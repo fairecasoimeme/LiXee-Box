@@ -1,0 +1,34 @@
+{
+	"lumi.sensor_switch.aq2" : [
+	{
+		"status" : [
+			{
+				"name" : "Clic",
+				"cluster" : "0006",
+				"attribut" : 0
+			},
+			{
+				"name" : "MultiClic",
+				"cluster" : "0000",
+				"attribut" : 32768
+			}
+		]
+	}
+       ],
+        "default" : [
+	{
+		"status" : [
+			{
+				"name" : "Clic",
+				"cluster" : "0012",
+				"attribut" : 85
+			},
+			{
+				"name" : "MultiClic",
+				"cluster" : "0012",
+				"attribut" : 1293
+			}
+		]
+	}
+	]
+}

@@ -1,0 +1,154 @@
+#pragma once
+
+#ifndef CONFIG_H_
+#define CONFIG_H_
+
+#include <Arduino.h>
+#include <CircularBuffer.h>
+
+#define VERSION "v1.5a"
+
+// hardware config64
+#define RESET_ZIGATE 4
+#define FLASH_ZIGATE 33
+#define LED1 2
+#define PRODUCTION 1
+#define FLASH 0
+
+#define RXD2 17 //2 //17
+#define TXD2 16 //4//16
+
+#define MAXHEAP 96000
+
+// ma structure configCRC error
+struct ConfigSettingsStruct {
+  bool enableWiFi;
+  bool enableEthernet;
+  char ssid[50];
+  char password[50];
+  char ipAddressWiFi[18];
+  char ipMaskWiFi[16];
+  char ipGWWiFi[18];
+  bool dhcp;
+  bool connectedEther;
+  bool connectedWifiSta;
+  char ipAddress[18];
+  char ipMask[16];
+  char ipGW[18];
+  int serialSpeed;
+  char radioType[20];
+  char dataFlow[20];
+  int  tcpListenPort;
+  bool disableWeb;
+  bool enableHeartBeat;
+  double refreshLogs;
+  bool enableDebug;
+  bool enableNotif;
+  bool enableMqtt;
+  
+};
+
+struct ZigbeeConfig {
+  char application[4];
+  char type;
+  char sdk;
+  int channel;
+  uint64_t zigbeeMac;
+};
+
+struct ZiGateInfosStruct {
+  char device[8];
+  char mac[8];
+  char flash[8];  
+};
+
+struct ConfigGeneralStruct {
+  char ZLinky[20];
+  int LinkyMode;
+  int powerMaxDatas;
+  char ntpserver[50];
+  int timeoffset;
+  char timezone[50];
+  char tarifIdx1[10];
+  char tarifIdx2[10];
+  char tarifIdx3[10];
+  char tarifIdx4[10];
+  char tarifIdx5[10];
+  char tarifIdx6[10];
+  char tarifIdx7[10];
+  char tarifIdx8[10];
+  char tarifIdx9[10];
+  char tarifIdx10[10];
+  char tarifAbo[10];
+  char tarifCSPE[10];
+  char tarifCTA[10];
+  char servSMTP[50];
+  char portSMTP[50];
+  char userSMTP[50];
+  char passSMTP[50];
+  char servMQTT[50];
+  char portMQTT[50];
+  char userMQTT[50];
+  char passMQTT[50];
+};
+
+
+typedef struct {
+    unsigned int cmd;
+    unsigned int len;
+    uint8_t datas[256];
+} Packet;
+
+
+typedef struct {
+    unsigned int type;
+    char sql[128];
+} SQLReq;
+
+
+typedef struct {
+    char name[50];
+    unsigned int cluster;
+    unsigned int attribute;
+    char type[20];
+    float coefficient;
+    char unit[20];
+    bool visible;
+    char typeJauge[20];
+    int jaugeMin;
+    int jaugeMax;
+    
+} State;
+
+typedef struct {
+    char name[50];
+    unsigned int command;
+    unsigned int value;
+    bool visible;
+} Action;
+
+typedef struct {
+  uint8_t StateSize;
+  uint8_t ActionSize;
+  char bind[50];
+  State e[10];
+  Action a[10];
+}Template;
+
+typedef struct {
+  String message;
+  int state;
+} Alert;
+
+typedef CircularBuffer<char, 4096> LogConsoleType;
+
+#define DEBUG_ON
+
+#ifdef DEBUG_ON
+#define DEBUG_PRINT(x)  Serial.print(x) 
+#define DEBUG_PRINTLN(x)  Serial.println(x)
+#else
+#define DEBUG_PRINT(x) 
+#define DEBUG_PRINTLN(x) 
+#endif
+#endif

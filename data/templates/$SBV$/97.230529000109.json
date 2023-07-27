@@ -1,0 +1,185 @@
+{
+	"lumi.plug.maeu01" : [
+	{
+		"status" : [
+			{
+				"name" : "Power",
+				"cluster" : "0006",
+				"attribut" : 0
+			},
+                        {
+				"name" : "BASE",
+				"cluster" : "0702",
+				"attribut" : 0,
+                                "type": "numeric",
+                                "unit": "kWh",
+                                "poll": 2
+			},
+			{
+				"name" : "SINSTS",
+				"cluster" : "0B04",
+				"attribut" : 1295,
+                                "type": "numeric",
+                                "unit": "VA",
+                                "poll": 2
+			}
+		],		
+		"action" : [
+			{
+				"name" : "ON",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 1
+			},
+			{
+				"name" : "OFF",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 0
+			},
+			{
+				"name" : "TOGGLE",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 2
+			}
+		],
+                "bind" : "1794;2820",
+                "report" : [
+			{
+				"cluster" : "0702",
+				"attribut": 0,
+				"type":37,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			}
+                ]
+	}
+	],"default" : [
+	{
+		"status" : [
+			{
+				"name" : "Power",
+				"cluster" : "0006",
+				"attribut" : 0
+			}
+		],		
+		"action" : [
+			{
+				"name" : "ON",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 1
+			},
+			{
+				"name" : "OFF",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 0
+			},
+			{
+				"name" : "TOGGLE",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 2
+			}
+		],
+                "bind" : "1794;2820",
+                "report" : [
+			{
+				"cluster" : "0702",
+				"attribut": 0,
+				"type":37,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			}
+                ]
+	}
+	],"ZLinky_TIC" : [
+	{
+		"status" : [
+			{
+				"name" : "BASE",
+				"cluster" : "0702",
+				"attribut" : 0,
+                                "type": "numeric",
+                                "unit": "kWh"
+			},
+			{
+				"name" : "SINSTS",
+				"cluster" : "0B04",
+				"attribut" : 1295,
+                                "type": "numeric",
+                                "unit": "VA"
+			},
+			{
+				"name" : "UMOY1",
+				"cluster" : "0B04",
+				"attribut" : 1297,
+                                "type": "numeric",
+                                "unit": "V"
+			},
+			{
+				"name" : "SMAXN",
+				"cluster" : "0B04",
+				"attribut" : 1293,
+                                "type": "numeric",
+                                "unit": "VA",
+                                "poll" : 6
+			},
+			{
+				"name" : "STGE",
+				"cluster" : "FF66",
+				"attribut" : 535,
+                                "poll" : 10
+
+			}
+		],
+		"bind" : "1794;2820;65382",
+		"report" : [
+			{
+				"cluster" : "0702",
+				"attribut": 0,
+				"type":37,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1295,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1293,
+				"type":41,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1297,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			}
+
+		]
+		
+	}
+	]
+}
