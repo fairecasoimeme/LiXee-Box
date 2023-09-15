@@ -7,7 +7,7 @@ This application can be used with :
 * LiXee-ZiWifi32  (WiFi only)
     * The zigbee radio is a ZiGate.  
 * LiXee-Ethernet32  (WiFi / Ethernet)
-    * The zigbee radio can be : ZiGate, ZNP, Conbee or EZSP.
+    * The zigbee radio must be : ZiGate (with PiZiGate).
       
 Obviously, you can use this code with ESP32 chip but depend on your board pins connexions. 
 
@@ -106,6 +106,6 @@ Just install esptools and run this command
 
 ## Changelog
 
-### V1
+### V1.0
 * Initial source 
   
