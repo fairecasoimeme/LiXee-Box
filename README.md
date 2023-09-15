@@ -40,34 +40,34 @@ When a Zigbee device is joining, LiXee-Box create an object following the corres
 ### Structure
 Here is the structure :
 
-├── Device model or 'default'    
-│   ├── status   
-│   │   ├── name   
-│   │   ├── cluster  
-│   │   ├── attribut  
-│   │   ├── type   
-│   │   ├── unit  
-│   │   ├── coefficient   
-│   │   ├── visible  
-│   │   ├── jauge     
-│   │   ├── min  
-│   │   ├── max  
-│   │   ├── poll  
-│   ├── action   
-│   │   ├── name   
-│   │   ├── command  
-│   │   ├── endpoint  
-│   │   ├── value    
-│   │   ├── visible   
-│   ├── bind  
-│   ├── report  
-│   │   ├── cluster   
-│   │   ├── attribut  
-│   │   ├── type  
-│   │   ├── min   
-│   │   ├── max  
-│   │   ├── timeout   
-│   │   ├── change  
+    ├── Device model or 'default'    
+    │   ├── status   
+    │   │   ├── name   
+    │   │   ├── cluster  
+    │   │   ├── attribut  
+    │   │   ├── type   
+    │   │   ├── unit  
+    │   │   ├── coefficient   
+    │   │   ├── visible  
+    │   │   ├── jauge     
+    │   │   ├── min  
+    │   │   ├── max  
+    │   │   ├── poll  
+    │   ├── action   
+    │   │   ├── name   
+    │   │   ├── command  
+    │   │   ├── endpoint  
+    │   │   ├── value    
+    │   │   ├── visible   
+    │   ├── bind  
+    │   ├── report  
+    │   │   ├── cluster   
+    │   │   ├── attribut  
+    │   │   ├── type  
+    │   │   ├── min   
+    │   │   ├── max  
+    │   │   ├── timeout   
+    │   │   ├── change  
 
 ### Status
 
