@@ -4,7 +4,7 @@ Little Universal Smarthome Box with ESP32 MCU and ZiGate (Zigbee Radio MCU)
 
 ## Compatibility
 This application can be used with :  
-* LiXee-ZiWifi32  (WiFi only)
+* [LiXee-ZiWifi32](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)  (WiFi only)
     * The zigbee radio is a ZiGate.  
 * LiXee-Ethernet32  (WiFi / Ethernet)
     * The zigbee radio must be : ZiGate (with PiZiGate).
