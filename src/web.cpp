@@ -5,6 +5,7 @@
 #include <esp_task_wdt.h>
 #include <stddef.h>
 #include <Arduino.h>
+#include <TimeLib.h>
 #include "AsyncJson.h"
 #include <ArduinoJson.h>
 #include <ETH.h>
@@ -18,7 +19,7 @@
 #include "FS.h"
 #include "LittleFS.h"
 #include "SPIFFS_ini.h"
-// #include "web.h"
+
 #include "config.h"
 #include "flash.h"
 #include "log.h"
@@ -191,6 +192,8 @@ const char HTTP_CONFIG_HORLOGE[] PROGMEM =
     "<input class='form-control' id='timeoffset' type='text' name='timeoffset' value='{{timeoffset}}'>"
     "<label for='timezone'>Time Zone</label>"
     "<input class='form-control' id='timezone' type='text' name='timezone' value='{{timezone}}'>"
+    "<label for='epochtime'>UTC epoch date</label>"
+    "<input class='form-control' id='epochtime' type='text' name='epochtime' value='{{epochtime}}'>"
     "</div>"
     "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
     "</form></div>"
@@ -1041,9 +1044,17 @@ void handleRoot(AsyncWebServerRequest *request)
               else
               {
                 dashboard += t.e[i].name;
-                dashboard += " : ";
+                dashboard += " : <span id='";
+                dashboard += F("label_");
+                dashboard += (String)ShortAddr;
+                dashboard += F("_");
+                dashboard += t.e[i].cluster;
+                dashboard += F("_");
+                dashboard += t.e[i].attribute;
+                dashboard += F("'>");
                 dashboard += GetValueStatus(file.name(), t.e[i].cluster, t.e[i].attribute, (String)t.e[i].type, t.e[i].coefficient, (String)t.e[i].unit);
-                dashboard += F("<br>");
+                dashboard += F("</span><br>");
+                js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t.e[i].cluster+","+t.e[i].attribute+",'"+(String)t.e[i].type+"',"+t.e[i].coefficient+",'"+(String)t.e[i].unit+"');";
               }
             }
           }
@@ -1476,6 +1487,12 @@ void handleConfigHorloge(AsyncWebServerRequest *request)
   result.replace("{{ntpserver}}", ConfigGeneral.ntpserver);
   result.replace("{{timeoffset}}", String(ConfigGeneral.timeoffset));
   result.replace("{{timezone}}", String(ConfigGeneral.timezone));
+  String path = "configGeneral.json";
+  String value = config_read(path,"epoch");
+  /*unsigned long t = atol(value.c_str());
+  char manualDate[32];
+  sprintf(manualDate, "%02d/%02d/%02d %02d:%02d:%02d", day(t), month(t), year(t), hour(t), minute(t), second(t));*/
+  result.replace("{{epochtime}}",value);
 
   request->send(200, "text/html", result);
 }
@@ -2399,9 +2416,17 @@ void handleSaveConfigHorloge(AsyncWebServerRequest *request)
     config_write(path, "timeoffset", String(request->arg("timeoffset")));
   }
 
-  AsyncWebServerResponse *response = request->beginResponse(303);
+  if (request->arg("epochtime").toDouble()>=0)
+  {
+    config_write(path, "epoch", String(request->arg("epochtime")));
+    ConfigGeneral.epochTime = atol(request->arg("epochtime").c_str());
+
+  }
+
+  request->send(200, "text/html", "Save config OK ! <br><form method='GET' action='reboot'><input type='submit' name='reboot' value='Reboot'></form>");
+  /*AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configHorloge"));
-  request->send(response);
+  request->send(response);*/
 }
 
 void handleSaveConfigLinky(AsyncWebServerRequest *request)
@@ -2888,6 +2913,23 @@ void handleLoadLinkyDatas(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void handleRefreshLabel(AsyncWebServerRequest *request)
+{
+
+  String file,Shortaddr,Cluster, Attribute, Type, Coefficient, Unit, result;
+  int i = 0;
+  file = request->arg(i);
+  Cluster = request->arg(1);
+  Attribute = request->arg(2);
+  Type = request->arg(3);
+  Coefficient = request->arg(4);
+  Unit = request->arg(5);
+
+  result = GetValueStatus(file, Cluster.toInt(), Attribute.toInt(), Type, Coefficient.toFloat(), Unit);
+
+  request->send(200, F("text/html"), result);
+}
+
 void handleRefreshGaugeAbo(AsyncWebServerRequest *request)
 {
 
@@ -2989,6 +3031,17 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
     else if (time == "day")
     {
       int now = Day.toInt();
+      int reste = 30 - now;
+      int lastNbDayMonth,firstDay;
+      if (reste>0)
+      {
+        lastNbDayMonth=maxDayOfTheMonth[(Month.toInt()-2)];
+        now = (lastNbDayMonth - reste)+1;
+      }else if (reste<0){
+        now=-(reste+1);
+      }else if (reste==0){
+        now=reste+1;
+      }
 
       int i = 0;
       while (i < 30)
@@ -2997,8 +3050,8 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
         {
           sep = ",";
         }
-        now++;
-        if (now > maxDayOfTheMonth[(Month.toInt() - 2)])
+        
+        if (now > maxDayOfTheMonth[(Month.toInt()-2)])
         {
           now = 1;
         }
@@ -3016,6 +3069,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
           j++;
         }
         result += F("}");
+        now++;
         i++;
       }
     }
@@ -3354,6 +3408,9 @@ void initWebServer()
                { handleLoadPowerGaugeTimeDay(request); });
   serverWeb.on("/refreshGaugeAbo", HTTP_GET, [](AsyncWebServerRequest *request)
                { handleRefreshGaugeAbo(request); });
+  serverWeb.on("/refreshLabel", HTTP_GET, [](AsyncWebServerRequest *request)
+               { handleRefreshLabel(request); });
+               
   serverWeb.on("/loadPowerTrend", HTTP_GET, [](AsyncWebServerRequest *request)
                { handleLoadPowerTrend(request); });
   serverWeb.on("/loadPowerChart", HTTP_GET, [](AsyncWebServerRequest *request)

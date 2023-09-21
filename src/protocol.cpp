@@ -236,11 +236,14 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
                         (uint64_t)protocol.payload[7] << 16 |
                         (uint64_t)protocol.payload[8] << 8 |
                         (uint64_t)protocol.payload[9];
-      ZConfig.zigbeeMac = tmpmac;                  
+      DEBUG_PRINT(F("Mac coordinator: "));
+      ZConfig.zigbeeMac = tmpmac; 
+      Serial.println(tmpmac, HEX);
+                
       tmp  = (protocol.payload[0]*256)+protocol.payload[1];
       
       DEBUG_PRINT(F("Short addr: "));
-      Serial.print(tmp, HEX);
+      Serial.println(tmp, HEX);
 
       if (tmp == 0xFFFF)
       {

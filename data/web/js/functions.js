@@ -149,7 +149,15 @@ function scanNetwork()
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			leselect = xhr.responseText;
-			document.getElementById("networks").innerHTML=leselect;
+			const datas = leselect.split(';');
+			if (parseInt(datas[0])>=0)
+			{
+				alert()
+				document.getElementById("networks").innerHTML=datas[1];
+			}else{
+				scanNetwork();
+			}
+			
 		}
 	}
 	xhr.open("GET","scanNetwork",true);
@@ -162,11 +170,11 @@ function updateSSID(val)
 	document.getElementById("ssid").value=val;
 }
 
-function cmd(val)
+function cmd(val,param="")
 {
 
 	var xhr = getXhr();
-	xhr.open("GET","cmd"+val,true);
+	xhr.open("GET","cmd"+val+"?param="+escape(param),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
@@ -270,6 +278,21 @@ function refreshStatusEnergy(IEEE,attribute,time)
 	}
 	loadEnergyChart(IEEE,time);
 	setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time); }, 60000);
+}
+
+function refreshLabel(file,shortaddr,cluster,attribute,type,coefficient,unit)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			leselect = xhr.responseText;
+			document.getElementById("label_"+shortaddr+"_"+cluster+"_"+attribute).innerHTML=leselect;
+			setTimeout(function(){ refreshLabel(file,shortaddr,cluster,attribute,type,coefficient,unit); }, 60000);
+		}
+	}
+	xhr.open("GET","refreshLabel?file="+escape(file)+"&cluster="+escape(cluster)+"&attribute="+escape(attribute)+"&type="+escape(type)+"&coeff="+escape(coefficient)+"&unit="+escape(unit),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
 }
 
 function refreshGaugeAbo(IEEE,attribute,time)
@@ -417,15 +440,20 @@ function getFormattedDate()
 
 function deleteDevice(devId)
 {
-     var xhr = getXhr();
-	xhr.onreadystatechange = function(){
-		if(xhr.readyState == 4 ){
-			leselect = xhr.responseText;
+	
+	const response = confirm("Are you sure you want to delete this device ?");
+	if (response){
+		var xhr = getXhr();
+		xhr.onreadystatechange = function(){
+			if(xhr.readyState == 4 ){
+				leselect = xhr.responseText;
+			}
 		}
+		xhr.open("GET","deleteDevice?devId="+escape(devId),true);
+		xhr.setRequestHeader('Content-Type','application/html');
+		xhr.send();
 	}
-	xhr.open("GET","deleteDevice?devId="+escape(devId),true);
-	xhr.setRequestHeader('Content-Type','application/html');
-	xhr.send();
+	  
 }
 
 function getAlert()

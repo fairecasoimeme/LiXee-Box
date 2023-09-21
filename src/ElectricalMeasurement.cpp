@@ -53,6 +53,17 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
         ini_power(inifile, (String)attribute, (String) tmp);
         ini_trendPower(inifile, (String)attribute, (String) tmp);
       }
-      break;         
+      break;  
+    default:
+      if (ini_exist(inifile))
+      {
+        for(int i=0;i<len;i++)
+        {
+           sprintf(value, "%02X",datas[i]);
+           tmp+=value;
+        }
+        ini_write(inifile,"0B04", (String)attribute, (String)tmp);
+      }
+      break;        
   }
 }

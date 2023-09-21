@@ -15,6 +15,7 @@
 #include <WiFiUdp.h>
 
 #include <WiFiClient.h>
+#include <esp_wifi.h>
 
 #include <ArduinoJson.h>
 #include <LittleFS.h>
@@ -72,7 +73,8 @@ CircularBuffer<Alert, 10> alertList;
 
 //CircularBuffer<SQLReq, 5> SQLReqList;
 
-
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP);
 
 #define FORMAT_LittleFS_IF_FAILED true
 #define CONFIG_LITTLEFS_CACHE_SIZE 512
@@ -105,10 +107,10 @@ unsigned long interval = 60000; // Intervalle de 1 minute en millisecondes
 //char timeServer[]="";
 //char timeServer[] = "51.38.81.135";
 
-WiFiUDP ntpUDP;
+
 #define NTP_UPDATE_INTERVAL_MS          60000L
 
-NTPClient timeClient(ntpUDP);
+
 
 String FormattedDate;
 String Hour;
@@ -134,6 +136,7 @@ void WiFiEvent(WiFiEvent_t event) {
       break;
     case ARDUINO_EVENT_ETH_CONNECTED:
       //DEBUG_PRINTLN("ETH Connected");
+      
       break;
     case ARDUINO_EVENT_ETH_GOT_IP:
       DEBUG_PRINT(F("ETH MAC: "));
@@ -147,6 +150,7 @@ void WiFiEvent(WiFiEvent_t event) {
       DEBUG_PRINT(ETH.linkSpeed());
       DEBUG_PRINTLN(F("Mbps"));
       ConfigSettings.connectedEther=true;
+      timeClient.forceUpdate();
       break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
       //DEBUG_PRINTLN("ETH Disconnected");
@@ -282,6 +286,9 @@ bool loadConfigGeneral() {
   }else{
     ConfigGeneral.timeoffset = 1;   
   }
+
+  ConfigGeneral.epochTime = doc["epoch"].as<long>();
+
   strlcpy(ConfigGeneral.tarifAbo, doc["tarifAbo"] | "0", sizeof(ConfigGeneral.tarifAbo));
   strlcpy(ConfigGeneral.tarifCTA, doc["tarifCTA"] | "0", sizeof(ConfigGeneral.tarifCTA));
   strlcpy(ConfigGeneral.tarifCSPE, doc["tarifCSPE"] | "0", sizeof(ConfigGeneral.tarifCSPE));
@@ -333,6 +340,7 @@ void setupWifiAP()
 
   WiFi.softAP(AP_NameChar,WIFIPASS );
   WiFi.setSleep(false);
+  
 }
 
 bool setupSTAWifi() {
@@ -365,6 +373,12 @@ bool setupSTAWifi() {
     }
     delay(250);
   }
+  uint8_t primaryChan;
+  wifi_second_chan_t secondChan;
+  esp_wifi_get_channel(&primaryChan, &secondChan);
+  ConfigSettings.channelWifi = primaryChan;
+  ConfigSettings.RSSIWifi = WiFi.RSSI();
+  ConfigSettings.bssid = WiFi.BSSIDstr(0);  
   ConfigSettings.connectedWifiSta=true;
   return true;
 }
@@ -373,8 +387,7 @@ bool setupSTAWifi() {
 void setup(void)
 {  
   
- /* rtc_wdt_protect_off(); 
-  rtc_wdt_disable(); */
+
   ZiGateMode=PRODUCTION;
   
   Serial.begin(115200);
@@ -400,21 +413,37 @@ void setup(void)
   if (ETH_ENABLE)
   {
     WiFi.onEvent(WiFiEvent);
-    ETH.begin(ETH_ADDR, ETH_POWER_PIN, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE);
-  } 
-
-   if (ConfigSettings.enableWiFi)
-  {
+    bool ETHReady = ETH.begin(ETH_ADDR, ETH_POWER_PIN, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE);
+    if (ConfigSettings.enableWiFi || (!ETHReady))
+    {
+      if (configOK)
+      {
+        DEBUG_PRINTLN(F("configOK"));  
+        if (!setupSTAWifi())
+        {
+          DEBUG_PRINTLN(F("AP"));
+          setupWifiAP();
+          modeWiFi="AP";
+        }
+        DEBUG_PRINTLN(F("setupSTAWifi"));   
+      }else{
+        
+        setupWifiAP();
+        modeWiFi="AP";
+        DEBUG_PRINTLN(F("AP"));
+      }
+    }
+  } else{
     if (configOK)
     {
       DEBUG_PRINTLN(F("configOK"));  
       if (!setupSTAWifi())
       {
-         DEBUG_PRINTLN(F("AP"));
+        DEBUG_PRINTLN(F("AP"));
         setupWifiAP();
         modeWiFi="AP";
       }
-       DEBUG_PRINTLN(F("setupSTAWifi"));   
+      DEBUG_PRINTLN(F("setupSTAWifi"));   
     }else{
       
       setupWifiAP();
@@ -422,6 +451,8 @@ void setup(void)
       DEBUG_PRINTLN(F("AP"));
     }
   }
+
+  
   if (ETH_ENABLE)
   {  
     if (!ConfigSettings.dhcp)
@@ -442,7 +473,7 @@ void setup(void)
   timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS);
 
   
- /* WiFi.disconnect(true);
+ /*WiFi.disconnect(true);
   WiFi.mode(WIFI_OFF);*/
   
   initWebServer();
@@ -457,6 +488,7 @@ void setup(void)
   digitalWrite(RESET_ZIGATE, 1);
   DEBUG_PRINTLN(F("add networkState"));
   commandList.push(Packet{0x0011, 0x0000,0});
+  commandList.push(Packet{0x0009, 0x0000,0});
   delay(2000);
   DEBUG_PRINTLN(F("start network"));
   commandList.push(Packet{0x0024, 0x0000,0});
@@ -466,17 +498,33 @@ void setup(void)
   commandList.push(Packet{0x0025, 0x0000,0});
 
   timeClient.begin();
-  timeClient.forceUpdate();
-  
+  bool NTPOK = timeClient.forceUpdate();
+  if (NTPOK)
+  {  
    FormattedDate = timeClient.getFullFormattedTime();
 
-   Hour = timeClient.getHours() < 10 ? "0" + String(timeClient.getHours()) : String(timeClient.getHours());
+   Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
    Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
    Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
    Year = String(timeClient.getYear());
-   Minute = timeClient.getMinutes() < 10 ? "0" + String(timeClient.getMinutes()) : String(timeClient.getMinutes()); 
+   Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
    Yesterday =  timeClient.getYesterday();
+   String path = "configGeneral.json";
+   config_write(path, "epoch", String(timeClient.getEpochTime()));
 
+  }else{
+      timeClient.setEpochTime(ConfigGeneral.epochTime);
+      FormattedDate = timeClient.getFullFormattedTime();
+
+      Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
+      Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
+      Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
+      Year = String(timeClient.getYear());
+      Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
+      Yesterday =  timeClient.getYesterday();
+  }
+
+  disableCore0WDT();
 }
 
 
@@ -638,7 +686,8 @@ void loop(void)
     }
 
     // Exec toutes les minutes
-    if (currentTime - previousTime >= interval) {
+    if (currentTime - previousTime >= interval) 
+    {
       previousTime = currentTime; // Mettre à jour le temps précédent
   
       // Écrire sur le port série
@@ -647,12 +696,14 @@ void loop(void)
       ScanDeviceToPoll();
 
       FormattedDate = timeClient.getFullFormattedTime();
-      Hour = timeClient.getHours() < 10 ? "0" + String(timeClient.getHours()) : String(timeClient.getHours());
+      Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
       Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
       Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
       Year = String(timeClient.getYear());
-      Minute = timeClient.getMinutes() < 10 ? "0" + String(timeClient.getMinutes()) : String(timeClient.getMinutes()); 
+      Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
       Yesterday = timeClient.getYesterday();
+      String path = "configGeneral.json";
+      config_write(path, "epoch", String(timeClient.getEpochTime()));
     }
     
   }

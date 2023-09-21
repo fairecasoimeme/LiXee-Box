@@ -72,6 +72,8 @@ class NTPClient {
 
     void setTimeZone(String timezone);
 
+    void setEpochTime(unsigned long epoch);
+
     /**
      * Changes the time offset. Useful for changing timezones dynamically
      */
@@ -104,6 +106,8 @@ class NTPClient {
    int getYear(); 
    int getMonth(); 
    int getDate();
+   int getHour();
+   int getMinute();
   
     /**
      * @return time in seconds since Jan. 1, 1970

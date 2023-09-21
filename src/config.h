@@ -23,15 +23,20 @@
 // ma structure configCRC error
 struct ConfigSettingsStruct {
   bool enableWiFi;
-  bool enableEthernet;
+  bool connectedWifiSta;
+  int channelWifi;
+  int RSSIWifi;
   char ssid[50];
+  String bssid;
   char password[50];
   char ipAddressWiFi[18];
   char ipMaskWiFi[16];
   char ipGWWiFi[18];
+  
+  
+  bool enableEthernet;
+  bool connectedEther; 
   bool dhcp;
-  bool connectedEther;
-  bool connectedWifiSta;
   char ipAddress[18];
   char ipMask[16];
   char ipGW[18];
@@ -68,6 +73,7 @@ struct ConfigGeneralStruct {
   int powerMaxDatas;
   char ntpserver[50];
   int timeoffset;
+  long epochTime;
   char timezone[50];
   char tarifIdx1[10];
   char tarifIdx2[10];

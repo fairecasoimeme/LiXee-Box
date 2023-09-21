@@ -118,6 +118,10 @@ unsigned long NTPClient::getEpochTime() {
          ((millis() - this->_lastUpdate) / 1000); // Time since last update
 }
 
+void NTPClient::setEpochTime(unsigned long epoch){
+  this->_currentEpoc = epoch;
+}
+
 int NTPClient::getDay() {
   return (((this->getEpochTime()  / 86400L) + 4 ) % 7); //0 is Sunday
 }
@@ -227,6 +231,24 @@ int NTPClient::getDate() {
   int day = (ti->tm_mday) < 10 ? 0 + (ti->tm_mday) : (ti->tm_mday);
   
   return day;
+}
+
+int NTPClient::getHour() {
+  time_t rawtime = this->getEpochTime();
+  struct tm * ti;
+  ti = localtime (&rawtime);
+  int hour = (ti->tm_hour) < 10 ? 0 + (ti->tm_hour) : (ti->tm_hour);
+  
+  return hour;
+}
+
+int NTPClient::getMinute() {
+  time_t rawtime = this->getEpochTime();
+  struct tm * ti;
+  ti = localtime (&rawtime);
+  int minute = (ti->tm_min) < 10 ? 0 + (ti->tm_min) : (ti->tm_min);
+  
+  return minute;
 }
 
 void NTPClient::end() {

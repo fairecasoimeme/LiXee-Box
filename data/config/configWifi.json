@@ -1,1 +1,1 @@
-{"enableWiFi":1,"ssid":"freebox_LCJFBU","pass":"Macdrome1981","ip":"192.168.0.130","mask":"255.255.255.0","gw":"192.168.0.254","tcpListenPort":""}
+{"enableWiFi":0,"ssid":"freebox_LCJFBU","pass":"","ip":"192.168.0.130","mask":"255.255.255.0","gw":"192.168.0.254","tcpListenPort":""}
