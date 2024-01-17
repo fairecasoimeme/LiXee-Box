@@ -1,15 +1,15 @@
 # LiXee-Box
-Little Universal Smarthome Box with ESP32 MCU and ZiGate (Zigbee Radio MCU)
+Little Universal Smarthome Box with ESP32S3 MCU and ZiGate (Zigbee Radio MCU)
 
 
 ## Compatibility
 This application can be used with :  
 * [LiXee-ZiWifi32](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)  (WiFi only)
     * The zigbee radio is a ZiGate.  
-* LiXee-Ethernet32  (WiFi / Ethernet)
-    * The zigbee radio must be : ZiGate (with PiZiGate).
+* LiXee-Ethernet32  (WiFi / Ethernet) (In progress)
+    * The zigbee radio must be : ZiGate (with PiZiGate). 
       
-Obviously, you can use this code with ESP32 chip but depend on your board pins connexions. 
+Obviously, you can use this code with ESP32S3 chip but depend on your board pins connexions. 
 
 ## Features
 The main feature is to get a mini smarthome box with energy management.
@@ -20,17 +20,22 @@ You can :
   * Management of subscriptions and prices
   * Graphs and gauges of consumption and power consumed according to a time base
   * Consumption trend display
-* Manage a ZiPulses for water and gas consumption management (in progress)
-  * Prices management (in progress)
-  * Graphs and gauges (in progress)
+* Manage a ZiPulses for water and gas consumption management 
+  * Prices management 
+  * Graphs and gauges 
 * Manage ZigBee device
   * Object creation
   * Template creation
   * Status and actions management
 * Time management by NTP
+* MQTT API management
+  * Server / Port / user / password /topic header customisable
+  * MQTT discover available (Home Assistant)
 * Rules management (in progress)
 * Notification management (in progress)
-* MQTT API management (in progress)
+* Update OTA
+* Backup / Restore datas
+  
 
 ## How to template zigbe device
 
@@ -53,6 +58,9 @@ Here is the structure :
     │   │   ├── min  
     │   │   ├── max  
     │   │   ├── poll  
+    │   │   ├── mqtt_device_class  
+    │   │   ├── mqtt_state_class  
+    │   │   ├── mqtt_icon 
     │   ├── action   
     │   │   ├── name   
     │   │   ├── command  
@@ -79,11 +87,15 @@ Here is the structure :
 |type| |String|"numeric"| only if you want manage numeric value| 
 |unit| |String|""| only for numeric type| 
 |coefficient| |float|| only for numeric type| 
-|jauge| |String|"Gauge"| only for numeric type| 
+|jauge| |String|"Gauge" / "Battery"| only for numeric type| 
 |min| |Decimal|| only for jauge = "Gauge"| 
 |max| |Decimal|| only for jauge = "Gauge"| 
 |visible| |Decimal|1 or 0| only if you want to display on dashboard| 
 |poll| |Decimal|| number of seconds if you want to poll the device| 
+|mqtt_device_class| |String|| could be "energy", "power", "apparent_power" (see mqtt discover HA webpage)| 
+|mqtt_state_class| |String|| could be "total_increasing", "measurement" (see mqtt discover HA webpage)| 
+|mqtt_icon| |String|| could be "transmission-tower", "lightning-bolt" (see mqtt discover HA webpage)| 
+
 
 ### Action
 
