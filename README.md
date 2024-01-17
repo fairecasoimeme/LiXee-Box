@@ -84,7 +84,7 @@ Here is the structure :
 |name|x|String||string character|   
 |cluster|x|String||cluster id in hexadecimal|  
 |attribut|x|Decimal||attribute number in decimal|  
-|type| |String|"numeric"| only if you want manage numeric value| 
+|type| |String|"numeric","float"| only if you want manage numeric value| 
 |unit| |String|""| only for numeric type| 
 |coefficient| |float|| only for numeric type| 
 |jauge| |String|"Gauge" / "Battery"| only for numeric type| 
