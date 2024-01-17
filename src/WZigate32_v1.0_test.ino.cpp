@@ -117,6 +117,7 @@ String Year;
 String Minute;
 String Yesterday;
 String epochTime;
+String firstStart;
 
 bool ETH_ENABLE;
 
@@ -362,6 +363,7 @@ bool loadConfigGeneral() {
   DynamicJsonDocument doc(10192);
   deserializeJson(doc,configFile);
 
+  ConfigGeneral.firstStart = (int)doc["firstStart"];
   ConfigSettings.enableDebug = (int)doc["enableDebug"];
   if (ConfigSettings.enableDebug)
   {

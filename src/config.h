@@ -72,6 +72,7 @@ struct ZiGateInfosStruct {
 };
 
 struct ConfigGeneralStruct {
+  int firstStart;
   char ZLinky[20];
   char Gaz[20];
   char Water[20];

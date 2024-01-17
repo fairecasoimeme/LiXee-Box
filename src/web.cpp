@@ -1590,187 +1590,197 @@ void handleNotFound(AsyncWebServerRequest *request)
 void handleRoot(AsyncWebServerRequest *request)
 {
 
-  String result;
-  result = F("<html>");
-  result += FPSTR(HTTP_HEADERGRAPH);
-  result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_ROOT);
-  result += FPSTR(HTTP_FOOTER);
-  result += F("</html>");
-  result.replace("{{FormattedDate}}", FormattedDate);
-  int i = 0;
-  String time;
-  int paramsNr = request->params();
-  if (paramsNr > 0)
+  if (!ConfigGeneral.firstStart)
   {
-    time = request->arg(i);
-  }
-  else
-  {
-    time = "hour";
-  }
-
-  if (time == "hour")
-  {
-    result.replace("{{selectedHour}}", F("selected"));
-    result.replace("{{selectedDay}}", F(""));
-    result.replace("{{selectedMonth}}", F(""));
-    result.replace("{{selectedYear}}", F(""));
-  }
-  else if (time == "day")
-  {
-    result.replace("{{selectedHour}}", F(""));
-    result.replace("{{selectedDay}}", F("selected"));
-    result.replace("{{selectedMonth}}", F(""));
-    result.replace("{{selectedYear}}", F(""));
-  }
-  else if (time == "month")
-  {
-    result.replace("{{selectedHour}}", F(""));
-    result.replace("{{selectedDay}}", F(""));
-    result.replace("{{selectedMonth}}", F("selected"));
-    result.replace("{{selectedYear}}", F(""));
-  }
-  else if (time == "year")
-  {
-    result.replace("{{selectedHour}}", F(""));
-    result.replace("{{selectedDay}}", F(""));
-    result.replace("{{selectedMonth}}", F(""));
-    result.replace("{{selectedYear}}", F("selected"));
-  }
-
-  String dashboard = "";
-  String js = "";
-  File root = LittleFS.open("/db");
-  File file = root.openNextFile();
-  while (file)
-  {
-    String tmp = file.name();
-    if (tmp.substring(16) == ".json")
+    String path = "configGeneral.json";
+    ConfigGeneral.firstStart=1;
+    config_write(path, "firstStart", "1");
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), F("/configWiFi"));
+    request->send(response);
+  }else{
+    String result;
+    result = F("<html>");
+    result += FPSTR(HTTP_HEADERGRAPH);
+    result += FPSTR(HTTP_MENU);
+    result += FPSTR(HTTP_ROOT);
+    result += FPSTR(HTTP_FOOTER);
+    result += F("</html>");
+    result.replace("{{FormattedDate}}", FormattedDate);
+    int i = 0;
+    String time;
+    int paramsNr = request->params();
+    if (paramsNr > 0)
     {
-      if (existDashboard(tmp))
-      {
-        int ShortAddr = GetShortAddr(file.name());
-        int DeviceId = GetDeviceId(file.name());
-        String model;
-        model = GetModel(file.name());
-        dashboard += F("<div class='col-sm-3'><div class='card'><div class='card-header'>");
-        String alias = getAliasDashboard(file.name());
-
-        if (alias != "null")
-        {
-          dashboard += F("<strong>");
-          dashboard += alias;
-          dashboard += F("</strong>");
-          dashboard += F("<br>(@Mac : ");
-          dashboard += tmp.substring(0, 16);
-          dashboard += F(")");
-        }
-        else
-        {
-          dashboard += F("@Mac : ");
-          dashboard += tmp.substring(0, 16);
-        }
-        dashboard += F("</div>");
-        dashboard += F("<div class='card-body'>");
-        // Get status and action from json
-
-        if (TemplateExist(DeviceId))
-        {
-          Template *t;
-          t = GetTemplate(DeviceId, model);
-          // toutes les propiétés
-          dashboard += F("<div id='status_");
-          dashboard += (String)ShortAddr;
-          dashboard += F("'>");
-
-          for (int i = 0; i < t->StateSize; i++)
-          {
-            if (t->e[i].visible)
-            {
-              
-              if (String(t->e[i].typeJauge) == "gauge")
-              {
-                js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
-                js += CreateTimeGauge((String)ShortAddr + (String)i);
-                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
-              }
-              else if(String(t->e[i].typeJauge) == "battery")
-              {
-                js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
-                js += CreateTimeGauge((String)ShortAddr + (String)i);
-                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
-              }
-              else
-              {
-                dashboard += t->e[i].name;
-                dashboard += " : <span id='";
-                dashboard += F("label_");
-                dashboard += (String)ShortAddr;
-                dashboard += F("_");
-                dashboard += t->e[i].cluster;
-                dashboard += F("_");
-                dashboard += t->e[i].attribute;
-                dashboard += F("'>");
-                dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
-                dashboard += F("</span><br>");
-                js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
-              }
-            }
-          }
-          dashboard += F("</div>");
-          dashboard += F("<div id='action_");
-          dashboard += (String)ShortAddr;
-          dashboard += F("'>");
-          // toutes les actions
-
-          for (int i = 0; i < t->ActionSize; i++)
-          {
-            if (t->a[i].visible)
-            {
-              dashboard += F("<button onclick=\"ZigbeeAction(");
-              dashboard += ShortAddr;
-              dashboard += ",";
-              dashboard += t->a[i].command;
-              dashboard += ",";
-              dashboard += t->a[i].value;
-              dashboard += ");\" class='btn btn-primary mb-2'>";
-              dashboard += t->a[i].name;
-              dashboard += F("</button>");
-            }
-          }
-          dashboard += F("</div>");
-        }
-        dashboard += F("</div></div></div>");
-      }
+      time = request->arg(i);
     }
-    file = root.openNextFile();
+    else
+    {
+      time = "hour";
+    }
+
+    if (time == "hour")
+    {
+      result.replace("{{selectedHour}}", F("selected"));
+      result.replace("{{selectedDay}}", F(""));
+      result.replace("{{selectedMonth}}", F(""));
+      result.replace("{{selectedYear}}", F(""));
+    }
+    else if (time == "day")
+    {
+      result.replace("{{selectedHour}}", F(""));
+      result.replace("{{selectedDay}}", F("selected"));
+      result.replace("{{selectedMonth}}", F(""));
+      result.replace("{{selectedYear}}", F(""));
+    }
+    else if (time == "month")
+    {
+      result.replace("{{selectedHour}}", F(""));
+      result.replace("{{selectedDay}}", F(""));
+      result.replace("{{selectedMonth}}", F("selected"));
+      result.replace("{{selectedYear}}", F(""));
+    }
+    else if (time == "year")
+    {
+      result.replace("{{selectedHour}}", F(""));
+      result.replace("{{selectedDay}}", F(""));
+      result.replace("{{selectedMonth}}", F(""));
+      result.replace("{{selectedYear}}", F("selected"));
+    }
+
+    String dashboard = "";
+    String js = "";
+    File root = LittleFS.open("/db");
+    File file = root.openNextFile();
+    while (file)
+    {
+      String tmp = file.name();
+      if (tmp.substring(16) == ".json")
+      {
+        if (existDashboard(tmp))
+        {
+          int ShortAddr = GetShortAddr(file.name());
+          int DeviceId = GetDeviceId(file.name());
+          String model;
+          model = GetModel(file.name());
+          dashboard += F("<div class='col-sm-3'><div class='card'><div class='card-header'>");
+          String alias = getAliasDashboard(file.name());
+
+          if (alias != "null")
+          {
+            dashboard += F("<strong>");
+            dashboard += alias;
+            dashboard += F("</strong>");
+            dashboard += F("<br>(@Mac : ");
+            dashboard += tmp.substring(0, 16);
+            dashboard += F(")");
+          }
+          else
+          {
+            dashboard += F("@Mac : ");
+            dashboard += tmp.substring(0, 16);
+          }
+          dashboard += F("</div>");
+          dashboard += F("<div class='card-body'>");
+          // Get status and action from json
+
+          if (TemplateExist(DeviceId))
+          {
+            Template *t;
+            t = GetTemplate(DeviceId, model);
+            // toutes les propiétés
+            dashboard += F("<div id='status_");
+            dashboard += (String)ShortAddr;
+            dashboard += F("'>");
+
+            for (int i = 0; i < t->StateSize; i++)
+            {
+              if (t->e[i].visible)
+              {
+                
+                if (String(t->e[i].typeJauge) == "gauge")
+                {
+                  js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+                  js += CreateTimeGauge((String)ShortAddr + (String)i);
+                  js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+                }
+                else if(String(t->e[i].typeJauge) == "battery")
+                {
+                  js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+                  js += CreateTimeGauge((String)ShortAddr + (String)i);
+                  js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+                }
+                else
+                {
+                  dashboard += t->e[i].name;
+                  dashboard += " : <span id='";
+                  dashboard += F("label_");
+                  dashboard += (String)ShortAddr;
+                  dashboard += F("_");
+                  dashboard += t->e[i].cluster;
+                  dashboard += F("_");
+                  dashboard += t->e[i].attribute;
+                  dashboard += F("'>");
+                  dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
+                  dashboard += F("</span><br>");
+                  js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
+                }
+              }
+            }
+            dashboard += F("</div>");
+            dashboard += F("<div id='action_");
+            dashboard += (String)ShortAddr;
+            dashboard += F("'>");
+            // toutes les actions
+
+            for (int i = 0; i < t->ActionSize; i++)
+            {
+              if (t->a[i].visible)
+              {
+                dashboard += F("<button onclick=\"ZigbeeAction(");
+                dashboard += ShortAddr;
+                dashboard += ",";
+                dashboard += t->a[i].command;
+                dashboard += ",";
+                dashboard += t->a[i].value;
+                dashboard += ");\" class='btn btn-primary mb-2'>";
+                dashboard += t->a[i].name;
+                dashboard += F("</button>");
+              }
+            }
+            dashboard += F("</div>");
+          }
+          dashboard += F("</div></div></div>");
+        }
+      }
+      file = root.openNextFile();
+    }
+    file.close();
+    root.close();
+    result.replace("{{dashboard}}", dashboard);
+
+    String javascript = "";
+    javascript = F("<script language='javascript'>");
+    javascript += F("$(document).ready(function() {");
+    javascript += F("loadPowerGaugeAbo(1");
+    javascript += F(",'");
+    javascript += String(ConfigGeneral.ZLinky);
+    javascript += F("','1295','");
+    javascript += time;
+    javascript += F("');");
+    javascript += F("refreshDashboard('");
+    javascript += String(ConfigGeneral.ZLinky);
+    javascript += F("','1295','");
+    javascript += time;
+    javascript += F("');");
+    javascript += js;
+    javascript += F("});");
+
+    javascript += F("</script>");
+    result.replace("{{javascript}}", javascript);
+
+    request->send(200, "text/html", result);
   }
-  file.close();
-  root.close();
-  result.replace("{{dashboard}}", dashboard);
-
-  String javascript = "";
-  javascript = F("<script language='javascript'>");
-  javascript += F("$(document).ready(function() {");
-  javascript += F("loadPowerGaugeAbo(1");
-  javascript += F(",'");
-  javascript += String(ConfigGeneral.ZLinky);
-  javascript += F("','1295','");
-  javascript += time;
-  javascript += F("');");
-  javascript += F("refreshDashboard('");
-  javascript += String(ConfigGeneral.ZLinky);
-  javascript += F("','1295','");
-  javascript += time;
-  javascript += F("');");
-  javascript += js;
-  javascript += F("});");
-
-  javascript += F("</script>");
-  result.replace("{{javascript}}", javascript);
-
-  request->send(200, "text/html", result);
 
 }
 
@@ -4253,6 +4263,7 @@ void handleSaveWifi(AsyncWebServerRequest *request)
       serializeJson(doc, configFile);
     }
   }
+  configFile.close();
   request->send(200, "text/html", "Save config OK ! <br><form method='GET' action='reboot'><input type='submit' name='reboot' value='Reboot'></form>");
 }
 
@@ -4309,6 +4320,7 @@ void handleSaveEther(AsyncWebServerRequest *request)
       serializeJson(doc, configFile);
     }
   }
+  configFile.close();
   request->send(200, "text/html", "Save config OK ! <br><form method='GET' action='reboot'><input type='submit' name='reboot' value='Reboot'></form>");
 }
 
