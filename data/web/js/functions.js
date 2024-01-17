@@ -1,4 +1,6 @@
-var powerGaugeAbo;
+var powerGaugeAbo1;
+var powerGaugeAbo2;
+var powerGaugeAbo3;
 var powerChart;
 var energyChart;
 function getXhr(){
@@ -113,16 +115,9 @@ function readfile(file,rep)
 			document.getElementById("file").innerHTML=leselect;
 		}
 	}
-	/*if (rep=="template")
-	{
-		xhr.open("GET","readFileTemplates?file="+escape(file),true);
-	}else if (rep=="database")
-	{
-		xhr.open("GET","readFileDatabase?file="+escape(file),true);
-	}else 
-	{*/
-		xhr.open("GET","readFile?rep="+escape(rep)+"&file="+escape(file),true);
-	//}
+	
+	xhr.open("GET","readFile?rep="+escape(rep)+"&file="+escape(file),true);
+	
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
@@ -149,10 +144,9 @@ function scanNetwork()
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			leselect = xhr.responseText;
-			const datas = leselect.split(';');
+			const datas = leselect.split('|');
 			if (parseInt(datas[0])>=0)
 			{
-				alert()
 				document.getElementById("networks").innerHTML=datas[1];
 			}else{
 				scanNetwork();
@@ -194,21 +188,51 @@ function loadLinkyDatas(IEEE)
 	xhr.send();
 }
 
-function loadPowerGaugeAbo(IEEE,attribute,time)
+function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 {
 	var xhr = getXhr();
-	if (time=='hour')
-	{
-		labelTime='VA';
-	}else{
-		labelTime='kWh';
-	}
+	
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			leselect = xhr.responseText;
 			const datas = leselect.split(';');
-			powerGaugeAbo = new JustGage({
-					id: 'power_gauge_global',
+			if (phase==1)
+			{
+				if (time=='hour')
+				{
+					labelTime='VA (Ph1)';
+				}else{
+					labelTime='Wh';
+				}
+				powerGaugeAbo1 = new JustGage({
+						id: 'power_gauge_global',
+						value: datas[0],
+						min: 0,
+						max: datas[1],
+						title: 'Target',
+						label: labelTime,
+						gaugeWidthScale: 0.6,
+						pointer: true,
+						pointerOptions: {
+						toplength: -15,
+						bottomlength: 10,
+						bottomwidth: 12,
+						color: '#8e8e93',
+						stroke: '#ffffff',
+						stroke_width: 3,
+						stroke_linecap: 'round'
+						},
+						relativeGaugeSize: true,
+						refreshAnimationTime: 1000
+				});
+			}else if (phase==2)
+			{
+				if (time=='hour')
+				{
+					labelTime='VA (Ph2)';
+				}
+				powerGaugeAbo2 = new JustGage({
+					id: 'power_gauge_global2',
 					value: datas[0],
 					min: 0,
 					max: datas[1],
@@ -217,17 +241,45 @@ function loadPowerGaugeAbo(IEEE,attribute,time)
 					gaugeWidthScale: 0.6,
 					pointer: true,
 					pointerOptions: {
-					  toplength: -15,
-					  bottomlength: 10,
-					  bottomwidth: 12,
-					  color: '#8e8e93',
-					  stroke: '#ffffff',
-					  stroke_width: 3,
-					  stroke_linecap: 'round'
+					toplength: -15,
+					bottomlength: 10,
+					bottomwidth: 12,
+					color: '#8e8e93',
+					stroke: '#ffffff',
+					stroke_width: 3,
+					stroke_linecap: 'round'
 					},
 					relativeGaugeSize: true,
 					refreshAnimationTime: 1000
-              });
+				});
+			}else if (phase==3)
+			{
+				if (time=='hour')
+				{
+					labelTime='VA (Ph3)';
+				}
+				powerGaugeAbo3 = new JustGage({
+					id: 'power_gauge_global3',
+					value: datas[0],
+					min: 0,
+					max: datas[1],
+					title: 'Target',
+					label: labelTime,
+					gaugeWidthScale: 0.6,
+					pointer: true,
+					pointerOptions: {
+					toplength: -15,
+					bottomlength: 10,
+					bottomwidth: 12,
+					color: '#8e8e93',
+					stroke: '#ffffff',
+					stroke_width: 3,
+					stroke_linecap: 'round'
+					},
+					relativeGaugeSize: true,
+					refreshAnimationTime: 1000
+				});
+			}
 
 		}
 	}
@@ -236,26 +288,37 @@ function loadPowerGaugeAbo(IEEE,attribute,time)
 	xhr.send();
 }
 
-function getLabelEnergy(datas,row)
+function getLabelEnergy(datas,row, barColor, options, index)
 {
 	var datas = JSON.parse(datas);
-	var colors = ['#7d7d7d ','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737'];
+	var colors = eval(barColor);
 	var result="";
 	i=0;
     totalEuro=0;
-	totalWh=0;
-	for (var key in row) {
-		if (datas[key] !==undefined)
+	total=0;
+	var unit="";
+	var label = options.data[index];
+	result += label.y+"<br>";
+	for (var key in datas) 
+	{
+		if (row[key] !==undefined)
 		{
-		   const item = datas[key];
-		   if (i>0){sep="<br>";}else{sep="";}
-		   totalEuro+=(Math.round(row[key]*item.price)/1000);
-		   totalWh+=row[key];
-		    result+= sep +"<span style='color:"+colors[i]+";'>"+item.name +" : "+row[key]+" Wh / "+(Math.round(row[key]*item.price)/1000)+"€</span>";
-		   i++;
-		}
+			const item = datas[key];
+			unit = item.unit;
+			const value = (item.coeff * row[key]);
+			
+			totalEuro+=(Math.round(value*item.price)/1000);
+			totalEuro+=(Math.round(value*item.taxe)/1000);
+			total+=(item.coeff * row[key]);
+			if (value!=0)
+			{
+				if (i>0){sep="<br>";}else{sep="";}
+				result+= sep +"<span style='color:"+colors[i]+";'>"+ item.name +" : "+value+" "+unit+" / "+(Math.round(value*item.price)/1000)+"€</span>";
+			}
+		} 
+		i++;
 	}
-    result+="<br><span style='color:red;font-weight:bold;'>Total : "+totalWh+" Wh / "+totalEuro+" €</span>";
+    result+="<br><span style='color:red;font-weight:bold;'>Total : "+total+" "+ unit+" / "+Math.round(totalEuro)+" €</span>";
 	return result;
   
 }
@@ -265,6 +328,46 @@ function refreshDashboard(IEEE,attribute,time)
 	refreshGaugeAbo(IEEE,attribute,time);
 	loadPowerTrend(IEEE,attribute,time);
 	setTimeout(function(){refreshDashboard(IEEE,attribute,time); }, 60000);
+}
+
+function loadGazChart(IEEE,time)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			var datas = JSON.parse(xhr.responseText);
+			 gazChart.setData(datas);
+		}
+	}
+	xhr.open("GET","loadEnergyChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
+function loadWaterChart(IEEE,time)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			var datas = JSON.parse(xhr.responseText);
+			waterChart.setData(datas);
+		}
+	}
+	xhr.open("GET","loadEnergyChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
+function refreshStatusGaz(IEEE,time)
+{
+	loadGazChart(IEEE,time);
+	setTimeout(function(){refreshStatusGaz(IEEE,time); }, 60000);
+}
+
+function refreshStatusWater(IEEE,time)
+{
+	loadWaterChart(IEEE,time);
+	setTimeout(function(){refreshStatusWater(IEEE,time); }, 60000);
 }
 
 function refreshStatusEnergy(IEEE,attribute,time)
@@ -302,7 +405,7 @@ function refreshGaugeAbo(IEEE,attribute,time)
 		if(xhr.readyState == 4 ){
 			leselect = xhr.responseText;
 			//document.getElementById(mac).innerHTML=leselect;
-			powerGaugeAbo.refresh(leselect);
+			powerGaugeAbo1.refresh(leselect);
 			//setTimeout(function(){ refreshGaugeAbo(IEEE,attribute);loadPowerTrend(IEEE,attribute);loadLinkyDatas(IEEE);loadPowerChart(IEEE,attribute);loadEnergyChart(IEEE,'hour');}, 60000);
 		}
 	}
@@ -400,7 +503,8 @@ function loadPowerChart(IEEE,attribute)
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			var datas = JSON.parse(xhr.responseText);
-			 powerChart.setData(datas[attribute].minute);
+			//powerChart.setData(datas);
+			powerChart.setData(datas["datas"]);
 		}
 	}
 	xhr.open("GET","loadPowerChart?IEEE="+escape(IEEE)+"&attribute="+escape(attribute),true);
@@ -489,3 +593,66 @@ function getAlert()
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
+
+function getLatestReleaseInfo() {
+	$.getJSON("https://api.github.com/repos/fairecasoimeme/lixee-box/releases/latest").done(function(release) {
+	  var asset = release.assets[0];
+	  var downloadCount = 0;
+	  for (var i = 0; i < release.assets.length; i++) {
+		downloadCount += release.assets[i].download_count;
+	  }
+	  var oneHour = 60 * 60 * 1000;
+	  var oneDay = 24 * oneHour;
+	  var dateDiff = new Date() - new Date(release.published_at);
+	  var timeAgo;
+	  if (dateDiff < oneDay) {
+		timeAgo = (dateDiff / oneHour).toFixed(1) + " hours ago";
+	  } else {
+		timeAgo = (dateDiff / oneDay).toFixed(1) + " days ago";
+	  }
+
+	  var releaseInfo = release.name + " was updated " + timeAgo + " and downloaded " + downloadCount.toLocaleString() + " times.";
+	  $("#downloadupdate").attr("href", asset.browser_download_url);
+	  $("#releasehead").text(releaseInfo);
+	  $("#releasebody").text(release.body);
+	  $("#releaseinfo").fadeIn("slow");
+	});
+  }
+
+  function toggleDiv(div) {
+	var x = document.getElementById(div);
+	if (x.style.display === "none") {
+	  x.style.display = "block";
+	} else {
+	  x.style.display = "none";
+	}
+  } 
+
+function createBackupFile()
+{
+	var xhr = getXhr();
+	document.getElementById('createBackupFile').innerHTML="<img src='/web/img/wait.gif'>";
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			leselect = xhr.responseText;
+			document.getElementById('createBackupFile').innerHTML=leselect;
+		}
+	}
+	xhr.open('GET','createBackupFile',true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
+function sendMqttDiscover(shortaddr)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			leselect = xhr.responseText;
+		}
+	}
+	xhr.open("GET","sendMqttDiscover?shortAddr="+escape(shortaddr),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+  

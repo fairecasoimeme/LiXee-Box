@@ -8,40 +8,61 @@
 
 #include "SPIFFS_ini.h"
 #include "config.h"
+#include "log.h"
 #include "zigbee.h"
 #include "basic.h"
 
 extern struct ZigbeeConfig ZConfig;
-extern CircularBuffer<Packet, 20> commandList;
+extern CircularBuffer<Packet, 40> commandList;
 extern CircularBuffer<Packet, 10> commandTimedList;
 extern CircularBuffer<Alert, 10> alertList;
 
 extern String FormattedDate;
-
+extern String epochTime;
 extern unsigned long timeLog;
+extern String section[12];
 
 char packet[128];
 int TimedFiFo;
 
+IPAddress parse_ip_address(const char *str) {
+    IPAddress result;    
+    int index = 0;
+
+    result[0] = 0;
+    while (*str) {
+        if (isdigit((unsigned char)*str)) {
+            result[index] *= 10;
+            result[index] += *str - '0';
+        } else {
+            index++;
+            if(index<4) {
+              result[index] = 0;
+            }
+        }
+        str++;
+    }
+    
+    return result;
+}
+
 String GetNameStatus(int deviceId,String cluster, int attribut, String model)
 {
-    String path = "/templates/"+(String)deviceId+".json";
+    String path = "/tp/"+(String)deviceId+".json";
 
-    File templateFile = LittleFS.open(path, FILE_READ);
-    if (!templateFile || templateFile.isDirectory()) 
+    File tpFile = LittleFS.open(path, FILE_READ);
+    if (!tpFile || tpFile.isDirectory()) 
     {
       DEBUG_PRINTLN(F("failed open"));
       
     }else
     {
-      DynamicJsonDocument temp(5096);
-      deserializeJson(temp,templateFile);
+      DynamicJsonDocument temp(10192);
+      deserializeJson(temp,tpFile);
 
-      templateFile.close();
+      tpFile.close();
       
-      int i=0;
-      const char *tmp;
-      
+      int i=0;     
       if (temp.containsKey(model))
       {
           JsonArray StatusArray = temp[model][0]["status"].as<JsonArray>();
@@ -61,11 +82,11 @@ String GetNameStatus(int deviceId,String cluster, int attribut, String model)
 
 String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient, String unit)
 {
-   char tmpKey[4];
+   char tmpKey[5];
    sprintf(tmpKey,"%04X",key);
    String tmp= ini_read(inifile, tmpKey, (String)attribut);  
 
-   if (type =="numeric")
+   if (type =="float")
    {
        float tmpint = strtol(tmp.c_str(), NULL, 16);
        if (coefficient != 1)
@@ -73,8 +94,13 @@ String GetValueStatus(String inifile, int key, int attribut, String type, float 
         tmpint = tmpint * coefficient;
        }
        tmp=String(tmpint); 
-   }else{
-      
+   }else if (type =="numeric"){
+      int tmpint = strtol(tmp.c_str(), NULL, 16);
+      if (coefficient != 1)
+       {
+        tmpint = tmpint * coefficient;
+       }
+       tmp=String(tmpint); 
    }
 
    tmp= tmp+" "+unit;
@@ -87,8 +113,6 @@ void lastSeen(int shortAddr)
   String path = GetMacAdrr(shortAddr);
   String tmpTime; 
 
-  //timeLog = millis();
-  //tmpTime = String(timeLog,DEC);
 
   ini_write(path,"INFO", "lastSeen", FormattedDate);
 
@@ -97,7 +121,7 @@ void lastSeen(int shortAddr)
 String GetMacAdrr(int shortAddr)
 {
  // char SAddr[20];
-  File root = LittleFS.open("/database");
+  File root = LittleFS.open("/db");
   File file = root.openNextFile();
   while (file) 
   {
@@ -123,6 +147,13 @@ String GetLastSeen(String inifile)
    return tmp;
 }
 
+String GetLQI(String inifile)
+{
+   String tmp= ini_read(inifile,"INFO", "LQI");  
+   int tmp2 = (int) strtol(tmp.c_str(), 0, 16);
+   return String(tmp2);
+}
+
 
 int GetShortAddr(String inifile)
 {
@@ -146,7 +177,6 @@ String GetSoftwareVersion(String inifile)
 void datasManage(char packet[128],int count)
 {
   int i=0;
-  char temp[4];
   uint8_t CRC=0;
   ZiGateProtocol protocol;
   if (count >=6)
@@ -171,7 +201,8 @@ void datasManage(char packet[128],int count)
     {
       DecodePayload(protocol,count); 
     }else{
-      DEBUG_PRINTLN("CRC error");
+      addDebugLog(F("CRC error"));
+      DEBUG_PRINTLN(F("CRC error"));
     }
     
   }
@@ -182,10 +213,27 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
   
   switch(protocol.type){
     case 0x8702:
-      Serial.print(F("Status :"));
+    {
+      uint8_t ShortAddr[2];
+      DEBUG_PRINT(F("8702 - Status :"));
       Serial.print(protocol.payload[0], HEX);
+      DEBUG_PRINT(F(" - "));
+      ShortAddr[0]=protocol.payload[4];
+      ShortAddr[1]=protocol.payload[5];
+      DEBUG_PRINT(ShortAddr[0]);
+      DEBUG_PRINT(ShortAddr[1]);
+      DEBUG_PRINT(F(" - "));
+      String inifile;
+      int SA = (int)(ShortAddr[0] * 256)+ShortAddr[1];
+      inifile = GetMacAdrr(SA);
+      DEBUG_PRINT(inifile);
+      char tmpStatus[2];
+      sprintf(tmpStatus,"%02x",protocol.payload[0]);
+      ini_write(inifile,"INFO","Status",String(tmpStatus));
       DEBUG_PRINTLN();
-      break;
+      
+    }
+    break;
     case 0x8000:
       Serial.print(F("Status :"));
       switch(protocol.payload[0]){
@@ -256,6 +304,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       {
         DEBUG_PRINT(F("Network : "));
         uint8_t statusNetwork = protocol.payload[0];
+        ZConfig.network = statusNetwork;
         DEBUG_PRINTLN(statusNetwork);
         DEBUG_PRINT(F("Channel: "));
         uint8_t channel = protocol.payload[11];
@@ -266,6 +315,9 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       case 0x8030:
       {
         uint8_t statusBind = protocol.payload[1];
+        DEBUG_PRINTLN();
+        DEBUG_PRINT(F("Bind Response: "));
+        DEBUG_PRINTLN(F(statusBind));
         if (statusBind ==0)
         {
           int tmp  = (protocol.payload[3]*256)+protocol.payload[4];
@@ -301,7 +353,6 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           String tmpIN="";
           String tmpOUT="";
           int i;
-          int j=0;
           for (i=12;i<(12+(nbIN*2));i=i+2)
           {
             int cluster;
@@ -387,8 +438,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         for (i=0;i<2;i++)
         {
           Cluster[i]=protocol.payload[i+1];
-          char tmp[2];
-          sprintf(tmp, "%02X",protocol.payload[i+1]);
+          char tmp[5];
+          snprintf(tmp,3,"%02X",protocol.payload[i+1]);
           DEBUG_PRINT(tmp);
         }
         
@@ -396,7 +447,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         {
           ShortAddr[i]=protocol.payload[i+4];
           char tmp[2];
-          sprintf(tmp, "%02X",protocol.payload[i+4]);
+          snprintf(tmp,3,"%02X",protocol.payload[i+4]);
           DEBUG_PRINT(tmp);
         }
 
@@ -410,8 +461,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         int i=0;
         for (i=0;i<(packetSize -6);i++)
         {
-          char tmp[2];
-          sprintf(tmp, "%02X",protocol.payload[i]);
+          char tmp[3];
+          snprintf(tmp,3, "%02X",protocol.payload[i]);
           DEBUG_PRINT(tmp);
           DEBUG_PRINT(" ");
         }
@@ -426,8 +477,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         for (i=0;i<2;i++)
         {
           Cluster[i]=protocol.payload[i+3];
-          char tmp[2];
-          sprintf(tmp, "%02X",protocol.payload[i+3]);
+          char tmp[3];
+          snprintf(tmp,3, "%02X",protocol.payload[i+3]);
           DEBUG_PRINT(tmp);
         }
         uint8_t endpoint = protocol.payload[5];
@@ -439,8 +490,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
            for (i=0;i<2;i++)
            {
               ShortAddr[i]=protocol.payload[i+8];
-              char tmp[2];
-              sprintf(tmp, "%02X",protocol.payload[i+8]);
+              char tmp[3];
+              snprintf(tmp,3, "%02X",protocol.payload[i+8]);
               DEBUG_PRINT(tmp);
            }
         }
@@ -452,13 +503,13 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         if ((Command == 10) || (Command == 1))
         {
           uint8_t Attribute[2];
-          char tmp[2];
+          char tmp[3];
           DEBUG_PRINT(F(" - Attr : ")); 
           Attribute[0]=protocol.payload[17];
-          sprintf(tmp, "%02X",protocol.payload[17]);
+          snprintf(tmp,3, "%02X",protocol.payload[17]);
           DEBUG_PRINT(tmp);
           Attribute[1]=protocol.payload[16];
-          sprintf(tmp, "%02X",protocol.payload[16]);
+          snprintf(tmp,3, "%02X",protocol.payload[16]);
           DEBUG_PRINT(tmp);
 
           int offset, ln;
@@ -473,9 +524,17 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
             ln = packetSize-20-6;
             offset = 20;
           }
+
           //Traitement données
           readZigbeeDatas(ShortAddr,Cluster,Attribute,DataType,ln,&protocol.payload[offset]);
         }
+        String inifile;
+        int SA = (int)(ShortAddr[0] * 256)+ShortAddr[1];
+        inifile = GetMacAdrr(SA);
+        DEBUG_PRINT(inifile);
+        char tmpStatus[2];
+        sprintf(tmpStatus,"%02x",protocol.payload[0]);
+        ini_write(inifile,"INFO","Status",String(tmpStatus));
         DEBUG_PRINTLN();
       }
       break;
@@ -489,8 +548,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         for (i=0;i<2;i++)
         {
           ShortAddr[i]=protocol.payload[i+1];
-          char tmp[2];
-          sprintf(tmp, "%02X",protocol.payload[i+1]);
+          char tmp[3];
+          snprintf(tmp,3,"%02X",protocol.payload[i+1]);
           DEBUG_PRINT(tmp);
         }
 
@@ -502,8 +561,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         for (i=0;i<2;i++)
         {
           Cluster[i]=protocol.payload[i+4];
-          char tmp[2];
-          sprintf(tmp, "%02X",protocol.payload[i+4]);
+          char tmp[3];
+          snprintf(tmp,3,"%02X",protocol.payload[i+4]);
           DEBUG_PRINT(tmp);
         }
 
@@ -512,8 +571,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         for (i=0;i<2;i++)
         {
           Attribute[i]=protocol.payload[i+6];
-          char tmp[2];
-          sprintf(tmp, "%02X",protocol.payload[i+6]);
+          char tmp[3];
+          snprintf(tmp,3,"%02X",protocol.payload[i+6]);
           DEBUG_PRINT(tmp);
         }
         
@@ -531,17 +590,23 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
            DEBUG_PRINT(F(" - Datas : ")); 
            for (i=0;i<ln;i++)
            {
-             char tmp[2];
-             sprintf(tmp, "%02X",protocol.payload[i+12]);
+             char tmp[3];
+             snprintf(tmp,3,"%02X",protocol.payload[i+12]);
              DEBUG_PRINT(tmp);
            }
-
+           DEBUG_PRINTLN();
+           DEBUG_PRINT("LQI :");
+           char lqi[3];
+           snprintf(lqi,3, "%02X",protocol.payload[ln+12]);
+           DEBUG_PRINTLN(lqi);
+           String inifile;
+           int SA = (int)(ShortAddr[0] * 256)+ShortAddr[1];
+           inifile = GetMacAdrr(SA);
+           ini_write(inifile,"INFO","LQI",String(lqi));
            //Traitement données
            readZigbeeDatas(ShortAddr,Cluster,Attribute,DataType,ln,&protocol.payload[12]);
            
         }
-        DEBUG_PRINTLN();
-        
 
         //traitement bind lors de la réception du model
         int tmpcluster = Cluster[0]*256+Cluster[1];
@@ -581,11 +646,17 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           
         }
         
+        size_t HeapSize = ESP.getHeapSize();
+        DEBUG_PRINT(F("Heap size : "));
+        DEBUG_PRINTLN(HeapSize);
         size_t freeMemory = ESP.getFreeHeap();
-        DEBUG_PRINT(F("Free memory : "));
+        DEBUG_PRINT(F("Free heap : "));
         DEBUG_PRINTLN(freeMemory);
+        size_t minMemory = ESP.getMinFreeHeap();
+        DEBUG_PRINT(F("lowest level of free heap : "));
+        DEBUG_PRINTLN(minMemory);
         size_t maxMemory = ESP.getMaxAllocHeap();
-        DEBUG_PRINT(F("Max memory : "));
+        DEBUG_PRINT(F("largest block of heap : "));
         DEBUG_PRINTLN(maxMemory);
       }
       break;
@@ -593,31 +664,31 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       {
          
          DEBUG_PRINT(F("Config report response : "));
+         DEBUG_PRINT(F(" Size : "));
+         DEBUG_PRINT(protocol.ln);
+         DEBUG_PRINT(F(" Short : "));
          Serial.print(protocol.payload[1], HEX);
          Serial.print(protocol.payload[2], HEX);
          DEBUG_PRINT(F(" Cluster : "));
-
-         Serial.print(protocol.payload[4], HEX);
-         Serial.print(protocol.payload[5], HEX);
-         DEBUG_PRINT(F(" Attr : "));
-
-         Serial.print(protocol.payload[6], HEX);
-         Serial.print(protocol.payload[7], HEX);
+         char cluster[5];
+         snprintf(cluster,5,"%02X%02X",protocol.payload[4],protocol.payload[5]);      
+         DEBUG_PRINT(cluster);
          DEBUG_PRINT(F(" Status : "));
-         Serial.println(protocol.payload[8], HEX);
+         Serial.println(protocol.payload[6], HEX);
+         
       }
       break;
       case 0x8048:   
       {
         DEBUG_PRINT(F("Leave Network : "));
-        char mac[9];
+        char mac[20];
         int i;
         for (i=0;i<9;i++)
         {
           mac[i]=protocol.payload[i];
           Serial.print(protocol.payload[i], HEX);
         }
-        sprintf(mac, "%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],mac[6],mac[7]);
+        snprintf(mac,20,"%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],mac[6],mac[7]);
         alertList.push(Alert{"Device leaved : "+String(mac), 1});
         DEBUG_PRINTLN(String(mac)
         );
@@ -636,8 +707,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         ShortAddr_c[0]=protocol.payload[0];
         ShortAddr_c[1]=protocol.payload[1];
         
-        char tmp[4];
-        sprintf(tmp, "%02X%02X",protocol.payload[0],protocol.payload[1]);
+        char tmp[5];
+        snprintf(tmp,5, "%02X%02X",protocol.payload[0],protocol.payload[1]);
         alertList.push(Alert{"Device Joined : "+String(tmp), 0});
         
         DEBUG_PRINT( ShortAddr);
@@ -653,9 +724,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           Serial.print(protocol.payload[i], HEX);
         }
         DEBUG_PRINT(F(" - LQI : "));
+        char lqi[3];
         for (i=11;i<12;i++)
         {
           Serial.print(protocol.payload[i], HEX);
+          snprintf(lqi, 3,"%02X",protocol.payload[i]);
+
         }
         DEBUG_PRINTLN();
         //Add dans la base
@@ -664,7 +738,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
      
         String path = adMac+".json";
         ini_write(path,"INFO","shortAddr",String(ShortAddr));
-
+        ini_write(path,"INFO","LQI",String(lqi));
        
      
         //Demande Active Request
@@ -732,34 +806,34 @@ void sendPacket(Packet p){
 }
 
 void sendZigbeeCmd(Packet p){
-    char buff16[4];
-    char buff8[2];
+    char buff16[5];
+    char buff8[3];
     
     DEBUG_PRINT("Trame : 01");
     DEBUG_PRINT(" ");
 
-    sprintf(buff16, "%04X", p.cmd);
+    snprintf(buff16,5,"%04X", p.cmd);
     DEBUG_PRINT(buff16);
     
     DEBUG_PRINT(" ");
-    sprintf(buff16, "%04X", p.len);
+    snprintf(buff16,5,"%04X", p.len);
     DEBUG_PRINT(buff16);
     
     if (p.len >0)
     {
       DEBUG_PRINT(F(" "));
-      sprintf(buff8, "%02X", getChecksum(p.cmd, p.len, p.datas));
+      snprintf(buff8,3,"%02X", getChecksum(p.cmd, p.len, p.datas));
       DEBUG_PRINT(buff8);
       DEBUG_PRINT(F(" "));
       
       for (int i=0;i<p.len;i++)
       {
-        sprintf(buff8, "%02X",p.datas[i]);
+        snprintf(buff8,3, "%02X",p.datas[i]);
         DEBUG_PRINT(buff8);
       }  
     }else{
       DEBUG_PRINT(F(" "));
-      sprintf(buff8, "%02X", getChecksum(p.cmd, p.len, p.datas));
+      snprintf(buff8,3, "%02X", getChecksum(p.cmd, p.len, p.datas));
       DEBUG_PRINT(buff8);
     }
     DEBUG_PRINT(F(" 03"));
@@ -848,79 +922,221 @@ void protocolDatas(uint8_t raw[128], int DatasSize)
 
 bool ScanDeviceToPoll()
 {
-  File root = LittleFS.open("/database");
+  File root = LittleFS.open("/db");
+  if (!root)
+  {
+    DEBUG_PRINTLN(F("Failed to open dir"));
+    return false;
+  }
+
+  if (!root.isDirectory())
+  {
+    DEBUG_PRINTLN(F("not a dir"));
+    return false;
+  }
   File filedevice = root.openNextFile();
   while (filedevice) 
   {
       
-      String inifile =  filedevice.name();
-      File file = LittleFS.open("/database/"+inifile, FILE_READ);
-      if (!file|| file.isDirectory()) {
-        DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier ini_read"));
-        file.close();
-      }
-      
-      // Analyser le contenu JSON du fichier
-      DynamicJsonDocument temp(5096);
-      DeserializationError error = deserializeJson(temp, file);
-
-      if (error) 
+      if (!filedevice.isDirectory())
       {
-        //DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
+        String inifile =  filedevice.name();
+        File file = LittleFS.open("/db/"+inifile, FILE_READ);
+        if (!file|| file.isDirectory()) {
+          DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
+          DEBUG_PRINTLN(inifile);
+          file.close();
+          break;
+        }
+        
+        // Analyser le contenu JSON du fichier
+        DynamicJsonDocument temp(ESP.getMaxAllocHeap());
+        DeserializationError error = deserializeJson(temp, file);
         file.close();
-      }else
-      {
-
-        file.close();
-  
-        int shortAddr;
-        int cluster;
-        int attribut;
-        int poll;
-        int last;
-        int i=0;
-        if (temp.containsKey("poll"))
+        if (error) 
         {
-          JsonArray PollArray = temp["poll"].as<JsonArray>();
-          for(JsonVariant v : PollArray) 
-          {      
-              
-              shortAddr = (int)temp["INFO"]["shortAddr"];    
-              cluster = (int)temp["poll"][i]["cluster"];
-              attribut = (int)temp["poll"][i]["attribut"];
-              last = (int)temp["poll"][i]["last"];
-              temp["poll"][i]["last"] = last - 1;
-  
-              if (temp["poll"][i]["last"]  <= 0)
-              {
-                //lancement de la requête
-                DEBUG_PRINTLN(F("Lancement de la requête"));
-                //send packet
-                SendAttributeRead(shortAddr, cluster, attribut);
-                temp["poll"][i]["last"]=temp["poll"][i]["poll"];
-              }
-              i++;
-          }
-  
-          file = LittleFS.open("/database/"+inifile, "w+");
-          if (!file|| file.isDirectory()) {
-            DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
-            //return false;
-          }
-          if (!temp.isNull())
+          DEBUG_PRINT(F("ERROR : deserializeJson (ScanDeviceToPoll) "));
+          DEBUG_PRINT(inifile);
+          DEBUG_PRINTLN(error.c_str());
+          break;
+        }else
+        {
+          int shortAddr;
+          int cluster;
+          int attribut;
+          int poll;
+          int last;
+          int i=0;
+          if (temp.containsKey("poll"))
           {
-            if (serializeJson(temp, file) == 0) {
-              DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
-              file.close();
+            JsonArray PollArray = temp["poll"].as<JsonArray>();
+            for(JsonVariant v : PollArray) 
+            {      
+                
+                shortAddr = (int)temp["INFO"]["shortAddr"];    
+                cluster = (int)temp["poll"][i]["cluster"];
+                attribut = (int)temp["poll"][i]["attribut"];
+                last = (int)temp["poll"][i]["last"];
+                temp["poll"][i]["last"] = last - 1;
+    
+                if (temp["poll"][i]["last"]  <= 0)
+                {
+                  //lancement de la requête
+                  DEBUG_PRINT(F("Lancement de la requête : "));
+                  DEBUG_PRINT(F(" sht :"));
+                  DEBUG_PRINT(shortAddr);
+                  DEBUG_PRINT(F(" cluster :"));
+                  DEBUG_PRINT(cluster);
+                  DEBUG_PRINT(F(" attr :"));
+                  DEBUG_PRINTLN(attribut);
+                  //send packet
+                  SendAttributeRead(shortAddr, cluster, attribut);
+                  temp["poll"][i]["last"]=temp["poll"][i]["poll"];
+                }
+                i++;
+            }
+    
+            file = LittleFS.open("/db/"+inifile, "w+");
+            if (!file|| file.isDirectory()) {
+              DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
+              DEBUG_PRINTLN(inifile);
               //return false;
             }
+            if (!temp.isNull())
+            {
+              if (serializeJson(temp, file) == 0) {
+                DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier ini_read"));
+                file.close();
+                break;
+              }
+            }
+            file.close();       
           }
-          file.close();       
         }
       }
       filedevice = root.openNextFile();    
   }
-  filedevice.close();
+  root.close();
+  return true;
+}
+
+bool ScanDeviceToRAZ()
+{
+  File root = LittleFS.open("/db");
+  if (!root)
+  {
+    DEBUG_PRINTLN(F("Failed to open dir"));
+    return false;
+  }
+
+  if (!root.isDirectory())
+  {
+    DEBUG_PRINTLN(F("not a dir"));
+    return false;
+  }
+  File filedevice = root.openNextFile();
+  while (filedevice) 
+  {
+      
+      if (!filedevice.isDirectory())
+      {
+        String inifile =  filedevice.name();
+        File file = LittleFS.open("/db/"+inifile, FILE_READ);
+        if (!file|| file.isDirectory()) {
+          DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
+          DEBUG_PRINTLN(inifile);
+          file.close();
+          break;
+        }
+        
+        // Analyser le contenu JSON du fichier
+        DynamicJsonDocument temp(ESP.getMaxAllocHeap());
+        DeserializationError error = deserializeJson(temp, file);
+        file.close();
+        if (error) 
+        {
+          DEBUG_PRINT(F("ERROR : deserializeJson (ScanDeviceToRAZ) "));
+          DEBUG_PRINT(inifile);
+          DEBUG_PRINTLN(error.c_str());
+          break;
+        }else
+        {
+          String model = GetModel(inifile);
+          if (model=="ZLinky_TIC")
+          {
+            String lastSeen = ini_read(inifile,"INFO","lastSeen");
+            struct tm t;
+            time_t t_of_time;
+            int y = lastSeen.c_str()[0]*1000 + lastSeen.c_str()[1]*100 + lastSeen.c_str()[2] * 10 + lastSeen.c_str()[3] - 53328;
+            int m = lastSeen.c_str()[5]*10 + lastSeen.c_str()[6] - 528;
+            int d = lastSeen.c_str()[8]*10 + lastSeen.c_str()[9] - 528;
+            int h = lastSeen.c_str()[11]*10 + lastSeen.c_str()[12] - 528;
+            int mn = lastSeen.c_str()[14]*10 + lastSeen.c_str()[15] - 528;
+            t.tm_hour= h;
+            t.tm_min= mn;
+            t.tm_mday= d;
+            t.tm_mon= m - 1;
+            t.tm_year= y - 1900;
+            t_of_time = mktime(&t);
+            long diff = (epochTime.toDouble() - (long)t_of_time);
+            if (diff > 3600)
+            {
+              //RAZ NRJ
+              //hour
+              ini_write(inifile,"0B04", "1295", "0");
+              ini_write(inifile,"0B04", "2319", "0");
+              ini_write(inifile,"0B04", "2575", "0");
+              ini_power2(inifile, "1295", "0");
+              ini_power2(inifile, "2319", "0");
+              ini_power2(inifile, "2575", "0");
+              ini_trendPower(inifile,"1295", "0");
+              ini_trendPower(inifile,"2319", "0");
+              ini_trendPower(inifile,"2575", "0");
+
+              init_raz_energy(inifile, "hour");
+            }
+            if (diff > 86400)
+            {
+              init_raz_energy(inifile, "day");
+            }
+            if (diff > 2678400)
+            {
+              init_raz_energy(inifile, "month");
+            }
+          }else if (model == "ZiPulses")
+          {
+            String lastSeen = ini_read(inifile,"INFO","lastSeen");
+            struct tm t;
+            time_t t_of_time;
+            int y = lastSeen.c_str()[0]*1000 + lastSeen.c_str()[1]*100 + lastSeen.c_str()[2] * 10 + lastSeen.c_str()[3] - 53328;
+            int m = lastSeen.c_str()[5]*10 + lastSeen.c_str()[6] - 528;
+            int d = lastSeen.c_str()[8]*10 + lastSeen.c_str()[9] - 528;
+            int h = lastSeen.c_str()[11]*10 + lastSeen.c_str()[12] - 528;
+            int mn = lastSeen.c_str()[14]*10 + lastSeen.c_str()[15] - 528;
+            t.tm_hour= h;
+            t.tm_min= mn;
+            t.tm_mday= d;
+            t.tm_mon= m - 1;
+            t.tm_year= y - 1900;
+            t_of_time = mktime(&t);
+            long diff = (epochTime.toDouble() - (long)t_of_time);
+            if (diff > 3600)
+            {
+              init_raz_energy(inifile, "hour");
+            }
+            if (diff > 86400)
+            {
+              init_raz_energy(inifile, "day");
+            }
+            if (diff > 2678400)
+            {
+              init_raz_energy(inifile, "month");
+            }
+          }
+        }
+      }
+      filedevice = root.openNextFile();    
+  }
   root.close();
   return true;
 }

@@ -10,7 +10,7 @@ String getTrendPower(String IEEE,String Attribute, String Time);
 String getTrendEnergyEuros(String IEEE);
 String getPowerGaugeTimeDay(String IEEE, String Attribute);
 String getPowerDatas( String IEEE, String type, String Attribute, String time);
-float getTarif(int attribute);
+float getTarif(int attribute, String Type);
 float getTarifPower(String IEEE, int power);
 void SendBind(uint64_t mac, int cluster);
 void SendDeleteDevice(uint64_t mac);

@@ -28,8 +28,11 @@ String config_read(String path,String key);
 String ini_read (String path, String section, String key);
 bool ini_energy(String path, String section, String value);
 bool ini_power(String path, String section, String value);
+bool ini_power2(String path, String section, String value);
 bool ini_trendPower(String path, String section, String value);
 bool ini_trendEnergy(String path, String section, String value);
+
+bool init_raz_energy(String path, String time);
 
 /*bool   ini_open (String ini_name);
 String ini_read (String section, String key, String def);

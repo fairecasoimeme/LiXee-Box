@@ -3,12 +3,19 @@
  */
 #define BONJOUR_SUPPORT
 
-#include "soc/rtc_wdt.h"
+//#include "soc/rtc_wdt.h"
+#include "esp32s3/rom/rtc.h"
+#include "driver/temp_sensor.h"
 #include <esp_task_wdt.h>
 #include <WiFi.h>
 #ifdef BONJOUR_SUPPORT
 #include <ESPmDNS.h>
 #endif
+extern "C" {
+	#include "freertos/FreeRTOS.h"
+	#include "freertos/timers.h"
+}
+#include <AsyncMqttClient.h>
 //#include <NTPClient_Generic.h>
 #include <time.h>
 #include "NTPClient.h"
@@ -35,12 +42,7 @@
 #undef ETH_CLK_MODE
 #endif
 #define ETH_CLK_MODE  ETH_CLOCK_GPIO0_IN //ETH_CLOCK_GPIO17_OUT //
-/* 
-   * ETH_CLOCK_GPIO0_IN   - default: external clock from crystal oscillator
-   * ETH_CLOCK_GPIO0_OUT  - 50MHz clock from internal APLL output on GPIO0 - possibly an inverter is needed for LAN8720
-   * ETH_CLOCK_GPIO16_OUT - 50MHz clock from internal APLL output on GPIO16 - possibly an inverter is needed for LAN8720
-   * ETH_CLOCK_GPIO17_OUT - 50MHz clock from internal APLL inverted output on GPIO17 - tested with LAN8720
-*/
+
 // Pin# of the enable signal for the external crystal oscillator (-1 to disable for internal APLL source)
 #define ETH_POWER_PIN    5//-1//5
 
@@ -56,28 +58,23 @@
 // Pin# of the I²C IO signal for the Ethernet PHY
 #define ETH_MDIO_PIN    18
 
-static bool eth_connected = false;
-
-
 // application config
 unsigned long timeLog;
 ConfigSettingsStruct ConfigSettings;
 ConfigGeneralStruct ConfigGeneral;
 ZigbeeConfig ZConfig;
 ZiGateInfosStruct ZiGateInfos;
-//sqlite3 *ZiGateDb;
 
-CircularBuffer<Packet, 20> commandList;
-CircularBuffer<Packet, 10> commandTimedList;
+
+CircularBuffer<Packet, 40> commandList;
+CircularBuffer<Packet, 2> commandTimedList;
 CircularBuffer<Alert, 10> alertList;
-
-//CircularBuffer<SQLReq, 5> SQLReqList;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
 #define FORMAT_LittleFS_IF_FAILED true
-#define CONFIG_LITTLEFS_CACHE_SIZE 512
+//#define CONFIG_LITTLEFS_CACHE_SIZE 512
 
 bool configOK=false;
 String modeWiFi="STA";
@@ -108,10 +105,10 @@ unsigned long interval = 60000; // Intervalle de 1 minute en millisecondes
 //char timeServer[] = "51.38.81.135";
 
 
+AsyncMqttClient mqttClient;
+TimerHandle_t mqttReconnectTimer;
+
 #define NTP_UPDATE_INTERVAL_MS          60000L
-
-
-
 String FormattedDate;
 String Hour;
 String Day;
@@ -119,16 +116,56 @@ String Month;
 String Year;
 String Minute;
 String Yesterday;
+String epochTime;
 
 bool ETH_ENABLE;
 
-/*#define CONFIG_ASYNC_TCP_RUNNING_CORE 1 //any available core
-#define CONFIG_ASYNC_TCP_USE_WDT 0
-#define configMINIMAL_STACK_SIZE                1024*/
+//#define CONFIG_ASYNC_TCP_RUNNING_CORE 1 //any available core
+/*#define CONFIG_ASYNC_TCP_USE_WDT 1*/
+
 SET_LOOP_TASK_STACK_SIZE(16*1024); // 16KB
+
+
+
+void connectToMqtt() {
+  
+  if (ConfigSettings.enableMqtt)
+  {
+    DEBUG_PRINT(F("Connecting to MQTT..."));
+    
+    DEBUG_PRINT(ConfigGeneral.servMQTT);
+    DEBUG_PRINT(F(":"));
+    DEBUG_PRINTLN(ConfigGeneral.portMQTT);
+    mqttClient.connect();
+  }
+
+}
 
 void WiFiEvent(WiFiEvent_t event) {
   switch (event) {
+
+    case ARDUINO_EVENT_WIFI_READY:
+      addDebugLog(F("WiFi Ready"));
+      break;
+    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+      addDebugLog(F("WiFi Connected"));
+      
+      break;
+    case ARDUINO_EVENT_WIFI_STA_STOP:
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+      addDebugLog(F("WiFi Disconnected"));
+      if (mqttReconnectTimer != NULL)
+      {
+        xTimerStop(mqttReconnectTimer, 0); 
+      }
+      break;
+    case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+      addDebugLog(F("WiFi LOST IP"));
+      WiFi.reconnect();
+      break;
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      connectToMqtt();
+      break;
     case ARDUINO_EVENT_ETH_START:
       DEBUG_PRINTLN(F("ETH Started"));
       //set eth hostname here
@@ -151,6 +188,7 @@ void WiFiEvent(WiFiEvent_t event) {
       DEBUG_PRINTLN(F("Mbps"));
       ConfigSettings.connectedEther=true;
       timeClient.forceUpdate();
+      connectToMqtt();
       break;
     case ARDUINO_EVENT_ETH_DISCONNECTED:
       //DEBUG_PRINTLN("ETH Disconnected");
@@ -165,27 +203,94 @@ void WiFiEvent(WiFiEvent_t event) {
   }
 }
 
-//WiFiServer server(TCP_LISTEN_PORT);
 
-IPAddress parse_ip_address(const char *str) {
-    IPAddress result;    
-    int index = 0;
 
-    result[0] = 0;
-    while (*str) {
-        if (isdigit((unsigned char)*str)) {
-            result[index] *= 10;
-            result[index] += *str - '0';
-        } else {
-            index++;
-            if(index<4) {
-              result[index] = 0;
-            }
-        }
-        str++;
-    }
-    
-    return result;
+void onMqttConnect(bool sessionPresent) {
+  DEBUG_PRINTLN(F("Connected to MQTT."));
+  DEBUG_PRINT(F("Session present: "));
+  DEBUG_PRINTLN(sessionPresent);
+
+ /*const char* PROGMEM HA_discovery_msg = "{"
+            "\"name\":\"Power\","
+            "\"unique_id\":\"Power_test01\","
+            "\"device_class\":\"power\","
+            "\"unit_of_measurement\":\"W\","
+            "\"icon\":\"mdi:transmission-tower\","
+            "\"state_topic\":\"homeassistant/sensor/LiXee-Box/state\","
+            "\"value_template\":\"{{ value_json.power}}\","
+            "\"device\": {"
+                "\"name\":\"LiXee-Box\","
+                "\"sw_version\":\"2.0\","
+                "\"model\":\"HW V2\","
+                "\"manufacturer\":\"LiXee\","
+                "\"identifiers\":[\"LiXee-Box\"]"
+            "}"
+        "}";
+  uint16_t packetIdSub = mqttClient.subscribe("homeassistant/sensor/LiXee-Box", 2);
+  DEBUG_PRINT(F("Subscribing at QoS 2, packetId: "));
+  DEBUG_PRINTLN(packetIdSub);
+  mqttClient.publish("homeassistant/sensor/LiXee-Box/config",1,true,HA_discovery_msg);
+  mqttClient.publish("homeassistant/sensor/ESP", 0, true, "10");
+  DEBUG_PRINTLN(F("Publishing at QoS 0"));
+  uint16_t packetIdPub1 = mqttClient.publish("homeassistant/sensor/ESP", 1, true, "50");
+  DEBUG_PRINT(F("Publishing at QoS 1, packetId: "));
+  DEBUG_PRINTLN(packetIdPub1);
+  uint16_t packetIdPub2 = mqttClient.publish("homeassistant/sensor/ESP", 2, true, "30");
+  DEBUG_PRINT(F("Publishing at QoS 2, packetId: "));
+  DEBUG_PRINTLN(packetIdPub2);*/
+}
+
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+  DEBUG_PRINTLN(F("Disconnected from MQTT."));
+  
+  if (WiFi.isConnected()) {
+    xTimerStart(mqttReconnectTimer, 0);
+  }
+}
+
+void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
+  DEBUG_PRINTLN(F("Subscribe acknowledged."));
+  DEBUG_PRINT(F("  packetId: "));
+  DEBUG_PRINTLN(packetId);
+  DEBUG_PRINT(F("  qos: "));
+  DEBUG_PRINTLN(qos);
+}
+
+void onMqttUnsubscribe(uint16_t packetId) {
+  DEBUG_PRINTLN(F("Unsubscribe acknowledged."));
+  DEBUG_PRINT(F("  packetId: "));
+  DEBUG_PRINTLN(packetId);
+}
+
+void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
+  DEBUG_PRINTLN(F("Publish received."));
+  DEBUG_PRINT(F("  topic: "));
+  DEBUG_PRINTLN(topic);
+  DEBUG_PRINT(F("  qos: "));
+  DEBUG_PRINTLN(properties.qos);
+  DEBUG_PRINT(F("  dup: "));
+  DEBUG_PRINTLN(properties.dup);
+  DEBUG_PRINT(F("  retain: "));
+  DEBUG_PRINTLN(properties.retain);
+  DEBUG_PRINT(F("  len: "));
+  DEBUG_PRINTLN(len);
+  DEBUG_PRINT(F("  index: "));
+  DEBUG_PRINTLN(index);
+  DEBUG_PRINT(F("  total: "));
+  DEBUG_PRINTLN(total);
+}
+
+void onMqttPublish(uint16_t packetId) {
+  DEBUG_PRINTLN(F("Publish acknowledged."));
+  DEBUG_PRINT(F("  packetId: "));
+  DEBUG_PRINT(packetId);
+}
+
+void initTempSensor(){
+    temp_sensor_config_t temp_sensor = TSENS_CONFIG_DEFAULT();
+    temp_sensor.dac_offset = TSENS_DAC_L2;  // TSENS_DAC_L2 is default; L4(-40°C ~ 20°C), L2(-10°C ~ 80°C), L1(20°C ~ 100°C), L0(50°C ~ 125°C)
+    temp_sensor_set_config(temp_sensor);
+    temp_sensor_start();
 }
 
 bool loadConfigWifi() {
@@ -254,7 +359,7 @@ bool loadConfigGeneral() {
     return false;
   }
 
-  DynamicJsonDocument doc(5096);
+  DynamicJsonDocument doc(10192);
   deserializeJson(doc,configFile);
 
   ConfigSettings.enableDebug = (int)doc["enableDebug"];
@@ -269,8 +374,27 @@ bool loadConfigGeneral() {
     #define DEBUG_PRINTLN(x) */
   }
   strlcpy(ConfigGeneral.ZLinky, doc["ZLinky"] | "", sizeof(ConfigGeneral.ZLinky));
+  strlcpy(ConfigGeneral.Gaz, doc["Gaz"] | "", sizeof(ConfigGeneral.Gaz));
+  strlcpy(ConfigGeneral.tarifGaz, doc["tarifGaz"] | "0", sizeof(ConfigGeneral.tarifGaz));
+  strlcpy(ConfigGeneral.unitGaz, doc["unitGaz"] | "m3", sizeof(ConfigGeneral.unitGaz));
+  if (!doc["coeffGaz"])
+  {
+    ConfigGeneral.coeffGaz=1;
+  }else{
+    ConfigGeneral.coeffGaz=doc["coeffGaz"].as<int>();
+  }
 
-  ConfigGeneral.LinkyMode = ini_read(String(ConfigGeneral.ZLinky)+".json","FF06", "768").toInt();
+  strlcpy(ConfigGeneral.Water, doc["Water"] | "", sizeof(ConfigGeneral.Water));
+  strlcpy(ConfigGeneral.tarifWater, doc["tarifWater"] | "0", sizeof(ConfigGeneral.tarifWater));
+  strlcpy(ConfigGeneral.unitWater, doc["unitWater"] | "L", sizeof(ConfigGeneral.unitWater));
+  if (!doc["coeffWater"])
+  {
+    ConfigGeneral.coeffWater=1;
+  }else{
+    ConfigGeneral.coeffWater=doc["coeffWater"].as<int>();
+  }
+
+  ConfigGeneral.LinkyMode = ini_read(String(ConfigGeneral.ZLinky)+".json","FF66", "768").toInt();
   if (!doc["powerMaxDatas"])
   {
     ConfigGeneral.powerMaxDatas=1000;
@@ -304,11 +428,22 @@ bool loadConfigGeneral() {
   strlcpy(ConfigGeneral.tarifIdx9, doc["tarifIdx9"] | "0", sizeof(ConfigGeneral.tarifIdx9));
   strlcpy(ConfigGeneral.tarifIdx10, doc["tarifIdx10"] | "0", sizeof(ConfigGeneral.tarifIdx10));
 
+  ConfigSettings.enableMqtt = (int)doc["enableMqtt"];
+  strlcpy(ConfigGeneral.servMQTT, doc["servMQTT"] | "", sizeof(ConfigGeneral.servMQTT));
+  strlcpy(ConfigGeneral.portMQTT, doc["portMQTT"] | "", sizeof(ConfigGeneral.portMQTT));
+  strlcpy(ConfigGeneral.userMQTT, doc["userMQTT"] | "", sizeof(ConfigGeneral.userMQTT));
+  strlcpy(ConfigGeneral.passMQTT, doc["passMQTT"] | "", sizeof(ConfigGeneral.passMQTT));
+  strlcpy(ConfigGeneral.headerMQTT, doc["headerMQTT"] | "", sizeof(ConfigGeneral.headerMQTT));
+
   ConfigSettings.enableNotif = (int)doc["enableNotif"];
   strlcpy(ConfigGeneral.servSMTP, doc["servSMTP"] | "", sizeof(ConfigGeneral.servSMTP));
   strlcpy(ConfigGeneral.portSMTP, doc["portSMTP"] | "", sizeof(ConfigGeneral.portSMTP));
   strlcpy(ConfigGeneral.userSMTP, doc["userSMTP"] | "", sizeof(ConfigGeneral.userSMTP));
-  strlcpy(ConfigGeneral.passSMTP, doc["passSMTP"] | "0", sizeof(ConfigGeneral.passSMTP));
+  strlcpy(ConfigGeneral.passSMTP, doc["passSMTP"] | "", sizeof(ConfigGeneral.passSMTP));
+
+  ConfigSettings.enableSecureHttp = (int)doc["enableSecureHttp"];
+  strlcpy(ConfigGeneral.userHTTP, doc["userHTTP"] | "", sizeof(ConfigGeneral.userHTTP));
+  strlcpy(ConfigGeneral.passHTTP, doc["passHTTP"] | "", sizeof(ConfigGeneral.passHTTP));
   
   configFile.close();
   return true;
@@ -324,7 +459,7 @@ void setupWifiAP()
   String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
                  String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
   macID.toUpperCase();
-  String AP_NameString = "LIXEE-" + macID;
+  String AP_NameString = "LIXEEBOX-" + macID;
 
   char AP_NameChar[AP_NameString.length() + 1];
   memset(AP_NameChar, 0, AP_NameString.length() + 1);
@@ -387,33 +522,73 @@ bool setupSTAWifi() {
 void setup(void)
 {  
   
-
   ZiGateMode=PRODUCTION;
+  initTempSensor();
   
-  Serial.begin(115200);
+  
+  Serial.begin(115200, SERIAL_8N1);
   DEBUG_PRINTLN(F("Start"));
   Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
-
-  if (!LittleFS.begin(FORMAT_LittleFS_IF_FAILED, "/lfs2",20)) {
+  //if (!LittleFS.begin(FORMAT_LittleFS_IF_FAILED, "/lfs2",20)) {
+  if (!LittleFS.begin(FORMAT_LittleFS_IF_FAILED)){
     DEBUG_PRINTLN(F("Erreur LittleFS"));
     return;
   }
-
   DEBUG_PRINTLN(F("LittleFS OK"));
   if ( (!loadConfigWifi()) || (!loadConfigGeneral())) {
       DEBUG_PRINTLN(F("Erreur Loadconfig LittleFS"));
-    
   } else {
     configOK=true;
     loadConfigEther();
     
     DEBUG_PRINTLN(F("Conf ok LittleFS"));
   }
-  
-  if (ETH_ENABLE)
+
+  //Création des répertoire LittleFS (si nécessaire)
+  if (!LittleFS.exists("/db"))
   {
-    WiFi.onEvent(WiFiEvent);
+    LittleFS.mkdir("/db");
+  }
+  if (!LittleFS.exists("/debug"))
+  {
+    LittleFS.mkdir("/debug");
+  }
+  if (!LittleFS.exists("/bk"))
+  {
+    LittleFS.mkdir("/bk");
+  }
+  if (!LittleFS.exists("/rt"))
+  {
+    LittleFS.mkdir("/rt");
+  }
+  
+  WiFi.onEvent(WiFiEvent);
+
+  if (ConfigSettings.enableMqtt)
+  {
+    DEBUG_PRINTLN(F("enableMqtt"));
+    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+    mqttClient.onConnect(onMqttConnect);
+    mqttClient.onDisconnect(onMqttDisconnect);
+    mqttClient.onSubscribe(onMqttSubscribe);
+    mqttClient.onUnsubscribe(onMqttUnsubscribe);
+    mqttClient.onMessage(onMqttMessage);
+    mqttClient.onPublish(onMqttPublish);
+    
+    mqttClient.setServer(parse_ip_address(ConfigGeneral.servMQTT), atoi(ConfigGeneral.portMQTT));
+    if (String(ConfigGeneral.userMQTT) !="")
+    {
+      mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
+    }
+    
+    
+  }
+
+
+  if (ETH_ENABLE)
+  { 
     bool ETHReady = ETH.begin(ETH_ADDR, ETH_POWER_PIN, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE);
+
     if (ConfigSettings.enableWiFi || (!ETHReady))
     {
       if (configOK)
@@ -457,8 +632,10 @@ void setup(void)
   {  
     if (!ConfigSettings.dhcp)
     {
-      ETH.config(parse_ip_address(ConfigSettings.ipAddress), parse_ip_address(ConfigSettings.ipGW),parse_ip_address(ConfigSettings.ipMask));
+      ETH.config(parse_ip_address(ConfigSettings.ipAddress), parse_ip_address(ConfigSettings.ipGW),parse_ip_address(ConfigSettings.ipMask),parse_ip_address(ConfigSettings.ipGW));
+      
     }
+
   }
    //Zeroconf
   String localdns = "lixee-box";
@@ -467,14 +644,13 @@ void setup(void)
      //return;
   }
 
+  
+
   timeClient.setPoolServerName((const char*)ConfigGeneral.ntpserver);
   timeClient.setTimeOffset((3600 * ConfigGeneral.timeoffset));
   timeClient.setTimeZone(ConfigGeneral.timezone);
   timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS);
 
-  
- /*WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);*/
   
   initWebServer();
   //server.begin();
@@ -523,16 +699,26 @@ void setup(void)
       Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
       Yesterday =  timeClient.getYesterday();
   }
+  
+
+  addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(0)));
+  addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(1)));
+  
+  //esp_task_wdt_init(15, true);
+ // esp_task_wdt_add(NULL);
+
+ // while (true)
+ //   ;
 
   disableCore0WDT();
 }
-
-
 
 WiFiClient client;
 
 void loop(void)
 {
+  esp_task_wdt_reset();
+
   size_t bytes_read;
   uint8_t net_buf[BUFFER_SIZE];
   uint8_t serial_buf[BUFFER_SIZE];
@@ -564,7 +750,7 @@ void loop(void)
   }  else if (ZiGateMode == PRODUCTION)
   {
     #define min(a,b) ((a)<(b)?(a):(b))
-    char output_sprintf[2];
+    char output_sprintf[5];
     if(client.connected()) 
     {
       int count = client.available();
@@ -702,8 +888,13 @@ void loop(void)
       Year = String(timeClient.getYear());
       Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
       Yesterday = timeClient.getYesterday();
+      epochTime = String(timeClient.getEpochTime());
       String path = "configGeneral.json";
-      config_write(path, "epoch", String(timeClient.getEpochTime()));
+      config_write(path, "epoch", epochTime);
+
+      //gestion des arrets de transmissions sur historisation
+      ScanDeviceToRAZ();
+
     }
     
   }

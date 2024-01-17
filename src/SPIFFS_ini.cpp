@@ -18,6 +18,7 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include "stdlib.h"
+#include "log.h"
 #include "config.h"
 
 extern ConfigGeneralStruct ConfigGeneral;
@@ -33,7 +34,7 @@ extern String Yesterday;
 bool ini_exist(String path)
 {
   // Vérifier si le fichier existe
-  if (LittleFS.exists("/database/" + path))
+  if (LittleFS.exists("/db/" + path))
   {
     return true;
   }
@@ -43,85 +44,78 @@ bool ini_exist(String path)
   }
 }
 
-bool ini_energy(String path, String section, String value)
+bool init_raz_energy(String path, String time)
 {
-
   if (path.length() > 0)
   {
-    File file = LittleFS.open("/database/" + path, "r+");
+    File file = LittleFS.open("/db/nrg_" + path, "r+");
     if (!file)
     {
-      file = LittleFS.open("/database/" + path, "w+");
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+      file = LittleFS.open("/db/nrg_" + path, "w+");
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
       if (!file)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (Energy) "));
+        file.close();
         return false;
       }
     }
     size_t filesize = file.size();
-
-    DynamicJsonDocument doc(MAXHEAP);
+    DynamicJsonDocument doc(ESP.getMaxAllocHeap());
     if (filesize > 0)
     {
       DeserializationError error = deserializeJson(doc, file);
       if (error)
       {
-        // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
+        String err;
+        err += F("Erreur lors de la désérialisation du fichier (ini_energy) : ");
+        err += error.c_str();
+        DEBUG_PRINTLN(err);
+        addDebugLog(err);
         file.close();
         return false;
       }
     }
     file.close();
 
-    // Ajouter des valeurs dans le fichier json
-    long temp;
-    long tmpvalue = strtol(value.c_str(), NULL, 16);
-    int sizeArray;
-
-    // if ((Year != "1970")||(Year != ""))
-    if (Year != "")
+    if (time == "hour")
     {
-      JsonArray hourArray = doc[section]["hour"].as<JsonArray>();
-      sizeArray = hourArray.size();
-      doc[section]["hour"][Hour]["y"] = Hour;
-      doc[section]["hour"][Hour]["a"] = tmpvalue;
-      if (sizeArray >= 24)
+      JsonObject sections = doc[F("hours")]["graph"][Hour].as<JsonObject>();
+      for (JsonPair j : sections)
       {
-        hourArray.remove(0);
-      }
-      JsonArray dayArray = doc[section]["day"].as<JsonArray>();
-      sizeArray = dayArray.size();
-      doc[section]["day"][Day]["y"] = Day;
-      doc[section]["day"][Day]["a"] = tmpvalue;
-      if (sizeArray >= 30)
+          doc[F("hours")]["graph"][Hour][j.key().c_str()]=0;
+      } 
+    }else if (time == "day")
+    {
+      JsonObject sections = doc[F("days")]["graph"][Day].as<JsonObject>();
+      for (JsonPair j : sections)
       {
-        dayArray.remove(0);
-      }
-      JsonArray monthArray = doc[section]["month"].as<JsonArray>();
-      sizeArray = monthArray.size();
-      doc[section]["month"][Month]["y"] = Month;
-      doc[section]["month"][Month]["a"] = tmpvalue;
-      if (sizeArray >= 12)
+          doc[F("days")]["graph"][Day][j.key().c_str()]=0;
+      } 
+    }else if (time == "month")
+    {
+      JsonObject sections = doc[F("months")]["graph"][Month].as<JsonObject>();
+      for (JsonPair j : sections)
       {
-        monthArray.remove(0);
-      }
-      JsonArray yearArray = doc[section]["year"].as<JsonArray>();
-      sizeArray = yearArray.size();
-      doc[section]["year"][Year]["y"] = Year;
-      doc[section]["year"][Year]["a"] = tmpvalue;
-      if (sizeArray >= 10)
+          doc[F("months")]["graph"][Month][j.key().c_str()]=0;
+      } 
+    }else if (time == "year")
+    {
+      JsonObject sections = doc[F("years")]["graph"][Month].as<JsonObject>();
+      for (JsonPair j : sections)
       {
-        yearArray.remove(0);
-      }
+          doc[F("years")]["graph"][Month][j.key().c_str()]=0;
+      } 
     }
-    file = LittleFS.open("/database/" + path, "w+");
+    file = LittleFS.open("/db/nrg_" + path, "w+");
     if (!file || file.isDirectory())
     {
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
+      file.close();
       return false;
     }
-    // serializeJsonPretty(doc, Serial);
     //  Écrire les données dans le fichier
     if (!doc.isNull())
     {
@@ -132,28 +126,114 @@ bool ini_energy(String path, String section, String value)
         return false;
       }
     }
-
     // Fermer le fichier
     file.close();
     return true;
   }
   else
   {
+    addDebugLog(F("PB path.length (ini_energy) "));
+    return false;
+  }
+  
+}
+
+bool ini_energy(String path, String section, String value)
+{
+  if (path.length() > 0)
+  {
+    File file = LittleFS.open("/db/nrg_" + path, "r+");
+    if (!file)
+    {
+      file = LittleFS.open("/db/nrg_" + path, "w+");
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
+      if (!file)
+      {
+        DEBUG_PRINTLN(F("Impossible de créer le fichier (Energy) "));
+        file.close();
+        return false;
+      }
+    }
+    size_t filesize = file.size();
+
+    DynamicJsonDocument doc(ESP.getMaxAllocHeap());
+    if (filesize > 0)
+    {
+      DeserializationError error = deserializeJson(doc, file);
+      if (error)
+      {
+        String err;
+        err += F("Erreur lors de la désérialisation du fichier (ini_energy) : ");
+        err += error.c_str();
+        DEBUG_PRINTLN(err);
+        addDebugLog(err);
+        file.close();
+        return false;
+      }
+    }
+    file.close();
+
+    // Ajouter des valeurs dans le fichier json
+    long tmpvalue = strtol(value.c_str(), NULL, 16);
+
+    if (tmpvalue >0)
+    {
+      if (Year != "")
+      {
+
+        doc[F("hours")][Hour][section] = tmpvalue;
+        doc[F("days")][Day][section] = tmpvalue;
+        doc[F("months")][Month][section] = tmpvalue;
+        doc[F("years")][Year][section] = tmpvalue;
+      }
+    
+      file = LittleFS.open("/db/nrg_" + path, "w+");
+      if (!file || file.isDirectory())
+      {
+        DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+        DEBUG_PRINTLN(path);
+        file.close();
+        return false;
+      }
+      // serializeJsonPretty(doc, Serial);
+      //  Écrire les données dans le fichier
+      if (!doc.isNull())
+      {
+        if (serializeJson(doc, file) == 0)
+        {
+          DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
+          file.close();
+          return false;
+        }
+      }
+
+      // Fermer le fichier
+      file.close();
+    }
+    return true;
+  }
+  else
+  {
+    addDebugLog(F("PB path.length (ini_energy) "));
     return false;
   }
 }
+
 bool ini_trendEnergy(String path, String section, String value)
 {
   if (path.length() > 0)
   {
-    File file = LittleFS.open("/database/energy_" + path, "r");
+    File file = LittleFS.open("/db/nrg_" + path, "r");
     if (!file)
     {
-      file = LittleFS.open("/database/energy_" + path, "w+");
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+      file = LittleFS.open("/db/nrg_" + path, "w+");
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
       if (!file)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (trendEnergy) "));
+        file.close();
         return false;
       }
     }
@@ -174,161 +254,182 @@ bool ini_trendEnergy(String path, String section, String value)
     // Ajouter des valeurs dans le fichier json
 
     long tmpvalue = strtol(value.c_str(), NULL, 16);
-
-    // if ((Year != "1970")||(Year != ""))
-    if (Year != "")
+    if (tmpvalue >0)
     {
-      // hour
-      if (!doc[section]["hour"]["last"])
+      if (Year != "")
       {
-        doc[section]["hour"]["trend"] = 0;
-      }
-      else
-      {
-
-        signed int result;
-
-        int tmpHour = (Hour.toInt() - 1);
-        if (tmpHour < 0)
+        // hour
+        if (!doc[F("hours")][F("last")][section])
         {
-          tmpHour = 23;
-        }
-        String hourtmp = tmpHour < 10 ? "0" + String(tmpHour) : String(tmpHour);
-        int tmp = doc[section]["hour"]["last"].as<int>();
-        // result = (tmpvalue - tmp);
-        result = (tmp - doc[section]["hour"][hourtmp]["a"].as<int>());
-
-        if (!doc[section]["hour"][hourtmp])
-        {
-          doc[section]["hour"]["graph"][Hour] = 0;
+          doc[F("hours")][F("trend")][section] = 0;
         }
         else
         {
-          doc[section]["hour"]["graph"][Hour] = result;
-        }
-
-        doc[section]["hour"]["trend"] = result;
-      }
-      doc[section]["hour"]["last"] = tmpvalue;
-
-      // day
-      if (!doc[section]["day"]["last"])
-      {
-        doc[section]["day"]["trend"] = 0;
-      }
-      else
-      {
-
-        signed int result;
-
-        int tmpDay = Yesterday.toInt();
-
-        String daytmp = tmpDay < 10 ? "0" + String(tmpDay) : String(tmpDay);
-        int tmp = doc[section]["day"]["last"].as<int>();
-        result = tmp - doc[section]["day"][daytmp]["a"].as<int>();
-
-        if (!doc[section]["day"][daytmp])
-        {
-          doc[section]["day"]["graph"][Day] = 0;
-        }
-        else
-        {
-          doc[section]["day"]["graph"][Day] = tmp - doc[section]["day"][daytmp]["a"].as<int>();
-        }
-
-        doc[section]["day"]["trend"] = result;
-      }
-      doc[section]["day"]["last"] = tmpvalue;
-
-      // month
-      if (!doc[section]["month"]["last"])
-      {
-        doc[section]["month"]["trend"] = 0;
-      }
-      else
-      {
-
-        signed int result;
-
-        int tmpMonth = (Month.toInt() - 1);
-        if (tmpMonth < 0)
-        {
-          tmpMonth = 12;
-        }
-
-        String monthtmp = tmpMonth < 10 ? "0" + String(tmpMonth) : String(tmpMonth);
-        int tmp = doc[section]["month"]["last"].as<int>();
-        result = tmp - doc[section]["month"][monthtmp]["a"].as<int>();
-
-        if (!doc[section]["month"][monthtmp])
-        {
-          doc[section]["month"]["graph"][Month] = 0;
-        }
-        else
-        {
-          doc[section]["month"]["graph"][Month] = result;
-        }
-
-        doc[section]["month"]["trend"] = result;
-      }
-      doc[section]["month"]["last"] = tmpvalue;
-
-      // year
-      if (!doc[section]["year"]["last"])
-      {
-        doc[section]["year"]["trend"] = 0;
-      }
-      else
-      {
-
-        signed int result;
-
-        int tmpYear = (Year.toInt() - 1);
-
-        String yeartmp = tmpYear < 10 ? "0" + String(tmpYear) : String(tmpYear);
-        int tmp = doc[section]["year"]["last"].as<int>();
-        result = tmp - doc[section]["year"][yeartmp]["a"].as<int>();
-
-        if (!doc[section]["year"][yeartmp])
-        {
-          // doc[section]["year"]["graph"][Year]=0;
-          long int monthSum = 0;
-          JsonObject graph = doc[section]["month"]["graph"].as<JsonObject>();
-          for (JsonPair j : graph)
+          signed int result;
+          int tmpHour = (Hour.toInt() - 1);
+          if (tmpHour < 0)
           {
-            monthSum += j.value().as<long int>();
+            tmpHour = 23;
           }
-          doc[section]["year"]["graph"][Year] = monthSum;
+          String hourtmp = tmpHour < 10 ? "0" + String(tmpHour) : String(tmpHour);
+          int tmp = doc[F("hours")][F("last")][section].as<int>();
+          if (doc[F("hours")][hourtmp][section].as<int>()==0)
+          {
+            doc[F("hours")][hourtmp][section]=doc[F("hours")][F("last")][section];
+          }
+          
+          result = (tmp - doc[F("hours")][hourtmp][section].as<int>());
+
+          if (!doc[F("hours")][hourtmp][section])
+          {
+            doc[F("hours")][F("graph")][Hour][section]= 0;
+          }
+          else
+          {
+            doc[F("hours")][F("graph")][Hour][section]= result;
+          }
+
+          doc[F("hours")][F("trend")][section] = result;
+        }
+        doc[F("hours")][F("last")][section] = tmpvalue;
+
+        // day
+        if (!doc[F("days")][F("last")][section])
+        {
+          doc[F("days")][F("trend")][section] = 0;
         }
         else
         {
-          doc[section]["year"]["graph"][Year] = result;
+
+          signed int result;
+
+          int tmpDay = Yesterday.toInt();
+
+          String daytmp = tmpDay < 10 ? "0" + String(tmpDay) : String(tmpDay);
+          int tmp = doc[F("days")][F("last")][section].as<int>();
+
+          if (doc[F("days")][daytmp][section].as<int>()==0)
+          {
+            doc[F("days")][daytmp][section]=doc[F("days")][F("last")][section];
+          }
+          
+          result = tmp - doc[F("days")][daytmp][section].as<int>();
+
+          if (!doc[F("days")][daytmp][section])
+          {
+            doc[F("days")][F("graph")][Day][section] = 0;
+          }
+          else
+          {
+            doc[F("days")][F("graph")][Day][section] = result;
+          }
+
+          doc[F("days")][F("trend")][section] = result;
         }
+        doc[F("days")][F("last")][section] = tmpvalue;
 
-        doc[section]["year"]["trend"] = result;
+        // month
+        if (!doc[F("months")][F("last")][section])
+        {
+          doc[F("months")][F("trend")][section] = 0;
+        }
+        else
+        {
+
+          signed int result;
+
+          int tmpMonth = (Month.toInt() - 1);
+          if (tmpMonth < 1)
+          {
+            tmpMonth = 12;
+          }
+
+          String monthtmp = tmpMonth < 10 ? "0" + String(tmpMonth) : String(tmpMonth);
+          int tmp = doc[F("months")][F("last")][section].as<int>();
+          if (doc[F("months")][monthtmp][section].as<int>()==0)
+          {
+            doc[F("months")][monthtmp][section]=doc[F("months")][F("last")][section];
+          }
+          
+          result = tmp - doc[F("months")][monthtmp][section].as<int>();
+
+          if (!doc[F("months")][monthtmp][section])
+          {
+            doc[F("months")][F("graph")][Month][section] = 0;
+          }
+          else
+          {
+            doc[F("months")][F("graph")][Month][section] = result;
+          }
+
+          doc[F("months")][F("trend")][section] = result;
+        }
+        doc[F("months")][F("last")][section] = tmpvalue;
+
+        // year
+        if (!doc[F("years")][F("last")][section])
+        {
+          doc[F("years")][F("trend")][section] = 0;
+        }
+        else
+        {
+
+          signed int result;
+
+          int tmpYear = (Year.toInt() - 1);
+
+          String yeartmp = tmpYear < 10 ? "0" + String(tmpYear) : String(tmpYear);
+          int tmp = doc[F("years")][F("last")][section].as<int>();
+          if (doc[F("years")][yeartmp][section].as<int>()==0)
+          {
+            doc[F("years")][yeartmp][section]=doc[F("years")][F("last")][section];
+          }
+          
+          result = tmp - doc[F("years")][yeartmp][section].as<int>();
+
+          if (!doc[F("years")][yeartmp][section])
+          {
+            // doc[section]["year"]["graph"][Year]=0;
+            long int monthSum = 0;
+            JsonObject graph = doc[F("months")][F("graph")][section].as<JsonObject>();
+            for (JsonPair j : graph)
+            {
+              monthSum += j.value().as<long int>();
+            }
+            doc[F("years")][F("graph")][Year][section] = monthSum;
+          }
+          else
+          {
+            doc[F("years")][F("graph")][Year][section] = result;
+          }
+
+          doc[F("years")][F("trend")][section] = result;
+        }
+        doc[F("years")][F("last")][section] = tmpvalue;
       }
-      doc[section]["year"]["last"] = tmpvalue;
-    }
 
-    // Écrire les données dans le fichier
-    file = LittleFS.open("/database/energy_" + path, "w+");
-    if (!file || file.isDirectory())
-    {
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
-      return false;
-    }
-    if (!doc.isNull())
-    {
-      if (serializeJson(doc, file) == 0)
+      // Écrire les données dans le fichier
+      file = LittleFS.open("/db/nrg_" + path, "w+");
+      if (!file || file.isDirectory())
       {
-        DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
+        DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+        DEBUG_PRINTLN(path);
         file.close();
         return false;
       }
-    }
+      if (!doc.isNull())
+      {
+        if (serializeJson(doc, file) == 0)
+        {
+          DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
+          file.close();
+          return false;
+        }
+      }
 
-    // Fermer le fichier
-    file.close();
+      // Fermer le fichier
+      file.close();
+    }
     return true;
   }
   else
@@ -336,19 +437,23 @@ bool ini_trendEnergy(String path, String section, String value)
     return false;
   }
 }
+
+
 bool ini_trendPower(String path, String section, String value)
 {
 
   if (path.length() > 0)
   {
-    File file = LittleFS.open("/database/power_" + section + "_" + path, "r");
+    File file = LittleFS.open("/db/pwr_" + path, "r");
     if (!file)
     {
-      file = LittleFS.open("/database/power_" + section + "_" + path, "w+");
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+      file = LittleFS.open("/db/pwr_" + path, "w+");
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
       if (!file)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (trendPower) "));
+        file.close();
         return false;
       }
     }
@@ -373,28 +478,30 @@ bool ini_trendPower(String path, String section, String value)
     // if ((Year != "1970")||(Year != ""))
     if (Year != "")
     {
-      if (!doc[section]["last"])
+      if (!doc[section][F("last")])
       {
-        doc[section]["trend"] = "0";
+        doc[section][F("trend")] = "0";
       }
       else
       {
 
         signed int result;
-        int tmp = doc[section]["last"].as<int>();
+        int tmp = doc[section][F("last")].as<int>();
         result = (tmpvalue - tmp);
 
-        doc[section]["trend"] = String(result);
+        doc[section][F("trend")] = String(result);
       }
 
-      doc[section]["last"] = String(tmpvalue);
+      doc[section][F("last")] = String(tmpvalue);
     }
     // serializeJsonPretty(doc, Serial);
     //  Écrire les données dans le fichier
-    file = LittleFS.open("/database/power_" + section + "_" + path, "w+");
+    file = LittleFS.open("/db/pwr_"+ path, "w+");
     if (!file || file.isDirectory())
     {
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
+      file.close();
       return false;
     }
     if (!doc.isNull())
@@ -416,83 +523,104 @@ bool ini_trendPower(String path, String section, String value)
     return false;
   }
 }
-bool ini_power(String path, String section, String value)
-{
 
+bool ini_power2(String path,String section,String value)
+{
   if (path.length() > 0)
   {
-    File file = LittleFS.open("/database/power_" + section + "_" + path, "r");
+    File file = LittleFS.open("/db/pwr_" + path, "r");
     if (!file)
     {
-      file = LittleFS.open("/database/power_" + section + "_" + path, "w+");
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+      file = LittleFS.open("/db/pwr_"  + path, "w+");
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
       if (!file)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (trendPower) "));
+        file.close();
         return false;
       }
     }
     size_t filesize = file.size();
-    DynamicJsonDocument doc(MAXHEAP);
+
+    DynamicJsonDocument doc(3000000);
 
     if (filesize > 0)
     {
+      DEBUG_PRINT(F("deserializeJson (iniPower) "));
+      DEBUG_PRINTLN(ESP.getFreePsram());
       DeserializationError error = deserializeJson(doc, file);
+      DEBUG_PRINT(F("Memory Usage : "));
+      DEBUG_PRINTLN(doc.memoryUsage());
       if (error)
       {
+        String err;
+        err = F("ERROR : deserializeJson (iniPower) ");
+        err += error.c_str();
+        DEBUG_PRINTLN(err);
+        addDebugLog(err);
+        
         file.close();
         return false;
       }
     }
     file.close();
 
-    // Ajouter des valeurs dans le fichier json
-
     long tmpvalue = strtol(value.c_str(), NULL, 16);
 
     // if ((Year != "1970")||(Year != ""))
     if (Year != "")
     {
-      JsonArray powerArray = doc[section]["minute"].as<JsonArray>();
+      JsonArray powerArray = doc[F("datas")].as<JsonArray>();
       int sizeArray = powerArray.size();
       DEBUG_PRINTLN(sizeArray);
       DEBUG_PRINTLN(ConfigGeneral.powerMaxDatas);
       // doc[section]["minute"][sizeArray][Hour +":"+ Minute]=tmpvalue;
-      doc[section]["minute"][sizeArray]["y"] = Hour + ":" + Minute;
-      doc[section]["minute"][sizeArray]["a"] = tmpvalue;
+      DEBUG_PRINTLN(Hour + ":" + Minute);
+      DEBUG_PRINTLN(doc[F("datas")][(sizeArray-1)][F("y")].as<String>());
+      if (( doc[F("datas")][(sizeArray-1)][F("y")].as<String>() == Hour + ":" + Minute))
+      {
+        sizeArray--;
+      }
+      DEBUG_PRINTLN(sizeArray);
+      doc[F("datas")][sizeArray][F("y")] = Hour + ":" + Minute;
+      doc[F("datas")][sizeArray][section] = tmpvalue;
       if (sizeArray >= ConfigGeneral.powerMaxDatas)
       {
         powerArray.remove(0);
       }
-      if (!doc[section]["min"])
+
+      if (!doc[section][F("min")])
       {
-        doc[section]["min"] = String(tmpvalue);
+        doc[section][F("min")] = String(tmpvalue);
       }
       else
       {
-        if (tmpvalue < (long)doc[section]["min"])
+        if (tmpvalue < (long)doc[section][F("min")])
         {
-          doc[section]["min"] = String(tmpvalue);
+          doc[section][F("min")] = String(tmpvalue);
         }
       }
-      if (!doc[section]["max"])
+      if (!doc[section][F("max")])
       {
-        doc[section]["max"] = String(tmpvalue);
+        doc[section][F("max")] = String(tmpvalue);
       }
       else
       {
-        if (tmpvalue > (long)doc[section]["max"])
+        if (tmpvalue > (long)doc[section][F("max")])
         {
-          doc[section]["max"] = String(tmpvalue);
+          doc[section][F("max")] = String(tmpvalue);
         }
       }
     }
     // serializeJsonPretty(doc, Serial);
     //  Écrire les données dans le fichier
-    file = LittleFS.open("/database/power_" + section + "_" + path, "w+");
+    file = LittleFS.open("/db/pwr_" + path, "w+");
     if (!file || file.isDirectory())
     {
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
+      file.close();
       return false;
     }
     if (!doc.isNull())
@@ -511,6 +639,137 @@ bool ini_power(String path, String section, String value)
   }
   else
   {
+    return false;
+  }
+}
+
+struct SpiRamAllocator {
+        void* allocate(size_t size) {
+                return ps_malloc(size);
+
+        }
+        void deallocate(void* pointer) {
+                free(pointer);
+        }
+};
+
+using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
+
+bool ini_power(String path, String section, String value)
+{
+
+  if (path.length() > 0)
+  {
+    File file = LittleFS.open("/db/" + section + "_" + path, "r");
+    if (!file)
+    {
+      file = LittleFS.open("/db/" + section + "_" + path, "w+");
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
+      if (!file)
+      {
+        DEBUG_PRINTLN(F("Impossible de créer le fichier (iniPower) "));
+        file.close();
+        return false;
+      }
+    }
+    size_t filesize = file.size();
+
+    DynamicJsonDocument doc(1000000);
+
+    if (filesize > 0)
+    {
+      DEBUG_PRINT(F("deserializeJson (iniPower) "));
+      DEBUG_PRINTLN(ESP.getFreePsram());
+      DeserializationError error = deserializeJson(doc, file);
+      DEBUG_PRINT(F("Memory Usage : "));
+      DEBUG_PRINTLN(doc.memoryUsage());
+      if (error)
+      {
+        String err;
+        err = F("ERROR : deserializeJson (iniPower) ");
+        err += error.c_str();
+        DEBUG_PRINTLN(err);
+        addDebugLog(err);
+        
+        file.close();
+        return false;
+      }
+    }
+    file.close();
+
+    // Ajouter des valeurs dans le fichier json
+
+    long tmpvalue = strtol(value.c_str(), NULL, 16);
+
+    if ((Year != "1970")||(Year != ""))
+    {
+      JsonArray powerArray = doc[section][F("minute")].as<JsonArray>();
+      int sizeArray = powerArray.size();
+      DEBUG_PRINTLN(sizeArray);
+      DEBUG_PRINTLN(ConfigGeneral.powerMaxDatas);
+      // doc[section]["minute"][sizeArray][Hour +":"+ Minute]=tmpvalue;
+      doc[section][F("minute")][sizeArray][F("y")] = Hour + ":" + Minute;
+      doc[section][F("minute")][sizeArray][F("a")] = tmpvalue;
+      if (sizeArray >= ConfigGeneral.powerMaxDatas)
+      {
+        powerArray.remove(0);
+      }
+      if (!doc[section][F("min")])
+      {
+        doc[section][F("min")] = String(tmpvalue);
+      }
+      else
+      {
+        if (tmpvalue < (long)doc[section][F("min")])
+        {
+          doc[section][F("min")] = String(tmpvalue);
+        }
+      }
+      if (!doc[section][F("max")])
+      {
+        doc[section][F("max")] = String(tmpvalue);
+      }
+      else
+      {
+        if (tmpvalue > (long)doc[section][F("max")])
+        {
+          doc[section][F("max")] = String(tmpvalue);
+        }
+      }
+    }
+    // serializeJsonPretty(doc, Serial);
+    //  Écrire les données dans le fichier
+    
+    file = LittleFS.open("/db/" + section + "_" + path, "w+");
+    if (!file || file.isDirectory())
+    {
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
+      file.close();
+      return false;
+    }
+    if (!doc.isNull())
+    {
+      DEBUG_PRINT(F("Memory Usage : "));
+      DEBUG_PRINTLN(doc.memoryUsage());
+      if (serializeJson(doc, file) == 0)
+      {
+        DEBUG_PRINT(F("Erreur lors de l'écriture dans le fichier serializeJson"));
+        DEBUG_PRINTLN(path);
+        file.close();
+        return false;
+      }
+    }
+
+    // Fermer le fichier
+    file.close();
+    return true;
+  }
+  else
+  {
+    DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier path.length() "));
+    DEBUG_PRINTLN(path);
     return false;
   }
 }
@@ -518,21 +777,23 @@ bool ini_power(String path, String section, String value)
 bool ini_write(String path, String section, String key, String value)
 {
 
-  File file = LittleFS.open("/database/" + path, "r+");
+  File file = LittleFS.open("/db/" + path, "r+");
   if (!file)
   {
-    file = LittleFS.open("/database/" + path, "w+");
-    DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+    file = LittleFS.open("/db/" + path, "w+");
+    DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+    DEBUG_PRINTLN(path);
     if (!file)
     {
       DEBUG_PRINTLN(F("Impossible de créer le fichier (ini_write) "));
+      file.close();
       return false;
     }
     // return false;
   }
   size_t filesize = file.size();
 
-  DynamicJsonDocument doc(5096);
+  DynamicJsonDocument doc(10192);
 
   if (filesize > 0)
   {
@@ -541,7 +802,7 @@ bool ini_write(String path, String section, String key, String value)
     {
       // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
       file.close();
-      return "Error";
+      return false;
     }
   }
   file.close();
@@ -551,10 +812,12 @@ bool ini_write(String path, String section, String key, String value)
 
   // serializeJsonPretty(doc, Serial);
   //  Écrire les données dans le fichier
-  file = LittleFS.open("/database/" + path, "w+");
+  file = LittleFS.open("/db/" + path, "w+");
   if (!file || file.isDirectory())
   {
-    DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+    DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+    DEBUG_PRINTLN(path);
+    file.close();
     return false;
   }
 
@@ -575,16 +838,17 @@ bool ini_write(String path, String section, String key, String value)
 
 String ini_read(String path, String section, String key)
 {
-  File file = LittleFS.open("/database/" + path, FILE_READ);
+  File file = LittleFS.open("/db/" + path, FILE_READ);
   if (!file || file.isDirectory())
   {
-    DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier ini_read"));
+    DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read : "));
+    DEBUG_PRINTLN(path);
     file.close();
     return "Error";
   }
 
   // Analyser le contenu JSON du fichier
-  DynamicJsonDocument doc(5096);
+  DynamicJsonDocument doc(10192);
   DeserializationError error = deserializeJson(doc, file);
 
   // Vérifier les erreurs de désérialisation
@@ -607,10 +871,11 @@ String config_read(String path,String key)
   if (!file)
   {
     DEBUG_PRINTLN(F("Impossible de lire le fichier (config_read) "));
+    file.close();
     return "Error";
   }
 
-  DynamicJsonDocument doc(5096);
+  DynamicJsonDocument doc(10192);
   DeserializationError error = deserializeJson(doc, file);
   // Vérifier les erreurs de désérialisation
   if (error)
@@ -634,16 +899,19 @@ bool config_write(String path, String key, String value)
   if (!file)
   {
     file = LittleFS.open("/config/" + path, "w+");
-    DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+    DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+    DEBUG_PRINTLN(path);
     if (!file)
     {
       DEBUG_PRINTLN(F("Impossible de créer le fichier (config_write) "));
+      file.close();
       return false;
     }
   }
+
   size_t filesize = file.size();
 
-  DynamicJsonDocument doc(5096);
+  DynamicJsonDocument doc(10192);
 
   if (filesize > 0)
   {
@@ -665,7 +933,9 @@ bool config_write(String path, String key, String value)
   file = LittleFS.open("/config/" + path, "w+");
   if (!file || file.isDirectory())
   {
-    DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier "));
+    DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+    DEBUG_PRINTLN(path);
+    file.close();
     return false;
   }
 

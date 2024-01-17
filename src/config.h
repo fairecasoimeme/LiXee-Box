@@ -9,16 +9,18 @@
 #define VERSION "v1.5a"
 
 // hardware config64
-#define RESET_ZIGATE 4
-#define FLASH_ZIGATE 33
-#define LED1 2
+#define RESET_ZIGATE 19//4
+#define FLASH_ZIGATE 40//33
+#define LED1 40
 #define PRODUCTION 1
 #define FLASH 0
 
-#define RXD2 17 //2 //17
-#define TXD2 16 //4//16
+#define VOLTAGE 45
 
-#define MAXHEAP 96000
+#define RXD2 17//17 
+#define TXD2 18//16 
+
+#define MAXHEAP 3000000//ESP.getMaxAllocHeap() //(ESP.getFreeHeap() / 2) //96000
 
 // ma structure configCRC error
 struct ConfigSettingsStruct {
@@ -49,15 +51,17 @@ struct ConfigSettingsStruct {
   double refreshLogs;
   bool enableDebug;
   bool enableNotif;
+  bool enableSecureHttp;
   bool enableMqtt;
   
 };
 
 struct ZigbeeConfig {
-  char application[4];
+  char application[9];
   char type;
   char sdk;
   int channel;
+  uint8_t network;
   uint64_t zigbeeMac;
 };
 
@@ -69,6 +73,8 @@ struct ZiGateInfosStruct {
 
 struct ConfigGeneralStruct {
   char ZLinky[20];
+  char Gaz[20];
+  char Water[20];
   int LinkyMode;
   int powerMaxDatas;
   char ntpserver[50];
@@ -95,7 +101,16 @@ struct ConfigGeneralStruct {
   char servMQTT[50];
   char portMQTT[50];
   char userMQTT[50];
-  char passMQTT[50];
+  char passMQTT[128];
+  char headerMQTT[128];
+  char userHTTP[50];
+  char passHTTP[50];
+  float coeffGaz;
+  float coeffWater;
+  char unitGaz[3];
+  char unitWater[3];
+  char tarifGaz[10];
+  char tarifWater[10];
 };
 
 
@@ -107,15 +122,12 @@ typedef struct {
 
 
 typedef struct {
-    unsigned int type;
-    char sql[128];
-} SQLReq;
-
-
-typedef struct {
     char name[50];
     unsigned int cluster;
     unsigned int attribute;
+    char mqtt_device_class[20];
+    char mqtt_state_class[20];
+    char mqtt_icon[20];
     char type[20];
     float coefficient;
     char unit[20];
@@ -134,10 +146,9 @@ typedef struct {
 } Action;
 
 typedef struct {
-  uint8_t StateSize;
-  uint8_t ActionSize;
-  char bind[50];
-  State e[10];
+  int StateSize;
+  int ActionSize;
+  State e[40];
   Action a[10];
 }Template;
 

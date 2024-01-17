@@ -1,1 +1,1 @@
-void defaultClusterManage(int shortaddr,String cluster, int attribute,uint8_t datatype,int len, char* datas);
+void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datatype,int len, char* datas);

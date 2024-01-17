@@ -3,26 +3,48 @@
 #include "config.h"
 #include "protocol.h"
 #include "SPIFFS_ini.h"
+#include <AsyncMqttClient.h>
 
-void defaultClusterManage(int shortaddr,String cluster, int attribute,uint8_t datatype,int len, char* datas)
+extern AsyncMqttClient mqttClient;
+extern ConfigGeneralStruct ConfigGeneral;
+extern ConfigSettingsStruct ConfigSettings;
+
+void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datatype,int len, char* datas)
 {
   String inifile;
   char value[4];
   String tmp="";
   inifile = GetMacAdrr(shortaddr);
-  switch (attribute)
-  {       
-    default:
-      if (ini_exist(inifile))
-      {
-        for(int i=0;i<len;i++)
+  if (inifile!="")
+  {
+    switch (attribute)
+    {       
+      default:
+        if (ini_exist(inifile))
         {
-           sprintf(value, "%02X",datas[i]);
-           tmp+=value;
+          for(int i=0;i<len;i++)
+          {
+            sprintf(value, "%02X",datas[i]);
+            tmp+=value;
+          }
+          char clusterHex[5];
+          snprintf(clusterHex,5,"%04X",cluster);
+          ini_write(inifile,clusterHex, (String)attribute, (String)tmp);
+
+          //MQTT
+          if (ConfigSettings.enableMqtt)
+          {
+            String tmpvalue;
+            tmpvalue = "{\"value_"+String(cluster)+"_"+String(attribute)+"\":";
+            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
+            tmpvalue +="}";
+            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_"+String(cluster)+"_"+String(attribute)+"/state";
+            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+
+          }
+          
         }
-        ini_write(inifile,cluster, (String)attribute, (String)tmp);
-        
-      }
-      break;
+        break;
+    }
   }
 }

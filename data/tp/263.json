@@ -1,0 +1,82 @@
+{
+	"lumi.plug" : [
+	{
+		"status" : [
+			{
+				"name" : "Power",
+				"cluster" : "0006",
+				"attribut" : 0
+			}
+		],		
+		"action" : [
+			{
+				"name" : "ON",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 1
+			},
+			{
+				"name" : "OFF",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 0
+			},
+			{
+				"name" : "TOGGLE",
+				"command" : 146,
+                                "endpoint" : 1,
+				"value" : 2
+			}
+		]
+	}
+	],
+	"ZiPulses": [
+	{
+		"status" : [
+			{
+				"name" : "Batterie",
+				"cluster" : "0001",
+				"attribut" : 32,
+				"type" : "float",
+				"coefficient" : 0.1,
+				"unit" : "V"
+			},{
+				"name" : "Batterie",
+				"cluster" : "0001",
+				"attribut" : 33,
+				"type" : "numeric",
+				"coefficient" : 0.4,
+				"unit" : "%",
+				"visible" : 1,
+				"jauge" : "battery",
+				"min" : 0,
+				"max" : 100
+			},
+			{
+				"name" : "Temperature",
+				"cluster" : "0402",
+				"attribut" : 0,
+				"type" : "float",
+				"coefficient" : 0.01,
+				"unit" : "°C",
+				"visible" : 1,
+				"jauge" : "gauge",
+				"min" : -20,
+				"max" : 50
+			},
+			{
+				"name" : "Index",
+				"cluster" : "0702",
+				"attribut" : 0,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type" : "numeric",
+				"coefficient" : 1,
+				"unit" : "L"
+
+			}
+		],
+		"bind" : "1794;1026;1"
+	}]
+}

@@ -54,9 +54,9 @@ void setProdMode()
 void ResultTreatment(byte datas[256]){
 
   byte command;
-  int datasSize;
+  //int datasSize;
 
-  datasSize = (int)datas[0];
+ // datasSize = (int)datas[0];
   command = (byte)datas[1];
   switch (command) {
     case 0x33:

@@ -2,6 +2,7 @@
 #include "rom/ets_sys.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/sens_reg.h"
+#include "driver/temp_sensor.h"
 #include <esp_task_wdt.h>
 #include <stddef.h>
 #include <Arduino.h>
@@ -15,10 +16,12 @@
 #include <HTTPClient.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <AsyncMqttClient.h>
 
 #include "FS.h"
 #include "LittleFS.h"
 #include "SPIFFS_ini.h"
+#include <Update.h>
 
 #include "config.h"
 #include "flash.h"
@@ -26,15 +29,19 @@
 #include "protocol.h"
 #include "zigbee.h"
 #include "basic.h"
+#include "microtar.h"
 
 extern struct ZigbeeConfig ZConfig;
 extern struct ConfigSettingsStruct ConfigSettings;
 extern struct ConfigGeneralStruct ConfigGeneral;
+extern AsyncMqttClient mqttClient;
+
 extern unsigned long timeLog;
-extern CircularBuffer<Packet, 20> commandList;
+extern CircularBuffer<Packet, 40> commandList;
 extern CircularBuffer<Alert, 10> alertList;
 
 int maxDayOfTheMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+String section[12] = { "0", "1", "256", "258" , "260", "262", "264" ,"266", "268", "270", "272", "274"};
 
 extern String Hour;
 extern String Day;
@@ -42,7 +49,11 @@ extern String Month;
 extern String Year;
 extern String FormattedDate;
 
+HTTPClient clientWeb;
+
 AsyncWebServer serverWeb(80);
+
+#define UPD_FILE "https://github.com/fairecasoimeme/lixee-box/releases/latest/download/lixee-box.bin"
 
 const char HTTP_HEADER[] PROGMEM =
     "<head>"
@@ -74,7 +85,7 @@ const char HTTP_MENU[] PROGMEM =
     "<nav class='navbar navbar-expand-lg navbar-light bg-light rounded'><div class='container-fluid'><a class='navbar-brand' href='/'>"
     "<div style='display:block-inline;float:left;'><img src='web/img/logo.png'> </div>"
     "<div style='float:left;display:block-inline;font-weight:bold;padding:18px 10px 10px 10px;'> Box Config</div>"
-    "<div id='FormattedDate' style='display:block;padding-top:58px;font-size:12px;'>{{FormattedDate}}</div>"
+    "<div id='FormattedDate' style='display:block;padding-top:58px;font-size:12px;'>%FormattedDate%</div>"
     "</a>"
     "<button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNavDropdown' aria-controls='navbarNavDropdown' aria-expanded='false' aria-label='Toggle navigation'>"
     "<span class='navbar-toggler-icon'></span>"
@@ -113,22 +124,144 @@ const char HTTP_MENU[] PROGMEM =
     "<div id='alert' style='display:none;' class='alert alert-success' role='alert'>"
     "</div>";
 
+// "<a href='/configFiles' class='btn btn-primary mb-2'>Config Files</a>"
 const char HTTP_TOOLS[] PROGMEM =
     "<h1>Tools</h1>"
     "<div class='btn-group-vertical'>"
     "<a href='/logs' class='btn btn-primary mb-2'>Console</a>"
-    "<a href='/configFiles' class='btn btn-primary mb-2'>Config Files</a>"
+   
+    "<a href='/debugFiles' class='btn btn-primary mb-2'>Debug Files</a>"
     "<a href='/fsbrowser' class='btn btn-primary mb-2'>Device Files</a>"
-    "<a href='/templates' class='btn btn-primary mb-2'>Templates</a>"
+    "<a href='/tp' class='btn btn-primary mb-2'>Templates</a>"
     "<a href='/javascript' class='btn btn-primary mb-2'>Javascript</a>"
     "<a href='/update' class='btn btn-primary mb-2'>Update</a>"
+    "<a href='/backup' class='btn btn-primary mb-2'>Backup</a>"
     "<a href='/reboot' class='btn btn-primary mb-2'>Reboot</a>"
     "</div>";
+
+const char HTTP_BACKUP[] PROGMEM =
+    "<h1>Backup datas</h1>"
+    "<a href='#' class='btn btn-primary mb-2' onClick='createBackupFile()'>Create Backup</a>"
+    "<div id='createBackupFile'>"
+    "</div>"
+    "<h1>Restore datas</h1>"
+    "<div id='restoreBackupFile'>"
+    "{{listBackupFiles}}"
+    "</div>"
+    "<form method='POST' action='/doRestore' enctype='multipart/form-data' id='upload_form'>"
+    "<input type='file' name='update' id='file' onchange='sub(this)' style=display:none accept='.tar'>"
+    "<label id='file-input' for='file'>Choose backup...</label>"
+    "<input type='submit' class='btn btn-warning mb-2' value='Restore'>"
+    "<br><br>"
+    "<div id='prg'></div>"
+    "<br><div id='prgbar'><div id='bar'></div></div><br></form>"
+
+    "<script>"
+    "function sub(obj){"
+    "var fileName = obj.value.split('\\\\');"
+    "document.getElementById('file-input').innerHTML = '   '+ fileName[fileName.length-1];"
+    "};"
+    "$('form').submit(function(e){"
+    "e.preventDefault();"
+    "var form = $('#upload_form')[0];"
+    "var data = new FormData(form);"
+    "$.ajax({"
+    "url: '/doRestore',"
+    "type: 'POST',"
+    "data: data,"
+    "contentType: false,"
+    "processData:false,"
+    "xhr: function() {"
+    "var xhr = new window.XMLHttpRequest();"
+    "xhr.upload.addEventListener('progress', function(evt) {"
+    "if (evt.lengthComputable) {"
+    "var per = evt.loaded / evt.total;"
+    "$('#prg').html('progress: ' + Math.round(per*100) + '%');"
+    "$('#bar').css('width',Math.round(per*100) + '%');"
+    "}"
+    "}, false);"
+    "return xhr;"
+    "},"
+    "success:function(d, s) {"
+    "console.log('success!');"
+    "$('#prg').html('restore completed!<br>Rebooting!');"
+    "window.location.href='/backup';"
+    "},"
+    "error: function (a, b, c) {"
+    "}"
+    "});"
+    "});"
+    "</script>";
+    ;
+
+const char HTTP_UPDATE[] PROGMEM =
+    "<h1>Update firmware</h1>"
+    "<div id='update_info'>"
+    "<h4>Latest version on GitHub</h4>"
+    "<div id='onlineupdate'>"
+    "<h5 id=releasehead></h5>"
+    "<div style='clear:both;'>"
+    "<br>"
+    "</div>"  
+    "<pre id=releasebody>Getting update information from GitHub...</pre>"
+    "</div>"
+    "You can download the last firmware here : "
+    "<a style='margin-left: 40px;' class='pull-right' href='{{linkFirmware}}' >"
+    "<button type='button' class='btn btn-success'>Download</button>"
+    "</a>"
+    "<form method='POST' action='/doUpdate' enctype='multipart/form-data' id='upload_form'>"
+    "<input type='file' name='update' id='file' onchange='sub(this)' style=display:none accept='.bin'>"
+    "<label id='file-input' for='file'>   Choose file...</label>"
+    "<input type='submit' class='btn btn-warning mb-2' value='Update'>"
+    "<br><br>"
+    "<div id='prg'></div>"
+    "<br><div id='prgbar'><div id='bar'></div></div><br></form>"
+    
+  
+    "<script language='javascript'>getLatestReleaseInfo();</script>"
+    "<script>"
+    "function sub(obj){"
+    "var fileName = obj.value.split('\\\\');"
+    "document.getElementById('file-input').innerHTML = '   '+ fileName[fileName.length-1];"
+    "};"
+    "$('form').submit(function(e){"
+    "e.preventDefault();"
+    "var form = $('#upload_form')[0];"
+    "var data = new FormData(form);"
+    "$.ajax({"
+    "url: '/doUpdate',"
+    "type: 'POST',"
+    "data: data,"
+    "contentType: false,"
+    "processData:false,"
+    "xhr: function() {"
+    "var xhr = new window.XMLHttpRequest();"
+    "xhr.upload.addEventListener('progress', function(evt) {"
+    "if (evt.lengthComputable) {"
+    "var per = evt.loaded / evt.total;"
+    "$('#prg').html('progress: ' + Math.round(per*100) + '%');"
+    "$('#bar').css('width',Math.round(per*100) + '%');"
+    "}"
+    "}, false);"
+    "return xhr;"
+    "},"
+    "success:function(d, s) {"
+    "console.log('success!');"
+    "$('#prg').html('Update completed!<br>Rebooting!');"
+    "window.location.href='/';"
+    "},"
+    "error: function (a, b, c) {"
+    "}"
+    "});"
+    "});"
+    "</script>";
 
 const char HTTP_CONFIG_MENU[] PROGMEM =
     "<a href='/configGeneral' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_general}}' >General</a>&nbsp"
     "<a href='/configHorloge' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_horloge}}' >Horloge</a>&nbsp"
     "<a href='/configLinky' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_linky}}' >Linky</a>&nbsp"
+    "<a href='/configGaz' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_gaz}}' >Gaz</a>&nbsp"
+    "<a href='/configWater' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_water}}' >Water</a>&nbsp"
     "<a href='/configHTTP' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_http}}' >HTTP</a>&nbsp"
     "<a href='/configMQTT' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_mqtt}}' >MQTT</a>&nbsp"
     "<a href='/configNotif' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_notif}}' >Notif</a>&nbsp";
@@ -156,6 +289,9 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
     "<div class='row justify-content-md-center' >"
     "<div class='col-sm-6'>"
     "<h2>Parameters</h2>"
+    "<span> @MAC coordinator : </span>{{macCoordinator}}<br>"
+    "<span> Version coordinator : </span>{{versionCoordinator}}<br>"
+    "<span> Network : </span>{{networkCoordinator}}<br>"
     "<label for='SetMaskChannel'>Set channel mask</label>"
     "<input class='form-control' id='SetMaskChannel' type='text' name='SetMaskChannel' value='{{SetMaskChannel}}'>"
     "<button type='button' onclick='cmd(\"SetChannelMask\",document.getElementById(\"SetMaskChannel\").value);' class='btn btn-primary'>Set Channel</button><br> "
@@ -209,6 +345,8 @@ const char HTTP_CONFIG_LINKY[] PROGMEM =
     "</div>"
     "<div class='col-sm-10'><form method='POST' action='saveConfigLinky'>"
     "<div class='form-check'>"
+    "<h2>Device</h2>"
+    "{{selectDevices}}"
     "<h2>Tarifs</h2>"
     "<label for='tarifAbo'>Tarif abonnement (€)</label>"
     "<input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'>"
@@ -242,6 +380,58 @@ const char HTTP_CONFIG_LINKY[] PROGMEM =
     "</form></div>"
     "</div>";
 
+const char HTTP_CONFIG_GAZ[] PROGMEM =
+    "<h1>Config Gaz</h1>"
+    "<div class='row justify-content-md-center' >"
+    "<div class='col-sm-2'>"
+    "<div class='btn-group-horizontal'>"
+    "{{menu_config}}"
+    "</div>"
+    "</div>"
+    "<div class='col-sm-10'><form method='POST' action='saveConfigGaz'>"
+    "<div class='form-check'>"
+    "<h2>Device</h2>"
+    "{{selectDevices}}"
+    "<h2>Parameters</h2>"
+    "<label for='coeffGaz'>Impulsion coefficient</label>"
+    "<input class='form-control' id='coeffGaz' type='text' name='coeffGaz' value='{{coeffGaz}}'>"
+    "<label for='unitGaz'>Unit</label>"
+    "<input class='form-control' id='unitGaz' type='text' name='unitGaz' value='{{unitGaz}}'>"
+    "<h2>Tarif</h2>"
+    "<label for='tarifGaz'>Tarif (€)</label>"
+    "<input class='form-control' id='tarifGaz' type='text' name='tarifGaz' value='{{tarifGaz}}'>"
+    "<br>"
+    "</div>"
+    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
+    "</form></div>"
+    "</div>";
+
+const char HTTP_CONFIG_WATER[] PROGMEM =
+    "<h1>Config Water</h1>"
+    "<div class='row justify-content-md-center' >"
+    "<div class='col-sm-2'>"
+    "<div class='btn-group-horizontal'>"
+    "{{menu_config}}"
+    "</div>"
+    "</div>"
+    "<div class='col-sm-10'><form method='POST' action='saveConfigWater'>"
+    "<div class='form-check'>"
+    "<h2>Device</h2>"
+    "{{selectDevices}}"
+    "<h2>Parameters</h2>"
+    "<label for='coeffWater'>Impulsion coefficient</label>"
+    "<input class='form-control' id='coeffWater' type='text' name='coeffWater' value='{{coeffWater}}'>"
+    "<label for='unitWater'>Unit</label>"
+    "<input class='form-control' id='unitWater' type='text' name='unitWater' value='{{unitWater}}'>"
+    "<h2>Tarif</h2>"
+    "<label for='tarifWater'>Tarif (€)</label>"
+    "<input class='form-control' id='tarifWater' type='text' name='tarifWater' value='{{tarifWater}}'>"
+    "<br>"
+    "</div>"
+    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
+    "</form></div>"
+    "</div>";
+
 const char HTTP_CONFIG_MQTT[] PROGMEM =
     "<h1>Config MQTT</h1>"
     "<div class='row justify-content-md-center' >"
@@ -264,8 +454,36 @@ const char HTTP_CONFIG_MQTT[] PROGMEM =
     "<label for='userMQTT'>MQTT username</label>"
     "<input class='form-control' id='userMQTT' type='text' name='userMQTT' value='{{userMQTT}}'>"
     "<label for='passMQTT'>MQTT password</label>"
-    "<input class='form-control' id='passMQTT' type='password' name='passMQTT' value='{{passMQTT}}'>"
+    "<input class='form-control' id='passMQTT' type='password' name='passMQTT' value=''>"
+    "<label for='headerMQTT'>MQTT topic header</label>"
+    "<input class='form-control' id='headerMQTT' type='text' name='headerMQTT' value='{{headerMQTT}}'>"
+    "{{MQTT Status}}"
 
+    "</div>"
+    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
+    "</form></div>"
+    
+    "</div>";
+
+const char HTTP_CONFIG_HTTP[] PROGMEM =
+    "<h1>Config HTTP</h1>"
+    "<div class='row justify-content-md-center' >"
+    "<div class='col-sm-2'>"
+    "<div class='btn-group-horizontal'>"
+    "{{menu_config}}"
+    "</div>"
+    "</div>"
+    "<div class='col-sm-10'><form method='POST' action='saveConfigHTTP'>"
+    "<div class='form-check'>"
+    "<h2>HTTP security</h2>"
+    "<div class='form-check'>"
+    "<input class='form-check-input' id='enableSecureHttp' type='checkbox' name='enableSecureHttp' {{checkedHttp}}>"
+    "<label class='form-check-label' for='enableSecureHttp'>Enable HTTP Security</label>"
+    "</div>"
+    "<label for='userHTTP'>HTTP username</label>"
+    "<input class='form-control' id='userHTTP' type='text' name='userHTTP' value='{{userHTTP}}'>"
+    "<label for='passHTTP'>HTTP password</label>"
+    "<input class='form-control' id='passHTTP' type='password' name='passHTTP' value=''>"
     "<br>"
     "</div>"
     "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
@@ -301,8 +519,8 @@ const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
 
 const char HTTP_NETWORK[] PROGMEM =
     "<h1>Network status</h1>"
-    "<div class='row'>"
-    "<div class='col-sm-6'>"
+    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
+    "<div class='col-sm-3'>"
     "<div class='card'>"
     "<div class='card-header'>Ethernet</div>"
     "<div class='card-body'>"
@@ -317,7 +535,7 @@ const char HTTP_NETWORK[] PROGMEM =
     "</div>"
     "</div>"
     "</div>"
-    "<div class='col-sm-6'>"
+    "<div class='col-sm-3'>"
     "<div class='card'>"
     "<div class='card-header'>Wifi</div>"
     "<div class='card-body'>"
@@ -333,18 +551,20 @@ const char HTTP_NETWORK[] PROGMEM =
     "</div>"
     "</div>"
     "</div>"
-    "<div class='row'>"
-    "<div class='col-sm-6'><div class='card'><div class='card-header'>Infos"
+    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
+    "<div class='col-sm-3'><div class='card'><div class='card-header'>System Infos"
     "</div>"
     "<div class='card-body'>"
-    "<Strong>Box voltage :</strong> {{Voltage}} V<br>"
+    "{{MQTT card}}"
+    "<i>System :</i><br><Strong>Box voltage :</strong> {{Voltage}} V<br>"
     "<Strong>Box temperature :</strong> {{Temperature}} °C<br>"
     "</div></div></div>"
+    
     "</div>";
 
 const char HTTP_ROOT[] PROGMEM =
     "<h1>Dashboard</h1>"
-    "<div class='row'>"
+    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
     "<div class='col-sm-12'>"
     "<Select class='form-select form-select-lg mb-3' aria-label='.form-select-lg example' name='time' onChange=\"window.location.href='?time='+this.value\">"
     "<option value='hour' {{selectedHour}}>Hour</option>"
@@ -354,46 +574,53 @@ const char HTTP_ROOT[] PROGMEM =
     "</select>"
     "</div>"
     "</div>"
-    "<div class='row'>"
+    "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
     "<div class='col-sm-6'>"
-    "<div class='card'>"
+    "<div class='card' >"
     "<div class='card-header'>Energy gauge</div>"
-    "<div id='power_gauge_global'></div>"
+    "<div class='card-body' style='min-height:272px;'>"
+    "<div id='power_gauge_global' style='height:230px;'></div>"
+    "</div>"
     "</div>"
     "</div>"
     "<div class='col-sm-6'>"
     "<div class='card'>"
     "<div class='card-header'>Energy trend</div>"
-    "<div id='power_trend' style='padding-top:40px;'></div>"
+    "<div class='card-body' style='min-height:272px;'>"
+    "<div id='power_trend'></div>"
     "</div>"
     "</div>"
     "</div>"
     "</div>"
-    "<div class='row'>"
-    "{{dashboard}}"
+    "</div>"
+    "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
+    "{{dashboard}}" 
     "</div>"
     "{{javascript}}";
 
 const char HTTP_DASHBOARD[] PROGMEM =
-    "<div class='row'>"
-    "<div class='col-sm-6'>"
+    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
+    "<div class='col' style='padding:0'>"
     "<div class='card'>"
     "<div class='card-header'>Energy gauge</div>"
-    "<div id='power_gauge_global'></div>"
+    "<div id='power_gauge_global' style='height:210px;'></div>"
     "</div>"
     "</div>"
-    "<div class='col-sm-6'>"
+    "<div class='col' style='padding:0'>"
     "<div class='card'>"
     "<div class='card-header'>Energy trend</div>"
-    "<div id='power_trend' style='padding-top:40px;'></div>"
+    "<div id='power_trend' style='height:210px;'></div>"
     "</div>"
     "</div>"
     "</div>"
+    "</div>"
+    "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
+    "{{dashboard}}" 
     "</div>"
     "{{javascript}}";
 
 const char HTTP_ENERGY[] PROGMEM =
-    "<h1>Energy status</h1>"
+    "<h1>Energy status</h1>" 
     "<div class='row'>"
     "<div class='col-sm-12'>"
     "<Select class='form-select form-select-lg mb-3' aria-label='.form-select-lg example' name='time' onChange=\"window.location.href='?time='+this.value\">"
@@ -403,27 +630,37 @@ const char HTTP_ENERGY[] PROGMEM =
     "<option value='year' {{selectedYear}}>Year</option>"
     "</select>"
     "</div>"
-    "</div>"
+    "</div>";
+
+const char HTTP_ENERGY_LINKY[] PROGMEM =
     "<div class='row'>"
-    "<div class='col-sm-3'>"
-    "<div id='power_gauge_global'></div>"
+      "<div class='col-sm-12'>"
+        "{{LinkyStatus}}"
+      "</div>"
     "</div>"
-    "<div class='col-sm-3'>"
-    "<div id='power_trend' style='padding-top:40px;'></div>"
-    "</div>"
-    "<div class='col-sm-6'>"
-    "<div class='card'>"
-    "<div class='card-header'>Linky Datas</div>"
-    "<div class='card-body'>"
-    "<div id='power_data'></div>"
-    "</div>"
-    "</div>"
-    "</div>"
+    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
+      "{{power_gauge}}"
+      "<div class='col-lg-2'>"
+        "<div class='card'>"
+          "<div class='card-header'>Energy trend</div>"
+          "<div class='card-body' style='min-height:272px;'>"
+            "<div id='power_trend'></div>"
+          "</div>"
+        "</div>"
+      "</div>"
+      "<div class='col-lg-4'>"
+        "<div class='card'>"
+          "<div class='card-header'>Linky Datas</div>"
+          "<div class='card-body' style='min-height:272px;'>"
+            "<div id='power_data'></div>"
+          "</div>"
+        "</div>"
+      "</div>"
     "</div>"
     "<div class='row' style='display:{{stylePowerChart}}'>"
     "<div class='col-sm-12'>"
     "<div class='card'>"
-    "<div class='card-header'>Power chart</div>"
+    "<div class='card-header'>Real Time Power chart</div>"
     "<div class='card-body'>"
     "<div id='power-chart'></div>"
     "</div>"
@@ -431,17 +668,44 @@ const char HTTP_ENERGY[] PROGMEM =
     "</div>"
     "</div>"
     "</div>"
-    "<div class='row'>"
+    "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
     "<div class='col-sm-12'>"
     "<div class='card'>"
-    "<div class='card-header'>Energy chart</div>"
+    "<div class='card-header'>Energy Usage</div>"
     "<div class='card-body'>"
     "<div id='energy-chart'></div>"
     "</div>"
     "</div>"
     "</div>"
     "</div>"
+    "</div>";
+
+const char HTTP_ENERGY_GAZ[] PROGMEM =
+    "<div class='row'>"
+    "<div class='col-sm-12'>"
+    "<div class='card'>"
+    "<div class='card-header'>Gaz consumption</div>"
+    "<div class='card-body'>"
+    "<div id='gaz-chart'></div>"
     "</div>"
+    "</div>"
+    "</div>"
+    "</div>"
+    "</div>";
+
+const char HTTP_ENERGY_WATER[] PROGMEM =
+    "<div class='row'>"
+    "<div class='col-sm-12'>"
+    "<div class='card'>"
+    "<div class='card-header'>Water consumption</div>"
+    "<div class='card-body'>"
+    "<div id='water-chart'></div>"
+    "</div>"
+    "</div>"
+    "</div>"
+    "</div>"
+    "</div>";
+const char HTTP_ENERGY_JAVASCRIPT[] PROGMEM =
     "{{javascript}}";
 
 const char HTTP_ETHERNET[] PROGMEM =
@@ -503,7 +767,7 @@ const char HTTP_CONFIG_WIFI[] PROGMEM =
     "</form>";
 
 const char HTTP_CREATE_TEMPLATE[] PROGMEM =
-    "<h1>Create template file</h1>"
+    "<h1>Create tp file</h1>"
     "<div class='row justify-content-md-center' >"
     "<div class='col-sm-6'><form method='POST' action='saveFileTemplates'>"
     "<div class='form-group'>"
@@ -537,6 +801,62 @@ const char HTTP_FOOTER[] PROGMEM =
     "getAlert();"
     "</script>";
 
+String getMenuGeneral(String tmp, String selected)
+{
+  
+  tmp.replace("{{menu_config}}", FPSTR(HTTP_CONFIG_MENU));
+  if (selected=="general")
+  {
+    tmp.replace("{{menu_config_general}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_general}}", "");
+  }
+  if (selected=="horloge")
+  {
+    tmp.replace("{{menu_config_horloge}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_horloge}}", "");
+  }
+  if (selected=="linky")
+  {
+    tmp.replace("{{menu_config_linky}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_linky}}", "");
+  }
+  if (selected=="gaz")
+  {
+    tmp.replace("{{menu_config_gaz}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_gaz}}", "");
+  }
+  if (selected=="water")
+  {
+    tmp.replace("{{menu_config_water}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_water}}", "");
+  }
+  if (selected=="http")
+  {
+    tmp.replace("{{menu_config_http}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_http}}", "");
+  }
+  if (selected=="mqtt")
+  {
+    tmp.replace("{{menu_config_mqtt}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_mqtt}}", "");
+  }
+  if (selected=="notif")
+  {
+    tmp.replace("{{menu_config_notif}}", "disabled");
+  }else{
+    tmp.replace("{{menu_config_notif}}", "");
+  }
+  return tmp;
+}
+
+/* ESP32-DEV
 float temperatureReadFixed()
 {
   SET_PERI_REG_BITS(SENS_SAR_MEAS_WAIT2_REG, SENS_FORCE_XPD_SAR, 3, SENS_FORCE_XPD_SAR_S);
@@ -550,206 +870,282 @@ float temperatureReadFixed()
   ets_delay_us(5);
   float temp_f = (float)GET_PERI_REG_BITS2(SENS_SAR_SLAVE_ADDR3_REG, SENS_TSENS_OUT, SENS_TSENS_OUT_S);
   float temp_c = (temp_f - 32) / 1.8;
+
+  float temp_c = 60;
   return temp_c;
+}*/
+
+float temperatureReadFixed()
+{
+  float result = 0;
+  temp_sensor_read_celsius(&result);
+
+  return result;
 }
 
 bool TemplateExist(int deviceId)
 {
-  String path = "/templates/" + (String)deviceId + ".json";
-
-  File templateFile = LittleFS.open(path, FILE_READ);
-  if (!templateFile || templateFile.isDirectory())
+  if (deviceId>0)
   {
+    String path = "/tp/" + (String)deviceId + ".json";
+
+    File tpFile = LittleFS.open(path, FILE_READ);
+    if (!tpFile || tpFile.isDirectory())
+    {
+      return false;
+    }
+    tpFile.close();
+    return true;
+  }else{
     return false;
   }
-  templateFile.close();
-  return true;
 }
 
-Template GetTemplate(int deviceId, String model)
+Template * GetTemplate(int deviceId, String model)
 {
-  String path = "/templates/" + String(deviceId) + ".json";
-  Template t;
-  File templateFile = LittleFS.open(path, FILE_READ);
-  if (!templateFile || templateFile.isDirectory())
+  Template *t = (Template *) ps_malloc(sizeof(Template));
+  if (deviceId>0)
   {
-    DEBUG_PRINTLN(F("failed open"));
-    return t;
-  }
-  else
-  {
-    DynamicJsonDocument temp(5096);
-    deserializeJson(temp, templateFile);
-    templateFile.close();
-    int i = 0;
-    const char *tmp;
-
-    if (temp.containsKey(model))
+    String path = "/tp/" + String(deviceId) + ".json";   
+    File tpFile = LittleFS.open(path, FILE_READ);
+    if (!tpFile || tpFile.isDirectory())
     {
-      
-      JsonArray StatusArray = temp[model][0]["status"].as<JsonArray>();
-      for (JsonVariant v : StatusArray)
-      {
-
-        tmp = temp[model][0]["status"][i]["name"];
-        strlcpy(t.e[i].name, tmp, sizeof(t.e[i].name));
-        t.e[i].cluster = (int)strtol(temp[model][0]["status"][i]["cluster"], 0, 16);
-        t.e[i].attribute = (int)temp[model][0]["status"][i]["attribut"];
-        if (temp[model][0]["status"][i]["type"])
-        {
-          strlcpy(t.e[i].type, temp[model][0]["status"][i]["type"], sizeof(t.e[i].type));
-        }
-        else
-        {
-          strlcpy(t.e[i].type, "", sizeof(t.e[i].type));
-        }
-        if (temp[model][0]["status"][i]["coefficient"])
-        {
-          t.e[i].coefficient = (float)temp[model][0]["status"][i]["coefficient"];
-        }
-        else
-        {
-          t.e[i].coefficient = 1;
-        }
-        if (temp[model][0]["status"][i]["unit"])
-        {
-          strlcpy(t.e[i].unit, temp[model][0]["status"][i]["unit"], sizeof(t.e[i].unit));
-        }
-        else
-        {
-          strlcpy(t.e[i].unit, "", sizeof(t.e[i].unit));
-        }
-
-        if (temp[model][0]["status"][i]["visible"].as<int>() == 1)
-        {
-          t.e[i].visible = 1;
-        }
-        else
-        {
-          t.e[i].visible = 0;
-        }
-        if (temp[model][0]["status"][i]["jauge"])
-        {
-          strlcpy(t.e[i].typeJauge, temp[model][0]["status"][i]["jauge"], sizeof(t.e[i].typeJauge));
-          t.e[i].jaugeMin = temp[model][0]["status"][i]["min"].as<int>();
-          t.e[i].jaugeMax = temp[model][0]["status"][i]["max"].as<int>();
-        }
-        else
-        {
-          strlcpy(t.e[i].typeJauge, "", sizeof(t.e[i].typeJauge));
-        }
-        i++;
-      }
-      t.StateSize = i;
-      i = 0;
-      JsonArray ActionArray = temp[model][0]["action"].as<JsonArray>();
-      for (JsonVariant v : ActionArray)
-      {
-
-        tmp = temp[model][0]["action"][i]["name"];
-        strlcpy(t.a[i].name, tmp, sizeof(t.a[i].name));
-        t.a[i].command = (int)temp[model][0]["action"][i]["command"];
-        t.a[i].value = (int)temp[model][0]["action"][i]["value"];
-        if (temp[model][0]["action"][i]["visible"].as<int>() == 1)
-        {
-          t.a[i].visible = 1;
-        }
-        else
-        {
-          t.a[i].visible = 0;
-        }
-        i++;
-      }
-      t.ActionSize = i;
-      // tmp = temp[model][0]["bind"];
-      // strlcpy(t.bind,tmp,sizeof(50));
+      DEBUG_PRINTLN(F("failed open"));
       return t;
     }
     else
     {
-      if (temp.containsKey("default"))
+      DynamicJsonDocument temp(MAXHEAP);
+      deserializeJson(temp, tpFile);
+      tpFile.close();
+      int i = 0;
+      const char *tmp;
+
+      if (temp.containsKey(model))
       {
-        JsonArray StatusArray = temp["default"][0]["status"].as<JsonArray>();
+        
+        JsonArray StatusArray = temp[model][0][F("status")].as<JsonArray>();
         for (JsonVariant v : StatusArray)
         {
+          
+          tmp = temp[model][0][F("status")][i][F("name")];
+          strlcpy(t->e[i].name, tmp, sizeof(t->e[i].name));
+          t->e[i].cluster = (int)strtol(temp[model][0][F("status")][i][F("cluster")], 0, 16);
+          t->e[i].attribute = (int)temp[model][0][F("status")][i][F("attribut")];
+          if (temp[model][0][F("status")][i][F("type")])
+          {
+            strlcpy(t->e[i].type, temp[model][0][F("status")][i][F("type")], sizeof(t->e[i].type));
+          }
+          else
+          {
+            strlcpy(t->e[i].type, "", sizeof(t->e[i].type));
+          }
+          //MQTT
+          if (temp[model][0][F("status")][i][F("mqtt_device_class")])
+          {
+            strlcpy(t->e[i].mqtt_device_class, temp[model][0][F("status")][i][F("mqtt_device_class")], sizeof(t->e[i].mqtt_device_class));
+          }
+          else
+          {
+            strlcpy(t->e[i].mqtt_device_class, "", sizeof(t->e[i].mqtt_device_class));
+          }
+          if (temp[model][0][F("status")][i][F("mqtt_state_class")])
+          {
+            strlcpy(t->e[i].mqtt_state_class, temp[model][0][F("status")][i][F("mqtt_state_class")], sizeof(t->e[i].mqtt_state_class));
+          }
+          else
+          {
+            strlcpy(t->e[i].mqtt_state_class, "", sizeof(t->e[i].mqtt_state_class));
+          }
+          if (temp[model][0][F("status")][i][F("mqtt_icon")])
+          {
+            strlcpy(t->e[i].mqtt_icon, temp[model][0][F("status")][i][F("mqtt_icon")], sizeof(t->e[i].mqtt_icon));
+          }
+          else
+          {
+            strlcpy(t->e[i].mqtt_icon, "", sizeof(t->e[i].mqtt_icon));
+          }
 
-          tmp = temp["default"][0]["status"][i]["name"];
-          strlcpy(t.e[i].name, tmp, sizeof(t.e[i].name));
-          t.e[i].cluster = (int)strtol(temp["default"][0]["status"][i]["cluster"], 0, 16);
-          t.e[i].attribute = (int)temp["default"][0]["status"][i]["attribut"];
-          if (temp["default"][0]["status"][i]["type"])
+
+
+          if (temp[model][0][F("status")][i][F("coefficient")])
           {
-            strlcpy(t.e[i].type, temp["default"][0]["status"][i]["type"], sizeof(t.e[i].type));
+            t->e[i].coefficient = (float)temp[model][0][F("status")][i][F("coefficient")];
           }
           else
           {
-            strlcpy(t.e[i].type, "", sizeof(t.e[i].type));
+            t->e[i].coefficient = 1;
           }
-          if (temp["default"][0]["status"][i]["coefficient"])
+          if (temp[model][0][F("status")][i][F("unit")])
           {
-            t.e[i].coefficient = (float)temp["default"][0]["status"][i]["coefficient"];
-          }
-          else
-          {
-            t.e[i].coefficient = 1;
-          }
-          if (temp["default"][0]["status"][i]["unit"])
-          {
-            strlcpy(t.e[i].unit, temp["default"][0]["status"][i]["unit"], sizeof(t.e[i].unit));
+            strlcpy(t->e[i].unit, temp[model][0][F("status")][i][F("unit")], sizeof(t->e[i].unit));
           }
           else
           {
-            strlcpy(t.e[i].unit, "", sizeof(t.e[i].unit));
+            strlcpy(t->e[i].unit, "", sizeof(t->e[i].unit));
           }
-          if (temp["default"][0]["status"][i]["visible"].as<int>() == 1)
+        
+          if (temp[model][0][F("status")][i][F("visible")].as<int>() == 1)
           {
-            t.e[i].visible = 1;
-          }
-          else
-          {
-            t.e[i].visible = 0;
-          }
-          if (temp["default"][0]["status"][i]["jauge"])
-          {
-            strlcpy(t.e[i].typeJauge, temp["default"][0]["status"][i]["jauge"], sizeof(t.e[i].typeJauge));
-            t.e[i].jaugeMin = temp["default"][0]["status"][i]["min"].as<int>();
-            t.e[i].jaugeMax = temp["default"][0]["status"][i]["max"].as<int>();
+            t->e[i].visible = 1;
           }
           else
           {
-            strlcpy(t.e[i].typeJauge, "", sizeof(t.e[i].typeJauge));
+            t->e[i].visible = 0;
+          }
+          if (temp[model][0][F("status")][i][F("jauge")])
+          {
+            strlcpy(t->e[i].typeJauge, temp[model][0][F("status")][i][F("jauge")], sizeof(t->e[i].typeJauge));
+            t->e[i].jaugeMin = temp[model][0][F("status")][i][F("min")].as<int>();
+            t->e[i].jaugeMax = temp[model][0][F("status")][i][F("max")].as<int>();
+          }
+          else
+          {
+            strlcpy(t->e[i].typeJauge, "", sizeof(t->e[i].typeJauge));
           }
           i++;
         }
-        t.StateSize = i;
+        t->StateSize = i;
         i = 0;
-        JsonArray ActionArray = temp["default"][0]["action"].as<JsonArray>();
+        JsonArray ActionArray = temp[model][0][F("action")].as<JsonArray>();
         for (JsonVariant v : ActionArray)
         {
 
-          tmp = temp["default"][0]["action"][i]["name"];
-          strlcpy(t.a[i].name, tmp, sizeof(t.a[i].name));
-          t.a[i].command = (int)temp["default"][0]["action"][i]["command"];
-          t.a[i].value = (int)temp["default"][0]["action"][i]["value"];
-          if (temp["default"][0]["action"][i]["visible"].as<int>() == 1)
+          tmp = temp[model][0][F("action")][i][F("name")];
+          strlcpy(t->a[i].name, tmp, sizeof(t->a[i].name));
+          t->a[i].command = (int)temp[model][0][F("action")][i][F("command")];
+          t->a[i].value = (int)temp[model][0][F("action")][i][F("value")];
+          if (temp[model][0][F("action")][i][F("visible")].as<int>() == 1)
           {
-            t.a[i].visible = 1;
+            t->a[i].visible = 1;
           }
           else
           {
-            t.a[i].visible = 0;
+            t->a[i].visible = 0;
           }
           i++;
         }
-        t.ActionSize = i;
+        t->ActionSize = i;
+        // tmp = temp[model][0]["bind"];
+        // strlcpy(t.bind,tmp,sizeof(50));
+        return t;
       }
       else
       {
-        t.StateSize = 0;
-        t.ActionSize = 0;
+        if (temp.containsKey("default"))
+        {
+          JsonArray StatusArray = temp[F("default")][0][F("status")].as<JsonArray>();
+          for (JsonVariant v : StatusArray)
+          {
+
+            tmp = temp[F("default")][0][F("status")][i][F("name")];
+            strlcpy(t->e[i].name, tmp, sizeof(t->e[i].name));
+            t->e[i].cluster = (int)strtol(temp[F("default")][0][F("status")][i][F("cluster")], 0, 16);
+            t->e[i].attribute = (int)temp[F("default")][0][F("status")][i][F("attribut")];
+            if (temp[F("default")][0][F("status")][i][F("type")])
+            {
+              strlcpy(t->e[i].type, temp[F("default")][0][F("status")][i][F("type")], sizeof(t->e[i].type));
+            }
+            else
+            {
+              strlcpy(t->e[i].type, "", sizeof(t->e[i].type));
+            }
+
+            //MQTT
+            if (temp[F("default")][0][F("status")][i][F("mqtt_device_class")])
+            {
+              strlcpy(t->e[i].mqtt_device_class, temp[F("default")][0][F("status")][i][F("mqtt_device_class")], sizeof(t->e[i].mqtt_device_class));
+            }
+            else
+            {
+              strlcpy(t->e[i].mqtt_device_class, "", sizeof(t->e[i].mqtt_device_class));
+            }
+            if (temp[F("default")][0][F("status")][i][F("mqtt_state_class")])
+            {
+              strlcpy(t->e[i].mqtt_state_class, temp[F("default")][0][F("status")][i][F("mqtt_state_class")], sizeof(t->e[i].mqtt_state_class));
+            }
+            else
+            {
+              strlcpy(t->e[i].mqtt_state_class, "", sizeof(t->e[i].mqtt_state_class));
+            }
+            if (temp[F("default")][0][F("status")][i][F("mqtt_icon")])
+            {
+              strlcpy(t->e[i].mqtt_icon, temp[F("default")][0][F("status")][i][F("mqtt_icon")], sizeof(t->e[i].mqtt_icon));
+            }
+            else
+            {
+              strlcpy(t->e[i].mqtt_icon, "", sizeof(t->e[i].mqtt_icon));
+            }
+
+
+
+            if (temp[F("default")][0][F("status")][i][F("coefficient")])
+            {
+              t->e[i].coefficient = (float)temp[F("default")][0][F("status")][i][F("coefficient")];
+            }
+            else
+            {
+              t->e[i].coefficient = 1;
+            }
+            if (temp[F("default")][0][F("status")][i][F("unit")])
+            {
+              strlcpy(t->e[i].unit, temp[F("default")][0][F("status")][i][F("unit")], sizeof(t->e[i].unit));
+            }
+            else
+            {
+              strlcpy(t->e[i].unit, "", sizeof(t->e[i].unit));
+            }
+            if (temp[F("default")][0][F("status")][i][F("visible")].as<int>() == 1)
+            {
+              t->e[i].visible = 1;
+            }
+            else
+            {
+              t->e[i].visible = 0;
+            }
+            if (temp[F("default")][0][F("status")][i][F("jauge")])
+            {
+              strlcpy(t->e[i].typeJauge, temp[F("default")][0][F("status")][i][F("jauge")], sizeof(t->e[i].typeJauge));
+              t->e[i].jaugeMin = temp[F("default")][0][F("status")][i][F("min")].as<int>();
+              t->e[i].jaugeMax = temp[F("default")][0][F("status")][i][F("max")].as<int>();
+            }
+            else
+            {
+              strlcpy(t->e[i].typeJauge, "", sizeof(t->e[i].typeJauge));
+            }
+            i++;
+          }
+          t->StateSize = i;
+          i = 0;
+          JsonArray ActionArray = temp[F("default")][0][F("action")].as<JsonArray>();
+          for (JsonVariant v : ActionArray)
+          {
+
+            tmp = temp[F("default")][0][F("action")][i][F("name")];
+            strlcpy(t->a[i].name, tmp, sizeof(t->a[i].name));
+            t->a[i].command = (int)temp[F("default")][0][F("action")][i][F("command")];
+            t->a[i].value = (int)temp[F("default")][0][F("action")][i][F("value")];
+            if (temp[F("default")][0][F("action")][i][F("visible")].as<int>() == 1)
+            {
+              t->a[i].visible = 1;
+            }
+            else
+            {
+              t->a[i].visible = 0;
+            }
+            i++;
+          }
+          t->ActionSize = i;
+        }
+        else
+        {
+          t->StateSize = 0;
+          t->ActionSize = 0;
+        }
+        return t;
       }
-      return t;
     }
+    
   }
   return t;
 }
@@ -766,7 +1162,58 @@ String getAliasDashboard(String inifile)
   return tmp;
 }
 
+String createGaugePower(String div, String min, String max, String label)
+{
+  String result = "";
+  result += "var Gauge" + div + " = new JustGage({";
+  result += "id: 'status_" + div + "',";
+  result += F("value: 0,");
+  result += "min: " + min + ",";
+  result += "max: " + max + ",";
+  result += F("title: 'Target',");
+  result += "label:'" + label + "',";
+  result += F("gaugeWidthScale: 0.6,");
+  result += F("pointer: true,");
+  result += F("pointerOptions: {");
+  result += F("toplength: 10,");
+  result += F("bottomlength: 10,");
+  result += F("bottomwidth: 2");
+  result += F("},");
+  result += F("humanFriendly: true,");
+  result += F("relativeGaugeSize: true,");
+  result += F("refreshAnimationTime: 1000");
+  result += F("});");
+
+  return result;
+}
+
+
 String createGaugeDashboard(String div, String i, String min, String max, String label)
+{
+  String result = "";
+  result += "var Gauge" + div  + i + " = new JustGage({";
+  result += "id: 'status_" + div + "',";
+  result += F("value: 0,");
+  result += "min: " + min + ",";
+  result += "max: " + max + ",";
+  result += F("title: 'Target',");
+  result += "label:'" + label + "',";
+  result += F("gaugeWidthScale: 0.6,");
+  result += F("pointer: true,");
+  result += F("pointerOptions: {");
+  result += F("toplength: 10,");
+  result += F("bottomlength: 10,");
+  result += F("bottomwidth: 2");
+  result += F("},");
+  result += F("humanFriendly: true,");
+  result += F("relativeGaugeSize: true,");
+  result += F("refreshAnimationTime: 1000");
+  result += F("});");
+
+  return result;
+}
+
+String createBaterryDashboard(String div, String i, String min, String max, String label)
 {
   String result = "";
   result += "var Gauge" + div + i + " = new JustGage({";
@@ -783,6 +1230,22 @@ String createGaugeDashboard(String div, String i, String min, String max, String
   result += F("bottomlength: 10,");
   result += F("bottomwidth: 2");
   result += F("},");
+  result += F("customSectors: {");
+  result +=    F(" percents: true,");
+  result +=    F(" ranges: [{");
+  result +=      F("   color : '#ff3b30',");
+  result +=      F("   lo : 0,");
+  result +=      F("   hi : 20");
+  result +=      F(" },{");
+  result +=      F("  color : '#f39c12',");
+  result +=      F("  lo : 21,");
+  result +=      F("  hi : 50");
+  result +=      F(" },{");
+  result +=      F("  color : '#43bf58',");
+  result +=      F("  lo : 51,");
+  result +=      F("  hi : 100");
+  result +=    F(" }]");
+  result += F(" },");
   result += F("humanFriendly: true,");
   result += F("relativeGaugeSize: true,");
   result += F("refreshAnimationTime: 1000");
@@ -819,40 +1282,46 @@ String createPowerGraph(String IEEE)
   result += F(" element: 'power-chart',");
   result += F("data: [],");
   result += F("xkey: 'y',");
-  result += F(" ykeys: ['a'],");
-  result += F(" labels: ['Power (VA)'],");
-  result += F("lineColors: ['#1e88e5'],");
-  result += F(" lineWidth: '3px',");
+
+  if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+  {
+    result += F(" ykeys: ['1295','2319','2575'],");
+    result += F(" labels: ['Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)'],");
+  }else{
+    result += F(" ykeys: ['1295'],");
+    result += F(" labels: ['Power (VA)'],");
+  }
+  result += F(" barColors: ['#1e88e5','#5dade2','#85c1e9'],");
   result += F(" resize: true,");
+  result += F(" xLabelAngle: 70,");
+  result += F(" stacked: true,");
   result += F(" redraw: true,");
+  result += F(" dataLabels: false,");
+  result += F(" showZero: false,");
+  result += F(" animate: false,");
   result += F(" });");
 
   return result;
 }
 
-String createEnergyGraph(String IEEE)
+String createEnergyGraph(String IEEE, String Type, String barColor)
 {
   String result = "";
   String sep = "";
-  result = F("energyChart = Morris.Bar({element: 'energy-chart',data: [],xkey: 'y',");
+  result = Type;
+  result += F("Chart = Morris.Bar({element: '");
+  result += Type;
+  result += F("-chart',data: [],xkey: 'y',");
   // list attr
-  String path = "/database/energy_" + IEEE + ".json";
-  File DeviceFile = LittleFS.open(path, FILE_READ);
-  if (!DeviceFile || DeviceFile.isDirectory())
+  result += F("ykeys: [");
+  String JsonEuros;
+  JsonEuros= "{";
+  int cntsection;
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+  if (Type=="energy")
   {
-    DEBUG_PRINTLN(F("failed open"));
-  }
-  else
-  {
-    DynamicJsonDocument temp(5096);
-    deserializeJson(temp, DeviceFile);
-    JsonObject root = temp.as<JsonObject>();
-    DeviceFile.close();
-
-    result += F("ykeys: [");
-    String JsonEuros = "{";
     int i = 0;
-    for (JsonPair kv : root)
+    for (cntsection=0 ; cntsection <arrayLength; cntsection++)
     {
       if (i > 0)
       {
@@ -862,28 +1331,44 @@ String createEnergyGraph(String IEEE)
       {
         sep = "";
       }
-      JsonEuros += sep + "\"" + String(kv.key().c_str()) + "\":{\"name\":\"" + GetNameStatus(97, "0702", String(kv.key().c_str()).toInt(), "ZLinky_TIC") + "\",\"price\":" + getTarif(String(kv.key().c_str()).toInt()) + "}";
-      result += sep + String(kv.key().c_str());
+      JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{\"name\":\"" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "\",\"coeff\":\"1\",\"price\":" + getTarif(String(section[cntsection]).toInt(),"energy") +",\"abo\":"+ConfigGeneral.tarifAbo+",\"taxe\":"+ConfigGeneral.tarifCSPE+",\"unit\":\"Wh\"}";
+      result += sep + String(section[cntsection]);
       i++;
     }
-    JsonEuros += "}";
-    result += F("],");
-    // list name
-    result += F("labels: [");
-
-    result += F("],");
-    result += F("barColors: ['#7d7d7d ','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737'],");
-    result += F("barWidth: '3px',");
-    result += F("resize: true,");
-    result += F("redraw: true,");
-    result += F("stacked: true,");
-    result += F("hoverCallback: function (index, options, content, row) {");
-    result += F("return getLabelEnergy('");
-    result += JsonEuros;
-    result += F("',row);");
-    result += F("}");
-    result += F("});");
+    
+  }else if (Type=="gaz")
+  {
+      JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":\""+String(ConfigGeneral.coeffGaz)+"\",\"price\":" + getTarif(0,"gaz") + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
+      result += "0"; 
+  }else if (Type=="water")
+  {
+    JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":\""+String(ConfigGeneral.coeffWater)+"\",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
+    result += "0";
   }
+  JsonEuros += "}";
+  result += F("],");
+  // list name
+  result += F("labels: [");
+  result += F("],");
+  result += F("barColors: ");
+  result += barColor;
+  result += F(",");
+  result += F("barWidth: '3px',");
+  result += F("resize: true,");
+  result += F("redraw: true,");
+  result += F(" xLabelAngle: 70,");
+  result += F("stacked: true,");
+  result += F(" dataLabels: false,");
+  result += F(" animate: false,");
+  result += F("hoverCallback: function (index, options, content, row) {");
+  result += F("return getLabelEnergy('");
+  result += JsonEuros;
+  result += F("',row,");
+  result += barColor;
+  result += F(",options,index);");
+  result += F("}");
+  result += F("});");
+  
   return result;
 }
 
@@ -916,10 +1401,197 @@ void handleNotFound(AsyncWebServerRequest *request)
   serverWeb.send(404, F("text/plain"), message);*/
 }
 
+/*void handleRoot(AsyncWebServerRequest *request)
+{
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  String result;
+  result = F("<html>");
+  result += FPSTR(HTTP_HEADERGRAPH);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_ROOT);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  
+  int i = 0;
+  String time;
+  int paramsNr = request->params();
+  if (paramsNr > 0)
+  {
+    time = request->arg(i);
+  }
+  else
+  {
+    time = "hour";
+  }
+
+  if (time == "hour")
+  {
+    result.replace("{{selectedHour}}", F("selected"));
+    result.replace("{{selectedDay}}", F(""));
+    result.replace("{{selectedMonth}}", F(""));
+    result.replace("{{selectedYear}}", F(""));
+  }
+  else if (time == "day")
+  {
+    result.replace("{{selectedHour}}", F(""));
+    result.replace("{{selectedDay}}", F("selected"));
+    result.replace("{{selectedMonth}}", F(""));
+    result.replace("{{selectedYear}}", F(""));
+  }
+  else if (time == "month")
+  {
+    result.replace("{{selectedHour}}", F(""));
+    result.replace("{{selectedDay}}", F(""));
+    result.replace("{{selectedMonth}}", F("selected"));
+    result.replace("{{selectedYear}}", F(""));
+  }
+  else if (time == "year")
+  {
+    result.replace("{{selectedHour}}", F(""));
+    result.replace("{{selectedDay}}", F(""));
+    result.replace("{{selectedMonth}}", F(""));
+    result.replace("{{selectedYear}}", F("selected"));
+  }
+  response->print(result);
+  String dashboard = "";
+  String js = "";
+  File root = LittleFS.open("/db");
+  File file = root.openNextFile();
+  while (file)
+  {
+    String tmp = file.name();
+    if (tmp.substring(16) == ".json")
+    {
+      if (existDashboard(tmp))
+      {
+        int ShortAddr = GetShortAddr(file.name());
+        int DeviceId = GetDeviceId(file.name());
+        String model;
+        model = GetModel(file.name());
+        dashboard += F("<div class='col-sm-3'><div class='card'><div class='card-header'>");
+        String alias = getAliasDashboard(file.name());
+
+        if (alias != "null")
+        {
+          dashboard += F("<strong>");
+          dashboard += alias;
+          dashboard += F("</strong>");
+          dashboard += F("<br>(@Mac : ");
+          dashboard += tmp.substring(0, 16);
+          dashboard += F(")");
+        }
+        else
+        {
+          dashboard += F("@Mac : ");
+          dashboard += tmp.substring(0, 16);
+        }
+        dashboard += F("</div>");
+        dashboard += F("<div class='card-body'>");
+        // Get status and action from json
+
+        if (TemplateExist(DeviceId))
+        {
+          Template t;
+          t = GetTemplate(DeviceId, model);
+          // toutes les propiétés
+          dashboard += F("<div id='status_");
+          dashboard += (String)ShortAddr;
+          dashboard += F("'>");
+
+          for (int i = 0; i < t->StateSize; i++)
+          {
+            if (t->e[i].visible)
+            {
+              if (String(t->e[i].typeJauge) == "gauge")
+              {
+                js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+                js += CreateTimeGauge((String)ShortAddr + (String)i);
+                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+              }
+              else
+              {
+                dashboard += t->e[i].name;
+                dashboard += " : <span id='";
+                dashboard += F("label_");
+                dashboard += (String)ShortAddr;
+                dashboard += F("_");
+                dashboard += t->e[i].cluster;
+                dashboard += F("_");
+                dashboard += t->e[i].attribute;
+                dashboard += F("'>");
+                dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
+                dashboard += F("</span><br>");
+                js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
+              }
+            }
+          }
+          dashboard += F("</div>");
+          dashboard += F("<div id='action_");
+          dashboard += (String)ShortAddr;
+          dashboard += F("'>");
+          // toutes les actions
+
+          for (int i = 0; i < t->ActionSize; i++)
+          {
+            if (t->a[i].visible)
+            {
+              dashboard += F("<button onclick=\"ZigbeeAction(");
+              dashboard += ShortAddr;
+              dashboard += ",";
+              dashboard += t->a[i].command;
+              dashboard += ",";
+              dashboard += t->a[i].value;
+              dashboard += ");\" class='btn btn-primary mb-2'>";
+              dashboard += t->a[i].name;
+              dashboard += F("</button>");
+            }
+          }
+          dashboard += F("</div>");
+        }
+        dashboard += F("</div></div></div>");
+      }
+    }
+    file = root.openNextFile();
+  }
+  file.close();
+  root.close();
+  result=F("<div class='row'>");
+  result+=dashboard; 
+  result+=F("</div>");
+  response->print(result);
+
+  String javascript = "";
+  javascript = F("<script language='javascript'>");
+  javascript += F("$(document).ready(function() {");
+  javascript += F("loadPowerGaugeAbo('");
+  javascript += String(ConfigGeneral.ZLinky);
+  javascript += F("','1295','");
+  javascript += time;
+  javascript += F("');");
+  javascript += F("refreshDashboard('");
+  javascript += String(ConfigGeneral.ZLinky);
+  javascript += F("','1295','");
+  javascript += time;
+  javascript += F("');");
+  javascript += js;
+  javascript += F("});");
+
+  javascript += F("</script>");
+  response->print(javascript);
+
+  result = FPSTR(HTTP_FOOTER);
+  result += F("</html>");
+  response->print(result);
+  request->send(response);
+
+}*/
+
+
+
 void handleRoot(AsyncWebServerRequest *request)
 {
+
   String result;
-  result += F("<html>");
+  result = F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ROOT);
@@ -969,7 +1641,7 @@ void handleRoot(AsyncWebServerRequest *request)
 
   String dashboard = "";
   String js = "";
-  File root = LittleFS.open("/database");
+  File root = LittleFS.open("/db");
   File file = root.openNextFile();
   while (file)
   {
@@ -1005,56 +1677,44 @@ void handleRoot(AsyncWebServerRequest *request)
 
         if (TemplateExist(DeviceId))
         {
-          Template t;
+          Template *t;
           t = GetTemplate(DeviceId, model);
           // toutes les propiétés
           dashboard += F("<div id='status_");
           dashboard += (String)ShortAddr;
           dashboard += F("'>");
 
-          for (int i = 0; i < t.StateSize; i++)
+          for (int i = 0; i < t->StateSize; i++)
           {
-            if (t.e[i].visible)
+            if (t->e[i].visible)
             {
-              if (String(t.e[i].typeJauge) == "gauge")
+              
+              if (String(t->e[i].typeJauge) == "gauge")
               {
-                js += createGaugeDashboard((String)ShortAddr, (String)i, String(t.e[i].jaugeMin), String(t.e[i].jaugeMax), t.e[i].unit);
+                js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
                 js += CreateTimeGauge((String)ShortAddr + (String)i);
-                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t.e[i].cluster + "," + t.e[i].attribute + ",'" + t.e[i].type + "'," + t.e[i].coefficient + ");";
-                /*js+=F("loadGaugeDashboard('status_");
-                js+=(String)ShortAddr;
-                js+=F("','");
-                js+=tmp.substring(0,16);
-                js+=F("',");
-                js+=t.e[i].cluster;
-                js+=F(",");
-                js+=t.e[i].attribute;
-                js+=F(",'");
-                js+=t.e[i].type;
-                js+=F("',");
-                js+=t.e[i].coefficient;
-                js+=F(",");
-                js+=String(t.e[i].jaugeMin);
-                js+=F(",");
-                js+=String(t.e[i].jaugeMax);
-                js+=F(",'");
-                js+=t.e[i].unit;
-                js+=F("');");*/
+                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+              }
+              else if(String(t->e[i].typeJauge) == "battery")
+              {
+                js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+                js += CreateTimeGauge((String)ShortAddr + (String)i);
+                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
               }
               else
               {
-                dashboard += t.e[i].name;
+                dashboard += t->e[i].name;
                 dashboard += " : <span id='";
                 dashboard += F("label_");
                 dashboard += (String)ShortAddr;
                 dashboard += F("_");
-                dashboard += t.e[i].cluster;
+                dashboard += t->e[i].cluster;
                 dashboard += F("_");
-                dashboard += t.e[i].attribute;
+                dashboard += t->e[i].attribute;
                 dashboard += F("'>");
-                dashboard += GetValueStatus(file.name(), t.e[i].cluster, t.e[i].attribute, (String)t.e[i].type, t.e[i].coefficient, (String)t.e[i].unit);
+                dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
                 dashboard += F("</span><br>");
-                js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t.e[i].cluster+","+t.e[i].attribute+",'"+(String)t.e[i].type+"',"+t.e[i].coefficient+",'"+(String)t.e[i].unit+"');";
+                js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
               }
             }
           }
@@ -1064,18 +1724,18 @@ void handleRoot(AsyncWebServerRequest *request)
           dashboard += F("'>");
           // toutes les actions
 
-          for (int i = 0; i < t.ActionSize; i++)
+          for (int i = 0; i < t->ActionSize; i++)
           {
-            if (t.a[i].visible)
+            if (t->a[i].visible)
             {
               dashboard += F("<button onclick=\"ZigbeeAction(");
               dashboard += ShortAddr;
               dashboard += ",";
-              dashboard += t.a[i].command;
+              dashboard += t->a[i].command;
               dashboard += ",";
-              dashboard += t.a[i].value;
+              dashboard += t->a[i].value;
               dashboard += ");\" class='btn btn-primary mb-2'>";
-              dashboard += t.a[i].name;
+              dashboard += t->a[i].name;
               dashboard += F("</button>");
             }
           }
@@ -1093,7 +1753,8 @@ void handleRoot(AsyncWebServerRequest *request)
   String javascript = "";
   javascript = F("<script language='javascript'>");
   javascript += F("$(document).ready(function() {");
-  javascript += F("loadPowerGaugeAbo('");
+  javascript += F("loadPowerGaugeAbo(1");
+  javascript += F(",'");
   javascript += String(ConfigGeneral.ZLinky);
   javascript += F("','1295','");
   javascript += time;
@@ -1110,6 +1771,7 @@ void handleRoot(AsyncWebServerRequest *request)
   result.replace("{{javascript}}", javascript);
 
   request->send(200, "text/html", result);
+
 }
 
 void handleDashboard(AsyncWebServerRequest *request)
@@ -1133,10 +1795,121 @@ void handleDashboard(AsyncWebServerRequest *request)
     time = "hour";
   }
 
+  String dashboard = "";
+  String js = "";
+  File root = LittleFS.open("/db");
+  File file = root.openNextFile();
+  while (file)
+  {
+    String tmp = file.name();
+    if (tmp.substring(16) == ".json")
+    {
+      if (existDashboard(tmp))
+      {
+        int ShortAddr = GetShortAddr(file.name());
+        int DeviceId = GetDeviceId(file.name());
+        String model;
+        model = GetModel(file.name());
+        dashboard += F("<div class='col-sm-3'><div class='card'><div class='card-header'>");
+        String alias = getAliasDashboard(file.name());
+
+        if (alias != "null")
+        {
+          dashboard += F("<strong>");
+          dashboard += alias;
+          dashboard += F("</strong>");
+          dashboard += F("<br>(@Mac : ");
+          dashboard += tmp.substring(0, 16);
+          dashboard += F(")");
+        }
+        else
+        {
+          dashboard += F("@Mac : ");
+          dashboard += tmp.substring(0, 16);
+        }
+        dashboard += F("</div>");
+        dashboard += F("<div class='card-body'>");
+        // Get status and action from json
+
+        if (TemplateExist(DeviceId))
+        {
+          Template *t;
+          t = GetTemplate(DeviceId, model);
+          // toutes les propiétés
+          dashboard += F("<div id='status_");
+          dashboard += (String)ShortAddr;
+          dashboard += F("'>");
+
+          for (int i = 0; i < t->StateSize; i++)
+          {
+            if (t->e[i].visible)
+            {
+              if (String(t->e[i].typeJauge) == "gauge")
+              {
+                js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+                js += CreateTimeGauge((String)ShortAddr + (String)i);
+                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+              }
+              else if(String(t->e[i].typeJauge) == "battery")
+              {
+                js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+                js += CreateTimeGauge((String)ShortAddr + (String)i);
+                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+              }
+              else
+              {
+                dashboard += t->e[i].name;
+                dashboard += " : <span id='";
+                dashboard += F("label_");
+                dashboard += (String)ShortAddr;
+                dashboard += F("_");
+                dashboard += t->e[i].cluster;
+                dashboard += F("_");
+                dashboard += t->e[i].attribute;
+                dashboard += F("'>");
+                dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
+                dashboard += F("</span><br>");
+                js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
+              }
+            }
+          }
+          dashboard += F("</div>");
+          dashboard += F("<div id='action_");
+          dashboard += (String)ShortAddr;
+          dashboard += F("'>");
+          // toutes les actions
+
+          for (int i = 0; i < t->ActionSize; i++)
+          {
+            if (t->a[i].visible)
+            {
+              dashboard += F("<button onclick=\"ZigbeeAction(");
+              dashboard += ShortAddr;
+              dashboard += ",";
+              dashboard += t->a[i].command;
+              dashboard += ",";
+              dashboard += t->a[i].value;
+              dashboard += ");\" class='btn btn-primary mb-2'>";
+              dashboard += t->a[i].name;
+              dashboard += F("</button>");
+            }
+          }
+          dashboard += F("</div>");
+        }
+        dashboard += F("</div></div></div>");
+      }
+    }
+    file = root.openNextFile();
+  }
+  file.close();
+  root.close();
+  result.replace("{{dashboard}}", dashboard);
+
   String javascript = "";
   javascript = F("<script language='javascript'>");
   javascript += F("$(document).ready(function() {");
-  javascript += F("loadPowerGaugeAbo('");
+  javascript += F("loadPowerGaugeAbo(1");
+  javascript += F(",'");
   javascript += String(ConfigGeneral.ZLinky);
   javascript += F("','1295','");
   javascript += time;
@@ -1146,6 +1919,7 @@ void handleDashboard(AsyncWebServerRequest *request)
   javascript += F("','1295','");
   javascript += time;
   javascript += F("');");
+  javascript += js;
   javascript += F("});");
 
   javascript += F("</script>");
@@ -1218,9 +1992,35 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
     result.replace("{{connectedEther}}", F("<img src='/web/img/nok.png'>"));
   }
 
+  if (ConfigSettings.enableMqtt)
+  {
+    String MqttCard = F("<i>MQTT Infos :</i>");
+    MqttCard +=F("<br>");
+    MqttCard +=F("<Strong>MQTT connected :</strong> ");
+    if (mqttClient.connected())
+    {
+      MqttCard +=F("<img src='/web/img/ok.png'>");
+    }else{
+      MqttCard +=F("<img src='/web/img/nok.png'>");
+    }
+    MqttCard +=F(" <br>");
+    MqttCard +=F("<Strong>MQTT serv :</strong> ");
+    MqttCard +=ConfigGeneral.servMQTT;
+    MqttCard +=F(" <br>");
+    MqttCard +=F("<Strong>MQTT port :</strong> ");
+    MqttCard +=ConfigGeneral.portMQTT;
+    MqttCard +=F(" <br><br>");
+
+    result.replace("{{MQTT card}}", MqttCard);
+  }else{
+    result.replace("{{MQTT card}}", "");
+  }
+
+
+
   float val;
   float Voltage = 0.0;
-  val = analogRead(35);
+  val = analogRead(VOLTAGE);
   Voltage = (val * 5300) / 4095;
   result.replace("{{Voltage}}", String(Voltage / 1000));
 
@@ -1240,11 +2040,35 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ENERGY);
+  if (strcmp(ConfigGeneral.ZLinky,"")!=0)
+  {
+    result += FPSTR(HTTP_ENERGY_LINKY);
+  }
+  if (strcmp(ConfigGeneral.Gaz,"")!=0)
+  {
+     result += FPSTR(HTTP_ENERGY_GAZ);
+  }
+  if (strcmp(ConfigGeneral.Water,"")!=0)
+  {
+     result += FPSTR(HTTP_ENERGY_WATER);
+  }
+  result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
+  String LinkyStatus;
+  String tmpStatus= ini_read(String(ConfigGeneral.ZLinky)+".json","INFO","Status");
+  if (tmpStatus =="d4")
+  {
+    LinkyStatus="<div class='alert alert-danger' role='alert'>Device Offline</div>";
+  }else{
+    LinkyStatus="";
+  }
+  result.replace("{{LinkyStatus}}",LinkyStatus);
+
   int i = 0;
   String time;
+
   int paramsNr = request->params();
   if (paramsNr > 0)
   {
@@ -1287,26 +2111,91 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     result.replace("{{selectedYear}}", F("selected"));
     result.replace("{{stylePowerChart}}", F("none"));
   }
+  ConfigGeneral.LinkyMode = ini_read(String(ConfigGeneral.ZLinky)+".json","FF66", "768").toInt();
+  String powerGauge="";
+  if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+  {
+     powerGauge=F("<div class='col-lg-6'>");
+          powerGauge +=F("<div class='card'>");
+            powerGauge +=F("<div class='card-header'>Energy gauge</div>");
+            powerGauge +=F("<div class='card-body' style='min-height:272px;'>");
+              powerGauge +=F("<div id='power_gauge_global' style='width:30%;display:inline-block;'></div>");
+              powerGauge +=F("<div id='power_gauge_global2' style='width:30%;display:inline-block;'></div>");
+              powerGauge +=F("<div id='power_gauge_global3' style='width:30%;display:inline-block;'></div>");
+            powerGauge +=F("</div>");
+          powerGauge +=F("</div>");
+        powerGauge +=F("</div>");
+  }else{
+    powerGauge =F("<div class='col-lg-6'>");
+          powerGauge +=F("<div class='card'>");
+            powerGauge +=F("<div class='card-header'>Energy gauge</div>");
+            powerGauge +=F("<div class='card-body' style='min-height:272px;'>");
+              powerGauge +=F("<div id='power_gauge_global' style='height:230px;'></div>");
+            powerGauge +=F("</div>");
+          powerGauge +=F("</div>");
+        powerGauge +=F("</div>");
+  }
+  result.replace("{{power_gauge}}",powerGauge);
 
   String javascript = "";
 
   javascript = F("<script language='javascript'>");
   javascript += F("$(document).ready(function() {");
-  javascript += createEnergyGraph(ConfigGeneral.ZLinky);
-  if (time == "hour")
+  if (strcmp(ConfigGeneral.ZLinky,"")!=0)
   {
-    javascript += createPowerGraph(ConfigGeneral.ZLinky);
+    if (time == "hour")
+    {
+      javascript += createPowerGraph(ConfigGeneral.ZLinky);
+      if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+      {
+        javascript += F("loadPowerGaugeAbo(2");
+        javascript += F(",'");
+        javascript += String(ConfigGeneral.ZLinky);
+        javascript += F("','2319','");
+        javascript += time;
+        javascript += F("');");
+        javascript += F("loadPowerGaugeAbo(3");
+        javascript += F(",'");
+        javascript += String(ConfigGeneral.ZLinky);
+        javascript += F("','2575','");
+        javascript += time;
+        javascript += F("');");
+      }
+    }
+    
+    javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d7dbdd','#85929e','#273746','#17202a','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += F("loadPowerGaugeAbo(1");
+    javascript += F(",'");
+    javascript += String(ConfigGeneral.ZLinky);
+    javascript += F("','1295','");
+    javascript += time;
+    javascript += F("');");
+    
+    javascript += F("refreshStatusEnergy('");
+    javascript += String(ConfigGeneral.ZLinky);
+    javascript += F("','1295','");
+    javascript += time;
+    javascript += F("');");
   }
-  javascript += F("loadPowerGaugeAbo('");
-  javascript += String(ConfigGeneral.ZLinky);
-  javascript += F("','1295','");
-  javascript += time;
-  javascript += F("');");
-  javascript += F("refreshStatusEnergy('");
-  javascript += String(ConfigGeneral.ZLinky);
-  javascript += F("','1295','");
-  javascript += time;
-  javascript += F("');");
+  if (strcmp(ConfigGeneral.Gaz,"")!=0)
+  {
+    javascript += createEnergyGraph(ConfigGeneral.Gaz, "gaz","['#e67e22','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += F("refreshStatusGaz('");
+    javascript += String(ConfigGeneral.Gaz);
+    javascript += F("','");
+    javascript += time;
+    javascript += F("');");
+  }
+  if (strcmp(ConfigGeneral.Water,"")!=0)
+  {
+    javascript += createEnergyGraph(ConfigGeneral.Water, "water","['#2e86c1','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += F("refreshStatusWater('");
+    javascript += String(ConfigGeneral.Water);
+    javascript += F("','");
+    javascript += time;
+    javascript += F("');");
+  }
+
   javascript += F("});");
   javascript += F("</script>");
 
@@ -1319,7 +2208,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
 {
   String result;
 
-  result += F("<html>");
+  result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -1328,8 +2217,10 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   result += F("<div class='row'>");
 
   String str = "";
-  File root = LittleFS.open("/database");
+  File root = LittleFS.open("/db");
   File file = root.openNextFile();
+
+  int i=0;
   while (file)
   {
     String tmp = file.name();
@@ -1340,6 +2231,16 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       result += tmp.substring(0, 16);
       result += F("</div>");
       result += F("<div class='card-body'>");
+      result += F("<a data-toggle='collapse' data-target='#infoDevice");
+      result += String(i);
+      result +=F("' role='button' aria-expanded='true' aria-controls='infoDevice");
+      result += String(i);
+      result += F("' onclick=\"toggleDiv('infoDevice");
+      result += String(i);
+      result += F("')\">+ Info</a>");
+      result += F("<div id='infoDevice");
+      result += String(i);
+      result += F("' style='display:none'>");
       result += F("<strong>Manufacturer: </strong>");
       String manufacturer;
       manufacturer = GetManufacturer(file.name());
@@ -1349,14 +2250,14 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       model = GetModel(file.name());
       result += model;
       result += F("<br><strong>Short Address: </strong>");
-      char SAddr[4];
+      char SAddr[5];
       int ShortAddr = GetShortAddr(file.name());
-      sprintf(SAddr, "%04X", ShortAddr);
+      snprintf(SAddr,5,"%04X", ShortAddr);
       result += SAddr;
       result += F("<br><strong>Device Id: </strong>");
-      char devId[4];
+      char devId[5];
       int DeviceId = GetDeviceId(file.name());
-      sprintf(devId, "%04X", DeviceId);
+      snprintf(devId,5, "%04X", DeviceId);
       result += devId;
       result += F("<br><strong>Soft Version: </strong>");
       String SoftVer = GetSoftwareVersion(file.name());
@@ -1364,24 +2265,26 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       result += F("<br><strong>Last seen: </strong>");
       String lastseen = GetLastSeen(file.name());
       result += lastseen;
-
+      result += F("<br><strong>LQI: </strong>");
+      result += GetLQI(file.name());
+      result += "</div>";
       // Get status and action from json
-
+      
       if (TemplateExist(DeviceId))
       {
-        Template t;
+        Template *t;
         t = GetTemplate(DeviceId, model);
         // toutes les propiétés
         result += F("<div id='status_");
         result += (String)ShortAddr;
         result += F("'>");
 
-        for (int i = 0; i < t.StateSize; i++)
+        for (int i = 0; i < t->StateSize; i++)
         {
 
-          result += t.e[i].name;
+          result += t->e[i].name;
           result += " : ";
-          result += GetValueStatus(file.name(), t.e[i].cluster, t.e[i].attribute, (String)t.e[i].type, t.e[i].coefficient, (String)t.e[i].unit);
+          result += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
           result += F("<br>");
         }
         result += F("</div>");
@@ -1389,24 +2292,25 @@ void handleStatusDevices(AsyncWebServerRequest *request)
         result += (String)ShortAddr;
         result += F("'>");
         // toutes les actions
-        for (int i = 0; i < t.ActionSize; i++)
+        for (int i = 0; i < t->ActionSize; i++)
         {
 
           result += F("<button onclick=\"ZigbeeAction(");
           result += ShortAddr;
           result += ",";
-          result += t.a[i].command;
+          result += t->a[i].command;
           result += ",";
-          result += t.a[i].value;
+          result += t->a[i].value;
           result += ");\" class='btn btn-primary mb-2'>";
-          result += t.a[i].name;
+          result += t->a[i].name;
           result += F("</button>");
         }
         result += F("</div>");
+        
       }
       result += F("</div></div></div>");
     }
-
+    i++;
     file = root.openNextFile();
   }
   result += FPSTR(HTTP_FOOTER);
@@ -1426,13 +2330,7 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result.replace("{{menu_config}}", FPSTR(HTTP_CONFIG_MENU));
-  result.replace("{{menu_config_general}}", "disabled");
-  result.replace("{{menu_config_horloge}}", "");
-  result.replace("{{menu_config_linky}}", "");
-  result.replace("{{menu_config_http}}", "");
-  result.replace("{{menu_config_mqtt}}", "");
-  result.replace("{{menu_config_notif}}", "");
+  result = getMenuGeneral(result, "general");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -1458,6 +2356,9 @@ void handleConfigZigbee(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_CONFIG_ZIGBEE);
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
+  result.replace("{{macCoordinator}}", String(ZConfig.zigbeeMac,HEX));
+  result.replace("{{versionCoordinator}}", "SDK: "+String(ZConfig.sdk, DEC)+" Ver: "+String(ZConfig.application));
+  result.replace("{{networkCoordinator}}", String(ZConfig.network));
 
   result.replace("{{FormattedDate}}", FormattedDate);
   result.replace("{{SetMaskChannel}}", String(ZConfig.channel));
@@ -1474,13 +2375,7 @@ void handleConfigHorloge(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result.replace("{{menu_config}}", FPSTR(HTTP_CONFIG_MENU));
-  result.replace("{{menu_config_general}}", "");
-  result.replace("{{menu_config_horloge}}", "disabled");
-  result.replace("{{menu_config_linky}}", "");
-  result.replace("{{menu_config_http}}", "");
-  result.replace("{{menu_config_mqtt}}", "");
-  result.replace("{{menu_config_notif}}", "");
+  result = getMenuGeneral(result, "horloge");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -1514,27 +2409,62 @@ void handleConfigMQTT(AsyncWebServerRequest *request)
   {
     result.replace("{{checkedMqtt}}", "");
   }
-  result.replace("{{menu_config}}", FPSTR(HTTP_CONFIG_MENU));
-  result.replace("{{menu_config_general}}", "");
-  result.replace("{{menu_config_horloge}}", "");
-  result.replace("{{menu_config_linky}}", "");
-  result.replace("{{menu_config_http}}", "");
-  result.replace("{{menu_config_mqtt}}", "disabled");
-  result.replace("{{menu_config_notif}}", "");
+  result = getMenuGeneral(result, "mqtt");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
   result.replace("{{servMQTT}}", String(ConfigGeneral.servMQTT));
   result.replace("{{portMQTT}}", String(ConfigGeneral.portMQTT));
   result.replace("{{userMQTT}}", String(ConfigGeneral.userMQTT));
-  result.replace("{{passMQTT}}", String(ConfigGeneral.passMQTT));
+  //result.replace("{{passMQTT}}", String(ConfigGeneral.passMQTT));
+  result.replace("{{headerMQTT}}", String(ConfigGeneral.headerMQTT));
+
+  if (ConfigSettings.enableMqtt)
+  {
+    String mqttStatus = F("<br><Strong>Connected : </strong>");
+    if (mqttClient.connected())
+    {
+      mqttStatus += F("<img src='/web/img/ok.png'>");
+    }else{
+      mqttStatus += F("<img src='/web/img/nok.png'>");
+    }
+    result.replace("{{MQTT Status}}",mqttStatus);
+  }else{
+    result.replace("{{MQTT Status}}","");
+  }
+
+  request->send(200, "text/html", result);
+}
+
+void handleConfigHTTP(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_HTTP);
+  result += FPSTR(HTTP_FOOTER);
+  result += F("</html>");
+  if (ConfigSettings.enableSecureHttp)
+  {
+    result.replace("{{checkedHttp}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedHttp}}", "");
+  }
+  result = getMenuGeneral(result, "http");
+
+  result.replace("{{FormattedDate}}", FormattedDate);
+
+  result.replace("{{userHTTP}}", String(ConfigGeneral.userHTTP));
 
   request->send(200, "text/html", result);
 }
 
 void handleConfigLinky(AsyncWebServerRequest *request)
 {
-  String result;
+  String result,list;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
@@ -1542,16 +2472,44 @@ void handleConfigLinky(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result.replace("{{menu_config}}", FPSTR(HTTP_CONFIG_MENU));
-  result.replace("{{menu_config_general}}", "");
-  result.replace("{{menu_config_horloge}}", "");
-  result.replace("{{menu_config_linky}}", "disabled");
-  result.replace("{{menu_config_http}}", "");
-  result.replace("{{menu_config_mqtt}}", "");
-  result.replace("{{menu_config_notif}}", "");
+  result = getMenuGeneral(result, "linky");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
+  list="<Select name='linkyDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  String str = "";
+  File root = LittleFS.open("/db");
+  File file = root.openNextFile();
+  while (file)
+  {
+    String tmp = file.name();
+    String mac = tmp.substring(0, 16);
+    if (tmp.substring(16) == ".json")
+    {
+      String model;
+      model = GetModel(file.name());
+      if (model == "ZLinky_TIC")
+      { 
+        list += F("<OPTION value='");
+        list += mac;
+        list += F("' ");
+        if (strcmp(mac.c_str(),ConfigGeneral.ZLinky)==0)
+        {
+          list +="Selected";
+        }
+        list += F(">");
+        list += F("ZLinky (");
+        list += mac;
+        list += F(")");
+        list += F("</OPTION>");
+      }
+    }
+    file = root.openNextFile();
+  }
+  file.close();
+  list +="</select>";
+
+  result.replace("{{selectDevices}}", list);
   result.replace("{{tarifAbo}}", String(ConfigGeneral.tarifAbo));
   result.replace("{{tarifCSPE}}", String(ConfigGeneral.tarifCSPE));
   result.replace("{{tarifCTA}}", String(ConfigGeneral.tarifCTA));
@@ -1569,6 +2527,119 @@ void handleConfigLinky(AsyncWebServerRequest *request)
   request->send(200, "text/html", result);
 }
 
+
+
+void handleConfigGaz(AsyncWebServerRequest *request)
+{
+  String result,list;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_GAZ);
+  result += FPSTR(HTTP_FOOTER);
+  result += F("</html>");
+
+  result = getMenuGeneral(result, "gaz");
+
+  result.replace("{{FormattedDate}}", FormattedDate);
+
+  list="<Select name='gazDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  String str = "";
+  File root = LittleFS.open("/db");
+  File file = root.openNextFile();
+  while (file)
+  {
+    String tmp = file.name();
+    String mac = tmp.substring(0, 16);
+    if (tmp.substring(16) == ".json")
+    {
+      String model;
+      model = GetModel(file.name());
+      if (model == "ZiPulses")
+      { 
+        list += F("<OPTION value='");
+        list += mac;
+        list += F("' ");
+        if (strcmp(mac.c_str(),ConfigGeneral.Gaz)==0)
+        {
+          list +="Selected";
+        }
+        list += F(">");
+        list += F("ZiPulses (");
+        list += mac;
+        list += F(")");
+        list += F("</OPTION>");
+      }
+    }
+    file = root.openNextFile();
+  }
+  file.close();
+  list +="</select>";
+
+  result.replace("{{selectDevices}}", list);
+
+  result.replace("{{tarifGaz}}", String(ConfigGeneral.tarifGaz));
+  result.replace("{{coeffGaz}}", String(ConfigGeneral.coeffGaz));
+  result.replace("{{unitGaz}}", String(ConfigGeneral.unitGaz));
+
+  request->send(200, "text/html", result);
+}
+
+void handleConfigWater(AsyncWebServerRequest *request)
+{
+  String result,list;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_WATER);
+  result += FPSTR(HTTP_FOOTER);
+  result += F("</html>");
+
+  result = getMenuGeneral(result, "water");
+
+  result.replace("{{FormattedDate}}", FormattedDate);
+
+  list="<Select name='waterDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  String str = "";
+  File root = LittleFS.open("/db");
+  File file = root.openNextFile();
+  while (file)
+  {
+    String tmp = file.name();
+    String mac = tmp.substring(0, 16);
+    if (tmp.substring(16) == ".json")
+    {
+      String model;
+      model = GetModel(file.name());
+      if (model == "ZiPulses")
+      { 
+        list += F("<OPTION value='");
+        list += mac;
+        list += F("' ");
+        if (strcmp(mac.c_str(),ConfigGeneral.Water)==0)
+        {
+          list +="Selected";
+        }
+        list += F(">");
+        list += F("ZiPulses (");
+        list += mac;
+        list += F(")");
+        list += F("</OPTION>");
+      }
+    }
+    file = root.openNextFile();
+  }
+  file.close();
+  list +="</select>";
+
+  result.replace("{{selectDevices}}", list);
+
+  result.replace("{{tarifWater}}", String(ConfigGeneral.tarifWater));
+  result.replace("{{coeffWater}}", String(ConfigGeneral.coeffWater));
+  result.replace("{{unitWater}}", String(ConfigGeneral.unitWater));
+  request->send(200, "text/html", result);
+}
+
 void handleConfigNotification(AsyncWebServerRequest *request)
 {
   String result;
@@ -1579,13 +2650,7 @@ void handleConfigNotification(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result.replace("{{menu_config}}", FPSTR(HTTP_CONFIG_MENU));
-  result.replace("{{menu_config_general}}", "");
-  result.replace("{{menu_config_horloge}}", "");
-  result.replace("{{menu_config_linky}}", "");
-  result.replace("{{menu_config_http}}", "");
-  result.replace("{{menu_config_mqtt}}", "");
-  result.replace("{{menu_config_notif}}", "disabled");
+  result = getMenuGeneral(result, "notif");
 
   result.replace("{{FormattedDate}}", FormattedDate);
   if (ConfigSettings.enableNotif)
@@ -1673,8 +2738,26 @@ void handleLogs(AsyncWebServerRequest *request)
 
 void handleTools(AsyncWebServerRequest *request)
 {
-  String result;
 
+  
+ /* AsyncWebServerResponse *response = request->beginChunkedResponse("text/plain",[](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+    
+    String result; 
+    result = F("<html>");
+    result += FPSTR(HTTP_HEADER);
+    result += FPSTR(HTTP_MENU);
+    result.replace("{{FormattedDate}}", FormattedDate);
+    result += FPSTR(HTTP_TOOLS);
+    result += FPSTR(HTTP_FOOTER);
+    result += F("</html>");
+    memcpy(buffer,result.c_str(),result.length());
+
+    return result.length();
+  });
+  request->send(response);*/
+
+  /*String result;
+  
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
@@ -1683,7 +2766,30 @@ void handleTools(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  request->send(200, F("text/html"), result);
+  request->send(200, F("text/html"), result);*/
+  
+  
+  String result;
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  response->print(result);
+  result = FPSTR(HTTP_TOOLS);
+  result += FPSTR(HTTP_FOOTER);
+  result += F("</html>");
+  response->print(result);
+  request->send(response);
+
+  /*AsyncWebServerResponse* response = request->beginChunkedResponse(contentType,
+                                       [](uint8_t* buffer, size_t maxLen, size_t index) -> size_t 
+    {
+
+    });
+
+  request->send(response);*/
+
 }
 
 void hard_restart()
@@ -1713,35 +2819,309 @@ void handleReboot(AsyncWebServerRequest *request)
   hard_restart();
 }
 
-void handleUpdate(AsyncWebServerRequest *request)
+size_t content_len;
+#define U_PART U_SPIFFS
+
+void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+  if (!index){
+    Serial.println("Update");
+    content_len = request->contentLength();
+    // if filename includes spiffs, update the spiffs partition
+    int cmd = (filename.indexOf("spiffs") > -1) ? U_PART : U_FLASH;
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd)) {
+      Update.printError(Serial);
+    }
+  }
+
+  if (Update.write(data, len) != len) {
+    Update.printError(Serial);
+  }
+
+  if (final) {
+    AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "Please wait while the device reboots");
+    response->addHeader("Refresh", "20");  
+    response->addHeader("Location", "/");
+    request->send(response);
+    if (!Update.end(true)){
+      Update.printError(Serial);
+    } else {
+      Serial.println("Update complete");
+      Serial.flush();
+      ESP.restart();
+    }
+  }
+}
+
+void printProgress(size_t prg, size_t sz) {
+  Serial.printf("Progress: %d%%\n", (prg*100)/content_len);
+}
+
+void handleDoRestore(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+  String logmessage="";
+  if (!index){
+    DEBUG_PRINTLN(F("Restore start..."));
+    request->_tempFile = LittleFS.open("/rt/" + filename, "w+");
+  }
+
+  if (len) {
+    // stream the incoming chunk to the opened file
+    request->_tempFile.write(data, len);
+    
+    logmessage = "Writing file: " + String(filename) + " index=" + String(index) + " len=" + String(len);
+    DEBUG_PRINTLN(logmessage);
+  }
+
+  if (final) {
+    // close the file handle as the upload is now done
+    logmessage = "Upload Complete: " + String(filename) + ",size: " + String(index + len);
+    request->_tempFile.close();
+    DEBUG_PRINTLN(logmessage);
+
+    mtar_t tar;
+    mtar_header_t h;
+    char *p;
+
+    /* Open archive for reading */
+    String path = "/rt/"+filename;
+    DEBUG_PRINTLN(path);
+    int err;
+    err = mtar_open(&tar, path.c_str(), "r");
+    DEBUG_PRINTLN(mtar_strerror(err));
+
+    while ( (err=mtar_read_header(&tar, &h)) != MTAR_ENULLRECORD ) {
+      DEBUG_PRINTLN(mtar_strerror(err));
+      
+      mtar_find(&tar, h.name, &h);
+      p = (char *)calloc(1, h.size + 1);
+      mtar_read_data(&tar, p, h.size);
+      
+      String path = "/";
+      path +=h.name;
+
+      File file = LittleFS.open(path.c_str(),"w");
+      file.print(p);
+      free(p);
+      file.close();
+      mtar_next(&tar);
+    }
+
+    /* Close archive */
+    mtar_close(&tar);
+    request->redirect("/backup");
+  }
+}
+
+void handleToolCreateBackup(AsyncWebServerRequest *request)
 {
-  String result;
+
+  mtar_t tar;
+  int error;
+  error = mtar_open(&tar, "/bk/backup.tar", "w");
+  DEBUG_PRINTLN(mtar_strerror(error));
+
+  //backup database
+  File root = LittleFS.open("/db");
+  File file = root.openNextFile();
+
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = F("db/");
+      tmp += file.name();
+      DEBUG_PRINT("mtar_write_file_header : ");
+      DEBUG_PRINTLN(tmp.c_str());
+      error = mtar_write_file_header(&tar, tmp.c_str(), file.size());
+      DEBUG_PRINTLN(mtar_strerror(error));
+      String buff="";
+      while (file.available())
+      { 
+        buff+=(char)file.read();
+      }
+      DEBUG_PRINT("mtar_write_data : ");
+      error = mtar_write_data(&tar, buff.c_str(), strlen(buff.c_str()));
+      DEBUG_PRINTLN(mtar_strerror(error));
+      file.close(); 
+    }
+    file = root.openNextFile();
+  }
+  
+  root.close();
+  file.close();
+
+  //backup config
+  root = LittleFS.open("/config");
+  file = root.openNextFile();
+
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = F("config/");
+      tmp += file.name();
+      DEBUG_PRINT("mtar_write_file_header : ");
+      DEBUG_PRINTLN(tmp.c_str());
+      error = mtar_write_file_header(&tar, tmp.c_str(), file.size());
+      DEBUG_PRINTLN(mtar_strerror(error));
+      String buff="";
+      while (file.available())
+      { 
+        buff+=(char)file.read();
+      }
+      DEBUG_PRINT("mtar_write_data : ");
+      error = mtar_write_data(&tar, buff.c_str(), strlen(buff.c_str()));
+      DEBUG_PRINTLN(mtar_strerror(error));
+      file.close(); 
+    }
+    file = root.openNextFile();
+  }
+  
+  root.close();
+  file.close();
+
+  //backup debug
+  root = LittleFS.open("/debug");
+  file = root.openNextFile();
+
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = F("debug/");
+      tmp += file.name();
+      DEBUG_PRINT("mtar_write_file_header : ");
+      DEBUG_PRINTLN(tmp.c_str());
+      error = mtar_write_file_header(&tar, tmp.c_str(), file.size());
+      DEBUG_PRINTLN(mtar_strerror(error));
+      String buff="";
+      while (file.available())
+      { 
+        buff+=(char)file.read();
+      }
+      DEBUG_PRINT("mtar_write_data : ");
+      error = mtar_write_data(&tar, buff.c_str(), strlen(buff.c_str()));
+      DEBUG_PRINTLN(mtar_strerror(error));
+      file.close(); 
+    }
+    file = root.openNextFile();
+  }
+  
+  root.close();
+  file.close();
+
+  //backup template
+  root = LittleFS.open("/tp");
+  file = root.openNextFile();
+
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = F("tp/");
+      tmp += file.name();
+      DEBUG_PRINT("mtar_write_file_header : ");
+      DEBUG_PRINTLN(tmp.c_str());
+      error = mtar_write_file_header(&tar, tmp.c_str(), file.size());
+      DEBUG_PRINTLN(mtar_strerror(error));
+      String buff="";
+      while (file.available())
+      { 
+        buff+=(char)file.read();
+      }
+      DEBUG_PRINT("mtar_write_data : ");
+      error = mtar_write_data(&tar, buff.c_str(), strlen(buff.c_str()));
+      DEBUG_PRINTLN(mtar_strerror(error));
+      file.close(); 
+    }
+    file = root.openNextFile();
+  }
+  
+  root.close();
+  file.close();
+
+  error =mtar_finalize(&tar);
+  DEBUG_PRINTLN(mtar_strerror(error));
+  error =mtar_close(&tar);
+  DEBUG_PRINTLN(mtar_strerror(error));
+
+ 
+  root = LittleFS.open("/bk");
+  file = root.openNextFile();
+
+  String listFiles="";
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = file.name();
+      // tmp = tmp.substring(10);
+      listFiles += F("<li><a href='web/");
+      listFiles += tmp;
+      listFiles += F("'>");
+      listFiles += tmp;
+      listFiles += F(" ( ");
+      listFiles += file.size();
+      listFiles += F(" o)</a></li>");
+    }
+    file = root.openNextFile();
+  }
+  root.close();
+  file.close();
+  request->send(200, F("text/html"), listFiles);
+
+
+}
+
+void handleToolBackup(AsyncWebServerRequest *request)
+{
+  String result, listFiles;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Update ...</h1>");
-  result += F("<div class='btn-group-vertical'>");
-  result += F("<a href='/setchipid' class='btn btn-primary mb-2'>setChipId</button>");
-  result += F("<a href='/setmodeprod' class='btn btn-primary mb-2'>setModeProd</button>");
-  result += F("</div>");
+  result += FPSTR(HTTP_BACKUP);
+  File root = LittleFS.open("/rt");
+  File file = root.openNextFile();
 
-  result = result + F("</body>");
+  listFiles="";
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = file.name();
+      listFiles += F("<li><a href='web/");
+      listFiles += tmp;
+      listFiles += F("'>");
+      listFiles += tmp;
+      listFiles += F(" ( ");
+      listFiles += file.size();
+      listFiles += F(" o)</a></li>");
+    }
+    file = root.openNextFile();
+  }
+  root.close();
+  file.close();
+  result.replace("{{listBackupFiles}}", listFiles);
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
+
   request->send(200, F("text/html"), result);
 }
 
-void handleSetchipid(AsyncWebServerRequest *request)
+void handleToolUpdate(AsyncWebServerRequest *request)
 {
-  check_chip_id();
-  request->send(200, F("text/html"), "");
-}
+    String result;
+    result += F("<html>");
+    result += FPSTR(HTTP_HEADER);
+    result += FPSTR(HTTP_MENU);
+    result.replace("{{FormattedDate}}", FormattedDate);
+    
+    result += FPSTR(HTTP_UPDATE);
+    result += FPSTR(HTTP_FOOTER);
+    result.replace("{{linkFirmware}}", UPD_FILE);
+    result += F("</html>");
 
-void handleSetmodeprod(AsyncWebServerRequest *request)
-{
-  setProdMode();
-  request->send(200, F("text/html"), "");
+    request->send(200, F("text/html"), result);
 }
 
 void handleConfigFiles(AsyncWebServerRequest *request)
@@ -1788,8 +3168,68 @@ void handleConfigFiles(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' class='btn btn-warning mb-2'>Save</button>");
+  result += F("<button type='submit' value='save' name='action' class='btn btn-warning mb-2'>Save</button>");
+   result += F("</div>");
+
+  result += F("</Form>");
   result += F("</div>");
+  result += F("</div>");
+  result += F("</body>");
+  result += FPSTR(HTTP_FOOTER);
+  result += F("</html>");
+  file.close();
+  root.close();
+  request->send(200, F("text/html"), result);
+}
+
+void handleDebugFiles(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result += F("<h1>Debug files</h1>");
+  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
+  result += F("      <div class='navbar-header'>");
+  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
+  result += F("      </div>");
+  result += F("<ul class='nav navbar-nav'>");
+
+  String str = "";
+  File root = LittleFS.open("/debug");
+  File file = root.openNextFile();
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = file.name();
+      // tmp = tmp.substring(10);
+      result += F("<li><a href='#' onClick=\"readfile('");
+      result += tmp;
+      result += F("','debug');document.getElementById('actions').style.display='block';\">");
+      result += tmp;
+      result += F(" ( ");
+      result += file.size();
+      result += F(" o)</a></li>");
+    }
+    file = root.openNextFile();
+  }
+  result += F("</ul></nav>");
+  result += F("<div class='container-fluid' >");
+  result += F("  <div class='app-main-content'>");
+  result += F("<form method='POST' action='saveDebug'>");
+  result += F("<div class='form-group'>");
+  result += F(" <label for='file'>File : <span id='title'></span></label>");
+  result += F("<input type='hidden' name='filename' id='filename' value=''>");
+  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
+  result += F("</textarea>");
+  result += F("</div>");
+  result += F("<div id='actions' style='display:none;'>");
+  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete</button>");
+  result += F("</div>");
+  result += F("<button type='submit' class='btn btn-danger mb-2' name='deleteAll' value='deleteAll' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete ALL</button>");
+
   result += F("</Form>");
   result += F("</div>");
   result += F("</div>");
@@ -1816,7 +3256,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   result += F("<ul class='nav navbar-nav'>");
 
   String str = "";
-  File root = LittleFS.open("/database");
+  File root = LittleFS.open("/db");
   File file = root.openNextFile();
   while (file)
   {
@@ -1826,7 +3266,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
       // tmp = tmp.substring(10);
       result += F("<li><a href='#' onClick=\"readfile('");
       result += tmp;
-      result += F("','database');document.getElementById('actions').style.display='block';\">");
+      result += F("','db');document.getElementById('actions').style.display='block';\">");
       result += tmp;
       result += F(" ( ");
       result += file.size();
@@ -1886,7 +3326,7 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += F("<ul class='nav navbar-nav'>");
 
   String str = "";
-  File root = LittleFS.open("/templates");
+  File root = LittleFS.open("/tp");
   File file = root.openNextFile();
   while (file)
   {
@@ -1896,7 +3336,7 @@ void handleTemplates(AsyncWebServerRequest *request)
       // tmp = tmp.substring(11);
       result += F("<li><a href='#' onClick=\"readfile('");
       result += tmp;
-      result += F("','templates');document.getElementById('actions').style.display = 'block';\">");
+      result += F("','tp');document.getElementById('actions').style.display = 'block';\">");
       result += tmp;
       result += F(" ( ");
       result += file.size();
@@ -1940,7 +3380,7 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
   {
     uint8_t i = 0;
 
-    String filename = "/templates/" + request->arg(i);
+    String filename = "/tp/" + request->arg(i);
     String content = request->arg(1);
     String action = request->arg(2);
 
@@ -1952,7 +3392,7 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
         DEBUG_PRINT(F("Failed to open file for reading\r\n"));
         return;
       }
-
+      
       int bytesWritten = file.print(content);
 
       if (bytesWritten > 0)
@@ -1972,7 +3412,7 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
       LittleFS.remove(filename);
     }
     AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/templates"));
+    response->addHeader(F("Location"), F("/tp"));
     request->send(response);
   }
 }
@@ -2085,6 +3525,44 @@ void handleSaveJavascript(AsyncWebServerRequest *request)
   }
 }
 
+
+void handleSaveDebug(AsyncWebServerRequest *request)
+{
+  if (request->method() != HTTP_POST)
+  {
+    request->send(405, F("text/plain"), F("Method Not Allowed"));
+  }
+  else
+  {
+    uint8_t i = 0;
+    String filename = "/debug/" + request->arg(i);
+    String content = request->arg(1);
+    String action = request->arg(2);
+    if (action == "delete")
+    {
+      LittleFS.remove(filename);
+    }else if (action == "deleteAll")
+    {
+      String str = "";
+      File root = LittleFS.open("/debug");
+      File file = root.openNextFile();
+      while (file)
+      {
+          if (!file.isDirectory())
+          {
+            String tmp = file.name();
+            file.close();
+            LittleFS.remove("/debug/"+tmp);
+          }
+          file = root.openNextFile();
+      }
+    }
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), F("/debugFiles"));
+    request->send(response);
+  }
+}
+
 void handleSaveConfig(AsyncWebServerRequest *request)
 {
   if (request->method() != HTTP_POST)
@@ -2096,47 +3574,10 @@ void handleSaveConfig(AsyncWebServerRequest *request)
     uint8_t i = 0;
     String filename = "/config/" + request->arg(i);
     String content = request->arg(1);
-    File file = LittleFS.open(filename, "w+");
-    if (!file || file.isDirectory())
-    {
-      DEBUG_PRINT(F("Failed to open file for reading\r\n"));
-      return;
-    }
-
-    int bytesWritten = file.print(content);
-
-    if (bytesWritten > 0)
-    {
-      DEBUG_PRINTLN(F("File was written"));
-      DEBUG_PRINTLN(bytesWritten);
-    }
-    else
-    {
-      DEBUG_PRINTLN(F("File write failed"));
-    }
-
-    file.close();
-    AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/configFiles"));
-    request->send(response);
-  }
-}
-void handleSaveDatabase(AsyncWebServerRequest *request)
-{
-  if (request->method() != HTTP_POST)
-  {
-    request->send(405, F("text/plain"), F("Method Not Allowed"));
-  }
-  else
-  {
-    uint8_t i = 0;
-    String filename = "/database/" + request->arg(i);
-    String content = request->arg(1);
     String action = request->arg(2);
-
     if (action == "save")
     {
-      File file = LittleFS.open(filename, "w");
+      File file = LittleFS.open(filename, "w+");
       if (!file || file.isDirectory())
       {
         DEBUG_PRINT(F("Failed to open file for reading\r\n"));
@@ -2153,6 +3594,49 @@ void handleSaveDatabase(AsyncWebServerRequest *request)
       else
       {
         DEBUG_PRINTLN(F("File write failed"));
+      }
+
+      file.close();
+    }
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), F("/configFiles"));
+    request->send(response);
+  }
+}
+void handleSaveDatabase(AsyncWebServerRequest *request)
+{
+  if (request->method() != HTTP_POST)
+  {
+    request->send(405, F("text/plain"), F("Method Not Allowed"));
+  }
+  else
+  {
+    uint8_t i = 0;
+    String filename = "/db/" + request->arg(i);
+    String content = request->arg(1);
+    String action = request->arg(2);
+
+    if (action == "save")
+    {
+      File file = LittleFS.open(filename, "w+");
+      if (!file || file.isDirectory())
+      {
+        DEBUG_PRINT(F("Failed to open file for reading\r\n"));
+        return;
+      }
+
+      int bytesWritten = file.print(content);
+
+      if (bytesWritten > 0)
+      {
+        DEBUG_PRINT(F("File was written : "));
+        DEBUG_PRINTLN(bytesWritten);
+      }
+      else
+      {
+        DEBUG_PRINT(F("File write failed : "));
+        DEBUG_PRINTLN(filename);
+        
       }
 
       file.close();
@@ -2183,7 +3667,6 @@ void handleReadfile(AsyncWebServerRequest *request)
 
   while (file.available())
   {
-
     result += (char)file.read();
   }
   file.close();
@@ -2197,33 +3680,29 @@ void handleLogBuffer(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
-void handleScanNetwork(AsyncWebServerRequest *request)
+void handleScanNetwork(AsyncWebServerRequest * request)
 {
-  String result = "";
-  int n = WiFi.scanNetworks();
-
-  if (n == 0)
-  {
-    result = " <label for='ssid'>SSID</label>";
-    result += "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}'> <a onclick='scanNetwork();' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>";
-  }
-  else
-  {
-
-    result = "<select name='WIFISSID' onChange='updateSSID(this.value);'>";
-    result += "<OPTION value=''>--Choose SSID--</OPTION>";
-    for (int i = 0; i < n; ++i)
-    {
-      result += "<OPTION value='";
-      result += WiFi.SSID(i);
-      result += "'>";
-      result += WiFi.SSID(i) + " (" + WiFi.RSSI(i) + ")";
-      result += "</OPTION>";
-    }
-    result += "</select>";
-  }
-  request->send(200, F("text/html"), result);
+   String result="";
+   int n = WiFi.scanNetworks();
+   if (n == 0) {
+      result = " <label for='ssid'>SSID</label>";
+      result += "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}'> <a onclick='scanNetwork();' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>";
+    } else {
+      
+       result = "<select name='WIFISSID' onChange='updateSSID(this.value);'>";
+       result += "<OPTION value=''>--Choose SSID--</OPTION>";
+       for (int i = 0; i < n; ++i) {
+            result += "<OPTION value='";
+            result +=WiFi.SSID(i);
+            result +="'>";
+            result +=WiFi.SSID(i)+" ("+WiFi.RSSI(i)+")";
+            result+="</OPTION>";
+        }
+        result += "</select>";
+    }  
+    request->send(200, F("text/html"), String(n)+"|"+result);
 }
+
 void handleClearConsole(AsyncWebServerRequest *request)
 {
   logClear();
@@ -2433,6 +3912,12 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
 {
 
   String path = "configGeneral.json";
+
+  if (request->arg("linkyDevice") != "")
+  {
+    strlcpy(ConfigGeneral.ZLinky, request->arg("linkyDevice").c_str(), sizeof(ConfigGeneral.ZLinky));
+    config_write(path, "ZLinky", String(request->arg("linkyDevice")));
+  }
   if (request->arg("tarifAbo").toFloat() >= 0)
   {
     // ConfigGeneral.tarifAbo = request->arg("tarifAbo");
@@ -2519,6 +4004,68 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
   request->send(response);
 }
 
+void handleSaveConfigGaz(AsyncWebServerRequest *request)
+{
+
+  String path = "configGeneral.json";
+
+  strlcpy(ConfigGeneral.Gaz, request->arg("gazDevice").c_str(), sizeof(ConfigGeneral.Gaz));
+  config_write(path, "Gaz", String(request->arg("gazDevice")));
+
+  if (request->arg("tarifGaz").toFloat() >= 0)
+  {
+    strlcpy(ConfigGeneral.tarifGaz, request->arg("tarifGaz").c_str(), sizeof(ConfigGeneral.tarifGaz));
+    config_write(path, "tarifGaz", String(request->arg("tarifGaz")));
+  }
+
+  if (request->arg("coeffGaz").toFloat() >= 0)
+  {
+    ConfigGeneral.coeffGaz= request->arg("coeffGaz").toFloat();
+    config_write(path, "coeffGaz", String(request->arg("coeffGaz")));
+  }
+
+  if (request->arg("unitGaz") != "")
+  {
+    strlcpy(ConfigGeneral.unitGaz, request->arg("unitGaz").c_str(), sizeof(ConfigGeneral.unitGaz));
+    config_write(path, "unitGaz", String(request->arg("unitGaz")));
+  }
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configGaz"));
+  request->send(response);
+}
+
+void handleSaveConfigWater(AsyncWebServerRequest *request)
+{
+
+  String path = "configGeneral.json";
+
+  strlcpy(ConfigGeneral.Water, request->arg("waterDevice").c_str(), sizeof(ConfigGeneral.Water));
+  config_write(path, "Water", String(request->arg("waterDevice")));
+
+  if (request->arg("tarifWater").toFloat() >= 0)
+  {
+    strlcpy(ConfigGeneral.tarifWater, request->arg("tarifWater").c_str(), sizeof(ConfigGeneral.tarifWater));
+    config_write(path, "tarifWater", String(request->arg("tarifWater")));
+  }
+
+  if (request->arg("coeffWater").toFloat() >= 0)
+  {
+    ConfigGeneral.coeffWater= request->arg("coeffWater").toFloat();
+    config_write(path, "coeffWater", String(request->arg("coeffWater")));
+  }
+
+  if (request->arg("unitWater") != "")
+  {
+    strlcpy(ConfigGeneral.unitWater, request->arg("unitWater").c_str(), sizeof(ConfigGeneral.unitWater));
+    config_write(path, "unitWater", String(request->arg("unitWater")));
+  }
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configWater"));
+  request->send(response);
+}
+
 void handleSaveConfigMQTT(AsyncWebServerRequest *request)
 {
 
@@ -2559,8 +4106,61 @@ void handleSaveConfigMQTT(AsyncWebServerRequest *request)
     config_write(path, "passMQTT", String(request->arg("passMQTT")));
   }
 
+  if (request->arg("headerMQTT"))
+  {
+    strlcpy(ConfigGeneral.headerMQTT, request->arg("headerMQTT").c_str(), sizeof(ConfigGeneral.headerMQTT));
+    config_write(path, "headerMQTT", String(request->arg("headerMQTT")));
+  }
+  
+  //MQTT connection process
+  if (ConfigSettings.enableMqtt)
+  {
+    mqttClient.disconnect();
+    mqttClient.setServer(parse_ip_address(ConfigGeneral.servMQTT), atoi(ConfigGeneral.portMQTT));
+    if (String(ConfigGeneral.userMQTT) !="")
+    {
+      mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
+    }
+    mqttClient.connect();
+  }else{
+    mqttClient.disconnect();
+  }
+  
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configMQTT"));
+  request->send(response);
+}
+
+void handleSaveConfigHTTP(AsyncWebServerRequest *request)
+{
+
+  String path = "configGeneral.json";
+  String enableHTTP;
+  if (request->arg("enableSecureHttp") == "on")
+  {
+    enableHTTP = "1";
+    ConfigSettings.enableSecureHttp = true;
+  }
+  else
+  {
+    enableHTTP = "0";
+    ConfigSettings.enableSecureHttp = false;
+  }
+  config_write(path, "enableSecureHttp", enableHTTP);
+  if (request->arg("userHTTP"))
+  {
+    strlcpy(ConfigGeneral.userHTTP, request->arg("userHTTP").c_str(), sizeof(ConfigGeneral.userHTTP));
+    config_write(path, "userHTTP", String(request->arg("userHTTP")));
+  }
+
+  if (request->arg("passHTTP"))
+  {
+    strlcpy(ConfigGeneral.passHTTP, request->arg("passHTTP").c_str(), sizeof(ConfigGeneral.passHTTP));
+    config_write(path, "passHTTP", String(request->arg("passHTTP")));
+  }
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configHTTP"));
   request->send(response);
 }
 
@@ -2716,7 +4316,7 @@ void handleConfigDevices(AsyncWebServerRequest *request)
 {
   String result;
 
-  result += F("<html>");
+  result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -2729,8 +4329,9 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   result += F("<div class='row'>");
 
   String str = "";
-  File root = LittleFS.open("/database");
+  File root = LittleFS.open("/db");
   File file = root.openNextFile();
+  int i=0;
   while (file)
   {
     String tmp = file.name();
@@ -2741,6 +4342,7 @@ void handleConfigDevices(AsyncWebServerRequest *request)
       result += tmp.substring(0, 16);
       result += F("</div>");
       result += F("<div class='card-body'>");
+      
       result += F("<strong>Manufacturer: </strong>");
       String manufacturer;
       manufacturer = GetManufacturer(file.name());
@@ -2750,14 +4352,14 @@ void handleConfigDevices(AsyncWebServerRequest *request)
       model = GetModel(file.name());
       result += model;
       result += F("<br><strong>Short Address: </strong>");
-      char SAddr[4];
+      char SAddr[5];
       int ShortAddr = GetShortAddr(file.name());
-      sprintf(SAddr, "%04X", ShortAddr);
+      snprintf(SAddr,5, "%04X", ShortAddr);
       result += SAddr;
       result += F("<br><strong>Device Id: </strong>");
-      char devId[4];
+      char devId[5];
       int DeviceId = GetDeviceId(file.name());
-      sprintf(devId, "%04X", DeviceId);
+      snprintf(devId,5, "%04X", DeviceId);
       result += devId;
       result += F("<br><strong>Soft Version: </strong>");
       String SoftVer = GetSoftwareVersion(file.name());
@@ -2765,67 +4367,44 @@ void handleConfigDevices(AsyncWebServerRequest *request)
       result += F("<br><strong>Last seen: </strong>");
       String lastseen = GetLastSeen(file.name());
       result += lastseen;
+      result += F("<br><strong>LQI: </strong>");
+      result += GetLQI(file.name());
+      
+     
+      // Paramétrages
+      result += F("<div>");
 
-      // Get status and action from json
-
-      if (TemplateExist(DeviceId))
-      {
-        Template t;
-        t = GetTemplate(DeviceId, model);
-        // toutes les propiétés
-        result += F("<div id='status_");
-        result += (String)ShortAddr;
-        result += F("'>");
-
-        for (int i = 0; i < t.StateSize; i++)
+        if (ConfigSettings.enableMqtt)
         {
-
-          result += t.e[i].name;
-          result += " : ";
-          result += GetValueStatus(file.name(), t.e[i].cluster, t.e[i].attribute, (String)t.e[i].type, t.e[i].coefficient, (String)t.e[i].unit);
-          result += F("<br>");
-        }
-        result += F("</div>");
-        result += F("<div id='action_");
-        result += (String)ShortAddr;
-        result += F("'>");
-        // toutes les actions
-        for (int i = 0; i < t.ActionSize; i++)
-        {
-
-          result += F("<button onclick=\"ZigbeeAction(");
+          result += F("<button onclick=\"sendMqttDiscover('");
           result += ShortAddr;
-          result += ",";
-          result += t.a[i].command;
-          result += ",";
-          result += t.a[i].value;
-          result += ");\" class='btn btn-primary mb-2'>";
-          result += t.a[i].name;
+          result += "');\" class='btn btn-warning mb-2'>";
+          result += "MQTT Discover";
           result += F("</button>");
         }
-        result += F("</div>");
-        // Paramétrages
-        result += F("<div>");
+
         result += F("<button onclick=\"ZigbeeSendRequest(");
         result += ShortAddr;
         result += ",";
         result += "0,5";
         result += ");\" class='btn btn-warning mb-2'>";
-        result += "Config";
+        result += "Reinit";
         result += F("</button>");
-
-        result += F("</div>");
-      }
-      result += F("<button onclick=\"deleteDevice('");
-      result += ShortAddr;
-      result += "');\" class='btn btn-danger mb-2'>";
-      result += "Delete";
-      result += F("</button>");
+      
+        result += F("<button onclick=\"deleteDevice('");
+        result += ShortAddr;
+        result += "');\" class='btn btn-danger mb-2'>";
+        result += "Delete";
+        result += F("</button>");
+      result += F("</div>");
       result += F("</div></div></div>");
+      
     }
-
+    
+    i++;
     file = root.openNextFile();
   }
+  result += F("</div>");
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
   file.close();
@@ -2965,21 +4544,46 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
   int i = 0;
   IEEE = request->arg(i);
   Attribute = request->arg(1);
-  result = getPowerDatas(IEEE, "power", Attribute, "minute");
+  
+  //result = getPowerDatas(IEEE, "power", Attribute, "minute");
+ 
+  //request->send(200, F("application/json"), result);
 
-  request->send(200, F("application/json"), result);
+
+
+  //request->send(LittleFS, "/db/"+Attribute+"_"+IEEE+".json", "application/json");
+  request->send(LittleFS, "/db/pwr_"+IEEE+".json", "application/json");
+
+  /*String path = "/db/"+Attribute+"_"+IEEE+".json";
+  File DeviceFile = LittleFS.open(path, FILE_READ);
+  if (!DeviceFile|| DeviceFile.isDirectory()) {
+    DEBUG_PRINTLN(F("failed open"));
+  }else
+  {
+    AsyncResponseStream *response = request->beginResponseStream("application/json",[](uint8_t *buffer, size_t maxLen, size_t index)->size_t {
+      while (DeviceFile.available()) {
+        response->print(DeviceFile.read());
+      }  
+      DeviceFile.close();
+    });
+    request->send(response);
+  }*/
+
+ 
 }
+
+
 
 void handleLoadEnergyChart(AsyncWebServerRequest *request)
 {
 
-  String IEEE, result, time;
+  String IEEE, result, type, time;
   String sep = "";
   int i = 0;
   IEEE = request->arg(i);
   time = request->arg(1);
-
-  String path = "/database/energy_" + IEEE + ".json";
+  
+  String path = "/db/nrg_" + IEEE + ".json";
 
   File DeviceFile = LittleFS.open(path, FILE_READ);
   if (!DeviceFile || DeviceFile.isDirectory())
@@ -2988,17 +4592,48 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
   }
   else
   {
-    DynamicJsonDocument temp(MAXHEAP / 2);
-    deserializeJson(temp, DeviceFile);
-    JsonObject root = temp.as<JsonObject>();
-    DeviceFile.close();
+    JsonObject root;
+    if (time == "hour")
+    {
+      StaticJsonDocument<32> filter;
+      filter["hours"]["graph"] = true;
+      DynamicJsonDocument temp(MAXHEAP /2);
+      DeserializationError error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
+      root = temp["hours"]["graph"];    
 
+    }else if (time == "day")
+    {
+      
+      StaticJsonDocument<32> filter;
+      filter["days"]["graph"] = true;
+      DynamicJsonDocument temp(MAXHEAP /2);
+      DeserializationError error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
+      root = temp["days"]["graph"]; 
+    }else if (time == "month")
+    {
+      StaticJsonDocument<32> filter;
+      filter["months"]["graph"] = true;
+      DynamicJsonDocument temp(MAXHEAP /2);
+      DeserializationError error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
+      root = temp["months"]["graph"]; 
+      
+    }else if (time == "year")
+    {
+      StaticJsonDocument<32> filter;
+      filter["years"]["graph"] = true;
+      DynamicJsonDocument temp(MAXHEAP /2);
+      DeserializationError error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
+      root = temp["years"]["graph"]; 
+    }
+
+    DeviceFile.close();
+    int cntsection;
+    int arrayLength = sizeof(section) / sizeof(section[0]);
     result = F("[");
 
     if (time == "hour")
     {
       int now = Hour.toInt();
-
       int i = 0;
       while (i < 24)
       {
@@ -3012,33 +4647,44 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
           now = 0;
         }
         String tmpi = now < 10 ? "0" + String(now) : String(now);
-        result += sep + F("{\"y\":\"") + tmpi + F("H\",");
+        result += sep + F("{\"y\":\"") + tmpi + F("H\"");
         int j = 0;
         String sep2 = "";
-        for (JsonPair kv : root)
+        
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
         {
-          if (j > 0)
-          {
-            sep2 = ",";
+          if (root[tmpi][section[cntsection]].as<int>() !=0)
+          { 
+            if (j > 0)
+            {
+              sep2 = ",";
+            }else{
+              result += ",";
+            }
+            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[tmpi][section[cntsection]].as<String>();
+            j++;
           }
-          result += sep2 + "\"" + String(kv.key().c_str()) + "\":" + root[kv.key().c_str()][time]["graph"][tmpi].as<String>();
-          j++;
         }
         result += F("}");
         i++;
       }
-    }
-    else if (time == "day")
+    }else if (time == "day")
     {
       int now = Day.toInt();
       int reste = 30 - now;
-      int lastNbDayMonth,firstDay;
-      if (reste>0)
+      int lastNbDayMonth;
+      String  m;
+      if (Month.toInt()-2>0)
       {
         lastNbDayMonth=maxDayOfTheMonth[(Month.toInt()-2)];
-        now = (lastNbDayMonth - reste)+1;
+      }else{
+        lastNbDayMonth=31;
+      }
+      if (reste>0)
+      {
+        now = (lastNbDayMonth - reste)+1;   
       }else if (reste<0){
-        now=-(reste+1);
+        now=2;
       }else if (reste==0){
         now=reste+1;
       }
@@ -3050,33 +4696,56 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
         {
           sep = ",";
         }
-        
-        if (now > maxDayOfTheMonth[(Month.toInt()-2)])
+
+        if (reste>0)
         {
-          now = 1;
+          if (now > lastNbDayMonth)
+          {
+            now = 1;
+          }
         }
         String tmpi = now < 10 ? "0" + String(now) : String(now);
-        result += sep + F("{\"y\":\"") + tmpi + F("\",");
+        if (i>now)
+        {
+          m = Month;
+        }else{
+          if (reste<=0)
+          {
+            m = Month;
+          }else{
+            if ((Month.toInt()-1)>0)
+            {
+              m = String((Month.toInt()-1));
+            }else{
+              m=12;
+            }
+          }
+        }
+        result += sep + F("{\"y\":\"") + tmpi + F("/")+ m +F("\"");
         int j = 0;
         String sep2 = "";
-        for (JsonPair kv : root)
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
         {
-          if (j > 0)
+          if (root[tmpi][section[cntsection]].as<int>() !=0)
           {
-            sep2 = ",";
+            if (j > 0)
+            {
+              sep2 = ",";
+            }else{
+              result += ",";
+            }
+            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[tmpi][section[cntsection]].as<String>();
+            j++;
           }
-          result += sep2 + "\"" + String(kv.key().c_str()) + "\":" + root[kv.key().c_str()][time]["graph"][tmpi].as<String>();
-          j++;
         }
         result += F("}");
         now++;
         i++;
       }
-    }
-    else if (time == "month")
+    }else if (time == "month")
     {
       int now = Month.toInt();
-
+      String  y;
       int i = 0;
       while (i < 12)
       {
@@ -3084,32 +4753,42 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
         {
           sep = ",";
         }
+        
         now++;
         if (now > 12)
         {
           now = 1;
         }
         String tmpi = now < 10 ? "0" + String(now) : String(now);
-        result += sep + F("{\"y\":\"") + tmpi + F("\",");
+        if (i<now)
+        {
+          y = String((Year.toInt()-1));
+        }else{
+          y = Year;
+        }
+        result += sep + F("{\"y\":\"") + tmpi + F("/")+ y +F("\"");
         int j = 0;
         String sep2 = "";
-        for (JsonPair kv : root)
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
         {
-          if (j > 0)
+          if (root[tmpi][section[cntsection]].as<int>() !=0)
           {
-            sep2 = ",";
+            if (j > 0)
+            {
+              sep2 = ",";
+            }else{
+              result += ",";
+            }
+            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[tmpi][section[cntsection]].as<String>();
+            j++;
           }
-          result += sep2 + "\"" + String(kv.key().c_str()) + "\":" + root[kv.key().c_str()][time]["graph"][tmpi].as<String>();
-          j++;
         }
         result += F("}");
         i++;
       }
-    }
-    else if (time == "year")
+    }else if (time == "year")
     {
       int now = Year.toInt() - 10;
-
       int i = 0;
       while (i < 11)
       {
@@ -3118,17 +4797,22 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
           sep = ",";
         }
 
-        result += sep + F("{\"y\":\"") + String(now) + F("\",");
+        result += sep + F("{\"y\":\"") + String(now) + F("\"");
         int j = 0;
         String sep2 = "";
-        for (JsonPair kv : root)
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
         {
-          if (j > 0)
+          if (root[String(now)][section[cntsection]].as<int>() !=0)
           {
-            sep2 = ",";
+            if (j > 0)
+            {
+              sep2 = ",";
+            }else{
+              result += ",";
+            }
+            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[String(now)][section[cntsection]].as<String>();
+            j++;
           }
-          result += sep2 + "\"" + String(kv.key().c_str()) + "\":" + root[kv.key().c_str()][time]["graph"][String(now)].as<String>();
-          j++;
         }
         result += F("}");
         now++;
@@ -3140,6 +4824,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
 
   request->send(200, F("application/json"), result);
 }
+
 
 void handleLoadTrendEnergyEuros(AsyncWebServerRequest *request)
 {
@@ -3184,6 +4869,83 @@ void handleGetAlert(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void handleSendMqttDiscover(AsyncWebServerRequest *request)
+{
+  String IEEE,ShortAddr, datas, result;
+  int i = 0;
+  ShortAddr = request->arg(i);
+  IEEE = GetMacAdrr(ShortAddr.toInt());
+  IEEE = IEEE.substring(0, 16);
+  String model;
+  model = GetModel(IEEE+".json");
+
+  File DeviceFile = LittleFS.open("/db/"+IEEE+".json" ,"r");
+
+  if (!DeviceFile || DeviceFile.isDirectory())
+  {
+    DEBUG_PRINTLN(F("failed open"));
+  }
+  else
+  {
+    int DeviceId = GetDeviceId(IEEE+".json");
+    if (TemplateExist(DeviceId))
+    {
+      Template *t;
+      t = GetTemplate(DeviceId, model);
+      for (int i = 0; i < t->StateSize; i++)
+      {
+        const char* PROGMEM HA_discovery_msg = "{"
+            "\"name\":\"{{name_prop}}\","
+            "\"unique_id\":\"{{unique_id}}\","
+            "\"device_class\":\"{{device_class}}\","
+            "\"state_class\":\"{{state_class}}\","
+            "\"unit_of_measurement\":\"{{unit}}\","
+            "\"icon\":\"mdi:{{mqtt_icon}}\","
+            "\"state_topic\":\"{{state_topic}}/state\","
+            "\"value_template\":\"{{value}}\","
+            "\"device\": {"
+                "\"name\":\"LiXee-Box_{{device_name}}\","
+                "\"sw_version\":\"2.0\","
+                "\"model\":\"HW V2\","
+                "\"manufacturer\":\"LiXee\","
+                "\"identifiers\":[\"LiXee-Box{{device_name}}\"]"
+            "}"
+        "}";
+        datas = FPSTR(HA_discovery_msg);
+        
+        datas.replace("{{name_prop}}", t->e[i].name);
+        datas.replace("{{unique_id}}", IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
+        datas.replace("{{device_class}}", t->e[i].mqtt_device_class);
+        datas.replace("{{state_class}}", t->e[i].mqtt_state_class);
+        datas.replace("{{mqtt_icon}}", t->e[i].mqtt_icon);
+        datas.replace("{{unit}}", t->e[i].unit);
+        datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
+        if ((String(t->e[i].type)=="numeric") || (String(t->e[i].type)=="float"))
+        {
+          if (t->e[i].coefficient!=1)
+          {
+            datas.replace("{{value}}", "{{ value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+" | float * "+String(t->e[i].coefficient)+"}}");
+          }else{
+            datas.replace("{{value}}", "{{ value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
+          }
+        }else{
+          datas.replace("{{value}}", "{{ value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
+        }
+        datas.replace("{{device_name}}", model+"_"+IEEE);
+        String topic = ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"/config";
+
+        mqttClient.publish(topic.c_str(),1,true,datas.c_str());
+      }
+      // toutes les actions
+    }
+  }
+  DeviceFile.close();
+
+  result="";
+
+  request->send(200, F("text/html"), result);
+}
+
 void handleDeleteDevice(AsyncWebServerRequest *request)
 {
 
@@ -3205,7 +4967,7 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
   SendDeleteDevice(macInt);
 
   // on efface le fichier json
-  String filename = "/database/" + tmpMac + ".json";
+  String filename = "/db/" + tmpMac + ".json";
   int res;
   res = LittleFS.remove(filename);
 
@@ -3233,7 +4995,7 @@ void APIgetDevices(AsyncWebServerRequest *request)
 {
   String result;
 
-  File root = LittleFS.open("/database");
+  File root = LittleFS.open("/db");
   File filedevice = root.openNextFile();
   result = "[";
   int i = 0;
@@ -3241,10 +5003,11 @@ void APIgetDevices(AsyncWebServerRequest *request)
   {
 
     String inifile = filedevice.name();
-    File file = LittleFS.open("/database/" + inifile, FILE_READ);
+    File file = LittleFS.open("/db/" + inifile, FILE_READ);
     if (!file || file.isDirectory())
     {
-      DEBUG_PRINTLN(F("Erreur lors de l'ouverture du fichier ini_read"));
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
+      DEBUG_PRINTLN(inifile);
       file.close();
     }
     size_t filesize = file.size();
@@ -3277,177 +5040,737 @@ void initWebServer()
 
   // serverWeb.on("/", handleRoot);
   serverWeb.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleRoot(request); });
-  serverWeb.on("/dashboard", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleDashboard(request); });
-  serverWeb.on("/statusEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleStatusEnergy(request); });
-  serverWeb.on("/statusNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleStatusNetwork(request); });
-  serverWeb.on("/statusDevices", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleStatusDevices(request); });
-  serverWeb.on("/configGeneral", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigGeneral(request); });
-  serverWeb.on("/configZigbee", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigZigbee(request); });
-  serverWeb.on("/configHorloge", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigHorloge(request); });
-  serverWeb.on("/configLinky", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigLinky(request); });
-  serverWeb.on("/configMQTT", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigMQTT(request); });
-  serverWeb.on("/configNotif", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigNotification(request); });
-  serverWeb.on("/configWiFi", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigWifi(request); });
-  serverWeb.on("/configEthernet", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigEthernet(request); });
-  serverWeb.on("/configDevices", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigDevices(request); });
-
-  serverWeb.on("/saveFileConfig", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveConfig(request); });
-  serverWeb.on("/saveFileTemplates", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveTemplates(request); });
-  serverWeb.on("/saveFileJavascript", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveJavascript(request); });
-  serverWeb.on("/saveFileDatabase", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveDatabase(request); });
-  serverWeb.on("/saveConfigGeneral", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveConfigGeneral(request); });
-  serverWeb.on("/saveConfigHorloge", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveConfigHorloge(request); });
-  serverWeb.on("/saveConfigLinky", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveConfigLinky(request); });
-  serverWeb.on("/saveConfigMQTT", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveConfigMQTT(request); });
-  serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveConfigNotification(request); });
-  serverWeb.on("/saveWifi", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveWifi(request); });
-  serverWeb.on("/saveEther", HTTP_POST, [](AsyncWebServerRequest *request)
-               { handleSaveEther(request); });
-  // serverWeb.on("/tools", handleTools);
-  serverWeb.on("/tools", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleTools(request); });
-  // serverWeb.on("/logs", handleLogs);
-  serverWeb.on("/logs", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLogs(request); });
-  // serverWeb.on("/reboot", handleReboot);
-  serverWeb.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleReboot(request); });
-  // serverWeb.on("/update", handleUpdate);
-  serverWeb.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleUpdate(request); });
-  // serverWeb.on("/readFile", handleReadfile);
-  serverWeb.on("/readFile", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleReadfile(request); });
-
-  // serverWeb.on("/getLogBuffer", handleLogBuffer);
-  serverWeb.on("/getLogBuffer", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLogBuffer(request); });
-  // serverWeb.on("/scanNetwork", handleScanNetwork);
-  serverWeb.on("/scanNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleScanNetwork(request); });
-  // serverWeb.on("/cmdClearConsole", handleClearConsole);
-  serverWeb.on("/cmdClearConsole", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleClearConsole(request); });
-  // serverWeb.on("/cmdGetVersion", handleGetVersion);
-  serverWeb.on("/cmdGetVersion", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleGetVersion(request); });
-  // serverWeb.on("/cmdErasePDM", handleErasePDM);
-  serverWeb.on("/cmdErasePDM", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleErasePDM(request); });
-  serverWeb.on("/cmdStartNwk", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleStartNwk(request); });
-  serverWeb.on("/cmdSetChannelMask", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleSetChannelMask(request); });
-  // serverWeb.on("/cmdPermitJoin", handlePermitJoin);
-  serverWeb.on("/cmdPermitJoin", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handlePermitJoin(request); });
-  // serverWeb.on("/cmdRawMode", handleRawMode);
-  serverWeb.on("/cmdRawMode", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleRawMode(request); });
-  // serverWeb.on("/cmdRawModeOff", handleRawModeOff);
-  serverWeb.on("/cmdRawModeOff", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleRawModeOff(request); });
-  // serverWeb.on("/cmdActiveReq", handleActiveReq);
-  serverWeb.on("/cmdActiveReq", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleActiveReq(request); });
-  // serverWeb.on("/cmdReset", handleReset);
-  serverWeb.on("/cmdReset", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleReset(request); });
-  // serverWeb.on("/setchipid", handleSetchipid);
-  serverWeb.on("/setchipid", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleSetchipid(request); });
-  // serverWeb.on("/setmodeprod", handleSetmodeprod);
-  serverWeb.on("/setmodeprod", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleSetmodeprod(request); });
-  // serverWeb.on("/fsbrowser", handleFSbrowser);
-  serverWeb.on("/configFiles", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleConfigFiles(request); });
-  serverWeb.on("/fsbrowser", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleFSbrowser(request); });
-  serverWeb.on("/templates", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleTemplates(request); });
-  serverWeb.on("/javascript", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleJavascript(request); });
-  serverWeb.on("/createTemplate", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleCreateTemplate(request); });
-  serverWeb.on("/ZigbeeAction", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleZigbeeAction(request); });
-  serverWeb.on("/ZigbeeSendRequest", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleZigbeeSendRequest(request); });
-  serverWeb.on("/loadLinkyDatas", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadLinkyDatas(request); });
-  serverWeb.on("/loadGaugeDashboard", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadGaugeDashboard(request); });
-  serverWeb.on("/loadPowerGaugeAbo", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadPowerGaugeAbo(request); });
-  serverWeb.on("/loadPowerGaugeTimeDay", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadPowerGaugeTimeDay(request); });
-  serverWeb.on("/refreshGaugeAbo", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleRefreshGaugeAbo(request); });
-  serverWeb.on("/refreshLabel", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleRefreshLabel(request); });
-               
-  serverWeb.on("/loadPowerTrend", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadPowerTrend(request); });
-  serverWeb.on("/loadPowerChart", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadPowerChart(request); });
-  serverWeb.on("/loadEnergyChart", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadEnergyChart(request); });
-  serverWeb.on("/loadTrendEnergyEuros", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadTrendEnergyEuros(request); });
-  serverWeb.on("/loadLabelEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleLoadLabelEnergy(request); });
-  serverWeb.on("/deleteDevice", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleDeleteDevice(request); });
-  serverWeb.on("/getAlert", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleGetAlert(request); });
-  serverWeb.on("/getFormattedDate", HTTP_GET, [](AsyncWebServerRequest *request)
-               { handleGetFormattedDate(request); });
-
-  serverWeb.on("/getDevices", HTTP_GET, [](AsyncWebServerRequest *request)
-               {
-     if(!request->authenticate("admin", "admin"))
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
-    APIgetDevices(request); });
+    }
+    handleRoot(request); 
+  });
+  serverWeb.on("/dashboard", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    //request->client()->setRxTimeout(15);
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleDashboard(request);
+  });
+  serverWeb.on("/statusEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleStatusEnergy(request); 
+  });
+  serverWeb.on("/statusNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleStatusNetwork(request);
+  });
+  serverWeb.on("/statusDevices", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleStatusDevices(request); 
+  });
+  serverWeb.on("/configGeneral", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigGeneral(request); 
+  });
+  serverWeb.on("/configZigbee", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigZigbee(request); 
+  });
+  serverWeb.on("/configHorloge", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigHorloge(request); 
+  });
+  serverWeb.on("/configLinky", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigLinky(request); 
+  });
+  serverWeb.on("/configGaz", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigGaz(request); 
+  });
+  serverWeb.on("/configWater", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigWater(request); 
+  });
+  serverWeb.on("/configMQTT", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigMQTT(request); 
+  });
+  serverWeb.on("/configHTTP", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigHTTP(request); 
+  });
+  serverWeb.on("/configNotif", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigNotification(request); 
+  });
+  serverWeb.on("/configWiFi", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigWifi(request); 
+  });
+  serverWeb.on("/configEthernet", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigEthernet(request); 
+  });
+  serverWeb.on("/configDevices", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigDevices(request); 
+  });
+  serverWeb.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleToolUpdate(request); 
+  });
+  serverWeb.on("/backup", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleToolBackup(request); 
+  });
+  serverWeb.on("/createBackupFile", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleToolCreateBackup(request); 
+  });
+  serverWeb.on("/saveDebug", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveDebug(request);  
+  });
+  serverWeb.on("/saveFileConfig", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfig(request);  
+  });
+  serverWeb.on("/saveFileTemplates", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveTemplates(request); 
+  });
+  serverWeb.on("/saveFileJavascript", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveJavascript(request); 
+  });
+  serverWeb.on("/saveFileDatabase", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveDatabase(request); 
+  });
+  serverWeb.on("/saveConfigGeneral", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigGeneral(request); 
+  });
+  serverWeb.on("/saveConfigHorloge", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigHorloge(request); 
+  });
+  serverWeb.on("/saveConfigLinky", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigLinky(request); 
+  });
+  serverWeb.on("/saveConfigGaz", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigGaz(request); 
+  });
+  serverWeb.on("/saveConfigWater", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigWater(request); 
+  });
+  serverWeb.on("/saveConfigMQTT", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigMQTT(request); 
+  });
+  serverWeb.on("/saveConfigHTTP", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigHTTP(request); 
+  });
+  serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigNotification(request); 
+  });
+  serverWeb.on("/saveWifi", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveWifi(request); 
+  });
+  serverWeb.on("/saveEther", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveEther(request); 
+  });
 
-  serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js");
-  serverWeb.serveStatic("/web/js/functions.js", LittleFS, "/web/js/functions.js");
-  serverWeb.serveStatic("/web/js/raphael-min.js", LittleFS, "/web/js/raphael-min.js");
-  serverWeb.serveStatic("/web/js/morris.min.js", LittleFS, "/web/js/morris.min.js");
-  serverWeb.serveStatic("/web/js/justgage.min.js", LittleFS, "/web/js/justgage.min.js");
-  serverWeb.serveStatic("/web/js/justgage.min.js.map", LittleFS, "/web/js/justgage.min.js.map");
-  serverWeb.serveStatic("/web/js/bootstrap.min.js", LittleFS, "/web/js/bootstrap.min.js");
-  serverWeb.serveStatic("/web/js/bootstrap.bundle.min.js.map", LittleFS, "/web/js/bootstrap.bundle.min.js.map");
-  serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css");
-  serverWeb.serveStatic("/web/css/style.css", LittleFS, "/web/css/style.css");
-  serverWeb.serveStatic("/web/img/logo.png", LittleFS, "/web/img/logo.png");
-  serverWeb.serveStatic("/web/img/wait.gif", LittleFS, "/web/img/wait.gif");
-  serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/");
+  serverWeb.on("/tools", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleTools(request); 
+  });
+  serverWeb.on("/logs", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLogs(request); 
+  });
+  serverWeb.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleReboot(request); 
+  });
+  serverWeb.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleToolUpdate(request); 
+  });
+  serverWeb.on("/doUpdate", HTTP_POST,
+    [](AsyncWebServerRequest *request) {},
+    [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
+                  size_t len, bool final) 
+        {
+          if (ConfigSettings.enableSecureHttp)
+          {
+            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+              return request->requestAuthentication();
+          }
+          handleDoUpdate(request, filename, index, data, len, final);
+        }
+  );
+  serverWeb.on("/doRestore", HTTP_POST,
+    [](AsyncWebServerRequest *request) {},
+    [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
+                  size_t len, bool final) 
+        {
+          if (ConfigSettings.enableSecureHttp)
+          {
+            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+              return request->requestAuthentication();
+          }
+          handleDoRestore(request, filename, index, data, len, final);
+        }
+  );
+  serverWeb.on("/readFile", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleReadfile(request); 
+  });
+  serverWeb.on("/getLogBuffer", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLogBuffer(request); 
+  });
+  serverWeb.on("/scanNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleScanNetwork(request); 
+  });
+  serverWeb.on("/cmdClearConsole", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleClearConsole(request); 
+  });
+  serverWeb.on("/cmdGetVersion", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetVersion(request); 
+  });
+
+  serverWeb.on("/cmdErasePDM", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleErasePDM(request); 
+  });
+  serverWeb.on("/cmdStartNwk", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleStartNwk(request); 
+  });
+  serverWeb.on("/cmdSetChannelMask", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSetChannelMask(request); 
+  });
+  serverWeb.on("/cmdPermitJoin", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handlePermitJoin(request); 
+  });
+  serverWeb.on("/cmdRawMode", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleRawMode(request); 
+  });
+  serverWeb.on("/cmdRawModeOff", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleRawModeOff(request); 
+  });
+  serverWeb.on("/cmdActiveReq", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleActiveReq(request); 
+  });
+  serverWeb.on("/cmdReset", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleReset(request); 
+  });
+  serverWeb.on("/configFiles", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigFiles(request); 
+  });
+  serverWeb.on("/debugFiles", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleDebugFiles(request); 
+  });
+  serverWeb.on("/fsbrowser", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleFSbrowser(request); 
+  });
+  serverWeb.on("/tp", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleTemplates(request); 
+  });
+  serverWeb.on("/javascript", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleJavascript(request); 
+  });
+  serverWeb.on("/createTemplate", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleCreateTemplate(request); 
+  });
+  serverWeb.on("/ZigbeeAction", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleZigbeeAction(request); 
+  });
+  serverWeb.on("/ZigbeeSendRequest", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleZigbeeSendRequest(request); 
+  });
+  serverWeb.on("/loadLinkyDatas", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadLinkyDatas(request); 
+  });
+  serverWeb.on("/loadGaugeDashboard", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadGaugeDashboard(request); 
+  });
+  serverWeb.on("/loadPowerGaugeAbo", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadPowerGaugeAbo(request); 
+  });
+  serverWeb.on("/loadPowerGaugeTimeDay", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadPowerGaugeTimeDay(request); 
+  });
+  serverWeb.on("/refreshGaugeAbo", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleRefreshGaugeAbo(request); 
+  });
+  serverWeb.on("/refreshLabel", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleRefreshLabel(request);
+  });             
+  serverWeb.on("/loadPowerTrend", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadPowerTrend(request); 
+  });
+  serverWeb.on("/loadPowerChart", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadPowerChart(request); 
+  });
+  serverWeb.on("/loadEnergyChart", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadEnergyChart(request); 
+  });
+  serverWeb.on("/loadTrendEnergyEuros", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadTrendEnergyEuros(request); 
+  });
+  serverWeb.on("/loadLabelEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadLabelEnergy(request); 
+  });
+  serverWeb.on("/deleteDevice", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleDeleteDevice(request); 
+  });
+  serverWeb.on("/c", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetAlert(request); 
+  });
+  serverWeb.on("/getFormattedDate", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetFormattedDate(request); 
+  });
+  serverWeb.on("/sendMqttDiscover", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSendMqttDiscover(request); 
+  });
+  serverWeb.on("/getDevices", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    APIgetDevices(request); 
+    
+  });
+
+  serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/functions.js", LittleFS, "/web/js/functions.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/raphael-min.js", LittleFS, "/web/js/raphael-min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/morris.min.js", LittleFS, "/web/js/morris.min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/justgage.min.js", LittleFS, "/web/js/justgage.min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/justgage.min.js.map", LittleFS, "/web/js/justgage.min.js.map").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/bootstrap.min.js", LittleFS, "/web/js/bootstrap.min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/bootstrap.bundle.min.js.map", LittleFS, "/web/js/bootstrap.map").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/css/style.css", LittleFS, "/web/css/style.css").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/img/logo.png", LittleFS, "/web/img/logo.png").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/img/wait.gif", LittleFS, "/web/img/wait.gif").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");
   serverWeb.onNotFound(handleNotFound);
 
   serverWeb.begin();
+
+  Update.onProgress(printProgress);
 }

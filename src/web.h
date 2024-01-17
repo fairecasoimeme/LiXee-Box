@@ -1,7 +1,7 @@
-Template GetTemplate(int deviceId, String model);
+Template * GetTemplate(int deviceId, String model);
 bool TemplateExist(int deviceId);
 
-String createEnergyGraph(String IEEE);
+String createEnergyGraph(String IEEE, String Type);
 
 void initWebServer();
 void webServerHandleClient();
@@ -29,3 +29,6 @@ void handleSetchipid();
 void handleSetmodeprod();
 
 void APIgetDevices();
+
+void checkUpdateFirmware();
+void runUpdateFirmware(uint8_t *data, size_t len);

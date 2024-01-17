@@ -3,8 +3,13 @@
 #include "config.h"
 #include "protocol.h"
 #include "SPIFFS_ini.h"
+#include <AsyncMqttClient.h>
 
-extern CircularBuffer<Packet, 20> commandList;
+extern AsyncMqttClient mqttClient;
+extern ConfigGeneralStruct ConfigGeneral;
+extern ConfigSettingsStruct ConfigSettings;
+
+extern CircularBuffer<Packet, 40> commandList;
 
 void SendOnOffAction(int shortaddr, int endpoint, String value)
 {
@@ -32,34 +37,55 @@ void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
   char value[256];
   String tmp="";
   inifile = GetMacAdrr(shortaddr);
-  switch (attribute)
+  if (inifile != "")
   {
-    case 0:
-      //manufacturer   
-      
-      if (ini_exist(inifile))
-      {
-        for(int i=0;i<len;i++)
+    switch (attribute)
+    {
+      case 0:
+        //manufacturer   
+        
+        if (ini_exist(inifile))
         {
-          sprintf(value, "%02X",datas[i]);
-          tmp+=value;
+          for(int i=0;i<len;i++)
+          {
+            sprintf(value, "%02X",datas[i]);
+            tmp+=value;
+          }
+    
+          ini_write(inifile,"0006", "0", (String)tmp);
+          if (ConfigSettings.enableMqtt)
+          {
+            String tmpvalue;
+            tmpvalue = "{\"value_0006_"+String(attribute)+"\":";
+            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
+            tmpvalue +="}";
+            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0006_"+String(attribute)+"/state";
+            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+
+          }
         }
-  
-        ini_write(inifile,"0006", "0", (String)tmp);
-        //ini_close();
-      }
-      break;       
-    default:
-      if (ini_exist(inifile))
-      {
-        for(int i=0;i<len;i++)
+        break;       
+      default:
+        if (ini_exist(inifile))
         {
-           sprintf(value, "%02X",datas[i]);
-           tmp+=value;
+          for(int i=0;i<len;i++)
+          {
+            sprintf(value, "%02X",datas[i]);
+            tmp+=value;
+          }
+          ini_write(inifile,"0000", (String)attribute, (String)tmp);
+          if (ConfigSettings.enableMqtt)
+          {
+            String tmpvalue;
+            tmpvalue = "{\"value_0006_"+String(attribute)+"\":";
+            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
+            tmpvalue +="}";
+            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0006_"+String(attribute)+"/state";
+            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+
+          }
         }
-        ini_write(inifile,"0000", (String)attribute, (String)tmp);
-        //ini_close();
-      }
-      break;
+        break;
+    }
   }
 }
