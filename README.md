@@ -9,18 +9,18 @@ This application can be used with :
 * LiXee-Ethernet32  (WiFi / Ethernet) (In progress)
     * The zigbee radio must be : ZiGate (with PiZiGate). 
       
-Obviously, you can use this code with ESP32S3 chip but depend on your board pins connexions. 
+Obviously, you can use this code with **ESP32S3** chip but depend on your board pins connexions. 
 
 ## Features
-The main feature is to get a mini smarthome box with energy management.
-Based on ESP32, you can manage, configure and act with your smarthome accros a Web browser (tablet / mobile / computer)
+The main feature is to get a mini smarthome box with **energy management**.  
+Based on ESP32S3, you can manage, configure and act with your smarthome accros a Web browser (tablet / mobile / computer)
 
 You can :  
-* Manage a ZLinky_TIC for electricity consumption and production.
+* Manage a [ZLinky_TIC](https://github.com/fairecasoimeme/Zlinky_TIC) for electricity consumption and production.
   * Management of subscriptions and prices
   * Graphs and gauges of consumption and power consumed according to a time base
   * Consumption trend display
-* Manage a ZiPulses for water and gas consumption management 
+* Manage a [ZiPulses](https://github.com/fairecasoimeme/ZiPulses/) for water and gas consumption management 
   * Prices management 
   * Graphs and gauges 
 * Manage ZigBee devices
@@ -37,7 +37,7 @@ You can :
 * Backup / Restore datas
   
 
-## How to template zigbee device
+## How to template a new zigbee device
 
 A template file is a JSON structure which give status and actions to a device type. The name of the template file corresponds to the device identification (decimal).
 When a Zigbee device is joining, LiXee-Box create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
@@ -77,6 +77,45 @@ Here is the structure :
     │   │   ├── timeout   
     │   │   ├── change  
 
+You can find Template examples in `data/tp` directory  
+Example of 24321.json device id (5F01 Hex) :
+```json
+{
+	"lumi.sensor_switch.aq2" : [
+	{
+		"status" : [
+			{
+				"name" : "Clic",
+				"cluster" : "0006",
+				"attribut" : 0
+			},
+			{
+				"name" : "MultiClic",
+				"cluster" : "0000",
+				"attribut" : 32768
+			}
+		]
+	}
+       ],
+        "default" : [
+	{
+		"status" : [
+			{
+				"name" : "Clic",
+				"cluster" : "0012",
+				"attribut" : 85
+			},
+			{
+				"name" : "MultiClic",
+				"cluster" : "0012",
+				"attribut" : 1293
+			}
+		]
+	}
+	]
+}
+```
+
 ### Status
 
 |Command|Mandatory|Type|Value|Comment|
@@ -109,7 +148,7 @@ Here is the structure :
 
 ### Bind
 List of cluster(in numeric) which will be binded
-example : `bind : {1026,1029,1794}`
+example : `bind : "1026;1029;1794"`
 
 ### Report
 
