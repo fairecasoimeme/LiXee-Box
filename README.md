@@ -107,6 +107,9 @@ Here is the structure :
 |value|x|Decimal||value sent in decimal| 
 |visible| |Decimal|1 or 0| only if you want to display button on dashboard| 
 
+### Bind
+List of cluster(in numeric) which will be binded
+example : `bind : {1026,1029,1794}`
 
 ### Report
 
