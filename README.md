@@ -107,6 +107,20 @@ Here is the structure :
 |value|x|Decimal||value sent in decimal| 
 |visible| |Decimal|1 or 0| only if you want to display button on dashboard| 
 
+
+### Report
+
+|Command|Mandatory|Type|Value|Comment|
+|-------|---------|----|-----|-------|			
+|cluster|x|String||cluster id in hexadecimal|  
+|attribut|x|Decimal||attribute number in decimal|  
+|type| |Decimal|| Correspond to the numeric type of attribut| 
+|min| |Decimal||min time (in second) to send report| 
+|max| |Decimal||max time (in second) to send report| 
+|timeout| |Decimal|| in millisecond| 
+|change| |Decimal|| change value to send report| 
+
+
 ## How to flash release
 Just install esptools and run this command
 
