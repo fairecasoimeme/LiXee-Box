@@ -117,9 +117,9 @@ example : `bind : {1026,1029,1794}`
 |-------|---------|----|-----|-------|			
 |cluster|x|String||cluster id in hexadecimal|  
 |attribut|x|Decimal||attribute number in decimal|  
-|type| |Decimal|| Correspond to the numeric type of attribut| 
-|min| |Decimal||min time (in second) to send report| 
-|max| |Decimal||max time (in second) to send report| 
+|type|x|Decimal|| Correspond to the numeric type of attribut| 
+|min|x|Decimal||min time (in second) to send report| 
+|max|x|Decimal||max time (in second) to send report| 
 |timeout| |Decimal|| in millisecond| 
 |change| |Decimal|| change value to send report| 
 
