@@ -23,7 +23,7 @@ You can :
 * Manage a ZiPulses for water and gas consumption management 
   * Prices management 
   * Graphs and gauges 
-* Manage ZigBee device
+* Manage ZigBee devices
   * Object creation
   * Template creation
   * Status and actions management
@@ -37,7 +37,7 @@ You can :
 * Backup / Restore datas
   
 
-## How to template zigbe device
+## How to template zigbee device
 
 A template file is a JSON structure which give status and actions to a device type. The name of the template file corresponds to the device identification (decimal).
 When a Zigbee device is joining, LiXee-Box create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
