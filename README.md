@@ -31,7 +31,7 @@ You need to relay zigbee devices datas to the cloud (with Web API)
 
 ## Features
 The main feature is to get a mini smarthome box with **energy management**.  
-Based on ESP32S3, you can manage, configure and act with your smarthome accros a Web browser (tablet / mobile / computer)
+Based on ESP32S3, you can manage, configure and act with your smarthome accross a Web browser (tablet / mobile / computer)
 
 You can :  
 * Manage a [ZLinky_TIC](https://github.com/fairecasoimeme/Zlinky_TIC) for electricity consumption and production.
@@ -58,7 +58,7 @@ You can :
 
 1. Plug the device on a USB power.
 2. Use a mobile/computer and scan the WiFi
-3. Connect to the SSID : **LiXeBox-XXXX** (XXXX correspond to a part of unique @MAC)
+3. Connect to the SSID : **LiXeeBox-XXXX** (XXXX correspond to a part of unique @MAC)
 4. By default, the password is : **adminXXXX** (XXXX correspond to the ssid XXXX)
 5. Connected to the WiFi SSID, you can open a web navigator and type in URL label : `http://lixee-box`
 6. Normally, you will redirect to the WiFi config page
