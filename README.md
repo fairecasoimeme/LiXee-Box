@@ -35,7 +35,28 @@ You can :
 * Notification management (in progress)
 * Update OTA
 * Backup / Restore datas
+
+## First start  
+
+1. Plug the device on a USB power.
+2. Use a mobile/computer and scan the WiFi
+3. Connect to the SSID : **LiXeBox-XXXX** (XXXX correspond to a part of unique @MAC)
+4. By default, the password is : **adminXXXX** (XXXX correspond to the ssid XXXX)
+5. Connected to the WiFi SSID, you can open a web navigator and type in URL label : `http://lixee-box`
+6. Normally, you will redirect to the WiFi config page
+7. Scan your SSID WiFi box and fill the form to complete configuration
+8. Reboot the device
+
+## Pair a device
+
+1. With you web navigator, you can go to `Config` menu then `Devices`  
+2. You can click on `Add Device` button. The ZiGate coordinator begin the `Permit Join` procedure for 30 seconds.   
+3. The blue LED of your device blink slowly.  
+4. Now, you can execute the pairing device procedure.
+   
+⚠️ **If a device is paired, a green alert appears. You can refresh to see devices properties.**  
   
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/ConfigDevices_1.png" width="800">  
 
 ## How to template a new zigbee device
 
@@ -162,6 +183,13 @@ example : `bind : "1026;1029;1794"`
 |timeout| |Decimal|| in millisecond| 
 |change| |Decimal|| change value to send report| 
 
+## How to backup/restore
+Just click on `Tools` menu then `Backup`  
+
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/backup_restore.png" width="800">  
+
+You can do a backup with clicking on `Create Backup` button. Wait a moment and a tar file appears. Then click on the link to download the backup.  
+To do a restore, please click on `Choose backup...` and click on `Restore`button.  
 
 ## How to flash release
 Just install esptools and run this command
