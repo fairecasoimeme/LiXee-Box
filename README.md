@@ -11,6 +11,24 @@ This application can be used with :
       
 Obviously, you can use this code with **ESP32S3** chip but depend on your board pins connexions. 
 
+## Operating diagram
+
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee-Box_Schema.png" width="1024">  
+
+## Uses cases example
+
+Here is a list of some use cases which can be used with LiXee-Box.  
+
+### Use case n°1
+You need to visualize and control your consumption (electricity / gaz / water) with a screen
+
+### Use case n°2
+Your Linky counter is very far and Zigbee protocol is too light to transport datas to the coordinator. You can use LiXee-Box like a gateway Zigbee/WiFi.  
+**Linky (ZLinky) <--> Zigbee <--> LiXee-Box <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz**
+
+### Use case n°3
+You need to relay zigbee devices datas to the cloud (with Web API)
+
 ## Features
 The main feature is to get a mini smarthome box with **energy management**.  
 Based on ESP32S3, you can manage, configure and act with your smarthome accros a Web browser (tablet / mobile / computer)
