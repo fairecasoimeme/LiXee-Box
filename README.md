@@ -1,6 +1,7 @@
 # LiXee-Box
 Little Universal Smarthome Box with ESP32S3 MCU and ZiGate (Zigbee Radio MCU)
 
+⚠️ **WARNING : The actual version is in testing mode and not a release yet.**
 
 ## Compatibility
 This application can be used with :  
