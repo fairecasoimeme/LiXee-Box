@@ -218,8 +218,24 @@ Just install esptools and run this command
 
 ## Screenshots
 
+### Status Energy
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/StatusEnergy_3.png" width="1024">  
+
+### Status network
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/StatusNetwork.png" width="1024">  
+
+### Config Wifi
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/ConfigWifi.png" width="1024">  
+
+### Config Gaz
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/ConfigGeneralGaz.png" width="1024">  
+
+### Dashboard 
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/dashboard.png" width="480">  
+
+
 ## Changelog
 
-### V1.0
+### V1.0a
 * Initial source 
   
