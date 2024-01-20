@@ -55,6 +55,23 @@ AsyncWebServer serverWeb(80);
 
 #define UPD_FILE "https://github.com/fairecasoimeme/lixee-box/releases/latest/download/lixee-box.bin"
 
+const char HTTP_HELP[] PROGMEM = 
+ "<h1>Help !</h1>"
+    "<h3>Version : {{version}}</h3>"
+    "<h3>Shop & description</h3>"
+    "You can go to this url :</br>"
+    "<a href=\"https://lixee.fr/\" target='_blank'>Shop </a></br>"
+
+    "<h3>Firmware Source & Issues</h3>"
+    "Please go here :</br>"
+    "<a href=\"https://github.com/fairecasoimeme/LiXee-Box\" target='_blank'>Sources</a>"
+    
+    
+    ;
+
+  
+
+
 const char HTTP_HEADER[] PROGMEM =
     "<head>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
@@ -117,7 +134,7 @@ const char HTTP_MENU[] PROGMEM =
     "<a class='nav-link' href='/tools'>Tools</a>"
     "</li>"
     "<li class='nav-item'>"
-    "<a class='nav-link' href='#'>Help</a>"
+    "<a class='nav-link' href='/help'>Help</a>"
     "</li>"
     "</ul></div></div>"
     "</nav>"
@@ -1192,10 +1209,11 @@ String createGaugeDashboard(String div, String i, String min, String max, String
 {
   String result = "";
   result += "var Gauge" + div  + i + " = new JustGage({";
-  result += "id: 'status_" + div + "',";
+  result += "id: 'gauge_" + div + i +"',";
   result += F("value: 0,");
   result += "min: " + min + ",";
   result += "max: " + max + ",";
+  result += F("height: 200,");
   result += F("title: 'Target',");
   result += "label:'" + label + "',";
   result += F("gaugeWidthScale: 0.6,");
@@ -1217,7 +1235,7 @@ String createBaterryDashboard(String div, String i, String min, String max, Stri
 {
   String result = "";
   result += "var Gauge" + div + i + " = new JustGage({";
-  result += "id: 'status_" + div + "',";
+  result += "id: 'gauge_" + div + i + "',";
   result += F("value: 0,");
   result += "min: " + min + ",";
   result += "max: " + max + ",";
@@ -1700,12 +1718,20 @@ void handleRoot(AsyncWebServerRequest *request)
                 
                 if (String(t->e[i].typeJauge) == "gauge")
                 {
+                  dashboard += "<div id='gauge_";
+                  dashboard += (String)ShortAddr+String(i);
+                  dashboard += F("' style='height:200px;'>");
+                  dashboard += F("</div>");
                   js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
                   js += CreateTimeGauge((String)ShortAddr + (String)i);
                   js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
                 }
                 else if(String(t->e[i].typeJauge) == "battery")
                 {
+                  dashboard += "<div id='gauge_";
+                  dashboard += (String)ShortAddr+String(i);
+                  dashboard += F("' style='height:200px;'>");
+                  dashboard += F("</div>");
                   js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
                   js += CreateTimeGauge((String)ShortAddr + (String)i);
                   js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
@@ -1820,7 +1846,7 @@ void handleDashboard(AsyncWebServerRequest *request)
         int DeviceId = GetDeviceId(file.name());
         String model;
         model = GetModel(file.name());
-        dashboard += F("<div class='col-sm-3'><div class='card'><div class='card-header'>");
+        dashboard += F("<div class='col-sm-6' style='padding:0;'><div class='card'><div class='card-header'>");
         String alias = getAliasDashboard(file.name());
 
         if (alias != "null")
@@ -1854,14 +1880,23 @@ void handleDashboard(AsyncWebServerRequest *request)
           {
             if (t->e[i].visible)
             {
+              
               if (String(t->e[i].typeJauge) == "gauge")
               {
+                dashboard += "<div id='gauge_";
+                dashboard += (String)ShortAddr+String(i);
+                dashboard += F("' style='height:200px;'>");
+                dashboard += F("</div>");
                 js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
                 js += CreateTimeGauge((String)ShortAddr + (String)i);
                 js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
               }
               else if(String(t->e[i].typeJauge) == "battery")
               {
+                dashboard += "<div id='gauge_";
+                dashboard += (String)ShortAddr+String(i);
+                dashboard += F("' style='height:200px;'>");
+                dashboard += F("</div>");
                 js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
                 js += CreateTimeGauge((String)ShortAddr + (String)i);
                 js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
@@ -2802,6 +2837,21 @@ void handleTools(AsyncWebServerRequest *request)
 
 }
 
+void handleHelp(AsyncWebServerRequest * request) {
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result += FPSTR(HTTP_HELP);
+  result += FPSTR(HTTP_FOOTER);
+  result += F("</html>");
+  result.replace("{{version}}", VERSION);
+  
+  request->send(200,"text/html", result);
+  
+}
+
 void hard_restart()
 {
   esp_task_wdt_init(1, true);
@@ -3118,6 +3168,65 @@ void handleToolBackup(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+
+int totalLength;       //total size of firmware
+int currentLength = 0; //current size of written firmware
+
+void progressFunc(unsigned int progress,unsigned int total) {
+  Serial.printf("Progress: %u of %u\r", progress, total);
+};
+
+void checkUpdateFirmware()
+{
+  clientWeb.begin(UPD_FILE);
+  clientWeb.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); 
+  // Get file, just to check if each reachable
+  int resp = clientWeb.GET();
+  Serial.print("Response: ");
+  Serial.println(resp);
+  // If file is reachable, start downloading
+  if(resp == HTTP_CODE_OK) 
+  {   
+      // get length of document (is -1 when Server sends no Content-Length header)
+      totalLength = clientWeb.getSize();
+      // transfer to local variable
+      int len = totalLength;
+      // this is required to start firmware update process
+      Update.begin(UPDATE_SIZE_UNKNOWN);
+      Update.onProgress(progressFunc);
+      DEBUG_PRINT("FW Size: ");
+      
+      DEBUG_PRINTLN(totalLength);
+      // create buffer for read
+      uint8_t buff[128] = { 0 };
+      // get tcp stream
+      WiFiClient * stream = clientWeb.getStreamPtr();
+      // read all data from server
+      DEBUG_PRINTLN("Updating firmware...");
+      while(clientWeb.connected() && (len > 0 || len == -1)) {
+          // get available data size
+          size_t size = stream->available();
+          if(size) {
+            // read up to 128 byte
+            int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
+            // pass to function
+           // runUpdateFirmware(buff, c);
+            if(len > 0) {
+                len -= c;
+            }
+          }
+          //DEBUG_PRINT("Bytes left to flash ");
+          //DEBUG_PRINTLN(len);
+           //delay(1);
+      }
+  }
+  else
+  {
+    Serial.println("Cannot download firmware file. Only HTTP response 200: OK is supported. Double check firmware location #defined in UPD_FILE.");
+  }
+  clientWeb.end();
+}
+
 void handleToolUpdate(AsyncWebServerRequest *request)
 {
     String result;
@@ -3132,7 +3241,10 @@ void handleToolUpdate(AsyncWebServerRequest *request)
     result += F("</html>");
 
     request->send(200, F("text/html"), result);
+    checkUpdateFirmware();
 }
+
+
 
 void handleConfigFiles(AsyncWebServerRequest *request)
 {
@@ -5754,6 +5866,15 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleSendMqttDiscover(request); 
+  });
+  serverWeb.on("/help", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleHelp(request); 
   });
   serverWeb.on("/getDevices", HTTP_GET, [](AsyncWebServerRequest *request)
   {

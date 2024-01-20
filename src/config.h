@@ -6,7 +6,7 @@
 #include <Arduino.h>
 #include <CircularBuffer.h>
 
-#define VERSION "v1.5a"
+#define VERSION "v1.0a"
 
 // hardware config64
 #define RESET_ZIGATE 19//4

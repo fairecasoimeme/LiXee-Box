@@ -807,39 +807,6 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         }
       }     
 
-      
-      /*for (JsonPair kv : root)
-      {
-        
-        JsonObject graph = temp[kv.key().c_str()][Time]["graph"].as<JsonObject>();
-        for (JsonPair j : graph)
-        {
-          maxVal = max(j.value().as<long int>(),maxVal);
-        }     
-        maxJauge += maxVal;          
-        if (Time=="day")
-        {
-          tmp=temp[kv.key().c_str()][Time]["trend"].as<int>();
-          lastTime+=temp[kv.key().c_str()][Time]["graph"][Yesterday].as<int>();
-        }else if (Time=="month")
-        {
-          tmp=temp[kv.key().c_str()][Time]["trend"].as<int>();
-          int monthDec = Month.toInt()-1;
-          String monthtmp = monthDec < 10 ? "0" + String(monthDec) : String(monthDec);         
-          lastTime+=temp[kv.key().c_str()][Time]["graph"][monthtmp].as<int>();
-        }else if (Time=="year")
-        {
-          int yearDec = Year.toInt()-1;
-          String yeartmp = yearDec < 10 ? "0" + String(yearDec) : String(yearDec);
-          tmp=temp[kv.key().c_str()][Time]["trend"].as<int>();
-          lastTime+=temp[kv.key().c_str()][Time]["graph"][yeartmp].as<int>();
-        }
-        if (tmp>0)
-        {
-          tarifEuro+=(tmp * getTarif(String(kv.key().c_str()).toInt(),"energy"))/1000;
-          energyTemp += tmp;
-        }
-      }*/
       if (tmp>0)
       {
         energyTemp = tmp;
@@ -848,41 +815,44 @@ String getTrendPower(String IEEE,String Attribute, String Time)
       String op="";
       if ( energyTemp > lastTime)
       {
-        result = "<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' fill='currentColor' class='bi bi-0-circle' style='color:orange;' viewBox='0 0 20 20'>";
-        result +="    <path fill-rule='evenodd' d='M14 2.5a.5.5 0 0 0-.5-.5h-6a.5.5 0 0 0 0 1h4.793L2.146 13.146a.5.5 0 0 0 .708.708L13 3.707V8.5a.5.5 0 0 0 1 0v-6z'/>";
-        result +="</svg>";
+        trendColor="style='color:orange;'";
+        trendIcon += "<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' fill='currentColor' class='bi bi-0-circle' style='color:orange;' viewBox='0 0 20 20'>";
+        trendIcon +="    <path fill-rule='evenodd' d='M14 2.5a.5.5 0 0 0-.5-.5h-6a.5.5 0 0 0 0 1h4.793L2.146 13.146a.5.5 0 0 0 .708.708L13 3.707V8.5a.5.5 0 0 0 1 0v-6z'/>";
+        trendIcon +="</svg>";
         op="+";
         trend=energyTemp - lastTime;
       }else if ( energyTemp < lastTime)
       {
-        result = "<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' fill='currentColor' class='bi bi-0-circle' style='color:green;' viewBox='0 0 20 20'>";
-        result +="  <path fill-rule='evenodd' d='M14 13.5a.5.5 0 0 1-.5.5h-6a.5.5 0 0 1 0-1h4.793L2.146 2.854a.5.5 0 1 1 .708-.708L13 12.293V7.5a.5.5 0 0 1 1 0v6z'/>";
-        result +="</svg>";
+        trendColor="style='color:green;'";
+        trendIcon += "<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' fill='currentColor' class='bi bi-0-circle' style='color:green;' viewBox='0 0 20 20'>";
+        trendIcon +="  <path fill-rule='evenodd' d='M14 13.5a.5.5 0 0 1-.5.5h-6a.5.5 0 0 1 0-1h4.793L2.146 2.854a.5.5 0 1 1 .708-.708L13 12.293V7.5a.5.5 0 0 1 1 0v6z'/>";
+        trendIcon +="</svg>";
         op="-";
         trend=lastTime - energyTemp;
       }else{
-        result = "<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' fill='currentColor' class='bi bi-0-circle' style='color:grey;' viewBox='0 0 20 20'>";
-        result +="  <path fill-rule='evenodd' d='M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z'/>";
-        result +="</svg>";
+        trendColor="style='color:grey;'";
+        trendIcon += "<svg xmlns='http://www.w3.org/2000/svg' width='96' height='96' fill='currentColor' class='bi bi-0-circle' style='color:grey;' viewBox='0 0 20 20'>";
+        trendIcon +="  <path fill-rule='evenodd' d='M1 8a.5.5 0 0 1 .5-.5h11.793l-3.147-3.146a.5.5 0 0 1 .708-.708l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 0 1-.708-.708L13.293 8.5H1.5A.5.5 0 0 1 1 8z'/>";
+        trendIcon +="</svg>";
         op="";
         trend=0;
       }
-       result +="<div style='text-align:center;'>";
-          result +="<div style='color:#fab600;display:inline-block;width:78px;'><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-fill' viewBox='0 0 16 16'>";
+       result +="<div style='text-align:left;'>";
+          result +="<div style='float:left;display:inline-block;width:72px;'><svg xmlns='http://www.w3.org/2000/svg' width='72px' height='72px' "+trendColor+" fill='currentColor' class='bi bi-lightning-fill' viewBox='0 0 16 16'>";
             result +="<path d='M5.52.359A.5.5 0 0 1 6 0h4a.5.5 0 0 1 .474.658L8.694 6H12.5a.5.5 0 0 1 .395.807l-7 9a.5.5 0 0 1-.873-.454L6.823 9.5H3.5a.5.5 0 0 1-.48-.641l2.5-8.5z'/>";
           result +="</svg></div>";
-          result+="<span style='font-size:24px;'>";
+          result+="<div style='display:inline-box;height:100px;'><span style='font-size:24px;'>";
             result +=op+String(trend)+ " Wh ";
-          result+="</span>";
+          result+="</span></div>";
           
-          result+="<br><div style='color:#239b56;display:inline-block;width:78px;'><svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-cash-stack' viewBox='0 0 16 16'>";
+          result+="<br><div style='display:inline-block;width:72px;float:left;'><svg xmlns='http://www.w3.org/2000/svg' width='72px' height='72px' fill='currentColor' class='bi bi-cash-stack' viewBox='0 0 16 16'>";
             result+="<path d='M1 3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1H1zm7 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z'/>";
             result+="<path d='M0 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H1a1 1 0 0 1-1-1V5zm3 0a2 2 0 0 1-2 2v4a2 2 0 0 1 2 2h10a2 2 0 0 1 2-2V7a2 2 0 0 1-2-2H3z'/>";
             result+="</svg>";       
           result+="</div>";
-          result+="<span style='font-size:24px;'>";
+          result+="<div style='display:inline-block;line-height:100px;vertical-align:middle'><span style='font-size:24px;padding-left:20px;'>";
             result +=String(tarifEuro) +"€";
-          result+="</span>";
+          result+="</span></div>";
         result += "</div>";
     }
   }
