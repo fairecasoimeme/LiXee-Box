@@ -1,0 +1,93 @@
+{
+	"default" : [
+	{
+		"status" : [
+			{
+				"name" : "Temperature",
+				"cluster" : "0402",
+				"attribut" : 0,
+				"type" : "float",
+				"coefficient" : 0.01,
+				"unit" : "°C",
+				"visible":1,
+				"jauge":"gauge",
+				"min":-20,
+				"max":50
+			},
+                        {
+				"name" : "Humidity",
+				"cluster" : "0405",
+				"attribut" : 0,
+				"type" : "float",
+				"coefficient" : 0.01,
+				"unit" : "%",
+				"visible":1,
+				"jauge":"gauge",
+				"min":0,
+				"max":100
+			},
+                        {
+				"name" : "Voltage",
+				"cluster" : "0001",
+				"attribut" : 32,
+				"type" : "float",
+				"coefficient" : 0.1,
+				"unit" : "V",
+				"visible":1
+			},
+                        {
+				"name" : "Bat",
+				"cluster" : "0001",
+				"attribut" : 33,
+				"type" : "numeric",
+				"unit" : "%",
+				"visible":1,
+				"jauge":"battery",
+				"min":0,
+				"max":100
+			}
+		],
+               "bind" : "1026;1029;1",
+	       "report" : [
+			{
+				"cluster" : "0402",
+				"attribut": 0,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0405",
+				"attribut": 1295,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0001",
+				"attribut": 32,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0001",
+				"attribut": 33,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			}
+		]
+		
+	}
+	]
+	
+}
