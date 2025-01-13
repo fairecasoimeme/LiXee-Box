@@ -71,7 +71,7 @@ You can :
 ## How to template a new zigbee device
 
 A template file is a JSON structure which give status and actions to a device type. The name of the template file corresponds to the device identification (decimal).
-When a Zigbee device is joining, LiXee-Box create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
+When a Zigbee device is joining, **LiXee-WebMQTT-Gateway** create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
 
 ### Structure
 Here is the structure :
