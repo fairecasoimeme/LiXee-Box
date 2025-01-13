@@ -69,7 +69,7 @@ const char HTTP_HELP[] PROGMEM =
 
     "<h3>Firmware Source & Issues</h3>"
     "Please go here :</br>"
-    "<a href=\"https://github.com/fairecasoimeme/LiXee-Box\" target='_blank'>Sources</a>"
+    "<a href=\"https://github.com/fairecasoimeme/LiXee-WebMQTT-Gateway\" target='_blank'>Sources</a>"
     
     
     ;
