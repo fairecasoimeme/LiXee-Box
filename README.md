@@ -50,7 +50,7 @@ You can :
 
 1. Plug the device on a USB power.
 2. Use a mobile/computer and scan the WiFi
-3. Connect to the SSID : **LiXeeBox-XXXX** (XXXX correspond to a part of unique @MAC)
+3. Connect to the SSID : **LIXEEGW-XXXX** (XXXX correspond to a part of unique @MAC)
 4. By default, the password is : **adminXXXX** (XXXX correspond to the ssid XXXX)
 5. Connected to the WiFi SSID, you can open a web navigator and type in URL label : `http://lixee-box`
 6. Normally, you will redirect to the WiFi config page
