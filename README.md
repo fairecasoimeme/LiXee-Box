@@ -22,7 +22,7 @@ Here is a list of some use cases which can be used with **LiXee-WebMQTT-Gateway*
 
 ### Use case n°1
 Your Linky counter is very far and Zigbee protocol is too light to transport datas to the coordinator.
-**Linky (ZLinky) <--> Zigbee <--> LiXee-WebMQTT-Gateway <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz**
+**Linky (ZLinky) <--> Zigbee <--> LiXee-WebMQTT-Gateway <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz / other**
 
 ### Use case n°2
 You need to relay zigbee devices datas to the cloud (with Web API)
@@ -52,7 +52,7 @@ You can :
 2. Use a mobile/computer and scan the WiFi
 3. Connect to the SSID : **LIXEEGW-XXXX** (XXXX correspond to a part of unique @MAC)
 4. By default, the password is : **adminXXXX** (XXXX correspond to the ssid XXXX)
-5. Connected to the WiFi SSID, you can open a web navigator and type in URL label : `http://lixee-box`
+5. Connected to the WiFi SSID, you can open a web navigator and type in URL label : `http://lixee-gw`
 6. Normally, you will redirect to the WiFi config page
 7. Scan your SSID WiFi box and fill the form to complete configuration
 8. Reboot the device
