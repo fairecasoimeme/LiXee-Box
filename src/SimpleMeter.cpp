@@ -6,10 +6,13 @@
 #include "SPIFFS_ini.h"
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
+#include "mqtt.h"
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
+
+extern CircularBuffer<Device, 10> *deviceList;
 
 void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
 {
@@ -49,12 +52,7 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"1794_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_1794_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+            mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -63,6 +61,13 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
           }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+          }
+          
           ini_trendEnergy(inifile, (String)attribute, (String) tmp);
         }
         break; 
@@ -76,15 +81,10 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
           }
           tmp="-"+tmp;
           ini_write(inifile,"0702", (String)attribute, (String)tmp);
+          //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"1794_1\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_1794_1/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -92,6 +92,12 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           ini_energy(inifile, (String)attribute, (String) tmp);
           ini_trendEnergy(inifile, (String)attribute, (String) tmp);
@@ -109,15 +115,10 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
             }
           }
           ini_write(inifile,"0702", (String)attribute, (String)tmp);
+          //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"1794_32\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_1794_32/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -125,6 +126,12 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
       break;
@@ -140,12 +147,7 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"1794_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_1794_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+            mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -153,6 +155,12 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
         break;      

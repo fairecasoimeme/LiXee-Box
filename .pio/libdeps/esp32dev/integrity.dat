@@ -1,7 +1,7 @@
-rlogiacco/CircularBuffer@^1.3.3
-bblanchon/ArduinoJson@^6.21.3
-me-no-dev/ESP Async WebServer@^1.2.3
-marvinroger/AsyncMqttClient@^0.9.0
 paulstoffregen/Time@^1.6.1
-cmb27/ModbusRTUSlave@^2.0.6
+me-no-dev/ESPAsyncWebServer@^3.6.0
+marvinroger/AsyncMqttClient@^0.9.0
+bblanchon/ArduinoJson@^6.21.3
+me-no-dev/AsyncTCP@^3.3.2
 arkhipenko/TaskScheduler@^3.7.0
+rlogiacco/CircularBuffer@^1.3.3

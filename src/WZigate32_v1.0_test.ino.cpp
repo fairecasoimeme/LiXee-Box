@@ -2,7 +2,7 @@
   ESP32 mDNS serial wifi bridge by Daniel Parnell 2nd of May 2015
  */
 #define BONJOUR_SUPPORT
-
+#include <Arduino.h>
 //#include "soc/rtc_wdt.h"
 #include "esp32s3/rom/rtc.h"
 #include "driver/temp_sensor.h"
@@ -41,33 +41,6 @@ extern "C" {
 
 #include <TaskScheduler.h>
 
-//modbus
-#include <ModbusRTUSlave.h>
-uint16_t holdingRegisters[24600];
-
-ModbusRTUSlave modbus(Serial2, 14);
-
-#include <ETH.h>
-#ifdef ETH_CLK_MODE
-#undef ETH_CLK_MODE
-#endif
-#define ETH_CLK_MODE  ETH_CLOCK_GPIO0_IN //ETH_CLOCK_GPIO17_OUT //
-
-// Pin# of the enable signal for the external crystal oscillator (-1 to disable for internal APLL source)
-#define ETH_POWER_PIN    5//-1//5
-
-// Type of the Ethernet PHY (LAN8720 or TLK110)
-#define ETH_TYPE        ETH_PHY_LAN8720
-
-// I²C-address of Ethernet PHY (0 or 1 for LAN8720, 31 for TLK110)
-#define ETH_ADDR      1
-
-// Pin# of the I²C clock signal for the Ethernet PHY
-#define ETH_MDC_PIN     23
-
-// Pin# of the I²C IO signal for the Ethernet PHY
-#define ETH_MDIO_PIN    18
-
 // application config
 unsigned long timeLog;
 ConfigSettingsStruct ConfigSettings;
@@ -79,6 +52,7 @@ CircularBuffer<Packet, 100> *commandList = nullptr;
 CircularBuffer<Packet, 10> *PrioritycommandList = nullptr;
 CircularBuffer<SerialPacket, 30> *PriorityQueuePacket = nullptr;
 CircularBuffer<Alert, 10> *alertList = nullptr;
+CircularBuffer<Device, 10> *deviceList = nullptr;
 CircularBuffer<SerialPacket, 300> *QueuePacket = nullptr;
 /*CircularBuffer<Packet, 100> commandList;
 CircularBuffer<Packet, 10> PrioritycommandList;
@@ -140,22 +114,18 @@ String Yesterday;
 String epochTime;
 String firstStart;
 
-bool ETH_ENABLE;
-
 //#define CONFIG_ASYNC_TCP_RUNNING_CORE 0 //any available core
 /*#define CONFIG_ASYNC_TCP_USE_WDT 1*/
 
-SET_LOOP_TASK_STACK_SIZE(24*1024); // 32KB
-
+SET_LOOP_TASK_STACK_SIZE(24*1024); // 24KB
 
 //callback timer
 void scanCallback();
-void datasTreatment();
+
 void sendPacket();
 
 Task scan(60000, TASK_FOREVER, &scanCallback);
 Scheduler runner;
-
 
 void initCircularBuffer()
 {
@@ -163,9 +133,10 @@ void initCircularBuffer()
   PrioritycommandList = (CircularBuffer<Packet, 10>*) ps_malloc(sizeof(CircularBuffer<Packet, 10>));
   PriorityQueuePacket= (CircularBuffer<SerialPacket, 30>*) ps_malloc(sizeof(CircularBuffer<SerialPacket, 30>));
   alertList = (CircularBuffer<Alert, 10>*) ps_malloc(sizeof(CircularBuffer<Alert, 10>));
+  deviceList = (CircularBuffer<Device, 10>*) ps_malloc(sizeof(CircularBuffer<Device, 10>));
   QueuePacket = (CircularBuffer<SerialPacket,300>*) ps_malloc(sizeof(CircularBuffer<SerialPacket,300>));
 
-  if (!QueuePacket || !commandList || !PrioritycommandList || !PriorityQueuePacket || !alertList) {
+  if (!QueuePacket || !commandList || !PrioritycommandList || !PriorityQueuePacket || !alertList || !deviceList) {
       DEBUG_PRINTLN("Erreur lors de l'allocation de CircularBuffer en PSRAM!");
       return;
   }
@@ -174,6 +145,7 @@ void initCircularBuffer()
   new (PrioritycommandList) CircularBuffer<Packet, 10>();
   new (PriorityQueuePacket) CircularBuffer<SerialPacket, 30>();
   new (alertList) CircularBuffer<Alert, 10>();
+  new (deviceList) CircularBuffer<Device, 10>();
   new (QueuePacket) CircularBuffer<SerialPacket,300>();
 }
 
@@ -196,9 +168,7 @@ DEBUG_PRINTLN(F("ScanDeviceToPoll OK"));
 DEBUG_PRINTLN(F("config_write"));
   config_write(path, "epoch", epochTime);
 DEBUG_PRINTLN(F("config_write OK"));
-  //gestion des arrets de transmissions sur historisation
-  DEBUG_PRINTLN(F("ScanDeviceToRAZ"));
-  ScanDeviceToRAZ();
+
 
 
 }
@@ -213,6 +183,8 @@ const uint32_t communicationTimeout_ms = 500;
 SemaphoreHandle_t uart_buffer_Mutex = NULL;
 SemaphoreHandle_t file_Mutex = NULL;
 SemaphoreHandle_t inifile_Mutex = NULL;
+SemaphoreHandle_t Queue_Mutex = NULL;
+SemaphoreHandle_t QueuePrio_Mutex = NULL;
 
 void sendPacket()
 {
@@ -226,7 +198,7 @@ void sendPacket()
     if (!commandList->isEmpty())
     {
       sendZigbeeCmd(commandList->shift());
-      vTaskDelay(30);
+      vTaskDelay(100);
     }
   }
   
@@ -265,6 +237,41 @@ void SERIAL_RX_CB() {
   }
 }
 
+void datasTreatment(void * pvParameters)
+{
+  
+  while(true)
+  {
+    esp_task_wdt_reset();
+    while (!PriorityQueuePacket->isEmpty())
+    {
+      DEBUG_PRINTLN("Priority Packet shift : protocol datas");
+      SerialPacket packet;
+      xSemaphoreTake(QueuePrio_Mutex, portMAX_DELAY);
+      packet = (SerialPacket)PriorityQueuePacket->shift();
+      xSemaphoreGive(QueuePrio_Mutex);
+      datasManage((char *)packet.raw,packet.len);
+      vTaskDelay(30);
+    }
+    
+    if (!QueuePacket->isEmpty())
+    {   
+      DEBUG_PRINTLN("Packet shift : protocol datas");
+      SerialPacket packet;
+      xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
+      packet = (SerialPacket)QueuePacket->shift();
+      xSemaphoreGive(Queue_Mutex);
+      datasManage((char *)packet.raw,packet.len);
+      vTaskDelay(100);
+    }
+    
+    sendPacket();
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+  }
+  vTaskDelete(NULL);
+
+}
+
 
 void SerialTask( void * pvParameters)
 {
@@ -273,13 +280,9 @@ void SerialTask( void * pvParameters)
   uint8_t packetRead[BUFFER_SIZE];
   while(true)
   {
+    esp_task_wdt_reset();
     if (uartBufferLength>0)
     {
-      /*if (xSemaphoreTake(uart_buffer_Mutex, portMAX_DELAY)) {
-        packetRead= uart_buffer.c_str();
-        uart_buffer="";
-        xSemaphoreGive(uart_buffer_Mutex);
-      }*/
       //protocolDatas(packetRead);
       bytes_read=0;
       if (xSemaphoreTake(uart_buffer_Mutex, portMAX_DELAY)) {
@@ -299,33 +302,10 @@ void SerialTask( void * pvParameters)
         DEBUG_PRINT(F(" "));  
         if (packetRead[i] == 0x03){DEBUG_PRINTLN();}
 
-        /*sprintf(output_sprintf,"%02x",packetRead[i]);
-        if(packetRead[i]==0x01)
-        {
-          //String tmpTime; 
-          String buff="";
-          //timeLog = millis();
-          //tmpTime = String(timeLog,DEC);
-          logPush('[');
-          for (int j =0;j<FormattedDate.length();j++)
-          {
-            
-            logPush(FormattedDate[j]);
-          }
-          logPush(']');
-          logPush('<');
-          logPush('-');
-        }
-        logPush(' ');
-        logPush(output_sprintf[0]);
-        logPush(output_sprintf[1]);
-        if (packetRead[i]==0x03)
-        {
-          logPush('\n');
-        }*/
       }                                                  
     }
     vTaskDelay(10 / portTICK_PERIOD_MS);
+
   }
   
   vTaskDelete(NULL);
@@ -340,6 +320,13 @@ void connectToMqtt() {
     DEBUG_PRINT(ConfigGeneral.servMQTT);
     DEBUG_PRINT(F(":"));
     DEBUG_PRINTLN(ConfigGeneral.portMQTT);
+    mqttClient.disconnect();
+    mqttClient.setServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT));
+    mqttClient.setClientId(ConfigGeneral.clientIDMQTT);
+    if (String(ConfigGeneral.userMQTT) !="")
+    {
+      mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
+    }
     mqttClient.connect();
   }
 
@@ -351,6 +338,10 @@ void WiFiEvent(WiFiEvent_t event) {
     case ARDUINO_EVENT_WIFI_READY:
       addDebugLog(F("WiFi Ready"));
       break;
+    
+    
+    case ARDUINO_EVENT_WIFI_AP_START:
+        
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
       addDebugLog(F("WiFi Connected"));
       if (WifiReconnectTimer != NULL)
@@ -361,49 +352,23 @@ void WiFiEvent(WiFiEvent_t event) {
     case ARDUINO_EVENT_WIFI_STA_STOP:
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       addDebugLog(F("WiFi Disconnected"));
+  
       if (mqttReconnectTimer != NULL)
       {
         xTimerStop(mqttReconnectTimer, 0); 
       }
+      xTimerStart(WifiReconnectTimer, 0);
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
       addDebugLog(F("WiFi LOST IP"));
+      if (mqttReconnectTimer != NULL)
+      {
+        xTimerStop(mqttReconnectTimer, 0); 
+      }
       xTimerStart(WifiReconnectTimer, 0);
       break;
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       connectToMqtt();
-      break;
-    case ARDUINO_EVENT_ETH_START:
-      DEBUG_PRINTLN(F("ETH Started"));
-      //set eth hostname here
-      ETH.setHostname("esp32-ethernet");
-      break;
-    case ARDUINO_EVENT_ETH_CONNECTED:
-      //DEBUG_PRINTLN("ETH Connected");
-      
-      break;
-    case ARDUINO_EVENT_ETH_GOT_IP:
-      DEBUG_PRINT(F("ETH MAC: "));
-      DEBUG_PRINT(ETH.macAddress());
-      DEBUG_PRINT(F(", IPv4: "));
-      DEBUG_PRINT(ETH.localIP());
-      if (ETH.fullDuplex()) {
-        DEBUG_PRINT(F(", FULL_DUPLEX"));
-      }
-      DEBUG_PRINT(", ");
-      DEBUG_PRINT(ETH.linkSpeed());
-      DEBUG_PRINTLN(F("Mbps"));
-      ConfigSettings.connectedEther=true;
-      timeClient.forceUpdate();
-      connectToMqtt();
-      break;
-    case ARDUINO_EVENT_ETH_DISCONNECTED:
-      //DEBUG_PRINTLN("ETH Disconnected");
-      ConfigSettings.connectedEther=false;
-      break;
-    case ARDUINO_EVENT_ETH_STOP:
-      DEBUG_PRINTLN(F("ETH Stopped"));
-      ConfigSettings.connectedEther=false;
       break;
     default:
       break;
@@ -417,13 +382,17 @@ void onMqttConnect(bool sessionPresent) {
   DEBUG_PRINT(F("Session present: "));
   DEBUG_PRINTLN(sessionPresent);
 
- 
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   DEBUG_PRINT(F("Disconnected from MQTT."));
   DEBUG_PRINTLN((uint8_t)reason);
   
+  if ((uint8_t)reason==0)
+  {
+    esp_restart();
+  }
+
   if (WiFi.isConnected()) {
     xTimerStart(mqttReconnectTimer, 0);
   }
@@ -499,37 +468,6 @@ bool loadConfigWifi() {
   ConfigSettings.enableWiFi = (int)doc["enableWiFi"];
 
   configFile.close();
-  return true;
-}
-
-bool loadConfigEther() {
-  const char * path = "/config/configEther.json";
-  
-  File configFile = LittleFS.open(path, FILE_READ);
-  if (!configFile) {
-    DEBUG_PRINTLN(F("failed open"));
-    return false;
-  }
-
-  DynamicJsonDocument doc(10192);
-  deserializeJson(doc,configFile);
-
-  // affectation des valeurs , si existe pas on place une valeur par defaut
-  ConfigSettings.enableEthernet = (int)doc["enable"];
-  ConfigSettings.dhcp = (int)doc["dhcp"];
-  strlcpy(ConfigSettings.ipAddress, doc["ip"] | "", sizeof(ConfigSettings.ipAddress));
-  strlcpy(ConfigSettings.ipMask, doc["mask"] | "", sizeof(ConfigSettings.ipMask));
-  strlcpy(ConfigSettings.ipGW, doc["gw"] | "", sizeof(ConfigSettings.ipGW));
-  configFile.close();
-
-  if (ConfigSettings.enableEthernet)
-  {
-    ETH_ENABLE=true;
-  }else{
-    ETH_ENABLE=false;
-  }
-  
-  
   return true;
 }
 
@@ -614,10 +552,15 @@ bool loadConfigGeneral() {
 
   ConfigSettings.enableMqtt = (int)doc["enableMqtt"];
   strlcpy(ConfigGeneral.servMQTT, doc["servMQTT"] | "", sizeof(ConfigGeneral.servMQTT));
+  strlcpy(ConfigGeneral.clientIDMQTT, doc["clientIDMQTT"] | "", sizeof(ConfigGeneral.clientIDMQTT));
   strlcpy(ConfigGeneral.portMQTT, doc["portMQTT"] | "", sizeof(ConfigGeneral.portMQTT));
   strlcpy(ConfigGeneral.userMQTT, doc["userMQTT"] | "", sizeof(ConfigGeneral.userMQTT));
   strlcpy(ConfigGeneral.passMQTT, doc["passMQTT"] | "", sizeof(ConfigGeneral.passMQTT));
   strlcpy(ConfigGeneral.headerMQTT, doc["headerMQTT"] | "", sizeof(ConfigGeneral.headerMQTT));
+  ConfigGeneral.HAMQTT = (int)doc["HAMQTT"];
+  ConfigGeneral.TBMQTT = (int)doc["TBMQTT"];
+  ConfigGeneral.customMQTT = (int)doc["customMQTT"];
+  ConfigGeneral.customMQTTJson =doc["customMQTTJson"].as<String>();
 
   ConfigSettings.enableNotif = (int)doc["enableNotif"];
   strlcpy(ConfigGeneral.servSMTP, doc["servSMTP"] | "", sizeof(ConfigGeneral.servSMTP));
@@ -651,7 +594,7 @@ void setupWifiAP()
   String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
                  String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
   macID.toUpperCase();
-  String AP_NameString = "LIXEEBOX-" + macID;
+  String AP_NameString = "LIXEEGW-" + macID;
 
   char AP_NameChar[AP_NameString.length() + 1];
   memset(AP_NameChar, 0, AP_NameString.length() + 1);
@@ -677,48 +620,62 @@ bool setupSTAWifi() {
   WiFi.disconnect();
   DEBUG_PRINTLN(F("disconnect"));
   vTaskDelay(10);
-
-  WiFi.begin(ConfigSettings.ssid, ConfigSettings.password);
-  WiFi.setSleep(false);
-  DEBUG_PRINTLN(F("WiFi.begin"));
-
-  IPAddress ip_address = parse_ip_address(ConfigSettings.ipAddressWiFi);
-  IPAddress gateway_address = parse_ip_address(ConfigSettings.ipGWWiFi);
-  IPAddress netmask = parse_ip_address(ConfigSettings.ipMaskWiFi);
-  IPAddress primaryDNS(8, 8, 8, 8);   //optional
-  IPAddress secondaryDNS(8, 8, 4, 4); //optional
-  if (!ConfigSettings.enableDHCP)
+  if (ConfigSettings.ssid != "")
   {
-    WiFi.config(ip_address, gateway_address, netmask, primaryDNS,secondaryDNS);
-  }
-  DEBUG_PRINTLN(F("WiFi.config"));
+    WiFi.begin(ConfigSettings.ssid, ConfigSettings.password);
+    WiFi.setSleep(false);
+    DEBUG_PRINTLN(F("WiFi.begin"));
 
-
-  int countDelay=20;
-  while (WiFi.status() != WL_CONNECTED) {
-    DEBUG_PRINT(F("."));
-    countDelay--;
-    if (countDelay==0)
+    IPAddress ip_address = parse_ip_address(ConfigSettings.ipAddressWiFi);
+    IPAddress gateway_address = parse_ip_address(ConfigSettings.ipGWWiFi);
+    IPAddress netmask = parse_ip_address(ConfigSettings.ipMaskWiFi);
+    IPAddress primaryDNS(8, 8, 8, 8);   //optional
+    IPAddress secondaryDNS(8, 8, 4, 4); //optional
+    if (!ConfigSettings.enableDHCP)
     {
-      ConfigSettings.connectedWifiSta=false;
-      return false;
+      WiFi.config(ip_address, gateway_address, netmask, primaryDNS,secondaryDNS);
     }
-    vTaskDelay(250);
+    DEBUG_PRINTLN(F("WiFi.config"));
+
+
+    int countDelay=20;
+    while (WiFi.status() != WL_CONNECTED) {
+      DEBUG_PRINT(F("."));
+      countDelay--;
+      if (countDelay==0)
+      {
+        ConfigSettings.connectedWifiSta=false;
+        return false;
+      }
+      vTaskDelay(250);
+    }
+    uint8_t primaryChan;
+    wifi_second_chan_t secondChan;
+    esp_wifi_get_channel(&primaryChan, &secondChan);
+    ConfigSettings.channelWifi = primaryChan;
+    ConfigSettings.RSSIWifi = WiFi.RSSI();
+    ConfigSettings.bssid = WiFi.BSSIDstr(0);  
+    ConfigSettings.connectedWifiSta=true;
+    return true;
+
+  }else{
+    return false;
   }
-  uint8_t primaryChan;
-  wifi_second_chan_t secondChan;
-  esp_wifi_get_channel(&primaryChan, &secondChan);
-  ConfigSettings.channelWifi = primaryChan;
-  ConfigSettings.RSSIWifi = WiFi.RSSI();
-  ConfigSettings.bssid = WiFi.BSSIDstr(0);  
-  ConfigSettings.connectedWifiSta=true;
-  return true;
+    
 }
 
 void reconnectWifi()
 {
   DEBUG_PRINT(F("reconnect to WiFi..."));
-  setupSTAWifi();
+  DEBUG_PRINT(ConfigSettings.ssid);
+  WiFi.disconnect();
+  if (WiFi.getMode() == WIFI_MODE_STA)
+  {
+    if (ConfigSettings.ssid != "")
+    {
+      WiFi.begin(ConfigSettings.ssid,ConfigSettings.password);
+    }
+  }
   
 }
 
@@ -772,7 +729,7 @@ void setup(void)
   DEBUG_PRINTLN(F("Send data to UART0 in order to activate the RX callback"));
 
   initCircularBuffer();
-  delay(1000);
+ /* delay(1000);
 // creates a mutex object to control access to files
  file_Mutex = xSemaphoreCreateMutex();
   if (file_Mutex == NULL) {
@@ -791,6 +748,26 @@ void setup(void)
       DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
       delay(1000);
     }
+  }*/
+
+  // creates a mutex object to control access to files
+  Queue_Mutex = xSemaphoreCreateMutex();
+  if (Queue_Mutex == NULL) {
+    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
+    while (true) {
+      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
+      delay(1000);
+    }
+  }
+
+  // creates a mutex object to control access to files
+  QueuePrio_Mutex = xSemaphoreCreateMutex();
+  if (QueuePrio_Mutex == NULL) {
+    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
+    while (true) {
+      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
+      delay(1000);
+    }
   }
 
 
@@ -803,9 +780,7 @@ void setup(void)
   if ( (!loadConfigWifi()) || (!loadConfigGeneral())) {
       DEBUG_PRINTLN(F("Erreur Loadconfig LittleFS"));
   } else {
-    configOK=true;
-    loadConfigEther();
-    
+    configOK=true;    
     DEBUG_PRINTLN(F("Conf ok LittleFS"));
   }
 
@@ -842,81 +817,43 @@ void setup(void)
     mqttClient.onPublish(onMqttPublish);
 
     mqttClient.setServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT));
+    mqttClient.setClientId(ConfigGeneral.clientIDMQTT);
     if (String(ConfigGeneral.userMQTT) !="")
     {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
-    }
-    
-    
+    } 
   }
-
-
-  if (ETH_ENABLE)
-  { 
-    bool ETHReady = ETH.begin(ETH_ADDR, ETH_POWER_PIN, ETH_MDC_PIN, ETH_MDIO_PIN, ETH_TYPE, ETH_CLK_MODE);
-
-    if (ConfigSettings.enableWiFi || (!ETHReady))
+ 
+  if (configOK)
+  {
+    DEBUG_PRINTLN(F("configOK"));  
+    if (!setupSTAWifi())
     {
-      if (configOK)
-      {
-        DEBUG_PRINTLN(F("configOK"));  
-        if (!setupSTAWifi())
-        {
-          DEBUG_PRINTLN(F("AP"));
-          setupWifiAP();
-          modeWiFi="AP";
-        }
-        DEBUG_PRINTLN(F("setupSTAWifi"));   
-      }else{
-        
-        setupWifiAP();
-        modeWiFi="AP";
-        DEBUG_PRINTLN(F("AP"));
-      }
-    }
-  } else{
-    if (configOK)
-    {
-      DEBUG_PRINTLN(F("configOK"));  
-      if (!setupSTAWifi())
-      {
-        DEBUG_PRINTLN(F("AP"));
-        setupWifiAP();
-        modeWiFi="AP";
-      }
-      DEBUG_PRINTLN(F("setupSTAWifi"));   
-    }else{
-      
+      DEBUG_PRINTLN(F("AP"));
       setupWifiAP();
       modeWiFi="AP";
-      DEBUG_PRINTLN(F("AP"));
     }
+    DEBUG_PRINTLN(F("setupSTAWifi"));   
+  }else{
+    
+    setupWifiAP();
+    modeWiFi="AP";
+    DEBUG_PRINTLN(F("AP"));
   }
-
   
-  if (ETH_ENABLE)
-  {  
-    if (!ConfigSettings.dhcp)
-    {
-      ETH.config(parse_ip_address(ConfigSettings.ipAddress), parse_ip_address(ConfigSettings.ipGW),parse_ip_address(ConfigSettings.ipMask),parse_ip_address(ConfigSettings.ipGW));
-      
-    }
-
-  }
    //Zeroconf
-  String localdns = "lixee-box";
+  String localdns = "lixee-gw";
   if(!MDNS.begin(localdns.c_str())) {
      DEBUG_PRINTLN("Error starting mDNS");
      //return;
   }
-
+  esp_task_wdt_reset();
   
-
   timeClient.setPoolServerName((const char*)ConfigGeneral.ntpserver);
   timeClient.setTimeOffset((3600 * ConfigGeneral.timeoffset));
   timeClient.setTimeZone(ConfigGeneral.timezone);
   timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS);
-
+  vTaskDelay(2000);
   
   initWebServer();
   //server.begin();
@@ -942,9 +879,13 @@ void setup(void)
   commandList->push(Packet{0x0010, 0x0000,0});
   DEBUG_PRINTLN(F("add networkState"));
   commandList->push(Packet{0x0025, 0x0000,0});
-
+ esp_task_wdt_reset();
   timeClient.begin();
   bool NTPOK = timeClient.forceUpdate();
+  log_e("NTPOK : %d\r\n",NTPOK);
+
+ 
+
   if (NTPOK)
   {  
    FormattedDate = timeClient.getFullFormattedTime();
@@ -980,10 +921,10 @@ void setup(void)
  // while (true)
  //   ;
 
-  runner.init();
-  runner.addTask(scan);
-  scan.enableDelayed(60000);
-
+runner.init();
+runner.addTask(scan);
+scan.enableDelayed(60000);
+esp_task_wdt_reset();
 
  xTaskCreatePinnedToCore(
                     SerialTask,   // Function to implement the task 
@@ -994,19 +935,18 @@ void setup(void)
                     NULL,       // Task handle. 
                     0);  
 
+  xTaskCreatePinnedToCore(
+                    datasTreatment,   // Function to implement the task 
+                    "datasTreatment", // Name of the task 
+                    32*1024,      // Stack size in words 
+                    NULL,       // Task input parameter 
+                    18,          // Priority of the task 
+                    NULL,       // Task handle. 
+                    1);
+
   //initMailClient();
   disableCore0WDT();
-  pinMode(45,OUTPUT);
-  digitalWrite(45, HIGH);
 
-  //MODBUS
-  /*Serial2.begin(9600,rxPinModbus, txPinModbus);
-  ModbusRTUSlave modbus(Serial2, bufModbus, bufModbusSize,12);
-  modbus.begin(id, baud);
-  modbus.configureHoldingRegisters(numHoldingRegisters , (WordRead) holdingRegisterRead, (WordWrite) holdingRegisterWrite);*/
-  Serial2.setPins(10,11);
-  modbus.configureHoldingRegisters(holdingRegisters, 24600);
-  modbus.begin(1, 9600);
 
 }
 
@@ -1015,10 +955,6 @@ WiFiClient client;
 void loop(void)
 {
   esp_task_wdt_reset();
-  modbus.poll();
-  holdingRegisters[0x4000]=666;
-  holdingRegisters[0x4001]=33;
-
 
   runner.execute();
   size_t bytes_read;
@@ -1050,33 +986,26 @@ void loop(void)
       if (packetRead[i] == 0x03){DEBUG_PRINTLN();}
     }                                                  
   }*/
-   
 
-
-
-
-  while (!PriorityQueuePacket->isEmpty())
+  /*while (!PriorityQueuePacket->isEmpty())
   {
     DEBUG_PRINTLN("Priority Packet shift : protocol datas");
     SerialPacket packet;
     packet = (SerialPacket)PriorityQueuePacket->shift();
     datasManage((char *)packet.raw,packet.len);
     vTaskDelay(30);
-    
   }
   
   if (!QueuePacket->isEmpty())
-  {
-   
+  {   
     DEBUG_PRINTLN("Packet shift : protocol datas");
     SerialPacket packet;
     packet = (SerialPacket)QueuePacket->shift();
     datasManage((char *)packet.raw,packet.len);
     vTaskDelay(100);
-
   }
   
-  sendPacket();
+  sendPacket();*/
   monitor_heap();
 
   /*if (currentTime - previousTime >= interval) 
@@ -1094,8 +1023,9 @@ void loop(void)
     
   }*/
 
-
   //vTaskDelay(10);
 }
+
+
 
 

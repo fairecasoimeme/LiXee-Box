@@ -23,6 +23,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "esp_err.h"
+#include "esp_task_wdt.h"
 #include <map>
 #include "stdlib.h"
 #include "log.h"
@@ -48,15 +50,23 @@ std::map<String, bool> openFilesMap;
 // Fonction pour ouvrir un fichier avec suivi d'état
 
 File safeOpenFile(const char *path, const char *mode) {
-  /*if (openFilesMap[String(path)]) {
-    DEBUG_PRINTLN("Fichier déjà ouvert");
-    return File();
-  }*/
+  int i=0;
+  while (openFilesMap[String(path)]) {
+    esp_task_wdt_reset();
+    log_e("Fichier déjà ouvert\r\n");
+    vTaskDelay(20);
+    i++;
+
+    if (i > 5)
+    {
+      return File();
+    }
+  }
 
   File file = LittleFS.open(path, mode);
-  /*if (file) {
+  if (file) {
     openFilesMap[String(path)] = true;
-  }*/
+  }
   return file;
 }
 
@@ -64,7 +74,7 @@ File safeOpenFile(const char *path, const char *mode) {
 void safeCloseFile(File &file, const char *path) {
   if (file) {
     file.close();
-    //openFilesMap[String(path)] = false;
+    openFilesMap[String(path)] = false;
   }
 
 }
@@ -122,8 +132,8 @@ bool init_raz_energy(String path, String time)
     char name_with_extension[64];
     strcpy(name_with_extension,prefix);
     strcat(name_with_extension,path.c_str());
-    if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
-    {
+    //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+    //{
       File file = safeOpenFile(name_with_extension, "r+");
       if (!file)
       {
@@ -134,7 +144,7 @@ bool init_raz_energy(String path, String time)
         {
           DEBUG_PRINTLN(F("Impossible de créer le fichier (Energy) "));
           safeCloseFile(file,name_with_extension);
-          xSemaphoreGive(file_Mutex);
+          //xSemaphoreGive(file_Mutex);
           return false;
         }
       }
@@ -152,7 +162,7 @@ bool init_raz_energy(String path, String time)
           DEBUG_PRINTLN(err);
           addDebugLog(err);
           safeCloseFile(file,name_with_extension);
-          xSemaphoreGive(file_Mutex);
+          //xSemaphoreGive(file_Mutex);
           return false;
         }
       }
@@ -193,7 +203,7 @@ bool init_raz_energy(String path, String time)
         DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
         DEBUG_PRINTLN(path);
         safeCloseFile(file,name_with_extension);
-        xSemaphoreGive(file_Mutex);
+        //xSemaphoreGive(file_Mutex);
         return false;
       }
       //  Écrire les données dans le fichier
@@ -203,15 +213,15 @@ bool init_raz_energy(String path, String time)
         {
           DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
           safeCloseFile(file,name_with_extension);
-          xSemaphoreGive(file_Mutex);
+          //xSemaphoreGive(file_Mutex);
           return false;
         }
       }
       // Fermer le fichier
       safeCloseFile(file,name_with_extension);
-      xSemaphoreGive(file_Mutex);
+      //xSemaphoreGive(file_Mutex);
       return true;
-    }
+    //}
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
   else
@@ -233,8 +243,8 @@ bool ini_energy(String path, String section, String value)
       char name_with_extension[64];
       strcpy(name_with_extension,prefix);
       strcat(name_with_extension,path.c_str());
-      if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
-      {
+      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+      //{
         File file = safeOpenFile(name_with_extension, "r+");
         if (!file)
         {
@@ -245,7 +255,7 @@ bool ini_energy(String path, String section, String value)
           {
             DEBUG_PRINTLN(F("Impossible de créer le fichier (Energy) "));
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -263,7 +273,7 @@ bool ini_energy(String path, String section, String value)
             DEBUG_PRINTLN(err);
             addDebugLog(err);
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -289,7 +299,7 @@ bool ini_energy(String path, String section, String value)
             DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
             DEBUG_PRINTLN(path);
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+           // xSemaphoreGive(file_Mutex);
             return false;
           }
           // serializeJsonPretty(doc, Serial);
@@ -300,7 +310,7 @@ bool ini_energy(String path, String section, String value)
             {
               DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
               safeCloseFile(file,name_with_extension);
-              xSemaphoreGive(file_Mutex);
+             // xSemaphoreGive(file_Mutex);
               return false;
             }
           }
@@ -308,8 +318,8 @@ bool ini_energy(String path, String section, String value)
           // Fermer le fichier
           safeCloseFile(file,name_with_extension);   
         } 
-        xSemaphoreGive(file_Mutex);
-      }
+        //xSemaphoreGive(file_Mutex);
+      //}
       // Délai pour simuler une tâche
       vTaskDelay(10 / portTICK_PERIOD_MS);
       return true;
@@ -334,8 +344,8 @@ bool ini_trendEnergy(String path, String section, String value)
       char name_with_extension[64];
       strcpy(name_with_extension,prefix);
       strcat(name_with_extension,path.c_str());
-      if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
-      {
+      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+      //{
         File file = safeOpenFile(name_with_extension, "r");
         if (!file)
         {
@@ -346,7 +356,7 @@ bool ini_trendEnergy(String path, String section, String value)
           {
             DEBUG_PRINTLN(F("Impossible de créer le fichier (trendEnergy) "));
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+           // xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -359,7 +369,7 @@ bool ini_trendEnergy(String path, String section, String value)
           if (error)
           {
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -531,7 +541,7 @@ bool ini_trendEnergy(String path, String section, String value)
           DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
           DEBUG_PRINTLN(path);
           safeCloseFile(file,name_with_extension);
-          xSemaphoreGive(file_Mutex);
+          //xSemaphoreGive(file_Mutex);
           return false;
         }
         if (!doc.isNull())
@@ -540,15 +550,15 @@ bool ini_trendEnergy(String path, String section, String value)
           {
             DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
 
         // Fermer le fichier
         safeCloseFile(file,name_with_extension);
-        xSemaphoreGive(file_Mutex);
-      }
+        //xSemaphoreGive(file_Mutex);
+      //}
       vTaskDelay(10 / portTICK_PERIOD_MS);
       return true;
     }
@@ -573,8 +583,8 @@ bool ini_trendPower(String path, String section, String value)
       char name_with_extension[64];
       strcpy(name_with_extension,prefix);
       strcat(name_with_extension,path.c_str());
-      if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
-      {
+      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+      //{
         File file = safeOpenFile(name_with_extension, "r");
         if (!file)
         {
@@ -585,7 +595,7 @@ bool ini_trendPower(String path, String section, String value)
           {
             DEBUG_PRINTLN(F("Impossible de créer le fichier (trendPower) "));
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -598,7 +608,7 @@ bool ini_trendPower(String path, String section, String value)
           if (error)
           {
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -632,7 +642,7 @@ bool ini_trendPower(String path, String section, String value)
           DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
           DEBUG_PRINTLN(path);
           safeCloseFile(file,name_with_extension);
-          xSemaphoreGive(file_Mutex);
+          //xSemaphoreGive(file_Mutex);
           return false;
         }
         if (!doc.isNull())
@@ -641,16 +651,16 @@ bool ini_trendPower(String path, String section, String value)
           {
             DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
 
         // Fermer le fichier
         safeCloseFile(file,name_with_extension);
-        xSemaphoreGive(file_Mutex);
+        //xSemaphoreGive(file_Mutex);
         
-      }
+      //}
       vTaskDelay(10 / portTICK_PERIOD_MS);
       return true;
     }
@@ -678,8 +688,8 @@ bool ini_power2(String path,String section,String value)
       char name_with_extension[64];
       strcpy(name_with_extension,prefix);
       strcat(name_with_extension,path.c_str());
-      if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
-      {
+      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+      //{
         File file = safeOpenFile(name_with_extension, "r");
         if (!file)
         {
@@ -690,7 +700,7 @@ bool ini_power2(String path,String section,String value)
           {
             DEBUG_PRINTLN(F("Impossible de créer le fichier (trendPower) "));
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -714,7 +724,7 @@ bool ini_power2(String path,String section,String value)
             addDebugLog(err);
             
             safeCloseFile(file,name_with_extension);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -775,7 +785,7 @@ bool ini_power2(String path,String section,String value)
           DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
           DEBUG_PRINTLN(path);
           safeCloseFile(tmpFile,tmpFilenamePower);
-          xSemaphoreGive(file_Mutex);
+          //xSemaphoreGive(file_Mutex);
           return false;
         }
         if (!doc.isNull())
@@ -784,7 +794,7 @@ bool ini_power2(String path,String section,String value)
           {
             DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
             safeCloseFile(tmpFile,tmpFilenamePower);
-            xSemaphoreGive(file_Mutex);
+            //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
@@ -795,8 +805,8 @@ bool ini_power2(String path,String section,String value)
           DEBUG_PRINTLN("Échec du renommage du fichier temporaire : ini_power2");
         }
 
-        xSemaphoreGive(file_Mutex);
-      }
+       // xSemaphoreGive(file_Mutex);
+     // }
       vTaskDelay(10 / portTICK_PERIOD_MS);
       return true;
       
@@ -950,18 +960,23 @@ using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
 bool ini_write(String path, String section, String key, String value)
 {
 
+  const char* prefix ="/db/";
+  char name_with_extension[64];
+  strcpy(name_with_extension,prefix);
+  strcat(name_with_extension,path.c_str());
+
   if (path.length()>0)
   {
-    File file = LittleFS.open("/db/" + path, "r+");
+    File file = safeOpenFile(name_with_extension, "r+");
     if (!file)
     {
-      file = LittleFS.open("/db/" + path, "w+");
+      file = safeOpenFile(name_with_extension, "w+");
       DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
       DEBUG_PRINTLN(path);
       if (!file)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (ini_write) "));
-        file.close();
+        safeCloseFile(file,name_with_extension);
         return false;
       }
       // return false;
@@ -976,23 +991,23 @@ bool ini_write(String path, String section, String key, String value)
       if (error)
       {
         // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-        file.close();
+        safeCloseFile(file,name_with_extension);
         return false;
       }
     }
-    file.close();
+    safeCloseFile(file,name_with_extension);
 
     // Ajouter des valeurs dans le fichier json
     doc[section][key] = value;
 
     // serializeJsonPretty(doc, Serial);
     //  Écrire les données dans le fichier
-    file = LittleFS.open("/db/" + path, "w+");
+    file = safeOpenFile(name_with_extension, "w+");
     if (!file || file.isDirectory())
     {
       DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
       DEBUG_PRINTLN(path);
-      file.close();
+      safeCloseFile(file,name_with_extension);
       return false;
     }
 
@@ -1001,13 +1016,13 @@ bool ini_write(String path, String section, String key, String value)
       if (serializeJson(doc, file) == 0)
       {
         DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
-        file.close();
+        safeCloseFile(file,name_with_extension);
         return false;
       }
     }
 
     // Fermer le fichier
-    file.close();
+    safeCloseFile(file,name_with_extension);
     return true;
   }else{
     return false;
@@ -1097,11 +1112,12 @@ bool config_write(String path, String key, String value)
   char name_with_extension[64];
   strcpy(name_with_extension,prefix);
   strcat(name_with_extension,path.c_str());
-  if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
-  {
+  //  xSemaphoreTake(file_Mutex, portMAX_DELAY);
     File file = safeOpenFile(name_with_extension, "r+");
     if (!file)
     {
+  //   xSemaphoreGive(file_Mutex);
+  //    xSemaphoreTake(file_Mutex, portMAX_DELAY);
       file = safeOpenFile(name_with_extension, "w+");
       DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
       DEBUG_PRINTLN(path);
@@ -1109,7 +1125,7 @@ bool config_write(String path, String key, String value)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (config_write) "));
         safeCloseFile(file,name_with_extension);
-        xSemaphoreGive(file_Mutex);
+  //      xSemaphoreGive(file_Mutex);
         return false;
       }
     }
@@ -1125,24 +1141,26 @@ bool config_write(String path, String key, String value)
       {
         // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
         safeCloseFile(file,name_with_extension);
-        xSemaphoreGive(file_Mutex);
+    //    xSemaphoreGive(file_Mutex);
         return "Error";
       }
     }
     safeCloseFile(file,name_with_extension);
+    //xSemaphoreGive(file_Mutex);
 
     // Ajouter des valeurs dans le fichier json
     doc[key] = value;
 
     // serializeJsonPretty(doc, Serial);
     //  Écrire les données dans le fichier
+    //xSemaphoreTake(file_Mutex, portMAX_DELAY);
     File tpFile = safeOpenFile(tempFileName, "w+");
     if (!tpFile || tpFile.isDirectory())
     {
       DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
       DEBUG_PRINTLN(path);
       safeCloseFile(tpFile,tempFileName);
-      xSemaphoreGive(file_Mutex);
+      //xSemaphoreGive(file_Mutex);
       return false;
     }
 
@@ -1152,26 +1170,23 @@ bool config_write(String path, String key, String value)
       {
         DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
         safeCloseFile(tpFile,tempFileName);
-        xSemaphoreGive(file_Mutex);
+        //xSemaphoreGive(file_Mutex);
         return false;
       }
     }
 
     // Fermer le fichier
     safeCloseFile(tpFile,tempFileName);
-    
+    //xSemaphoreGive(file_Mutex);
+
     // Renommer le fichier temporaire pour remplacer l'original
+    //xSemaphoreTake(file_Mutex, portMAX_DELAY);
     if (!LittleFS.rename(tempFileName, name_with_extension)) {
       DEBUG_PRINTLN("Échec du renommage du fichier temporaire : config_write");
     }
-
-
-    xSemaphoreGive(file_Mutex);
-
-  }
+    //xSemaphoreGive(file_Mutex);
   vTaskDelay(10 / portTICK_PERIOD_MS);
   return true;
-  
 }
 
 
@@ -1191,7 +1206,7 @@ void scanFilesError(void){
   {
     if (!filedevice.isDirectory())
     {
-      if (filedevice.size() == 0)
+      if (filedevice.size() < 50)
       {
         //recherche backup
         File rootbk = LittleFS.open("/bk");

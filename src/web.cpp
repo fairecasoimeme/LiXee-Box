@@ -11,10 +11,8 @@
 #define ARDUINOJSON_USE_LONG_LONG 1
 #define ARDUINOJSON_SLOT_ID_SIZE 2
 #include <ArduinoJson.h>
-#include <ETH.h>
 #include "WiFi.h"
 
-// #include <WebServer.h>
 #include <HTTPClient.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -44,6 +42,7 @@ extern unsigned long timeLog;
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 10> *PrioritycommandList;
 extern CircularBuffer<Alert, 10> *alertList;
+extern CircularBuffer<Device, 10> *deviceList;
 
 int maxDayOfTheMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 String section[12] = { "0", "1", "256", "258" , "260", "262", "264" ,"266", "268", "270", "272", "274"};
@@ -58,18 +57,18 @@ HTTPClient clientWeb;
 
 AsyncWebServer serverWeb(80);
 
-#define UPD_FILE "https://github.com/fairecasoimeme/lixee-box/releases/latest/download/lixee-box.bin"
+#define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/lixee-gateway.bin"
 
 const char HTTP_HELP[] PROGMEM = 
- "<h1>Help !</h1>"
-    "<h3>Version : {{version}}</h3>"
-    "<h3>Shop & description</h3>"
+ "<h4>About !</h4>"
+    "<h5>Version : {{version}}</h5>"
+    "<h5>Shop & description</h5>"
     "You can go to this url :</br>"
     "<a href=\"https://lixee.fr/\" target='_blank'>Shop </a></br>"
 
-    "<h3>Firmware Source & Issues</h3>"
+    "<h5>Firmware Source & Issues</h5>"
     "Please go here :</br>"
-    "<a href=\"https://github.com/fairecasoimeme/LiXee-WebMQTT-Gateway\" target='_blank'>Sources</a>"
+    "<a href=\"https://github.com/fairecasoimeme/LiXee-Gateway\" target='_blank'>Sources</a>"
     
     
     ;
@@ -101,55 +100,179 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
 
 const char HTTP_MENU[] PROGMEM =
     "<body>"
-    "<nav class='navbar navbar-expand-lg navbar-light bg-light rounded'><div class='container-fluid'><a class='navbar-brand' href='/statusNetwork'>"
-    "<div style='display:block-inline;float:left;'><img src='web/img/logo.png'> </div>"
-    "<div style='float:left;display:block-inline;font-weight:bold;padding:18px 10px 10px 10px;'> WEBAPI-MQTT Gateway</div>"
-    //"<div id='FormattedDate' style='display:block;padding-top:58px;font-size:12px;'>%FormattedDate%</div>"
-    "</a>"
+    "<nav class='navbar navbar-expand-md rounded'>"
+    "<div class='container-fluid' style=''>"
     "<button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNavDropdown' aria-controls='navbarNavDropdown' aria-expanded='false' aria-label='Toggle navigation'>"
     "<span class='navbar-toggler-icon'></span>"
     "</button>"
-    "<div id='navbarNavDropdown' class='collapse navbar-collapse justify-content-md-center'>"
-    "<ul class='navbar-nav me-auto mb-2 mb-lg-0'>"
+    "<a class='navbar-brand p-0 me-0 me-lg-2' href='/statusNetwork' style='margin-right:0px;'>"
+      "<div style='display:block-inline;float:left;'><img width='70px' src='web/img/logo.png'> </div>"
+      "<div style='float:left;display:block-inline;font-size:12px;font-weight:bold;padding:13px 10px 10px 10px;'> Gateway</div>"
+    "</a>"
+    "<div id='navbarNavDropdown' class='collapse navbar-collapse justify-content-center'>"
+    "<ul class='navbar-nav mc-auto mb-2 mb-lg-0'>"
     //"<li class='nav-item'>"
     //"<a class='nav-link' href='/'>Dashboard</a>"
     //"</li>"
     "<li class='nav-item dropdown'>"
-    "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>Status</a>"
+    "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-home'>"
+      "<path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'></path>"
+      "<polyline points='9 22 9 12 15 12 15 22'></polyline>"
+    "</svg>"
+    " Status"
+    "</a>"
     "<div class='dropdown-menu'>"
     //"<a class='dropdown-item' href='statusEnergy'>Energy</a>"
-    "<a class='dropdown-item' href='statusNetwork'>Network</a>"
-    "<a class='dropdown-item' href='statusDevices'>Devices</a>"
+    "<a class='dropdown-item' href='statusNetwork'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
+      "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
+      "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+    "</svg>"
+    " Network"
+    "</a>"
+    "<a class='dropdown-item' href='statusDevices'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
+      "<path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
+      "<path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
+    "</svg>"
+    " Devices"
+    "</a>"
     "</div>"
     "</li>"
+
     "<li class='nav-item dropdown'>"
-    "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>Config</a>"
+    "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-router' viewBox='0 0 16 16'>"
+      "<path d='M5.525 3.025a3.5 3.5 0 0 1 4.95 0 .5.5 0 1 0 .707-.707 4.5 4.5 0 0 0-6.364 0 .5.5 0 0 0 .707.707'/>"
+      "<path d='M6.94 4.44a1.5 1.5 0 0 1 2.12 0 .5.5 0 0 0 .708-.708 2.5 2.5 0 0 0-3.536 0 .5.5 0 0 0 .707.707ZM2.5 11a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1m4.5-.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0m2.5.5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1m1.5-.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0m2 0a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0'/>"
+      "<path d='M2.974 2.342a.5.5 0 1 0-.948.316L3.806 8H1.5A1.5 1.5 0 0 0 0 9.5v2A1.5 1.5 0 0 0 1.5 13H2a.5.5 0 0 0 .5.5h2A.5.5 0 0 0 5 13h6a.5.5 0 0 0 .5.5h2a.5.5 0 0 0 .5-.5h.5a1.5 1.5 0 0 0 1.5-1.5v-2A1.5 1.5 0 0 0 14.5 8h-2.306l1.78-5.342a.5.5 0 1 0-.948-.316L11.14 8H4.86zM14.5 9a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 .5-.5z'/>"
+      "<path d='M8.5 5.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0'/>"
+    "</svg>"
+    " Network"
+    "</a>"
     "<div class='dropdown-menu'>"
-    "<a class='dropdown-item' href='configGeneral'>Gateway</a>"
-    "<a class='dropdown-item' href='configZigbee'>Zigbee</a>"
-    "<a class='dropdown-item' href='configWiFi'>WiFi</a>"
-    //"<a class='dropdown-item' href='configEthernet'>Ethernet</a>"
-    "<a class='dropdown-item' href='configDevices'>Devices</a>"
+    "<a class='dropdown-item' href='configWiFi'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
+      "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
+      "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+    "</svg>"
+    " WiFi"
+    "</a>"
+    "<a class='dropdown-item' href='configDevices'>"
+    "<svg fill='currentColor' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' role='img' xmlns='http://www.w3.org/2000/svg'>"
+      "<path d='M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z'/>"
+    "</svg>"
+    " Zigbee"
+    "</a>"
+    "</div>"
+    "</li>"
+
+
+    "<li class='nav-item dropdown'>"
+    "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>"
+    "<svg style='width:24px;' width='24' height='24' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg' fill='currentColor'>"
+      "<path fill='#000000' fill-rule='evenodd' d='M13.75.5a2.25 2.25 0 00-1.847 3.536l-.933.934a.752.752 0 00-.11.14c-.19-.071-.396-.11-.61-.11h-2.5A1.75 1.75 0 006 6.75v.5H4.372a2.25 2.25 0 100 1.5H6v.5c0 .966.784 1.75 1.75 1.75h2.5c.214 0 .42-.039.61-.11.03.05.067.097.11.14l.933.934a2.25 2.25 0 101.24-.881L12.03 9.97a.75.75 0 00-.14-.11c.071-.19.11-.396.11-.61v-2.5c0-.214-.039-.42-.11-.61a.75.75 0 00.14-.11l1.113-1.113A2.252 2.252 0 0016 2.75 2.25 2.25 0 0013.75.5zM13 2.75a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM7.75 6.5a.25.25 0 00-.25.25v2.5c0 .138.112.25.25.25h2.5a.25.25 0 00.25-.25v-2.5a.25.25 0 00-.25-.25h-2.5zm6 6a.75.75 0 100 1.5.75.75 0 000-1.5zM1.5 8A.75.75 0 113 8a.75.75 0 01-1.5 0z' clip-rule='evenodd'/>"
+    "</svg>"
+    " Gateway"
+    "</a>"
+    "<div class='dropdown-menu'>"
+    "<a class='dropdown-item' href='/configMQTT'>"
+    "<svg role='img' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' style='width:16px;' height='16' width='16'>"
+      "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z' fill='currentColor' stroke-width='1'></path>"
+    "</svg>"
+    " MQTT"
+    "</a>"
+    "<a class='dropdown-item' href='/configWebPush'>"
+    "<svg style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='currentColor' xmlns='http://www.w3.org/2000/svg'>"
+      "<path fill-rule='evenodd' clip-rule='evenodd' d='M9.83824 18.4467C10.0103 18.7692 10.1826 19.0598 10.3473 19.3173C8.59745 18.9238 7.07906 17.9187 6.02838 16.5383C6.72181 16.1478 7.60995 15.743 8.67766 15.4468C8.98112 16.637 9.40924 17.6423 9.83824 18.4467ZM11.1618 17.7408C10.7891 17.0421 10.4156 16.1695 10.1465 15.1356C10.7258 15.0496 11.3442 15 12.0001 15C12.6559 15 13.2743 15.0496 13.8535 15.1355C13.5844 16.1695 13.2109 17.0421 12.8382 17.7408C12.5394 18.3011 12.2417 18.7484 12 19.0757C11.7583 18.7484 11.4606 18.3011 11.1618 17.7408ZM9.75 12C9.75 12.5841 9.7893 13.1385 9.8586 13.6619C10.5269 13.5594 11.2414 13.5 12.0001 13.5C12.7587 13.5 13.4732 13.5593 14.1414 13.6619C14.2107 13.1384 14.25 12.5841 14.25 12C14.25 11.4159 14.2107 10.8616 14.1414 10.3381C13.4732 10.4406 12.7587 10.5 12.0001 10.5C11.2414 10.5 10.5269 10.4406 9.8586 10.3381C9.7893 10.8615 9.75 11.4159 9.75 12ZM8.38688 10.0288C8.29977 10.6478 8.25 11.3054 8.25 12C8.25 12.6946 8.29977 13.3522 8.38688 13.9712C7.11338 14.3131 6.05882 14.7952 5.24324 15.2591C4.76698 14.2736 4.5 13.168 4.5 12C4.5 10.832 4.76698 9.72644 5.24323 8.74088C6.05872 9.20472 7.1133 9.68686 8.38688 10.0288ZM10.1465 8.86445C10.7258 8.95042 11.3442 9 12.0001 9C12.6559 9 13.2743 8.95043 13.8535 8.86447C13.5844 7.83055 13.2109 6.95793 12.8382 6.2592C12.5394 5.69894 12.2417 5.25156 12 4.92432C11.7583 5.25156 11.4606 5.69894 11.1618 6.25918C10.7891 6.95791 10.4156 7.83053 10.1465 8.86445ZM15.6131 10.0289C15.7002 10.6479 15.75 11.3055 15.75 12C15.75 12.6946 15.7002 13.3521 15.6131 13.9711C16.8866 14.3131 17.9412 14.7952 18.7568 15.2591C19.233 14.2735 19.5 13.1679 19.5 12C19.5 10.8321 19.233 9.72647 18.7568 8.74093C17.9413 9.20477 16.8867 9.6869 15.6131 10.0289ZM17.9716 7.46178C17.2781 7.85231 16.39 8.25705 15.3224 8.55328C15.0189 7.36304 14.5908 6.35769 14.1618 5.55332C13.9897 5.23077 13.8174 4.94025 13.6527 4.6827C15.4026 5.07623 16.921 6.08136 17.9716 7.46178ZM8.67765 8.55325C7.61001 8.25701 6.7219 7.85227 6.02839 7.46173C7.07906 6.08134 8.59745 5.07623 10.3472 4.6827C10.1826 4.94025 10.0103 5.23076 9.83823 5.5533C9.40924 6.35767 8.98112 7.36301 8.67765 8.55325ZM15.3224 15.4467C15.0189 16.637 14.5908 17.6423 14.1618 18.4467C13.9897 18.7692 13.8174 19.0598 13.6527 19.3173C15.4026 18.9238 16.921 17.9186 17.9717 16.5382C17.2782 16.1477 16.3901 15.743 15.3224 15.4467ZM12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z' fill='currentColor'/>"
+    "</svg>"
+    " WebPush"
+    "</a>"
+    "</div>"
+    "</li>"
+
+
+
+
+
+
+    "<li class='nav-item dropdown'>"
+    "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
+      "<circle cx='12' cy='12' r='3'></circle>"
+      "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
+    "</svg>"
+    " Config"
+    "</a>"
+    "<div class='dropdown-menu'>"
+    "<a class='dropdown-item' href='/configGeneral'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
+      "<circle cx='12' cy='12' r='3'></circle>"
+      "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
+    "</svg>"
+    " General"
+    "</a>"
+    "<a class='dropdown-item' href='/configHorloge'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-clock' viewBox='0 0 16 16'>"
+      "<path d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z'></path><path d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0'></path>"
+    "</svg>"
+    " Horloge"
+    "</a>"
+    "<a class='dropdown-item' href='configHTTP'>"
+    "<svg style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>"
+      "<path d='M2 16C2 13.1716 2 11.7574 2.87868 10.8787C3.75736 10 5.17157 10 8 10H16C18.8284 10 20.2426 10 21.1213 10.8787C22 11.7574 22 13.1716 22 16C22 18.8284 22 20.2426 21.1213 21.1213C20.2426 22 18.8284 22 16 22H8C5.17157 22 3.75736 22 2.87868 21.1213C2 20.2426 2 18.8284 2 16Z' stroke='currentColor' stroke-width='1.5'/>"
+      "<path d='M6 10V8C6 4.68629 8.68629 2 12 2C15.3137 2 18 4.68629 18 8V10' stroke='currentColor' stroke-width='1.5' stroke-linecap='round'/>"
+    "</svg>"
+    " Security"
+    "</a>"
     "</div>"
     "</li>"
     "<li class='nav-item'>"
-    "<a class='nav-link' href='/tools'>Tools</a>"
+    "<a class='nav-link' href='/tools'>"
+    "<svg viewBox='0 0 24 24' style='width:24px;' width='24' height='24' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round' class='css-i6dzq1'>"
+      "<path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'></path>"
+    "</svg>"
+    " Tools"
+    "</a>"
     "</li>"
     "<li class='nav-item'>"
-    "<a class='nav-link' href='/help'>Help</a>"
+    "<a class='nav-link' href='/help'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>"
+      "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+      "<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
+    "</svg>"
+    " About"
+    "</a>"
     "</li>"
     "</ul></div></div>"
     "</nav>"
+    "<div style='display:block;text-align:right;font-size:12px;'>"
+          "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-clock' viewBox='0 0 16 16'>"
+                "<path d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z'/>"
+                "<path d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0'/>"
+          "</svg> "
+        "<span id='FormattedDate' style='padding:20 20 0 0;'>{{FormattedDate}}</span>"
+    "</div>"
+    
     "<div id='alert' style='display:none;' class='alert alert-success' role='alert'>"
     "</div>";
 
 // "<a href='/configFiles' class='btn btn-primary mb-2'>Config Files</a>"
 const char HTTP_TOOLS[] PROGMEM =
-    "<h1>Tools</h1>"
+    "<h4>"
+    "Tools"
+    "</h4>"
     "<div class='btn-group-vertical'>"
     //"<a href='/logs' class='btn btn-primary mb-2'>Console</a>"
-    "<a href='/debugFiles' class='btn btn-primary mb-2'>Debug Files</a>"
-    //"<a href='/fsbrowser' class='btn btn-primary mb-2'>Device Files</a>"
+    "<a href='/debugFiles' class='btn btn-primary mb-2'>"
+    "<svg viewBox='0 0 24 24' style='width:24px' width='24' height='24' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'>"
+      "<polyline points='4 17 10 11 4 5'></polyline>"
+      "<line x1='12' y1='19' x2='20' y2='19'></line>"
+    "</svg>"
+    " Debug"
+    "</a>"
+    "<a href='/fsbrowser' class='btn btn-primary mb-2'>Device Files</a>"
     "<a href='/tp' class='btn btn-primary mb-2'>Templates</a>"
     //"<a href='/javascript' class='btn btn-primary mb-2'>Javascript</a>"
     "<a href='/update' class='btn btn-primary mb-2'>Update</a>"
@@ -158,11 +281,11 @@ const char HTTP_TOOLS[] PROGMEM =
     "</div>";
 
 const char HTTP_BACKUP[] PROGMEM =
-    "<h1>Backup datas</h1>"
+    "<h4>Backup datas</h4>"
     "<a href='#' class='btn btn-primary mb-2' onClick='createBackupFile()'>Create Backup</a>"
     "<div id='createBackupFile'>"
     "</div>"
-    "<h1>Restore datas</h1>"
+    "<h4>Restore datas</h4>"
     "<div id='restoreBackupFile'>"
     "{{listBackupFiles}}"
     "</div>"
@@ -194,7 +317,7 @@ const char HTTP_BACKUP[] PROGMEM =
     "xhr.upload.addEventListener('progress', function(evt) {"
     "if (evt.lengthComputable) {"
     "var per = evt.loaded / evt.total;"
-    "$('#prg').html('progress: ' + Math.round(per*100) + '%');"
+    "$('#prg').html( Math.round(per*100) + '%');"
     "$('#bar').css('width',Math.round(per*100) + '%');"
     "}"
     "}, false);"
@@ -213,7 +336,7 @@ const char HTTP_BACKUP[] PROGMEM =
     ;
 
 const char HTTP_UPDATE[] PROGMEM =
-    "<h1>Update firmware</h1>"
+    "<h4>Update firmware</h4>"
     "<div id='update_info'>"
     "<h4>Latest version on GitHub</h4>"
     "<div id='onlineupdate'>"
@@ -257,7 +380,7 @@ const char HTTP_UPDATE[] PROGMEM =
     "xhr.upload.addEventListener('progress', function(evt) {"
     "if (evt.lengthComputable) {"
     "var per = evt.loaded / evt.total;"
-    "$('#prg').html('progress: ' + Math.round(per*100) + '%');"
+    "$('#prg').html(Math.round(per*100) + '%');"
     "$('#bar').css('width',Math.round(per*100) + '%');"
     "}"
     "}, false);"
@@ -274,73 +397,118 @@ const char HTTP_UPDATE[] PROGMEM =
     "});"
     "</script>";
 
-const char HTTP_CONFIG_MENU[] PROGMEM =
-    //"<a href='/configGeneral' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_general}}' >General</a>&nbsp"
-    //"<a href='/configHorloge' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_horloge}}' >Horloge</a>&nbsp"
-    //"<a href='/configLinky' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_linky}}' >Linky</a>&nbsp"
-    //"<a href='/configGaz' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_gaz}}' >Gaz</a>&nbsp"
-    //"<a href='/configWater' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_water}}' >Water</a>&nbsp"
-    "<a href='/configHTTP' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_http}}' >HTTP</a>&nbsp"
-    "<a href='/configMQTT' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_mqtt}}' >MQTT</a>&nbsp"
-    "<a href='/configWebPush' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_webpush}}' >WebPush</a>&nbsp"
-    //"<a href='/configModbus' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_modbus}}' >Modbus</a>&nbsp"
-    //"<a href='/configNotif' style='width:100px;' class='btn btn-primary mb-1 {{menu_config_notif}}' >Notif</a>&nbsp"
+const char HTTP_CONFIG_MENU_ZIGBEE[] PROGMEM =
+    "<a href='/configDevices' style='width:100px;height:64px;' class='btn btn-primary mb-1 {{menu_config_devices}}' >"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
+      "<path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
+      "<path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
+    "</svg><br>"
+    " Devices"
+    "</a>&nbsp"
+    "<a href='/configZigbee' style='width:100px;height:64px;' class='btn btn-primary mb-1 {{menu_config_zigbee}}' >"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
+      "<circle cx='12' cy='12' r='3'></circle>"
+      "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
+    "</svg><br>"
+    " Config"
+    "</a>&nbsp"
     ;
-const char HTTP_CONFIG_GENERAL[] PROGMEM =
-    "<h1>Config general</h1>"
+
+const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
+
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigGeneral'>"
-    "<h2>General</h2>"
+      "<div class='col-sm-2'>"
+        "<div class='btn-group-horizontal'>"
+          "{{menu_config_zigbee}}"
+        "</div>"
+      "</div>"
+      "<div class='col-sm-10'>"
+        "<h4>Config Zigbee Devices</h4>"
+        "<div align='right'>"
+          "<button type='button' onclick='cmd(\"PermitJoin\");' class='btn btn-primary'>"
+          "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
+            "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+            "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
+          "</svg><br>"
+          " Add Device"
+          "</button> "
+        "</div><br>"
+        "<h5>List of devices</h5>"
+        "<div class='row' style='font-size:12px;'>"
+          "{{devicesList}}"
+        "</div>"
+      "</div>"
+
+
+;
+
+
+const char HTTP_CONFIG_GENERAL[] PROGMEM =
+    
+    "<div class='row justify-content-md-center' >"
+    "<div class='col col-md-6'>"
+    "<h4>General</h4>"
+    "<form method='POST' action='saveConfigGeneral'>" 
     "<div class='form-check'>"
     "<input class='form-check-input' id='debugSerial' type='checkbox' name='debugSerial' {{checkedDebug}}>"
-    "<label class='form-check-label' for='debugSerial'>Debug on Serial</label>"
+    "<label class='form-check-label' for='debugSerial'>Debug</label>"
     "</div>"
     "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
     "</form></div>"
     "</div>";
 
-const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
-    "<h1>Config zigbee</h1>"
+const char HTTP_CONFIG_ZIGBEE[] PROGMEM =  
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-6'>"
-    "<h2>Parameters</h2>"
+    "<div class='col-sm-2'>"
+    "<div class='btn-group-horizontal'>"
+    "{{menu_config_zigbee}}"
+    "</div>"
+    "</div>"
+    "<div class='col-sm-10'>"
+    "<h4>Config Zigbee</h4>"
+    "<div align='right'>"
+    "<button type='button' onclick='cmd(\"Reset\");' class='btn btn-primary'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='#FFFFFF' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
+      "<path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
+      "<path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
+    "</svg>"
+    " Reset"
+    "</button> "
+    "<button type='button' onClick=\"if (confirm('Are you sure ?')==true){cmd('ErasePDM');}else{return false;};\" class='btn btn-danger'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>"
+      "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>"
+      "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>"
+    "</svg>"
+    " RAZ"
+    "</button> "
+    "</div>"
+    "<h5>Parameters</h5>"
     "<span> @MAC coordinator : </span>{{macCoordinator}}<br>"
     "<span> Version coordinator : </span>{{versionCoordinator}}<br>"
     "<span> Network : </span>{{networkCoordinator}}<br>"
     "<label for='SetMaskChannel'>Set channel mask</label>"
     "<input class='form-control' id='SetMaskChannel' type='text' name='SetMaskChannel' value='{{SetMaskChannel}}'>"
     "<button type='button' onclick='cmd(\"SetChannelMask\",document.getElementById(\"SetMaskChannel\").value);' class='btn btn-primary'>Set Channel</button><br> "
-    /*"<h2>Console</h2>"
+    /*"<h5>Console</h5>"
     "<button type='button' onclick='cmd(\"ClearConsole\");document.getElementById(\"console\").value=\"\";' class='btn btn-primary'>Clear Console</button> "
     "<button type='button' onclick='cmd(\"GetVersion\");' class='btn btn-primary'>Get Version</button> "
-    "<button type='button' onclick='cmd(\"ErasePDM\");' class='btn btn-primary'>Erase PDM</button> "
-    "<button type='button' onclick='cmd(\"Reset\");' class='btn btn-primary'>Reset</button> "
-    "<button type='button' onclick='cmd(\"StartNwk\");' class='btn btn-primary'>StartNwk</button> "
-    "<button type='button' onclick='cmd(\"PermitJoin\");' class='btn btn-primary'>Permit Join</button> "
-    "<br>Raw datas : <br><textarea id='console' rows='16' cols='100'></textarea>"*/
+    
+    "<br>Raw datas : <br><textarea id='console' rows='16' style='width:100%;'></textarea>"*/
     "</div>"
     "</div>"
-    /*"<script language='javascript'>"
+   /*"<script language='javascript'>"
     "$(document).ready(function() {"
     "logRefresh();});"
     "</script>";*/
     ;
 const char HTTP_CONFIG_HORLOGE[] PROGMEM =
-    "<h1>Config horloge</h1>"
+    
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigHorloge'>"
+    "<div class='col col-md-6'>"
+    "<h4>Time</h4>"
+    "<form method='POST' action='saveConfigHorloge'>"
     "<div class='form-check'>"
-    "<h2>NTP Server</h2>"
+    "<h5>NTP Server</h5>"
     "<span> Datetime : </span>{{FormattedDate}}"
     "<br><label for='ntpserver'>NTP server URL</label>"
     "<input class='form-control' id='ntpserver' type='text' name='ntpserver' value='{{ntpserver}}'>"
@@ -356,7 +524,7 @@ const char HTTP_CONFIG_HORLOGE[] PROGMEM =
     "</div>";
 
 const char HTTP_CONFIG_LINKY[] PROGMEM =
-    "<h1>Config Linky</h1>"
+    "<h4>Config Linky</h4>"
     "<div class='row justify-content-md-center' >"
     "<div class='col-sm-2'>"
     "<div class='btn-group-horizontal'>"
@@ -365,9 +533,9 @@ const char HTTP_CONFIG_LINKY[] PROGMEM =
     "</div>"
     "<div class='col-sm-10'><form method='POST' action='saveConfigLinky'>"
     "<div class='form-check'>"
-    "<h2>Device</h2>"
+    "<h5>Device</h5>"
     "{{selectDevices}}"
-    "<h2>Tarifs</h2>"
+    "<h5>Tarifs</h5>"
     "<label for='tarifAbo'>Tarif abonnement (€)</label>"
     "<input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'>"
     "<label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label>"
@@ -401,7 +569,7 @@ const char HTTP_CONFIG_LINKY[] PROGMEM =
     "</div>";
 
 const char HTTP_CONFIG_GAZ[] PROGMEM =
-    "<h1>Config Gaz</h1>"
+    "<h4>Config Gaz</h4>"
     "<div class='row justify-content-md-center' >"
     "<div class='col-sm-2'>"
     "<div class='btn-group-horizontal'>"
@@ -410,14 +578,14 @@ const char HTTP_CONFIG_GAZ[] PROGMEM =
     "</div>"
     "<div class='col-sm-10'><form method='POST' action='saveConfigGaz'>"
     "<div class='form-check'>"
-    "<h2>Device</h2>"
+    "<h5>Device</h5>"
     "{{selectDevices}}"
-    "<h2>Parameters</h2>"
+    "<h5>Parameters</h5>"
     "<label for='coeffGaz'>Impulsion coefficient</label>"
     "<input class='form-control' id='coeffGaz' type='text' name='coeffGaz' value='{{coeffGaz}}'>"
     "<label for='unitGaz'>Unit</label>"
     "<input class='form-control' id='unitGaz' type='text' name='unitGaz' value='{{unitGaz}}'>"
-    "<h2>Tarif</h2>"
+    "<h5>Tarif</h5>"
     "<label for='tarifGaz'>Tarif (€)</label>"
     "<input class='form-control' id='tarifGaz' type='text' name='tarifGaz' value='{{tarifGaz}}'>"
     "<br>"
@@ -427,7 +595,7 @@ const char HTTP_CONFIG_GAZ[] PROGMEM =
     "</div>";
 
 const char HTTP_CONFIG_WATER[] PROGMEM =
-    "<h1>Config Water</h1>"
+    "<h4>Config Water</h4>"
     "<div class='row justify-content-md-center' >"
     "<div class='col-sm-2'>"
     "<div class='btn-group-horizontal'>"
@@ -436,14 +604,14 @@ const char HTTP_CONFIG_WATER[] PROGMEM =
     "</div>"
     "<div class='col-sm-10'><form method='POST' action='saveConfigWater'>"
     "<div class='form-check'>"
-    "<h2>Device</h2>"
+    "<h5>Device</h5>"
     "{{selectDevices}}"
-    "<h2>Parameters</h2>"
+    "<h5>Parameters</h5>"
     "<label for='coeffWater'>Impulsion coefficient</label>"
     "<input class='form-control' id='coeffWater' type='text' name='coeffWater' value='{{coeffWater}}'>"
     "<label for='unitWater'>Unit</label>"
     "<input class='form-control' id='unitWater' type='text' name='unitWater' value='{{unitWater}}'>"
-    "<h2>Tarif</h2>"
+    "<h5>Tarif</h5>"
     "<label for='tarifWater'>Tarif (€)</label>"
     "<input class='form-control' id='tarifWater' type='text' name='tarifWater' value='{{tarifWater}}'>"
     "<br>"
@@ -453,33 +621,48 @@ const char HTTP_CONFIG_WATER[] PROGMEM =
     "</div>";
 
 const char HTTP_CONFIG_MQTT[] PROGMEM =
-    "<h1>Config MQTT</h1>"
+    
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigMQTT'>"
+    "<div class='col col-md-6'>"
+    "<h4>MQTT</h4>"
+    "<form method='POST' action='saveConfigMQTT'>"   
     "<div class='form-check'>"
-    "<h2>MQTT client</h2>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='enableMqtt' type='checkbox' name='enableMqtt' {{checkedMqtt}}>"
-    "<label class='form-check-label' for='enableMqtt'>Enable MQTT</label>"
+      "<input class='form-check-input' id='enableMqtt' type='checkbox' name='enableMqtt' {{checkedMqtt}}>"
+      "<label class='form-check-label' for='enableMqtt'>Enable MQTT</label>"
     "</div>"
-    "<label for='servMQTT'>MQTT server</label>"
-    "<input class='form-control' id='servMQTT' type='text' name='servMQTT' value='{{servMQTT}}'>"
-    "<label for='portMQTT'>MQTT port</label>"
-    "<input class='form-control' id='portMQTT' type='text' name='portMQTT' value='{{portMQTT}}'>"
-    "<label for='userMQTT'>MQTT username</label>"
-    "<input class='form-control' id='userMQTT' type='text' name='userMQTT' value='{{userMQTT}}'>"
-    "<label for='passMQTT'>MQTT password</label>"
-    "<input class='form-control' id='passMQTT' type='password' name='passMQTT' value='{{passMQTT}}'>"
-    "<label for='headerMQTT'>MQTT topic header</label>"
-    "<input class='form-control' id='headerMQTT' type='text' name='headerMQTT' value='{{headerMQTT}}'>"
+    "<div class='form-check'>"
+      "<label for='servMQTT'>MQTT server</label>"
+      "<input class='form-control' id='servMQTT' type='text' name='servMQTT' value='{{servMQTT}}'>"
+      "<label for='portMQTT'>MQTT port</label>"
+      "<input class='form-control' id='portMQTT' type='text' name='portMQTT' value='{{portMQTT}}'>"
+      "<label for='clientIDMQTT'>MQTT Client ID</label>"
+      "<input class='form-control' id='clientIDMQTT' type='text' name='clientIDMQTT' value='{{clientIDMQTT}}'>"
+      "<label for='userMQTT'>MQTT username</label>"
+      "<input class='form-control' id='userMQTT' type='text' name='userMQTT' value='{{userMQTT}}'>"
+      "<label for='passMQTT'>MQTT password</label>"
+      "<input class='form-control' id='passMQTT' type='password' name='passMQTT' value='{{passMQTT}}'>"
+      "<label for='headerMQTT'>MQTT topic header</label>"
+      "<input class='form-control' id='headerMQTT' type='text' name='headerMQTT' value='{{headerMQTT}}'>"
+    "</div>"
+    "<div class='form-check'>"
+      "<input class='form-check-input' id='ha' type='radio' name='appliMQTT' value='HA' {{checkedHA}} onClick='document.getElementById(\"displayCustomMQTT\").style.display=\"none\";document.getElementById(\"headerMQTT\").value=\"homeassistant/sensor/\";'>"
+      "<label class='form-check-label' for='ha'>Home-Assistant</label>"
+    "</div>"
+    "<div class='form-check'>"
+      "<input class='form-check-input' id='TB' type='radio' name='appliMQTT' value='TB' {{checkedTB}} onClick='document.getElementById(\"displayCustomMQTT\").style.display=\"none\";document.getElementById(\"headerMQTT\").value=\"v1/gateway/telemetry\";'>"
+      "<label class='form-check-label' for='TB'>ThingsBoard</label>"
+    "</div>"
+    "<div class='form-check'>"
+      "<input class='form-check-input' id='custom' type='radio' name='appliMQTT' value='custom' onClick='document.getElementById(\"displayCustomMQTT\").style.display=\"block\";' {{checkedCustom}}>"
+      "<label class='form-check-label' for='custom'>Custom</label>"
+    "</div>"
+    "<div class='form-floating' id='displayCustomMQTT' style='{{displayCustomMQTT}}'>"
+      "<textarea class='form-control' name='customMQTTJson' placeholder='' id='customMQTTJson' style='min-height:200px;'>{{customMQTTJson}}</textarea>"
+      "<label for='customMQTTJson'>Custom JSON</label>"
+    "</div>"
     "<br><Strong>Connected : </strong><span id='mqttStatus'><img src='web/img/wait.gif' /></span>"
     "<br>"
-    "</div>"
+ 
     "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
     "</form></div>"
     "</div>"
@@ -508,19 +691,15 @@ const char HTTP_CONFIG_MQTT[] PROGMEM =
     ;
 
 const char HTTP_CONFIG_HTTP[] PROGMEM =
-    "<h1>Config HTTP</h1>"
+    
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigHTTP'>"
+    "<div class='col col-md-6'>"
+    "<h4>Security</h4>"
+    "<form method='POST' action='saveConfigHTTP'>"
     "<div class='form-check'>"
-    "<h2>HTTP security</h2>"
     "<div class='form-check'>"
     "<input class='form-check-input' id='enableSecureHttp' type='checkbox' name='enableSecureHttp' {{checkedHttp}}>"
-    "<label class='form-check-label' for='enableSecureHttp'>Enable HTTP Security</label>"
+    "<label class='form-check-label' for='enableSecureHttp'>Enable HTTP authentification</label>"
     "</div>"
     "<label for='userHTTP'>HTTP username</label>"
     "<input class='form-control' id='userHTTP' type='text' name='userHTTP' value='{{userHTTP}}' style='{{userborder}}'>"
@@ -535,20 +714,15 @@ const char HTTP_CONFIG_HTTP[] PROGMEM =
     "</div>";
 
 const char HTTP_CONFIG_WEBPUSH[] PROGMEM =
-    "<h1>Config WebPush</h1>"
+    
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigWebPush'>"
-    "<h2>General</h2>"
+    "<div class='col col-md-6'>"
+    "<h4>WebPush</h4>"
+    "<form method='POST' action='saveConfigWebPush'>"
     "<div class='form-check'>"
     "<input class='form-check-input' id='enableWebPush' type='checkbox' name='enableWebPush' {{checkedWebPush}}>"
     "<label class='form-check-label' for='enableWebPush'>Enable WebPush</label>"
     "</div>"
-    "<h2>Web Push</h2>"
     "<label for='servWebPush'>Server HTTP</label>"
     "<input class='form-control' id='servWebPush' type='text' name='servWebPush' value='{{servWebPush}}' style='{{urlborder}}'>"
     "<div class='form-check'>"
@@ -556,7 +730,7 @@ const char HTTP_CONFIG_WEBPUSH[] PROGMEM =
     "<label class='form-check-label' for='webPushAuth'>Enable Authentification</label>"
     "</div>"
     "<div id='authWebPush' style='{{displayWebPushAuth}}'>"
-    "<h3>Authentification</h3>"
+    "<h5>Authentification</h5>"
     "<label for='userWebPush'>Username</label>"
     "<input class='form-control' id='userWebPush' type='text' name='userWebPush' value='{{userWebPush}}' style='{{userborder}}'>"
     "<label for='passWebPush'>password</label>"
@@ -567,7 +741,7 @@ const char HTTP_CONFIG_WEBPUSH[] PROGMEM =
     "<div style='color:red'>{{error}}</div>"
     
     
-    "<h3>HTTP datas sent example</h3>"
+    "<h5>HTTP datas sent example</h5>"
     "Header : POST"
     "<br>Content-Type : JSON"
     "<br>Content :"
@@ -584,28 +758,8 @@ const char HTTP_CONFIG_WEBPUSH[] PROGMEM =
 
     ;
 
-const char HTTP_CONFIG_MODBUS[] PROGMEM =
-    "<h1>Config Modbus RTU RS485</h1>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigModbus'>"
-    "<h2>General</h2>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='enableModbus' type='checkbox' name='enableModbus' {{checkedModbus}}>"
-    "<label class='form-check-label' for='enableModbus'>Enable Modbus</label>"
-    "</div>"
-    "<h2>Modbus</h2>"
-    
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form></div>"
-    "</div>";
-
 const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
-    "<h1>Config Notification</h1>"
+    "<h4>Config Notification</h4>"
     "<div class='row justify-content-md-center' >"
     "<div class='col-sm-2'>"
     "<div class='btn-group-horizontal'>"
@@ -613,12 +767,12 @@ const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
     "</div>"
     "</div>"
     "<div class='col-sm-10'><form method='POST' action='saveConfigNotification'>"
-    "<h2>General</h2>"
+    "<h5>General</h5>"
     "<div class='form-check'>"
     "<input class='form-check-input' id='enableNotif' type='checkbox' name='enableNotif' {{checkedNotif}}>"
     "<label class='form-check-label' for='enableNotif'>Enable Notification</label>"
     "</div>"
-    "<h2>EMail</h2>"
+    "<h5>EMail</h5>"
     "<label for='servSMTP'>Server SMTP</label>"
     "<input class='form-control' id='servSMTP' type='text' name='servSMTP' value='{{servSMTP}}'>"
     "<label for='portSMTP'>Port SMTP</label>"
@@ -632,26 +786,18 @@ const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
     "</div>";
 
 const char HTTP_NETWORK[] PROGMEM =
-    "<h1>Network status</h1>"
-    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
-    /*"<div class='col-sm-3'>"
+    
+    "<div class='row justify-content-md-center justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>"
+    "<div class='col col-md-6'>"
+    "<h4>Network status</h4>"
     "<div class='card'>"
-    "<div class='card-header'>Ethernet</div>"
-    "<div class='card-body'>"
-    "<div id='ethConfig'>"
-    "<strong>Enable : </strong>{{enableEther}}"
-    "<br><strong>Connected : </strong>{{connectedEther}}"
-    "<br><strong>Mode : </strong>{{modeEther}}"
-    "<br><strong>@IP : </strong>{{ipEther}}"
-    "<br><strong>@Mask : </strong>{{maskEther}}"
-    "<br><strong>@GW : </strong>{{GWEther}}"
+    "<div class='card-header'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
+      "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
+      "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+    "</svg>"
+    " Wifi"
     "</div>"
-    "</div>"
-    "</div>"
-    "</div>"*/
-    "<div class='col-sm-3'>"
-    "<div class='card'>"
-    "<div class='card-header'>Wifi</div>"
     "<div class='card-body'>"
     "<div id='wifiConfig'>"
     "<strong>Enable : </strong>{{enableWifi}}"
@@ -665,9 +811,15 @@ const char HTTP_NETWORK[] PROGMEM =
     "</div>"
     "</div>"
     "</div>"
-    "</div>"
-    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
-    "<div class='col-sm-3'><div class='card'><div class='card-header'>System Infos"
+    "</div><br>"
+    "<div class='row justify-content-md-center justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>"
+    "<div class='col col-md-6'><div class='card'><div class='card-header'>"
+    "<svg style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>"
+      "<path d='M12 16.75C11.8019 16.7474 11.6126 16.6676 11.4725 16.5275C11.3324 16.3874 11.2526 16.1981 11.25 16V11C11.25 10.8011 11.329 10.6103 11.4697 10.4697C11.6103 10.329 11.8011 10.25 12 10.25C12.1989 10.25 12.3897 10.329 12.5303 10.4697C12.671 10.6103 12.75 10.8011 12.75 11V16C12.7474 16.1981 12.6676 16.3874 12.5275 16.5275C12.3874 16.6676 12.1981 16.7474 12 16.75Z' fill='#000000'/>"
+      "<path d='M12 9.25C11.8019 9.24741 11.6126 9.16756 11.4725 9.02747C11.3324 8.88737 11.2526 8.69811 11.25 8.5V8C11.25 7.80109 11.329 7.61032 11.4697 7.46967C11.6103 7.32902 11.8011 7.25 12 7.25C12.1989 7.25 12.3897 7.32902 12.5303 7.46967C12.671 7.61032 12.75 7.80109 12.75 8V8.5C12.7474 8.69811 12.6676 8.88737 12.5275 9.02747C12.3874 9.16756 12.1981 9.24741 12 9.25Z' fill='#000000'/>"
+      "<path d='M12 21C10.22 21 8.47991 20.4722 6.99987 19.4832C5.51983 18.4943 4.36628 17.0887 3.68509 15.4442C3.0039 13.7996 2.82567 11.99 3.17294 10.2442C3.5202 8.49836 4.37737 6.89472 5.63604 5.63604C6.89472 4.37737 8.49836 3.5202 10.2442 3.17294C11.99 2.82567 13.7996 3.0039 15.4442 3.68509C17.0887 4.36628 18.4943 5.51983 19.4832 6.99987C20.4722 8.47991 21 10.22 21 12C21 14.387 20.0518 16.6761 18.364 18.364C16.6761 20.0518 14.387 21 12 21ZM12 4.5C10.5166 4.5 9.0666 4.93987 7.83323 5.76398C6.59986 6.58809 5.63856 7.75943 5.07091 9.12988C4.50325 10.5003 4.35473 12.0083 4.64411 13.4632C4.9335 14.918 5.64781 16.2544 6.6967 17.3033C7.7456 18.3522 9.08197 19.0665 10.5368 19.3559C11.9917 19.6453 13.4997 19.4968 14.8701 18.9291C16.2406 18.3614 17.4119 17.4001 18.236 16.1668C19.0601 14.9334 19.5 13.4834 19.5 12C19.5 10.0109 18.7098 8.10323 17.3033 6.6967C15.8968 5.29018 13.9891 4.5 12 4.5Z' fill='#000000'/>"
+    "</svg>"
+    " System Infos"
     "</div>"
     "<div class='card-body'>"
     "{{MQTT card}}"
@@ -678,7 +830,7 @@ const char HTTP_NETWORK[] PROGMEM =
     "</div>";
 
 const char HTTP_ROOT[] PROGMEM =
-    "<h1>Dashboard</h1>"
+    "<h4>Dashboard</h4>"
     "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
     "<div class='col-sm-12'>"
     "<Select class='form-select form-select-lg mb-3' aria-label='.form-select-lg example' name='time' onChange=\"window.location.href='?time='+this.value\">"
@@ -690,7 +842,7 @@ const char HTTP_ROOT[] PROGMEM =
     "</div>"
     "</div>"
     "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
-    "<div class='col-sm-6'>"
+    "<div class='col col-md-6'>"
     "<div class='card' >"
     "<div class='card-header'>Energy gauge</div>"
     "<div class='card-body' style='min-height:272px;'>"
@@ -698,7 +850,7 @@ const char HTTP_ROOT[] PROGMEM =
     "</div>"
     "</div>"
     "</div>"
-    "<div class='col-sm-6'>"
+    "<div class='col col-md-6'>"
     "<div class='card'>"
     "<div class='card-header'>Energy trend</div>"
     "<div class='card-body' style='min-height:272px;'>"
@@ -735,7 +887,7 @@ const char HTTP_DASHBOARD[] PROGMEM =
     "{{javascript}}";
 
 const char HTTP_ENERGY[] PROGMEM =
-    "<h1>Energy status</h1>" 
+    "<h4>Energy status</h4>" 
     "<div class='row'>"
     "<div class='col-sm-12'>"
     "<Select class='form-select form-select-lg mb-3' aria-label='.form-select-lg example' name='time' onChange=\"window.location.href='?time='+this.value\">"
@@ -823,37 +975,12 @@ const char HTTP_ENERGY_WATER[] PROGMEM =
 const char HTTP_ENERGY_JAVASCRIPT[] PROGMEM =
     "{{javascript}}";
 
-const char HTTP_ETHERNET[] PROGMEM =
-    "<h1>Config Ethernet</h1>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-6'><form method='POST' action='saveEther'>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='etherEnable' type='checkbox' name='etherEnable' {{checkedEthernet}}>"
-    "<label class='form-check-label' for='etherEnable'>Enable</label>"
-    "</div>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='dhcp' type='checkbox' name='dhcp' {{modeEther}}>"
-    "<label class='form-check-label' for='dhcp'>DHCP</label>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label for='ip'>@IP</label>"
-    "<input class='form-control' id='ip' type='text' name='ipAddress' value='{{ipEther}}'>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label for='mask'>@Mask</label>"
-    "<input class='form-control' id='mask' type='text' name='ipMask' value='{{maskEther}}'>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label for='gateway'>@Gateway</label>"
-    "<input type='text' class='form-control' id='gateway' name='ipGW' value='{{GWEther}}'>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form>";
-
 const char HTTP_CONFIG_WIFI[] PROGMEM =
-    "<h1>Config WiFi</h1>"
+   
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-6'><form method='POST' action='saveWifi'>"
+    "<div class='col col-md-6'>"
+    "<h4>Config WiFi</h4>"
+    "<form method='POST' action='saveWifi'>"
     /*"<div class='form-check'>"
     "<input class='form-check-input' id='wifiEnable' type='checkbox' name='wifiEnable' {{checkedWiFi}}>"
     "<label class='form-check-label' for='wifiEnable'>Enable</label>"
@@ -890,11 +1017,25 @@ const char HTTP_CONFIG_WIFI[] PROGMEM =
     "<div style='color:red'>{{ipError}}</div>"
     "<div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>"
     ;
-
-const char HTTP_CREATE_TEMPLATE[] PROGMEM =
-    "<h1>Create tp file</h1>"
+const char HTTP_CREATE_DEVICE[] PROGMEM =
+    "<h4>Create device file</h4>"
     "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-6'><form method='POST' action='saveFileTemplates'>"
+    "<div class='col col-md-6'><form method='POST' action='saveFileDevice'>"
+    "<div class='form-group'>"
+    "<label for='filename'>@ mac</label>"
+    "<input class='form-control' id='filename' type='text' name='filename' value=''> "
+    "</div>"
+    "<div class='form-group'>"
+    " <label for='file'>Content</label>"
+    " <textarea class='form-control' id='file' name='file' rows='20'>"
+    "</textarea>"
+    "</div>"
+    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Save</button>"
+    "</form>";
+const char HTTP_CREATE_TEMPLATE[] PROGMEM =
+    "<h4>Create tp file</h4>"
+    "<div class='row justify-content-md-center' >"
+    "<div class='col col-md-6'><form method='POST' action='saveFileTemplates'>"
     "<div class='form-group'>"
     "<label for='filename'>File name</label>"
     "<input class='form-control' id='filename' type='text' name='filename' value=''> "
@@ -922,73 +1063,25 @@ const char HTTP_DEVICE[] PROGMEM =
 
 const char HTTP_FOOTER[] PROGMEM =
     "<script language='javascript'>"
-    //"getFormattedDate();"
+    "getFormattedDate();"
     "getAlert();"
     "</script>";
 
-String getMenuGeneral(String tmp, String selected)
+String getMenuGeneralZigbee(String tmp, String selected)
 {
   
-  tmp.replace("{{menu_config}}", FPSTR(HTTP_CONFIG_MENU));
-  if (selected=="general")
+  tmp.replace("{{menu_config_zigbee}}", FPSTR(HTTP_CONFIG_MENU_ZIGBEE));
+  if (selected=="devices")
   {
-    tmp.replace("{{menu_config_general}}", "disabled");
+    tmp.replace("{{menu_config_devices}}", "disabled");
   }else{
-    tmp.replace("{{menu_config_general}}", "");
+    tmp.replace("{{menu_config_devices}}", "");
   }
-  if (selected=="horloge")
+  if (selected=="config")
   {
-    tmp.replace("{{menu_config_horloge}}", "disabled");
+    tmp.replace("{{menu_config_zigbee}}", "disabled");
   }else{
-    tmp.replace("{{menu_config_horloge}}", "");
-  }
-  if (selected=="linky")
-  {
-    tmp.replace("{{menu_config_linky}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_linky}}", "");
-  }
-  if (selected=="gaz")
-  {
-    tmp.replace("{{menu_config_gaz}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_gaz}}", "");
-  }
-  if (selected=="water")
-  {
-    tmp.replace("{{menu_config_water}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_water}}", "");
-  }
-  if (selected=="http")
-  {
-    tmp.replace("{{menu_config_http}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_http}}", "");
-  }
-  if (selected=="mqtt")
-  {
-    tmp.replace("{{menu_config_mqtt}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_mqtt}}", "");
-  }
-  if (selected=="webpush")
-  {
-    tmp.replace("{{menu_config_webpush}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_webpush}}", "");
-  }
-  if (selected=="modbus")
-  {
-    tmp.replace("{{menu_config_modbus}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_modbus}}", "");
-  }
-  if (selected=="notif")
-  {
-    tmp.replace("{{menu_config_notif}}", "disabled");
-  }else{
-    tmp.replace("{{menu_config_notif}}", "");
+    tmp.replace("{{menu_config_zigbee}}", "");
   }
   return tmp;
 }
@@ -1222,121 +1315,118 @@ Template * GetTemplate(int deviceId, String model)
         // tmp = temp[model][0]["bind"];
         // strlcpy(t.bind,tmp,sizeof(50));
         return t;
+      } else if (temp.containsKey("default"))       
+      {
+        JsonArray StatusArray = temp[F("default")][0][F("status")].as<JsonArray>();
+        for (JsonVariant v : StatusArray)
+        {
+
+          tmp = temp[F("default")][0][F("status")][i][F("name")];
+          strlcpy(t->e[i].name, tmp, sizeof(t->e[i].name));
+          t->e[i].cluster = (int)strtol(temp[F("default")][0][F("status")][i][F("cluster")], 0, 16);
+          t->e[i].attribute = (int)temp[F("default")][0][F("status")][i][F("attribut")];
+          if (temp[F("default")][0][F("status")][i][F("type")])
+          {
+            strlcpy(t->e[i].type, temp[F("default")][0][F("status")][i][F("type")], sizeof(t->e[i].type));
+          }
+          else
+          {
+            strlcpy(t->e[i].type, "", sizeof(t->e[i].type));
+          }
+
+          //MQTT
+          if (temp[F("default")][0][F("status")][i][F("mqtt_device_class")])
+          {
+            strlcpy(t->e[i].mqtt_device_class, temp[F("default")][0][F("status")][i][F("mqtt_device_class")], sizeof(t->e[i].mqtt_device_class));
+          }
+          else
+          {
+            strlcpy(t->e[i].mqtt_device_class, "", sizeof(t->e[i].mqtt_device_class));
+          }
+          if (temp[F("default")][0][F("status")][i][F("mqtt_state_class")])
+          {
+            strlcpy(t->e[i].mqtt_state_class, temp[F("default")][0][F("status")][i][F("mqtt_state_class")], sizeof(t->e[i].mqtt_state_class));
+          }
+          else
+          {
+            strlcpy(t->e[i].mqtt_state_class, "", sizeof(t->e[i].mqtt_state_class));
+          }
+          if (temp[F("default")][0][F("status")][i][F("mqtt_icon")])
+          {
+            strlcpy(t->e[i].mqtt_icon, temp[F("default")][0][F("status")][i][F("mqtt_icon")], sizeof(t->e[i].mqtt_icon));
+          }
+          else
+          {
+            strlcpy(t->e[i].mqtt_icon, "", sizeof(t->e[i].mqtt_icon));
+          }
+
+
+
+          if (temp[F("default")][0][F("status")][i][F("coefficient")])
+          {
+            t->e[i].coefficient = (float)temp[F("default")][0][F("status")][i][F("coefficient")];
+          }
+          else
+          {
+            t->e[i].coefficient = 1;
+          }
+          if (temp[F("default")][0][F("status")][i][F("unit")])
+          {
+            strlcpy(t->e[i].unit, temp[F("default")][0][F("status")][i][F("unit")], sizeof(t->e[i].unit));
+          }
+          else
+          {
+            strlcpy(t->e[i].unit, "", sizeof(t->e[i].unit));
+          }
+          if (temp[F("default")][0][F("status")][i][F("visible")].as<int>() == 1)
+          {
+            t->e[i].visible = 1;
+          }
+          else
+          {
+            t->e[i].visible = 0;
+          }
+          if (temp[F("default")][0][F("status")][i][F("jauge")])
+          {
+            strlcpy(t->e[i].typeJauge, temp[F("default")][0][F("status")][i][F("jauge")], sizeof(t->e[i].typeJauge));
+            t->e[i].jaugeMin = temp[F("default")][0][F("status")][i][F("min")].as<int>();
+            t->e[i].jaugeMax = temp[F("default")][0][F("status")][i][F("max")].as<int>();
+          }
+          else
+          {
+            strlcpy(t->e[i].typeJauge, "", sizeof(t->e[i].typeJauge));
+          }
+          i++;
+        }
+        t->StateSize = i;
+        i = 0;
+        JsonArray ActionArray = temp[F("default")][0][F("action")].as<JsonArray>();
+        for (JsonVariant v : ActionArray)
+        {
+
+          tmp = temp[F("default")][0][F("action")][i][F("name")];
+          strlcpy(t->a[i].name, tmp, sizeof(t->a[i].name));
+          t->a[i].command = (int)temp[F("default")][0][F("action")][i][F("command")];
+          t->a[i].value = (int)temp[F("default")][0][F("action")][i][F("value")];
+          if (temp[F("default")][0][F("action")][i][F("visible")].as<int>() == 1)
+          {
+            t->a[i].visible = 1;
+          }
+          else
+          {
+            t->a[i].visible = 0;
+          }
+          i++;
+        }
+        t->ActionSize = i;
       }
       else
       {
-        if (temp.containsKey("default"))
-        {
-          JsonArray StatusArray = temp[F("default")][0][F("status")].as<JsonArray>();
-          for (JsonVariant v : StatusArray)
-          {
-
-            tmp = temp[F("default")][0][F("status")][i][F("name")];
-            strlcpy(t->e[i].name, tmp, sizeof(t->e[i].name));
-            t->e[i].cluster = (int)strtol(temp[F("default")][0][F("status")][i][F("cluster")], 0, 16);
-            t->e[i].attribute = (int)temp[F("default")][0][F("status")][i][F("attribut")];
-            if (temp[F("default")][0][F("status")][i][F("type")])
-            {
-              strlcpy(t->e[i].type, temp[F("default")][0][F("status")][i][F("type")], sizeof(t->e[i].type));
-            }
-            else
-            {
-              strlcpy(t->e[i].type, "", sizeof(t->e[i].type));
-            }
-
-            //MQTT
-            if (temp[F("default")][0][F("status")][i][F("mqtt_device_class")])
-            {
-              strlcpy(t->e[i].mqtt_device_class, temp[F("default")][0][F("status")][i][F("mqtt_device_class")], sizeof(t->e[i].mqtt_device_class));
-            }
-            else
-            {
-              strlcpy(t->e[i].mqtt_device_class, "", sizeof(t->e[i].mqtt_device_class));
-            }
-            if (temp[F("default")][0][F("status")][i][F("mqtt_state_class")])
-            {
-              strlcpy(t->e[i].mqtt_state_class, temp[F("default")][0][F("status")][i][F("mqtt_state_class")], sizeof(t->e[i].mqtt_state_class));
-            }
-            else
-            {
-              strlcpy(t->e[i].mqtt_state_class, "", sizeof(t->e[i].mqtt_state_class));
-            }
-            if (temp[F("default")][0][F("status")][i][F("mqtt_icon")])
-            {
-              strlcpy(t->e[i].mqtt_icon, temp[F("default")][0][F("status")][i][F("mqtt_icon")], sizeof(t->e[i].mqtt_icon));
-            }
-            else
-            {
-              strlcpy(t->e[i].mqtt_icon, "", sizeof(t->e[i].mqtt_icon));
-            }
-
-
-
-            if (temp[F("default")][0][F("status")][i][F("coefficient")])
-            {
-              t->e[i].coefficient = (float)temp[F("default")][0][F("status")][i][F("coefficient")];
-            }
-            else
-            {
-              t->e[i].coefficient = 1;
-            }
-            if (temp[F("default")][0][F("status")][i][F("unit")])
-            {
-              strlcpy(t->e[i].unit, temp[F("default")][0][F("status")][i][F("unit")], sizeof(t->e[i].unit));
-            }
-            else
-            {
-              strlcpy(t->e[i].unit, "", sizeof(t->e[i].unit));
-            }
-            if (temp[F("default")][0][F("status")][i][F("visible")].as<int>() == 1)
-            {
-              t->e[i].visible = 1;
-            }
-            else
-            {
-              t->e[i].visible = 0;
-            }
-            if (temp[F("default")][0][F("status")][i][F("jauge")])
-            {
-              strlcpy(t->e[i].typeJauge, temp[F("default")][0][F("status")][i][F("jauge")], sizeof(t->e[i].typeJauge));
-              t->e[i].jaugeMin = temp[F("default")][0][F("status")][i][F("min")].as<int>();
-              t->e[i].jaugeMax = temp[F("default")][0][F("status")][i][F("max")].as<int>();
-            }
-            else
-            {
-              strlcpy(t->e[i].typeJauge, "", sizeof(t->e[i].typeJauge));
-            }
-            i++;
-          }
-          t->StateSize = i;
-          i = 0;
-          JsonArray ActionArray = temp[F("default")][0][F("action")].as<JsonArray>();
-          for (JsonVariant v : ActionArray)
-          {
-
-            tmp = temp[F("default")][0][F("action")][i][F("name")];
-            strlcpy(t->a[i].name, tmp, sizeof(t->a[i].name));
-            t->a[i].command = (int)temp[F("default")][0][F("action")][i][F("command")];
-            t->a[i].value = (int)temp[F("default")][0][F("action")][i][F("value")];
-            if (temp[F("default")][0][F("action")][i][F("visible")].as<int>() == 1)
-            {
-              t->a[i].visible = 1;
-            }
-            else
-            {
-              t->a[i].visible = 0;
-            }
-            i++;
-          }
-          t->ActionSize = i;
-        }
-        else
-        {
-          t->StateSize = 0;
-          t->ActionSize = 0;
-        }
-        return t;
+        t->StateSize = 0;
+        t->ActionSize = 0;
       }
+      return t;
+      
     }
     
   }
@@ -1836,7 +1926,7 @@ void handleDashboard(AsyncWebServerRequest *request)
         int DeviceId = GetDeviceId(file.name());
         String model;
         model = GetModel(file.name());
-        dashboard += F("<div class='col-sm-6' style='padding:0;'><div class='card'><div class='card-header'>");
+        dashboard += F("<div class='col col-md-6' style='padding:0;'><div class='card'><div class='card-header'>");
         String alias = getAliasDashboard(file.name());
 
         if (alias != "null")
@@ -1902,7 +1992,7 @@ void handleDashboard(AsyncWebServerRequest *request)
                 dashboard += F("_");
                 dashboard += t->e[i].attribute;
                 dashboard += F("'>");
-                dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
+                dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
                 dashboard += F("</span><br>");
                 js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
               }
@@ -1968,30 +2058,13 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
 {
   String result;
   result += F("<html>");
-  result += FPSTR(HTTP_HEADERGRAPH);
+  result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_NETWORK);
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
 
-  /*if (ConfigSettings.enableEthernet)
-  {
-    result.replace("{{enableEther}}", F("<img src='/web/img/ok.png'>"));
-  }
-  else
-  {
-    result.replace("{{enableEther}}", F("<img src='/web/img/nok.png'>"));
-  }
-
-  if (ConfigSettings.enableWiFi)
-  {
-    result.replace("{{enableWifi}}", F("<img src='/web/img/ok.png'>"));
-  }
-  else
-  {
-    result.replace("{{enableWifi}}", F("<img src='/web/img/nok.png'>"));
-  }*/
   result.replace("{{enableWifi}}", F("<img src='/web/img/ok.png'>"));
   result.replace("{{ssidWifi}}", String(ConfigSettings.ssid));
   if (ConfigSettings.enableDHCP)
@@ -2007,21 +2080,6 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
     result.replace("{{GWWifi}}", ConfigSettings.ipGWWiFi);
   }
   
-
-  if (ConfigSettings.dhcp)
-  {
-    result.replace("{{modeEther}}", "DHCP");
-    result.replace("{{ipEther}}", ETH.localIP().toString());
-    result.replace("{{maskEther}}", ETH.subnetMask().toString());
-    result.replace("{{GWEther}}", ETH.gatewayIP().toString());
-  }
-  else
-  {
-    result.replace("{{modeEther}}", "STATIC");
-    result.replace("{{ipEther}}", ConfigSettings.ipAddress);
-    result.replace("{{maskEther}}", ConfigSettings.ipMask);
-    result.replace("{{GWEther}}", ConfigSettings.ipGW);
-  }
   if (ConfigSettings.connectedWifiSta)
   {
     result.replace("{{connectedWifi}}", F("<img src='/web/img/ok.png'>"));
@@ -2030,15 +2088,7 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   {
     result.replace("{{connectedWifi}}", F("<img src='/web/img/nok.png'>"));
   }
-  if (ConfigSettings.connectedEther)
-  {
-    result.replace("{{connectedEther}}", F("<img src='/web/img/ok.png'>"));
-  }
-  else
-  {
-    result.replace("{{connectedEther}}", F("<img src='/web/img/nok.png'>"));
-  }
-
+  
   if (ConfigSettings.enableMqtt)
   {
     String MqttCard = F("<i>MQTT Infos :</i>");
@@ -2253,16 +2303,20 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
 void handleStatusDevices(AsyncWebServerRequest *request)
 {
+  if(!deviceList->isEmpty())
+  {
+    deviceList->clear();
+  }
   String result;
 
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Status Devices</h1>");
-  result += F("<h2>List of devices</h2>");
-  result += F("<div class='row'>");
-
+  
+  //result += F("<h5>List of devices</h5>");
+  result += F("<div class='row justify-content-sm-center'>");
+  result += F("<h4>Status Devices</h4>");
   String str = "";
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
@@ -2274,7 +2328,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     // tmp = tmp.substring(10);
     if (tmp.substring(16) == ".json")
     {
-      result += F("<div class='col-sm-3'><div class='card'><div class='card-header'>@Mac : ");
+      result += F("<div class='col-md-auto col-sm-auto'><div class='card' style='min-width:380px;'><div class='card-header' style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>@Mac : ");
       result += tmp.substring(0, 16);
       result += F("</div>");
       result += F("<div class='card-body'>");
@@ -2287,34 +2341,35 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       result += F("')\">+ Info</a>");
       result += F("<div id='infoDevice");
       result += String(i);
-      result += F("' style='display:none'>");
-      result += F("<strong>Manufacturer: </strong>");
+      result += F("' style='display:none;'>");
+      result += "<table width='100%'><tr>";
+      result += F("<td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String manufacturer;
       manufacturer = GetManufacturer(file.name());
       result += manufacturer;
-      result += F("<br><strong>Model: </strong>");
+      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String model;
       model = GetModel(file.name());
       result += model;
-      result += F("<br><strong>Short Address: </strong>");
+      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       char SAddr[5];
       int ShortAddr = GetShortAddr(file.name());
       snprintf(SAddr,5,"%04X", ShortAddr);
       result += SAddr;
-      result += F("<br><strong>Device Id: </strong>");
+      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       char devId[5];
       int DeviceId = GetDeviceId(file.name());
       snprintf(devId,5, "%04X", DeviceId);
       result += devId;
-      result += F("<br><strong>Soft Version: </strong>");
+      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String SoftVer = GetSoftwareVersion(file.name());
       result += SoftVer;
-      result += F("<br><strong>Last seen: </strong>");
+      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String lastseen = GetLastSeen(file.name());
       result += lastseen;
-      result += F("<br><strong>LQI: </strong>");
+      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       result += GetLQI(file.name());
-      result += "</div>";
+      result += "</td></tr></table></div><hr>";
       // Get status and action from json
       
       if (TemplateExist(DeviceId))
@@ -2325,7 +2380,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
         result += F("<div id='status_");
         result += (String)ShortAddr;
         result += F("'>");
-
+        result += F("<table width='100%' style='font-size:12px;'>");
         for (int i = 0; i < t->StateSize; i++)
         {
           if (t->e[i].visible)
@@ -2353,20 +2408,33 @@ void handleStatusDevices(AsyncWebServerRequest *request)
               }
 
               if (afficheOK){
+                result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
                 result += t->e[i].name;
-                result += " : ";
-                result += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
-                result += F("<br>");
+                result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+                result += "<span id='";
+                result += String(ShortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
+                result +="'>";
+                result += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+                result += "</span></td>";
+                result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
+                result += F("</td>");
+                result +="</td></tr>";
               }
             }else{
+              result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
               result += t->e[i].name;
-              result += " : ";
-              result += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient, (String)t->e[i].unit);
-              result += F("<br>");
+              result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+              result += "<span id='";
+              result += String(ShortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
+              result +="'>";
+              result += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+              result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
+              result += F("</td>");
+              result +="</td></tr>";
             }
           }
         }
-        result += F("</div>");
+        result += F("</table></div><br>");
         result += F("<div id='action_");
         result += (String)ShortAddr;
         result += F("'>");
@@ -2385,7 +2453,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
           result += F("</button>");
         }
         result += F("</div>");
-        
+        free(t);
       }
       result += F("</div></div></div>");
     }
@@ -2394,6 +2462,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     file = root.openNextFile();
   }
   result += FPSTR(HTTP_FOOTER);
+  result +="<script>getDeviceValue();</script>";
   result += F("</html>");
   file.close();
   root.close();
@@ -2410,7 +2479,7 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result = getMenuGeneral(result, "general");
+  //result = getMenuGeneral(result, "general");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -2430,12 +2499,12 @@ void handleConfigZigbee(AsyncWebServerRequest *request)
 {
   String result;
 
-  result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_ZIGBEE);
   result += FPSTR(HTTP_FOOTER);
-  result += F("</html>");
+  result = getMenuGeneralZigbee(result, "config");
+  
   result.replace("{{macCoordinator}}", String(ZConfig.zigbeeMac,HEX));
   result.replace("{{versionCoordinator}}", "SDK: "+String(ZConfig.sdk, DEC)+" Ver: "+String(ZConfig.application));
   result.replace("{{networkCoordinator}}", String(ZConfig.network));
@@ -2456,7 +2525,7 @@ void handleConfigHorloge(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result = getMenuGeneral(result, "horloge");
+  //result = getMenuGeneral(result, "horloge");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -2507,13 +2576,14 @@ void handleConfigMQTT(AsyncWebServerRequest *request)
   {
     result.replace("{{checkedMqtt}}", "");
   }
-  result = getMenuGeneral(result, "mqtt");
+  //result = getMenuGeneral(result, "mqtt");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
   result.replace("{{servMQTT}}", String(ConfigGeneral.servMQTT));
   result.replace("{{portMQTT}}", String(ConfigGeneral.portMQTT));
   result.replace("{{userMQTT}}", String(ConfigGeneral.userMQTT));
+  result.replace("{{clientIDMQTT}}", String(ConfigGeneral.clientIDMQTT));
   if (String(ConfigGeneral.passMQTT) !="")
   {
     result.replace("{{passMQTT}}", "********");
@@ -2522,8 +2592,39 @@ void handleConfigMQTT(AsyncWebServerRequest *request)
   }
   //result.replace("{{passMQTT}}", String(ConfigGeneral.passMQTT));
   result.replace("{{headerMQTT}}", String(ConfigGeneral.headerMQTT));
+  result.replace("{{displayCustomMQTT}}", "display:none;");
 
-  
+  if (ConfigGeneral.HAMQTT)
+  {
+    result.replace("{{checkedHA}}", "checked");
+    result.replace("{{checkedTB}}", "");
+    result.replace("{{checkedCustom}}", "");
+    result.replace("{{displayCustomMQTT}}", "display:none;");
+  }
+
+  if (ConfigGeneral.TBMQTT)
+  {
+    result.replace("{{checkedTB}}", "checked");
+    result.replace("{{checkedHA}}", "");
+    result.replace("{{checkedCustom}}", "");
+    result.replace("{{displayCustomMQTT}}", "display:none;");
+  }
+
+  if (ConfigGeneral.customMQTT)
+  {
+    result.replace("{{checkedCustom}}", "checked");
+    result.replace("{{checkedHA}}", "");
+    result.replace("{{checkedCustom}}", "");
+    result.replace("{{displayCustomMQTT}}", "display:block;");
+  }
+
+
+  if (ConfigGeneral.customMQTTJson != "null")
+  {
+    result.replace("{{customMQTTJson}}", ConfigGeneral.customMQTTJson);
+  }else{
+    result.replace("{{customMQTTJson}}", "");
+  }
 
   request->send(200, "text/html", result);
 }
@@ -2537,7 +2638,7 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_CONFIG_HTTP);
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
-  result = getMenuGeneral(result, "http");
+  //result = getMenuGeneral(result, "http");
 
   if (ConfigSettings.enableSecureHttp)
   {
@@ -2589,7 +2690,7 @@ void handleConfigLinky(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result = getMenuGeneral(result, "linky");
+  //result = getMenuGeneral(result, "linky");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -2657,7 +2758,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result = getMenuGeneral(result, "gaz");
+  //result = getMenuGeneral(result, "gaz");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -2714,7 +2815,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result = getMenuGeneral(result, "water");
+  //result = getMenuGeneral(result, "water");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -2770,7 +2871,7 @@ void handleConfigNotification(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result = getMenuGeneral(result, "notif");
+  //result = getMenuGeneral(result, "notif");
 
   result.replace("{{FormattedDate}}", FormattedDate);
   if (ConfigSettings.enableNotif)
@@ -2789,30 +2890,7 @@ void handleConfigNotification(AsyncWebServerRequest *request)
   request->send(200, "text/html", result);
 }
 
-void handleConfigModbus(AsyncWebServerRequest *request)
-{
-  String result;
-  result += F("<html>");
-  result += FPSTR(HTTP_HEADER);
-  result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_CONFIG_MODBUS);
-  result += FPSTR(HTTP_FOOTER);
-  result += F("</html>");
 
-  result = getMenuGeneral(result, "modbus");
-
-  result.replace("{{FormattedDate}}", FormattedDate);
-  if (ConfigSettings.enableModbus)
-  {
-    result.replace("{{checkedModbus}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedModbus}}", "");
-  }
-
-  request->send(200, "text/html", result);
-}
 
 void handleConfigWebPush(AsyncWebServerRequest *request)
 {
@@ -2824,7 +2902,7 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
 
-  result = getMenuGeneral(result, "webpush");
+  //result = getMenuGeneral(result, "webpush");
 
   result.replace("{{FormattedDate}}", FormattedDate);
   if (ConfigSettings.enableWebPush)
@@ -2990,9 +3068,9 @@ void handleLogs(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
 
-  result += F("<h1>Console</h1>");
+  result += F("<h4>Console</h4>");
   result += F("<div class='row justify-content-md-center'>");
-  result += F("<div class='col-sm-6'>");
+  result += F("<div class='col col-md-6'>");
   result += F("<button type='button' onclick='cmd(\"ClearConsole\");document.getElementById(\"console\").value=\"\";' class='btn btn-primary'>Clear Console</button> ");
   result += F("<button type='button' onclick='cmd(\"GetVersion\");' class='btn btn-primary'>Get Version</button> ");
   result += F("<button type='button' onclick='cmd(\"ErasePDM\");' class='btn btn-primary'>Erase PDM</button> ");
@@ -3004,7 +3082,7 @@ void handleLogs(AsyncWebServerRequest *request)
   result += F("<button type='button' onclick='cmd(\"ActiveReq\");' class='btn btn-primary'>ActiveReq</button> ");
   result += F("</div></div>");
   result += F("<div class='row justify-content-md-center' >");
-  result += F("<div class='col-sm-6'>");
+  result += F("<div class='col col-md-6'>");
 
   result += F("Raw datas : <textarea id='console' rows='16' cols='100'>");
 
@@ -3055,17 +3133,17 @@ void handleTools(AsyncWebServerRequest *request)
   
   
   String result;
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  //AsyncResponseStream *response = request->beginResponseStream("text/html");
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  response->print(result);
-  result = FPSTR(HTTP_TOOLS);
+
+  result += FPSTR(HTTP_TOOLS);
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
-  response->print(result);
-  request->send(response);
+ 
+  request->send(200,"text/html", result);
 
   /*AsyncWebServerResponse* response = request->beginChunkedResponse(contentType,
                                        [](uint8_t* buffer, size_t maxLen, size_t index) -> size_t 
@@ -3108,7 +3186,7 @@ void handleReboot(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Reboot ...</h1>");
+  result += F("<h4>Reboot ...</h4>");
   result = result + F("</body>");
   result += FPSTR(HTTP_FOOTER);
   result += F("</html>");
@@ -3128,7 +3206,7 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size
     content_len = request->contentLength();
     // if filename includes spiffs, update the spiffs partition
     int cmd = (filename.indexOf("spiffs") > -1) ? U_PART : U_FLASH;
-    if (!Update.begin(UPDATE_SIZE_UNKNOWN, cmd)) {
+    if (!Update.begin(content_len, cmd)) {
       Update.printError(Serial);
     }
   }
@@ -3153,7 +3231,7 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size
 }
 
 void printProgress(size_t prg, size_t sz) {
-  Serial.printf("Progress: %d%%\n", (prg*100)/content_len);
+  Serial.printf("%d%%\n", (prg*100)/content_len);
 }
 
 void handleDoRestore(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -3222,7 +3300,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   //backup database
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
-
+  esp_task_wdt_reset();
   while (file)
   {
     if (!file.isDirectory())
@@ -3253,7 +3331,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   //backup config
   root = LittleFS.open("/config");
   file = root.openNextFile();
-
+  esp_task_wdt_reset();
   while (file)
   {
     if (!file.isDirectory())
@@ -3284,7 +3362,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   //backup debug
   root = LittleFS.open("/debug");
   file = root.openNextFile();
-
+  esp_task_wdt_reset();
   while (file)
   {
     if (!file.isDirectory())
@@ -3315,7 +3393,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   //backup template
   root = LittleFS.open("/tp");
   file = root.openNextFile();
-
+  esp_task_wdt_reset();
   while (file)
   {
     if (!file.isDirectory())
@@ -3351,21 +3429,23 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
  
   root = LittleFS.open("/bk");
   file = root.openNextFile();
-
   String listFiles="";
+  esp_task_wdt_reset();
   while (file)
   {
     if (!file.isDirectory())
     {
       String tmp = file.name();
-      // tmp = tmp.substring(10);
-      listFiles += F("<li><a href='web/");
-      listFiles += tmp;
-      listFiles += F("'>");
-      listFiles += tmp;
-      listFiles += F(" ( ");
-      listFiles += file.size();
-      listFiles += F(" o)</a></li>");
+      if (tmp.substring((tmp.length()-3),tmp.length()) == "tar")
+      {
+        listFiles += F("<li><a href='web/");
+        listFiles += tmp;
+        listFiles += F("'>");
+        listFiles += tmp;
+        listFiles += F(" ( ");
+        listFiles += file.size();
+        listFiles += F(" o)</a></li>");
+      } 
     }
     file.close();
     file = root.openNextFile();
@@ -3420,7 +3500,7 @@ int totalLength;       //total size of firmware
 int currentLength = 0; //current size of written firmware
 
 void progressFunc(unsigned int progress,unsigned int total) {
-  Serial.printf("Progress: %u of %u\r", progress, total);
+  Serial.printf("%u of %u\r", progress, total);
 };
 
 void checkUpdateFirmware()
@@ -3488,7 +3568,7 @@ void handleToolUpdate(AsyncWebServerRequest *request)
     result += F("</html>");
 
     request->send(200, F("text/html"), result);
-    checkUpdateFirmware();
+    //checkUpdateFirmware();
 }
 
 
@@ -3500,7 +3580,7 @@ void handleConfigFiles(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Config files</h1>");
+  result += F("<h4>Config files</h4>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -3559,7 +3639,7 @@ void handleDebugFiles(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Debug files</h1>");
+  result += F("<h4>Debug files</h4>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -3620,7 +3700,7 @@ void handleFSbrowserBackup(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>backup list files</h1>");
+  result += F("<h4>backup list files</h4>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -3679,7 +3759,8 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Devices list files</h1>");
+  result += F("<h4>Devices list files</h4>");
+  result += F("<div align='right'><a href='/createDevice' class='btn btn-primary mb-2'>+ New</a></div>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -3731,6 +3812,18 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void handleCreateDevice(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CREATE_DEVICE);
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  request->send(200, "text/html", result);
+}
+
 void handleCreateTemplate(AsyncWebServerRequest *request)
 {
   String result;
@@ -3749,7 +3842,7 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Templates</h1>");
+  result += F("<h4>Templates</h4>");
   result += F("<div align='right'><a href='/createTemplate' class='btn btn-primary mb-2'>+ New</a></div>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
@@ -3801,6 +3894,54 @@ void handleTemplates(AsyncWebServerRequest *request)
   file.close();
   root.close();
   request->send(200, F("text/html"), result);
+}
+
+void handleSaveDevice(AsyncWebServerRequest *request)
+{
+  if (request->method() != HTTP_POST)
+  {
+    request->send(405, F("text/plain"), F("Method Not Allowed"));
+  }
+  else
+  {
+    uint8_t i = 0;
+
+    String filename = "/db/" + request->arg(i) +".json";
+    String content = request->arg(1);
+    String action = request->arg(2);
+
+    if (action == "save")
+    {
+      File file = LittleFS.open(filename.c_str(), "w+");
+      if (!file || file.isDirectory())
+      {
+        DEBUG_PRINT(F("Failed to open file for reading\r\n"));
+        file.close();
+        return;
+      }
+      
+      int bytesWritten = file.print(content);
+
+      if (bytesWritten > 0)
+      {
+        DEBUG_PRINTLN(F("File was written"));
+        DEBUG_PRINTLN(bytesWritten);
+      }
+      else
+      {
+        DEBUG_PRINTLN(F("File write failed"));
+      }
+
+      file.close();
+    }
+    else if (action == "delete")
+    {
+      LittleFS.remove(filename);
+    }
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), F("/fsbrowser"));
+    request->send(response);
+  }
 }
 
 void handleSaveTemplates(AsyncWebServerRequest *request)
@@ -3858,7 +3999,7 @@ void handleJavascript(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Javascript</h1>");
+  result += F("<h4>Javascript</h4>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -4123,7 +4264,9 @@ void handleLogBuffer(AsyncWebServerRequest *request)
 void handleScanNetwork(AsyncWebServerRequest * request)
 {
    String result="";
+  
    int n = WiFi.scanNetworks();
+
    if (n == 0) {
       result = " <label for='ssid'>SSID</label>";
       result += "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}'> <a onclick='scanNetwork();' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>";
@@ -4257,40 +4400,6 @@ void handleActiveReq(AsyncWebServerRequest *request)
   SendBasicDescription(shrtAddr, 1);
 
   request->send(200, F("text/html"), "");
-}
-
-void handleConfigEthernet(AsyncWebServerRequest *request)
-{
-  String result;
-  result += F("<html>");
-  result += FPSTR(HTTP_HEADER);
-  result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_ETHERNET);
-  result += FPSTR(HTTP_FOOTER);
-  result += F("</html>");
-  result.replace("{{FormattedDate}}", FormattedDate);
-
-  if (ConfigSettings.enableEthernet)
-  {
-    result.replace("{{checkedEthernet}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedEthernet}}", "");
-  }
-  if (ConfigSettings.dhcp)
-  {
-    result.replace("{{modeEther}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{modeEther}}", "");
-  }
-  result.replace("{{ipEther}}", ConfigSettings.ipAddress);
-  result.replace("{{maskEther}}", ConfigSettings.ipMask);
-  result.replace("{{GWEther}}", ConfigSettings.ipGW);
-
-  request->send(200, "text/html", result);
 }
 
 void handleSaveConfigGeneral(AsyncWebServerRequest *request)
@@ -4535,6 +4644,12 @@ void handleSaveConfigMQTT(AsyncWebServerRequest *request)
     config_write(path, "portMQTT", String(request->arg("portMQTT")));
   }
 
+  if (request->arg("clientIDMQTT"))
+  {
+    strlcpy(ConfigGeneral.clientIDMQTT, request->arg("clientIDMQTT").c_str(), sizeof(ConfigGeneral.clientIDMQTT));
+    config_write(path, "clientIDMQTT", String(request->arg("clientIDMQTT")));
+  }
+
   if (request->arg("userMQTT"))
   {
     strlcpy(ConfigGeneral.userMQTT, request->arg("userMQTT").c_str(), sizeof(ConfigGeneral.userMQTT));
@@ -4555,12 +4670,43 @@ void handleSaveConfigMQTT(AsyncWebServerRequest *request)
     strlcpy(ConfigGeneral.headerMQTT, request->arg("headerMQTT").c_str(), sizeof(ConfigGeneral.headerMQTT));
     config_write(path, "headerMQTT", String(request->arg("headerMQTT")));
   }
+
+  if (String(request->arg("appliMQTT")) == "HA")
+  {
+    ConfigGeneral.HAMQTT = true;
+    ConfigGeneral.TBMQTT = false;
+    ConfigGeneral.customMQTT = false;
+    config_write(path, "HAMQTT", "1");
+    config_write(path, "TBMQTT", "0");
+    config_write(path, "customMQTT", "0");
+  }
+
+  if (String(request->arg("appliMQTT")) == "TB")
+  {
+    ConfigGeneral.HAMQTT = false;
+    ConfigGeneral.TBMQTT = true;
+    ConfigGeneral.customMQTT = false;
+    config_write(path, "HAMQTT", "0");
+    config_write(path, "TBMQTT", "1");
+    config_write(path, "customMQTT", "0");
+  }
+  if (String(request->arg("appliMQTT")) == "custom")
+  {
+    ConfigGeneral.HAMQTT = false;
+    ConfigGeneral.TBMQTT = false;
+    ConfigGeneral.customMQTT = true;
+    config_write(path, "HAMQTT", "0");
+    config_write(path, "TBMQTT", "0");
+    config_write(path, "customMQTT", "1");
+    config_write(path,"customMQTTJson",String(request->arg("customMQTTJson")));
+  }
   
   //MQTT connection process
   if (ConfigSettings.enableMqtt)
   {
     mqttClient.disconnect();
     mqttClient.setServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT));
+    mqttClient.setClientId(ConfigGeneral.clientIDMQTT);
     if (String(ConfigGeneral.userMQTT) !="")
     {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
@@ -4741,28 +4887,6 @@ void handleSaveConfigWebPush(AsyncWebServerRequest *request)
   
 }
 
-void handleSaveConfigModbus(AsyncWebServerRequest *request)
-{
-
-  String path = "configGeneral.json";
-  String enableModbus;
-  if (request->arg("enableModbus") == "on")
-  {
-    enableModbus = "1";
-    ConfigSettings.enableModbus = true;
-  }
-  else
-  {
-    enableModbus = "0";
-    ConfigSettings.enableModbus = false;
-  }
- 
-  config_write(path, "enableModbus", enableModbus);
-
-  AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/configModbus"));
-  request->send(response);
-}
 
 void handleSaveConfigNotification(AsyncWebServerRequest *request)
 {
@@ -4904,63 +5028,6 @@ void handleSaveWifi(AsyncWebServerRequest *request)
   }
 }
 
-void handleSaveEther(AsyncWebServerRequest *request)
-{
-  if (!request->hasArg("ipAddress"))
-  {
-    request->send(500, "text/plain", "BAD ARGS");
-    return;
-  }
-
-  String StringConfig;
-  String dhcp;
-  if (request->arg("dhcp") == "on")
-  {
-    dhcp = "1";
-  }
-  else
-  {
-    dhcp = "0";
-  }
-
-  String enableEthernet;
-  if (request->arg("etherEnable") == "on")
-  {
-    enableEthernet = "1";
-  }
-  else
-  {
-    enableEthernet = "0";
-  }
-
-  String ipAddress = request->arg("ipAddress");
-  String ipMask = request->arg("ipMask");
-  String ipGW = request->arg("ipGW");
-
-  const char *path = "/config/configEther.json";
-
-  StringConfig = "{\"enable\":" + enableEthernet + ",\"dhcp\":" + dhcp + ",\"ip\":\"" + ipAddress + "\",\"mask\":\"" + ipMask + "\",\"gw\":\"" + ipGW + "\"}";
-  DEBUG_PRINTLN(StringConfig);
-  StaticJsonDocument<512> jsonBuffer;
-  DynamicJsonDocument doc(MAXHEAP);
-  deserializeJson(doc, StringConfig);
-
-  File configFile = LittleFS.open(path, FILE_WRITE);
-  if (!configFile)
-  {
-    DEBUG_PRINTLN(F("failed open"));
-  }
-  else
-  {
-    if (!doc.isNull())
-    {
-      serializeJson(doc, configFile);
-    }
-  }
-  configFile.close();
-  request->send(200, "text/html", "Save config OK ! <br><form method='GET' action='reboot'><input type='submit' name='reboot' value='Reboot'></form>");
-}
-
 void handleConfigDevices(AsyncWebServerRequest *request)
 {
   String result;
@@ -4968,18 +5035,14 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_DEVICES_ZIGBEE);
+  result += FPSTR(HTTP_FOOTER);
+  result = getMenuGeneralZigbee(result, "devices");
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h1>Config</h1>");
-  result += F("<div align='right'>");
-  result += F("<button type='button' onclick='cmd(\"PermitJoin\");' class='btn btn-primary'>Add Device</button> ");
-  result += F("<button type='button' onclick='cmd(\"Reset\");' class='btn btn-primary'>Reset</button> ");
-  result += F("<br><button type='button' onClick=\"if (confirm('Are you sure ?')==true){cmd('ErasePDM');}else{return false;};\" class='btn btn-danger'>RAZ</button> ");
-  
-  result += F("</div><br>");
-  result += F("<h2>List of devices</h2>");
-  result += F("<div class='row'>");
+  result += F("</html>");
 
   String str = "";
+  String devices="";
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
   int i=0;
@@ -4989,66 +5052,96 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     // tmp = tmp.substring(10);
     if (tmp.substring(16) == ".json")
     {
-      result += F("<div class='col-sm-3'><div class='card'><div class='card-header'>@Mac : ");
-      result += tmp.substring(0, 16);
-      result += F("</div>");
-      result += F("<div class='card-body'>");
-      
-      result += F("<strong>Manufacturer: </strong>");
+      devices += F("<div class='col-md-auto col-sm-auto'><div class='card' style='min-width:380px;' ><div class='card-header'  style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;' >@Mac : ");
+      devices += tmp.substring(0, 16);
+      devices += F("</div>");
+      devices += F("<div class='card-body'>");
+      devices += "<table width='100%' style='font-size:12px;'><tr>";
+      devices += F("<td style='font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String manufacturer;
       manufacturer = GetManufacturer(file.name());
-      result += manufacturer;
-      result += F("<br><strong>Model: </strong>");
+      devices += manufacturer;
+      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String model;
       model = GetModel(file.name());
-      result += model;
-      result += F("<br><strong>Short Address: </strong>");
+      devices += model;
+      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       char SAddr[5];
       int ShortAddr = GetShortAddr(file.name());
       snprintf(SAddr,5, "%04X", ShortAddr);
-      result += SAddr;
-      result += F("<br><strong>Device Id: </strong>");
+      devices += SAddr;
+      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       char devId[5];
       int DeviceId = GetDeviceId(file.name());
       snprintf(devId,5, "%04X", DeviceId);
-      result += devId;
-      result += F("<br><strong>Soft Version: </strong>");
+      devices += devId;
+      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String SoftVer = GetSoftwareVersion(file.name());
-      result += SoftVer;
-      //result += F("<br><strong>Last seen: </strong>");
-      //String lastseen = GetLastSeen(file.name());
-     // result += lastseen;
-      result += F("<br><strong>LQI: </strong>");
-      result += GetLQI(file.name());
-      
+      devices += SoftVer;
+      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      String lastseen = GetLastSeen(file.name());
+      devices += lastseen;
+      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      devices += GetLQI(file.name());
+      devices += "</td></tr></table>";
      
       // Paramétrages
-      result += F("<div>");
-
-        if (ConfigSettings.enableMqtt)
+      devices += F("<hr>");
+        //infos
+        
+        devices += F("<button onclick=\"ZigbeeSendRequest(");
+        devices += ShortAddr;
+        devices += ",";
+        if (model=="ZLinky_TIC")
         {
-          result += F("<button onclick=\"sendMqttDiscover('");
-          result += ShortAddr;
-          result += "');\" class='btn btn-warning mb-2'>";
-          result += "MQTT Discover";
-          result += F("</button>");
+          devices += "0,16384";
+        }else{
+          devices += "0,1";
+        }
+        
+        devices += ");\" class='btn btn-info mb-2'>";
+        devices += "Version";
+        devices += F("</button>");
+
+
+        //modif
+        devices +="<div align='right'>";
+        if (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT )
+        {
+          devices += F("<button onclick=\"sendMqttDiscover('");
+          devices += ShortAddr;
+          devices += "');\" class='btn btn-warning mb-2'>";
+          devices +="<svg role='img' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' style='width:16px;' height='16' width='16'>";
+          devices +=  "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z' fill='currentColor' stroke-width='1'></path>";
+          devices +="</svg>";
+          //devices += "MQTT Discover";
+          devices += F("</button>");
         }
 
-        result += F("<button onclick=\"ZigbeeSendRequest(");
-        result += ShortAddr;
-        result += ",";
-        result += "0,5";
-        result += ");\" class='btn btn-warning mb-2'>";
-        result += "Reinit";
-        result += F("</button>");
+        devices += F("<button onclick=\"ZigbeeSendRequest(");
+        devices += ShortAddr;
+        devices += ",";
+        devices += "0,5";
+        devices += ");\" class='btn btn-warning mb-2'>";
+        devices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>";
+        devices +=  "<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>";
+        devices +=  "<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>";
+        devices +="</svg>";
+        //devices += " Refresh";
+        devices += F("</button>");
       
-        result += F("<button onclick=\"deleteDevice('");
-        result += ShortAddr;
-        result += "');\" class='btn btn-danger mb-2'>";
-        result += "Delete";
-        result += F("</button>");
-      result += F("</div>");
-      result += F("</div></div></div>");
+        devices += F("<button onclick=\"deleteDevice('");
+        devices += ShortAddr;
+        devices += "');\" class='btn btn-danger mb-2'>";
+        devices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>";
+        devices +=  "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>";
+        devices +=  "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>";
+        devices +="</svg>";
+        //devices += " Delete";
+        devices += F("</button>");
+      devices += F("</div>");
+      devices += F("</div>");
+      devices += F("</div></div><br>");
       
     }
     
@@ -5056,9 +5149,12 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     file.close();
     file = root.openNextFile();
   }
-  result += F("</div>");
-  result += FPSTR(HTTP_FOOTER);
-  result += F("</html>");
+
+
+
+  result.replace("{{devicesList}}", devices);
+
+
   file.close();
   root.close();
   request->send(200, F("text/html"), result);
@@ -5114,7 +5210,7 @@ void handleLoadGaugeDashboard(AsyncWebServerRequest *request)
   Attribute = request->arg(2);
   Type = request->arg(3);
   Coefficient = request->arg(4);
-  result = GetValueStatus(IEEE + ".json", Cluster.toInt(), Attribute.toInt(), (String)Type, Coefficient.toFloat(), "");
+  result = GetValueStatus(IEEE + ".json", Cluster.toInt(), Attribute.toInt(), (String)Type, Coefficient.toFloat());
 
   request->send(200, F("text/html"), result);
 }
@@ -5156,7 +5252,7 @@ void handleRefreshLabel(AsyncWebServerRequest *request)
   Coefficient = request->arg(4);
   Unit = request->arg(5);
 
-  result = GetValueStatus(file, Cluster.toInt(), Attribute.toInt(), Type, Coefficient.toFloat(), Unit);
+  result = GetValueStatus(file, Cluster.toInt(), Attribute.toInt(), Type, Coefficient.toFloat());
 
   request->send(200, F("text/html"), result);
 }
@@ -5525,6 +5621,30 @@ void handleGetAlert(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void handleGetDeviceValue(AsyncWebServerRequest *request)
+{
+
+  String result = "";
+
+  if (!deviceList->isEmpty())
+  {
+    int i=0;
+    result="[";
+    while (!deviceList->isEmpty())
+    {
+      Device d = deviceList->shift();
+      if (i>0){result+=",";}
+      result += "\""+String(d.shortAddr)+"_"+String(d.cluster)+"_"+String(d.attribute);
+      result += F(";");
+      result += d.value+"\"";
+      i++;
+    }
+    result +="]";
+    
+  }
+  request->send(200, F("text/html"), result);
+}
+
 void handleSendMqttDiscover(AsyncWebServerRequest *request)
 {
   String IEEE,ShortAddr, datas, result;
@@ -5580,12 +5700,12 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
         {
           if (t->e[i].coefficient!=1)
           {
-            datas.replace("{{value}}", "{{ value_json."+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+" | float * "+String(t->e[i].coefficient)+"}}");
+            datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+" | float * "+String(t->e[i].coefficient)+"}}");
           }else{
-            datas.replace("{{value}}", "{{ value_json."+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
+            datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
           }
         }else{
-          datas.replace("{{value}}", "{{ value_json."+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
+          datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
         }
         datas.replace("{{device_name}}", model+"_"+IEEE);
         String topic = ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"/config";
@@ -6017,15 +6137,7 @@ void initWebServer()
     }
     handleConfigWebPush(request); 
   });
-  serverWeb.on("/configModbus", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
-    handleConfigModbus(request); 
-  });
+  
   serverWeb.on("/configNotif", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6044,15 +6156,7 @@ void initWebServer()
     }
     handleConfigWifi(request); 
   });
-  serverWeb.on("/configEthernet", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
-    handleConfigEthernet(request); 
-  });
+  
   serverWeb.on("/configDevices", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6106,6 +6210,15 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleSaveConfig(request);  
+  });
+  serverWeb.on("/saveFileDevice", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveDevice(request); 
   });
   serverWeb.on("/saveFileTemplates", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
@@ -6206,15 +6319,7 @@ void initWebServer()
     }
     handleSaveConfigWebPush(request); 
   });
-  serverWeb.on("/saveConfigModbus", HTTP_POST, [](AsyncWebServerRequest *request)
-  { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
-    handleSaveConfigModbus(request); 
-  });
+
   serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6233,16 +6338,6 @@ void initWebServer()
     }
     handleSaveWifi(request); 
   });
-  serverWeb.on("/saveEther", HTTP_POST, [](AsyncWebServerRequest *request)
-  { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
-    handleSaveEther(request); 
-  });
-
   serverWeb.on("/tools", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6477,6 +6572,15 @@ void initWebServer()
     }
     handleJavascript(request); 
   });
+  serverWeb.on("/createDevice", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleCreateDevice(request); 
+  });
   serverWeb.on("/createTemplate", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6612,6 +6716,15 @@ void initWebServer()
     }
     handleDeleteDevice(request); 
   });
+  serverWeb.on("/getDeviceValue", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetDeviceValue(request); 
+  });
   serverWeb.on("/getAlert", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6701,10 +6814,6 @@ void initWebServer()
 
   serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/functions.js", LittleFS, "/web/js/functions.js").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/js/raphael-min.js", LittleFS, "/web/js/raphael-min.js").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/js/morris.min.js", LittleFS, "/web/js/morris.min.js").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/js/justgage.min.js", LittleFS, "/web/js/justgage.min.js").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/js/justgage.min.js.map", LittleFS, "/web/js/justgage.min.js.map").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/bootstrap.min.js", LittleFS, "/web/js/bootstrap.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/bootstrap.bundle.min.js.map", LittleFS, "/web/js/bootstrap.map").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css").setCacheControl("max-age=600");

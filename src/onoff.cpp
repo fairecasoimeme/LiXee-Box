@@ -5,6 +5,7 @@
 #include "SPIFFS_ini.h"
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
+#include "mqtt.h"
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
@@ -12,6 +13,7 @@ extern ConfigSettingsStruct ConfigSettings;
 
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 10> *PrioritycommandList;
+extern CircularBuffer<Device, 10> *deviceList;
 
 void SendOnOffAction(int shortaddr, int endpoint, String value)
 {
@@ -56,15 +58,10 @@ void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           }
     
           ini_write(inifile,"0006", "0", (String)tmp);
+          //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"0006_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0006_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"0006",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -72,6 +69,11 @@ void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"0006",(String)attribute,tmpvalue.c_str());
+          }
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,6,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
         break;       
@@ -83,16 +85,11 @@ void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
             sprintf(value, "%02X",datas[i]);
             tmp+=value;
           }
-          ini_write(inifile,"0000", (String)attribute, (String)tmp);
+          ini_write(inifile,"0006", (String)attribute, (String)tmp);
+          //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"0006_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0006_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"0006",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -100,6 +97,12 @@ void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"0006",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,6,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
         break;

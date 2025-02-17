@@ -5,11 +5,13 @@
 #include "SPIFFS_ini.h"
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
+#include "mqtt.h"
 
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
+
 
 String GetManufacturer(String inifile)
 {
@@ -50,13 +52,7 @@ void BasicManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"0000_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0000_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(manufacturer));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -65,6 +61,8 @@ void BasicManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
           }
+
+         
         }
         break;       
       case 5:
@@ -82,13 +80,7 @@ void BasicManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"0000_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0000_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(model));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -99,8 +91,21 @@ void BasicManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           }
         }
         break; 
+      case 1:
+        if (ini_exist(inifile))
+        {
+          for(int i=0;i<len;i++)
+          {
+            sprintf(value, "%02X",datas[i]);
+            tmp+=value;
+          }
+          ini_write(inifile,"INFO", "software_version", (String)strtol(tmp.c_str(), NULL, 16));
+
+
+        }
+        break;
       case 16384:
-        //SoftVersion         
+        //SoftVersion  ZLinky        
         if (ini_exist(inifile))
         {
           char soft[10];
@@ -113,13 +118,7 @@ void BasicManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"0000_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0000_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(soft));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -142,13 +141,7 @@ void BasicManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"0000_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_0000_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)

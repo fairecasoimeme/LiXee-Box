@@ -73,6 +73,7 @@
 				"mqtt_state_class" : "total_increasing",
 				"type" : "numeric",
 				"coefficient" : 1,
+                                "visible" : 1,
 				"unit" : "L"
 
 			}

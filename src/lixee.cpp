@@ -5,10 +5,12 @@
 #include "SPIFFS_ini.h"
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
+#include "mqtt.h"
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
+extern CircularBuffer<Device, 10> *deviceList;
 
 
 void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
@@ -35,13 +37,7 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"65382_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_65382_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"65382",String(attribute),"string",String(STGE));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -49,6 +45,12 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"65382",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,65382,attribute,tmp});
           }
         }
       }
@@ -66,13 +68,7 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
         //MQTT
         if (ConfigSettings.enableMqtt)
         {
-          String tmpvalue;
-          tmpvalue = "{\"65382_"+String(attribute)+"\":";
-          tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-          tmpvalue +="}";
-          String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_65382_"+String(attribute)+"/state";
-          mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+          mqttPublish(inifile.substring(0,16),"65382",String(attribute),"numeric",String(tmp));
         }
       //WebPush
         if (ConfigSettings.enableWebPush)
@@ -81,6 +77,12 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
           tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
           WebPush(inifile.substring(0,16),"65382",(String)attribute,tmpvalue.c_str());
         }
+
+        // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,65382,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+          }
       }
       break;
       default:
@@ -110,13 +112,7 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"65382_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_65382_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),"65382",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -124,6 +120,12 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"65382",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,65382,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
       break;

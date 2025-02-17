@@ -6,10 +6,12 @@
 #include "SPIFFS_ini.h"
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
+#include "mqtt.h"
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
+extern CircularBuffer<Device, 10> *deviceList;
 
 void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
 {
@@ -39,17 +41,10 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
             addDebugLog(err);
           }
           
-
-
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"2820_1295\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_2820_1295/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+            mqttPublish(inifile.substring(0,16),"2820",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -57,6 +52,12 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"2820",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
         }
@@ -77,12 +78,7 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"2820_2319\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_2820_2319/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+            mqttPublish(inifile.substring(0,16),"2820",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -90,6 +86,12 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"2820",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
         }
@@ -111,12 +113,7 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"2820_2575\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_2820_2575/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+            mqttPublish(inifile.substring(0,16),"2820",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -124,6 +121,12 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"2820",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
         }
@@ -140,12 +143,7 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\"2820_"+(String)attribute+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_2820_"+(String)attribute+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
+            mqttPublish(inifile.substring(0,16),"2820",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -153,6 +151,12 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"2820",(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
         break;        

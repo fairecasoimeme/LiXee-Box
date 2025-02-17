@@ -5,10 +5,12 @@
 #include "SPIFFS_ini.h"
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
+#include "mqtt.h"
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
+extern CircularBuffer<Device, 10> *deviceList;
 
 void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datatype,int len, char* datas)
 {
@@ -35,13 +37,7 @@ void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datat
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            String tmpvalue;
-            tmpvalue = "{\""+String(cluster)+"_"+String(attribute)+"\":";
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            tmpvalue +="}";
-            String topic = ConfigGeneral.headerMQTT+ inifile.substring(0, 16)+"_"+String(cluster)+"_"+String(attribute)+"/state";
-            mqttClient.publish(topic.c_str(), 0, true, tmpvalue.c_str());
-
+            mqttPublish(inifile.substring(0,16),String(cluster),String(attribute),"string",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -49,6 +45,12 @@ void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datat
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),String(cluster),(String)attribute,tmpvalue.c_str());
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            deviceList->push(Device{shortaddr,cluster,attribute,tmp});
           }
           
         }

@@ -20,6 +20,8 @@
 
 #include "Arduino.h"
 #include <string.h>
+#include <FS.h>
+#include <LittleFS.h>
 
 bool ini_exist(String path);
 bool ini_write(String path, String section, String key, String value);
@@ -36,6 +38,9 @@ bool ini_trendEnergy(String path, String section, String value);
 bool init_raz_energy(String path, String time);
 
 void scanFilesError(void);
+
+File safeOpenFile(const char *path, const char *mode);
+void safeCloseFile(File &file, const char *path);
 
 /*bool   ini_open (String ini_name);
 String ini_read (String section, String key, String def);

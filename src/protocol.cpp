@@ -24,6 +24,9 @@ extern CircularBuffer<SerialPacket, 30> *PriorityQueuePacket;
 //extern CircularBuffer<Packet, 10> commandTimedList;
 extern CircularBuffer<Alert, 10> *alertList;
 
+extern SemaphoreHandle_t Queue_Mutex ;
+extern SemaphoreHandle_t QueuePrio_Mutex;
+
 extern String FormattedDate;
 extern String Minute;
 extern String Hour;
@@ -95,7 +98,14 @@ String GetNameStatus(int deviceId,String cluster, int attribut, String model)
     return "";  
 }
 
-String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient, String unit)
+String GetValueFromShortAddr(int shortAddr,int cluster, int attribute, String value)
+{
+  /*String inifile;
+  inifile = GetMacAdrr(shortAddr);
+  return GetValueStatus(inifile, cluster, attribute, String type, float coefficient)*/
+}
+
+String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient)
 {
    char tmpKey[5];
    sprintf(tmpKey,"%04X",key);
@@ -117,8 +127,6 @@ String GetValueStatus(String inifile, int key, int attribut, String type, float 
        }
        tmp=String(tmpint); 
    }
-
-   tmp= tmp+" "+unit;
    
    return tmp;
 }
@@ -255,7 +263,7 @@ void datasManage(char packet[256],int count)
 
 void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 {
-  
+  esp_task_wdt_reset();
   switch(protocol.type){
     case 0x8702:
     {
@@ -350,7 +358,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         {
           int tmp  = (protocol.payload[3]*256)+protocol.payload[4];
           log_d("Short addr: %02X",tmp);
-          alertList->push(Alert{"BIND OK", 2});
+          //alertList->push(Alert{"BIND OK", 2});
         }
         
       }
@@ -625,11 +633,14 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           //Traitement spécifique seloin modèle
           SpecificTreatment(ShortAddr,model);
           log_d("SpecificTreatment");
+         
           vTaskDelay(100);
+          alertList->push(Alert{"Bind waiting...", 2});
           getBind(macInt,DeviceId,model);
           log_d("getBind");
           vTaskDelay(100);
           // Traitement config report
+          alertList->push(Alert{"Config Report waiting...", 2});
           getConfigReport(ShortAddr,DeviceId,model);
           log_d("getConfigReport");
           vTaskDelay(100);
@@ -637,6 +648,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           getPollingDevice(ShortAddr,DeviceId,model);
           log_d("getPollingDevice");
           vTaskDelay(100);
+          alertList->push(Alert{"Config OK", 2});
+          //Afficher la find de la config
           
           // backup du fichier
           if (copyFile(inifile) )
@@ -667,7 +680,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
          log_d("Config report response : ");
          char configReport[200];
          sprintf(configReport,"Config Report (%02X%02X) : Cluster : %02X%02X - Status : %02X",protocol.payload[1],protocol.payload[2],protocol.payload[4],protocol.payload[5],protocol.payload[6]);
-         alertList->push(Alert{configReport, 2});
+         //alertList->push(Alert{configReport, 2});
          
       }
       break;
@@ -928,7 +941,9 @@ void protocolDatas(uint8_t sp[4092], size_t len)
         {
           if (!PriorityQueuePacket->isFull())
           {
+            xSemaphoreTake(QueuePrio_Mutex, portMAX_DELAY);
             PriorityQueuePacket->push(sp);
+            xSemaphoreGive(QueuePrio_Mutex);
           }
         }else if((type == 0x8011) || (type == 0x8012))
         {
@@ -936,18 +951,24 @@ void protocolDatas(uint8_t sp[4092], size_t len)
         }else{
           if (!QueuePacket->isFull())
           {
+            xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
             QueuePacket->push(sp);
+            xSemaphoreGive(Queue_Mutex);
           }else{
             addDebugLog("QueuePacket FULL !");
             while (!QueuePacket->isEmpty())
             {
               DEBUG_PRINTLN("Packet shift : protocol datas");
               SerialPacket packet;
+              xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
               packet = (SerialPacket)QueuePacket->shift();
+              xSemaphoreGive(Queue_Mutex);
               datasManage((char *)packet.raw,packet.len);
-              vTaskDelay(30);
+              vTaskDelay(10);
             }
+            xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
             QueuePacket->push(sp);
+            xSemaphoreGive(Queue_Mutex);
           }
         }
         memset(packet,0,0);
@@ -1001,17 +1022,17 @@ bool ScanDeviceToPoll()
           char name_with_extension[64];
           strcpy(name_with_extension,path);
           strcat(name_with_extension,inifile);
-          File file = LittleFS.open(name_with_extension, FILE_READ);
+          File file = safeOpenFile(name_with_extension, FILE_READ);
           if (!file|| file.isDirectory()) {
             log_e("Erreur lors de l'ouverture du fichier ini_read %s",inifile);
-            file.close();
+            safeCloseFile(file,name_with_extension);
             break;
           }
           
           // Analyser le contenu JSON du fichier
           DynamicJsonDocument temp(MAXHEAP);
           DeserializationError error = deserializeJson(temp, file);
-          file.close();
+          safeCloseFile(file,name_with_extension);
           if (error) 
           {
             log_e("ERROR : deserializeJson (ScanDeviceToPoll) %s : %s",inifile,error.c_str() );
@@ -1047,21 +1068,21 @@ bool ScanDeviceToPoll()
                   i++;
               }
 
-              file = LittleFS.open(name_with_extension, "w+");
+              file = safeOpenFile(name_with_extension, "w+");
               if (!file|| file.isDirectory()) {
                 log_e("Erreur lors de l'ouverture du fichier ini_read %s",inifile);
-                file.close();
+                safeCloseFile(file,name_with_extension);
 
               }
               if (!temp.isNull())
               {
                 if (serializeJson(temp, file) == 0) {
                   log_e("Erreur lors de l'écriture dans le fichier ini_read");
-                  file.close();
+                  safeCloseFile(file,name_with_extension);
                   break;
                 }
               }
-              file.close();       
+              safeCloseFile(file,name_with_extension);      
             }
           }
         }
@@ -1073,140 +1094,4 @@ bool ScanDeviceToPoll()
   return true;
 }
 
-bool ScanDeviceToRAZ()
-{
-  File root = LittleFS.open("/db");
-  if (!root)
-  {
-    log_e("Failed to open dir");
-    root.close();
-    return false;
-  }
 
-  if (!root.isDirectory())
-  {
-    log_e("not a dir");
-    root.close();
-    return false;
-  }
-  File filedevice = root.openNextFile();
-  while (filedevice) 
-  {
-      
-      if (!filedevice.isDirectory())
-      {
-        if ((filedevice.size())>0)
-        {
-          const char* inifile =  filedevice.name();
-          const char* path ="/db/";
-          char name_with_extension[64];
-          strcpy(name_with_extension,path);
-          strcat(name_with_extension,inifile);
-          File file = LittleFS.open(name_with_extension, FILE_READ);
-          if (!file|| file.isDirectory()) {
-            log_e("Erreur lors de l'ouverture du fichier ini_read %s",inifile);
-            file.close();
-            break;
-          }
-          
-          // Analyser le contenu JSON du fichier
-          DynamicJsonDocument temp(MAXHEAP);
-          DeserializationError error = deserializeJson(temp, file);
-          file.close();
-          if (error) 
-          {
-            log_e("ERROR : deserializeJson (ScanDeviceToRAZ) %s - %s",inifile,error.c_str());
-            break;
-          }else
-          {
-            String model = GetModel(inifile);
-            String lastSeen = ini_read(inifile,"INFO","lastSeen");
-            struct tm t;
-            time_t t_of_time;
-            int y = lastSeen.c_str()[0]*1000 + lastSeen.c_str()[1]*100 + lastSeen.c_str()[2] * 10 + lastSeen.c_str()[3] - 53328;
-            int m = lastSeen.c_str()[5]*10 + lastSeen.c_str()[6] - 528;
-            int d = lastSeen.c_str()[8]*10 + lastSeen.c_str()[9] - 528;
-            int h = lastSeen.c_str()[11]*10 + lastSeen.c_str()[12] - 528;
-            int mn = lastSeen.c_str()[14]*10 + lastSeen.c_str()[15] - 528;
-           
-            t.tm_hour= h;
-            t.tm_min= mn;
-            t.tm_mday= d;
-            t.tm_mon= m - 1;
-            t.tm_year= y - 1900;
-            t.tm_sec = 0;
-            t.tm_isdst = -1; 
-            t_of_time = mktime(&t);
-            long diff = (epochTime.toDouble() - (long)t_of_time);
-
-            if (model=="ZLinky_TIC")
-            {
-              
-              if (Minute=="00")
-              {
-                  init_raz_energy(inifile, "hour");
-              }else if ((Hour=="00") && (Minute=="00"))
-              {
-                  init_raz_energy(inifile, "day");
-              }else if ((Day=="01") && (Hour=="00") && (Minute=="00"))
-              {
-                  init_raz_energy(inifile, "month");
-              }
-
-              
-              if (diff > 3600)
-              {
-                //RAZ NRJ
-                //hour
-                ini_write(inifile,"0B04", "1295", "0");
-                ini_write(inifile,"0B04", "2319", "0");
-                ini_write(inifile,"0B04", "2575", "0");
-                ini_power2(inifile, "1295", "0");
-                ini_power2(inifile, "2319", "0");
-                ini_power2(inifile, "2575", "0");
-                ini_trendPower(inifile,"1295", "0");
-                ini_trendPower(inifile,"2319", "0");
-                ini_trendPower(inifile,"2575", "0");
-              }
-            /* if (diff > 86400)
-              {
-                init_raz_energy(inifile, "day");
-              }
-              if (diff > 2678400)
-              {
-                init_raz_energy(inifile, "month");
-              }*/
-            }else if (model == "ZiPulses")
-            {
-              if (Minute=="00")
-              {
-                  init_raz_energy(inifile, "hour");
-              }else if ((Hour=="00") && (Minute=="00"))
-              {
-                  init_raz_energy(inifile, "day");
-              }else if ((Day=="01") && (Hour=="00") && (Minute=="00"))
-              {
-                  init_raz_energy(inifile, "month");
-              }
-              /*if (diff > 3600)
-              {
-                init_raz_energy(inifile, "hour");
-              }
-              if (diff > 86400)
-              {
-                init_raz_energy(inifile, "day");
-              }
-              if (diff > 2678400)
-              {
-                init_raz_energy(inifile, "month");
-              }*/
-            }
-          }
-        }
-      }
-      filedevice.close();
-      filedevice = root.openNextFile();    
-  }
-  root.close();
-  return true;
-}

@@ -14,7 +14,7 @@ function getXhr(){
 				xhr = new ActiveXObject("Microsoft.XMLHTTP");
 			}
 	}
-	else { // XMLHttpRequest non supporté par le navigateur 
+	else { // XMLHttpRequest non supportÃ© par le navigateur 
 	   alert("Votre navigateur ne supporte pas les objets XMLHTTPRequest..."); 
 	   xhr = false; 
 	} 
@@ -313,12 +313,12 @@ function getLabelEnergy(datas,row, barColor, options, index)
 			if (value!=0)
 			{
 				if (i>0){sep="<br>";}else{sep="";}
-				result+= sep +"<span style='color:"+colors[i]+";'>"+ item.name +" : "+value+" "+unit+" / "+(Math.round(value*item.price)/1000)+"€</span>";
+				result+= sep +"<span style='color:"+colors[i]+";'>"+ item.name +" : "+value+" "+unit+" / "+(Math.round(value*item.price)/1000)+"â‚¬</span>";
 			}
 		} 
 		i++;
 	}
-    result+="<br><span style='color:red;font-weight:bold;'>Total : "+total+" "+ unit+" / "+Math.round(totalEuro)+" €</span>";
+    result+="<br><span style='color:red;font-weight:bold;'>Total : "+total+" "+ unit+" / "+Math.round(totalEuro)+" â‚¬</span>";
 	return result;
   
 }
@@ -604,6 +604,37 @@ function getAlert()
 		}
 	}
 	xhr.open('GET','getAlert',true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
+function getDeviceValue()
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			leselect = xhr.responseText;
+			if (leselect!="")
+			{
+				const res = eval(leselect);
+				let len = res.length;
+				
+				for (let i=0;i <len; i++)
+				{
+					const datas = res[i].split(';');	
+					var elem = document.getElementById(datas[0]);
+					if(typeof elem !== 'undefined' && elem !== null) 
+					{
+						document.getElementById(datas[0]).innerHTML=datas[1];	
+						document.getElementById(datas[0]).style.backgroundColor = "lightblue";
+                        setTimeout(function(){ document.getElementById(datas[0]).style.backgroundColor ="transparent"; }, 5000);
+					}
+				}
+			}
+			setTimeout(function(){ getDeviceValue(); }, 5000);
+		}
+	}
+	xhr.open('GET','getDeviceValue',true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }

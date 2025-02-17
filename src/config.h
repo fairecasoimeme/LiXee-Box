@@ -7,7 +7,7 @@
 //#define CIRCULAR_BUFFER_INT_SAFE
 #include <CircularBuffer.h>
 
-#define VERSION "v1.0a"
+#define VERSION "v1.0"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -42,8 +42,6 @@ struct ConfigSettingsStruct {
   char ipGWWiFi[18];
   
   
-  bool enableEthernet;
-  bool connectedEther; 
   bool dhcp;
   char ipAddress[18];
   char ipMask[16];
@@ -58,7 +56,6 @@ struct ConfigSettingsStruct {
   bool enableDebug;
   bool enableNotif;
   bool enableWebPush;
-  bool enableModbus;
   bool enableSecureHttp;
   bool enableMqtt;
   bool enableHistory;
@@ -110,9 +107,14 @@ struct ConfigGeneralStruct {
   char passSMTP[50];
   char servMQTT[50];
   char portMQTT[50];
+  char clientIDMQTT[50];
   char userMQTT[50];
   char passMQTT[128];
   char headerMQTT[128];
+  bool HAMQTT;
+  bool TBMQTT;
+  bool customMQTT;
+  String customMQTTJson;
   char userHTTP[50];
   char passHTTP[50];
   char servWebPush[50];
@@ -176,6 +178,13 @@ typedef struct {
   String message;
   int state;
 } Alert;
+
+typedef struct {
+  int shortAddr;
+  int cluster;
+  int attribute;
+  String value;
+} Device;
 
 typedef CircularBuffer<char, 4096> LogConsoleType;
 

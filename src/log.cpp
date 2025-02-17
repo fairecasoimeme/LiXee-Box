@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "log.h"
 #include "config.h"
+#include "SPIFFS_ini.h"
 #include "LittleFS.h"
 
 extern String Hour;
@@ -50,7 +51,7 @@ bool addDebugLog(String text)
       strcpy(name_with_extension,path);
       strncat(name_with_extension,Day.c_str(),2);
       strncat(name_with_extension,extension,4);
-      File debugLog = LittleFS.open(name_with_extension,"a+");
+      File debugLog = safeOpenFile(name_with_extension,"a+");
 
       if (!debugLog)
       {
@@ -60,8 +61,8 @@ bool addDebugLog(String text)
 
       if (debugLog.size() > 20000)
       {
-        debugLog.close();
-        debugLog = LittleFS.open(path,"w+");
+        safeCloseFile(debugLog,name_with_extension);
+        debugLog = safeOpenFile(path,"w+");
       }
 
       char log[256];
@@ -79,7 +80,7 @@ bool addDebugLog(String text)
       strncat(log," / Err :",8);
       strncat(log,text.c_str(),text.length());
       debugLog.println(log);
-      debugLog.close();
+      safeCloseFile(debugLog,name_with_extension);
       return true;
     }
   }

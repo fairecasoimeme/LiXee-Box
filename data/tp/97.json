@@ -1,131 +1,140 @@
 {
-	"ZLinky_TIC" : [
+        
+      "ZLinky_TIC" : [
 	{
 		"status" : [
+			    "name" : "Mode",
+				"cluster" : "FF66",
+				"attribut" : 768,
+				"type": "numeric",
+				"visible":1,
+                "poll" : 1,
+				"unit": ""
+			},
 			{
 				"name" : "BASE / EAST",
 				"cluster" : "0702",
 				"attribut" : 0,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh"
 			},
             {
 				"name" : "HC / EJPHN / BBRHCJB / EASF01",
 				"cluster" : "0702",
 				"attribut" : 256,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh"
 			},
             {
 				"name" : "HP / EJPHPM / BBRHPJB / EASF02",
 				"cluster" : "0702",
 				"attribut" : 258,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh"
 			},
 			{
 				"name" : "BBRHCJW / EASF03",
 				"cluster" : "0702",
 				"attribut" : 260,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh"
 			},
             {
 				"name" : "BBRHPJW / EASF04",
 				"cluster" : "0702",
 				"attribut" : 262,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh"
 			},
 			{
 				"name" : "BBRHCJR / EASF05",
 				"cluster" : "0702",
 				"attribut" : 264,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh"
 			},
             {
 				"name" : "BBRHPJB / EASF06",
 				"cluster" : "0702",
 				"attribut" : 266,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh"
 			},
 			{
 				"name" : "EASF07",
 				"cluster" : "0702",
 				"attribut" : 268,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh",
-                                "mode":"1;3;5;7"
+				"mode":"1;3;5;7"
 			},
             {
 				"name" : "EASF08",
 				"cluster" : "0702",
 				"attribut" : 270,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh",
-                                "mode":"1;3;5;7"
+				"mode":"1;3;5;7"
 			},
 			{
 				"name" : "EASF09",
 				"cluster" : "0702",
 				"attribut" : 270,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh",
-                                "mode":"1;3;5;7"
+				"mode":"1;3;5;7"
 			},
             {
 				"name" : "EASF10",
 				"cluster" : "0702",
 				"attribut" : 272,
-                                "mqtt_device_class" : "energy",
-                                "mqtt_icon" :  "transmission-tower",
-                                "mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "Wh",
-                                "mode":"1;3;5;7"
+				"mode":"1;3;5;7"
 			},
 			{
 				"name" : "EAIT",
@@ -133,97 +142,97 @@
 				"attribut" : 1,
 				"type": "numeric",
 				"unit": "Wh",
-                                "visible":1,
-                                "mode" : "5;7"
+				"visible":1,
+				"mode" : "5;7"
 			},
 			{
 				"name" : "PAPP / SINSTS",
 				"cluster" : "0B04",
 				"attribut" : 1295,
-                                "mqtt_device_class" : "apparent_power",
-                                "mqtt_icon" :  "lightning-bolt",
-                                "mqtt_state_class" : "measurement",
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "VA"
 			},
-                        {
+            {
 				"name" : "SINSTS2",
 				"cluster" : "0B04",
 				"attribut" : 2319,
-                                "mqtt_device_class" : "apparent_power",
-                                "mqtt_icon" :  "lightning-bolt",
-                                "mqtt_state_class" : "measurement",
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
 				"type": "numeric",
 				"unit": "VA",
-                                "visible":1,
-                                "mode":"3;7"
+				"visible":1,
+				"mode":"3;7"
 			},
                         {
 				"name" : "SINSTS3",
 				"cluster" : "0B04",
 				"attribut" : 2575,
-                                "mqtt_device_class" : "apparent_power",
-                                "mqtt_icon" :  "lightning-bolt",
-                                "mqtt_state_class" : "measurement",
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
 				"type": "numeric",
 				"unit": "VA",
-                                "visible":1,
-                                "mode":"3;7"
+				"visible":1,
+				"mode":"3;7"
 			},
 			{
 				"name" : "URMS1",
 				"cluster" : "0B04",
 				"attribut" : 1285,
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "V",
-                                "mode":"1;3;5;7"
+				"mode":"1;3;5;7"
 			},
 			{
 				"name" : "URMS2",
 				"cluster" : "0B04",
 				"attribut" : 2309,
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "V",
-                                "mode":"3;7"
+				"mode":"3;7"
 			},
 			{
 				"name" : "URMS3",
 				"cluster" : "0B04",
 				"attribut" : 2565,
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "V",
-                                "mode":"3;7"
+				"mode":"3;7"
 			},
 			{
 				"name" : "UMOY1",
 				"cluster" : "0B04",
 				"attribut" : 1297,
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "V",
-                                "mode":"1;3;5;7"
+				"mode":"1;3;5;7"
 			},
 			{
 				"name" : "UMOY2",
 				"cluster" : "0B04",
 				"attribut" : 2321,
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "V",
-                                "mode":"3;7"
+				"mode":"3;7"
 			},
 			{
 				"name" : "UMOY3",
 				"cluster" : "0B04",
 				"attribut" : 2577,
 				"type": "numeric",
-                                "visible":1,
+				"visible":1,
 				"unit": "V",
-                                "mode":"3;7"
+				"mode":"3;7"
 			},
 			{
 				"name" : "PMAX / SMAXN",
@@ -231,7 +240,7 @@
 				"attribut" : 1293,
 				"type": "numeric",
 				"unit": "VA",
-                                "visible":1,
+				"visible":1,
 				"poll" : 6
 			},
 			{
@@ -239,140 +248,140 @@
 				"cluster" : "FF66",
 				"attribut" : 535,
 				"poll" : 10,
-                                "visible":1,
-                                "mode":"1;3;5;7"
+				"visible":1,
+				"mode":"1;3;5;7"
 
 			},
 			{
 				"name" : "Tarif en cours Histo",
 				"cluster" : "702",
 				"attribut" : 32,
-                                "visible":1,
+				"visible":1,
 				"poll" : 10,
-                                "visible":1,
-                                "mode":"0;2"
+				"visible":1,
+				"mode":"0;2"
 
 			},
 			{
 				"name" : "Tarif en cours Standard",
 				"cluster" : "FF66",
 				"attribut" : 512,
-                                "visible":1,
+				"visible":1,
 				"poll" : 10,
-                                "visible":1,
-                                "mode":"1;3;5;7"
+				"visible":1,
+				"mode":"1;3;5;7"
 
 			},
 			{
 				"name" : "Serial Number",
 				"cluster" : "0702",
 				"attribut" : 776,
-                                "visible":1,
-                                "type": "numeric"
+				"visible":1,
+				"type": "numeric"
 			},
 			{
 				"name" : "IINST / IRMS1",
 				"cluster" : "0B04",
 				"attribut" : 1288,
-                                "unit": "A",
-                                "visible":1,
-                                "type": "numeric"
+				"unit": "A",
+				"visible":1,
+				"type": "numeric"
 			},
 			{
 				"name" : "IINST2 / IRMS2",
 				"cluster" : "0B04",
 				"attribut" : 2312,
-                                "unit": "A",
-                                "type": "numeric",
-                                "visible":1,
-                                "mode":"2;3;7"
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2;3;7"
 			},
 			{
 				"name" : "IINST3 / IRMS3",
 				"cluster" : "0B04",
 				"attribut" : 2568,
-                                "unit": "A",
-                                "type": "numeric",
-                                "visible":1,
-                                "mode":"2;3;7"
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2;3;7"
 			},
 			{
 				"name" : "OPTARIF / NGTF",
 				"cluster" : "FF66",
 				"attribut" : 0,
-                                "visible":1,
+				"visible":1,
 				"poll" : 60,
-                                "mode":"0;2"
+				"mode":"0;2"
 			},
 			{
 				"name" : "DEMAIN",
 				"cluster" : "FF66",
 				"attribut" : 1,
 				"poll" : 60,
-                                "visible":1,
-                                "mode":"0;2"
+				"visible":1,
+				"mode":"0;2"
 			},
 			{
 				"name" : "PEJP",
 				"cluster" : "FF66",
 				"attribut" : 4,
-                                "unit": "Min",
-                                "type": "numeric",
-                                "visible":1,
-                                "mode":"0;2"
+				"unit": "Min",
+				"type": "numeric",
+				"visible":1,
+				"mode":"0;2"
 			},
 			{
 				"name" : "ADPS",
 				"cluster" : "FF66",
 				"attribut" : 5,
-                                "unit": "A",
-                                "type": "numeric",
-                                "visible":1,
-                                "mode":"0;2"
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"0;2"
 			},
 			{
 				"name" : "ADIR1",
 				"cluster" : "FF66",
 				"attribut" : 6,
-                                "unit": "A",
-                                "type": "numeric",
-                                "visible":1,
-                                "mode":"2"
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2"
 			},
 			{
 				"name" : "ADIR2",
 				"cluster" : "FF66",
 				"attribut" : 7,
-                                "unit": "A",
-                                "type": "numeric",
-                                "visible":1,
-                                "mode":"2"
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2"
 			},
 			{
 				"name" : "ADIR3",
 				"cluster" : "FF66",
 				"attribut" : 8,
-                                "unit": "A",
-                                "type": "numeric",
-                                "visible":1,
-                                "mode":"2"
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2"
 			},
 			{
 				"name" : "NTARF",
 				"cluster" : "FF66",
 				"attribut" : 513,
-                                "visible":1,
-                                "poll" : 60,
-                                "mode":"1;3;5;7"
+				"visible":1,
+				"poll" : 60,
+				"mode":"1;3;5;7"
 			},
 			{
 				"name" : "SINSTI",
 				"cluster" : "FF66",
 				"attribut" : 519,
-                                "type": "numeric",
-                                "visible":1,
-                                "unit": "VA",
-                                "mode":"5;7"
+				"type": "numeric",
+				"visible":1,
+				"unit": "VA",
+				"mode":"5;7"
 			}
 		],
 		"bind" : "1794;2820;65382",
@@ -686,7 +695,42 @@
 			}
 
 		]
-		
-	}
-	]
+        }],
+        "default" : [
+	    {
+			"status" : [
+			{
+				"name" : "Power",
+				"cluster" : "0006",
+				"attribut" : 0,
+				"visible":1
+			}
+			],		
+			"action" : [
+			{
+				"name" : "ON",
+				"command" : 146,
+				"endpoint" : 1,
+				"value" : 1,
+				"visible":1
+			},
+			{
+				"name" : "OFF",
+				"command" : 146,
+				"endpoint" : 1,
+				"value" : 0,
+				"visible":1
+			},
+			{
+				"name" : "TOGGLE",
+				"command" : 146,
+				"endpoint" : 1,
+				"value" : 2,
+				"visible":1
+			}
+			]
+	   }
+   ]
+        
+	
 }

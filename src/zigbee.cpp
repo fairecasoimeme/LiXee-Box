@@ -16,7 +16,11 @@
 #include "lixee.h"
 #include "SimpleMeter.h"
 #include "ElectricalMeasurement.h"
+#include "temperature.h"
+#include "humidity.h"
+#include "power.h"
 #include "web.h"
+
 
 extern struct ZigbeeConfig ZConfig;
 extern struct ConfigGeneralStruct ConfigGeneral;
@@ -1088,15 +1092,15 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
     //String path = "/tp/"+(String)device_id+".json";
     const char* path ="/tp/";
     const char* extension =".json";
-    char name_with_extension[64];
-    strcpy(name_with_extension,path);
-    strcat(name_with_extension,String(device_id).c_str());
-    strcat(name_with_extension,extension);
+    char name_with_extensionTP[64];
+    strcpy(name_with_extensionTP,path);
+    strcat(name_with_extensionTP,String(device_id).c_str());
+    strcat(name_with_extensionTP,extension);
 
-    File tpFile = LittleFS.open(name_with_extension, FILE_READ);
+    File tpFile = safeOpenFile(name_with_extensionTP, FILE_READ);
     if (!tpFile|| tpFile.isDirectory()) {
       DEBUG_PRINTLN(F("failed open"));
-      tpFile.close();
+      safeCloseFile(tpFile,name_with_extensionTP);
       return false;
     }else
     {
@@ -1120,10 +1124,9 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
           strcpy(name_with_extension,path);
           strcat(name_with_extension,inifile.c_str());
 
-
-          File file = LittleFS.open(name_with_extension, "r+");
+          File file = safeOpenFile(name_with_extension, "r+");
           if (!file) {
-            LittleFS.open(name_with_extension, "w+");
+            safeOpenFile(name_with_extension, "w+");
             DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
             DEBUG_PRINTLN(path);
           }
@@ -1135,11 +1138,11 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
             DeserializationError error = deserializeJson(doc, file);
             if (error) {
               //DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-              file.close();
+              safeCloseFile(file,name_with_extension);
               return "Error";
             }
           }
-          file.close();
+          safeCloseFile(file,name_with_extension);
           
           for(JsonVariant v : StatusArray) 
           {
@@ -1162,30 +1165,30 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
 
           if (j>0)
           {
-            file = LittleFS.open(name_with_extension, "w+");
+            file = safeOpenFile(name_with_extension, "w+");
             if (!file|| file.isDirectory()) {
               DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
               DEBUG_PRINTLN(path);
-              file.close();
+              safeCloseFile(file,name_with_extension);
               return false;
             }
             if (!doc.isNull())
             {
               if (serializeJson(doc, file) == 0) {
                 DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
-                file.close();
+                safeCloseFile(file,name_with_extension);
                 return false;
               }
             }
           
             // Fermer le fichier
-            file.close();
+            safeCloseFile(file,name_with_extension);
             return true;
           }
         }
         return false;
       }
-      tpFile.close();
+      safeCloseFile(tpFile,name_with_extensionTP);
       return false;
     }
   }
@@ -1330,6 +1333,15 @@ void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2
   {
     case 0:     
       BasicManage(shortaddr,attribute,DataType,len,datas);
+      break;
+    case 1:     
+      powerManage(shortaddr,attribute,DataType,len,datas);
+      break;
+    case 1026: //402 temperature
+      temperatureManage(shortaddr,attribute,DataType,len,datas);
+      break;
+    case 1029: //402 humidity
+      humidityManage(shortaddr,attribute,DataType,len,datas);
       break;
     case 1030: //406 occupancy
       OccupancyManage(shortaddr,attribute,DataType,len,datas);
