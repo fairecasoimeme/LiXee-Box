@@ -206,13 +206,15 @@ Just install esptools and run this command
 
 Just go to **Gateway** menu --> **MQTT** and enable the feature
 
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
+
 Fill the form :
   * MQTT server
   * MQTT port
   * MQTT username
   * MQTT password
 
-Then click to **Home-Assistant** and **Save**
+Then click to **Home-Assistant** and **Save**  
 Wait a moment and if all it's good, the connected icon will change to green.
 
 Then go to **Network** menu --> **Zigbee**
