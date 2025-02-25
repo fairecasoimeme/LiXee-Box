@@ -58,6 +58,8 @@ struct ConfigSettingsStruct {
   bool enableWebPush;
   bool enableSecureHttp;
   bool enableMqtt;
+  bool enableUDP;
+  bool enableMarstek;
   bool enableHistory;
   
 };
@@ -121,6 +123,10 @@ struct ConfigGeneralStruct {
   char userWebPush[50];
   char passWebPush[50];
   bool webPushAuth;
+  bool connectedMarstek;
+  char servUDP[50];
+  char portUDP[50];
+  String customUDPJson;
   float coeffGaz;
   float coeffWater;
   char unitGaz[3];
