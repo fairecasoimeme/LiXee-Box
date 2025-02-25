@@ -7,7 +7,8 @@ This application can be used with :
   The device is based on :
   * ESP32-S3-WROOM-N16R8 (PSRAM: 8Mo Flash: 16Mo)
   * JN5189 with [ZiGate v2 firmware](https://github.com/fairecasoimeme/ZiGatev2)
-
+<table><tr><td><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/LiXee_ZiWiFi32_face.png" width="480"></td>
+<td><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/LiXee_ZiWiFi32_pile.png" width="480">  </td></tr></table>
       
 Obviously, you can use this code with **ESP32S3** chip but depend on your board pins connexions. 
 
