@@ -57,10 +57,28 @@ HTTPClient clientWeb;
 
 AsyncWebServer serverWeb(80);
 
-#define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/lixee-gateway.bin"
+#define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/firmware.bin"
+
+const char HTTP_SHELLY_EMULE[] PROGMEM = 
+
+"{"
+    "\"name\":null,"
+    "\"id\":\"shellypro3em-ac1518778a1c\","
+    "\"mac\":\"AC1518778A1C\","
+    "\"slot\":0,"
+    "\"model\":\"SPEM-003CEBEU\","
+    "\"gen\":2,"
+    "\"fw_id\":\"20241011-114455/1.4.4-g6d2a586\","
+    "\"ver\":\"1.4.4\","
+    "\"app\":\"Pro3EM\","
+    "\"auth_en\":false,"
+    "\"auth_domain\":null,"
+    "\"profile\":\"triphase\""
+
+"}";
 
 const char HTTP_HELP[] PROGMEM = 
- "<h4>About !</h4>"
+ "<h4>About</h4>"
     "<h5>Version : {{version}}</h5>"
     "<h5>Shop & description</h5>"
     "You can go to this url :</br>"
@@ -189,14 +207,25 @@ const char HTTP_MENU[] PROGMEM =
     "</svg>"
     " WebPush"
     "</a>"
+    "<a class='dropdown-item' href='/configMarstek'>"
+    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='24px' height='20px' viewBox='0 0 23 20' version='1.1'>"
+      "<g id='surface1'>"
+        "<path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 20.652344 1.757812 C 20.03125 2.171875 19.339844 2.757812 19.09375 3.046875 C 18.28125 4.035156 18.304688 3.878906 18.328125 11.867188 L 18.363281 19.035156 L 19.503906 18.292969 C 20.125 17.878906 20.851562 17.304688 21.109375 17 C 21.96875 15.988281 21.945312 16.183594 21.945312 8.144531 C 21.945312 4.207031 21.910156 0.976562 21.863281 0.976562 C 21.804688 0.988281 21.261719 1.328125 20.652344 1.757812 Z M 20.652344 1.757812 '/>"
+        "<path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 1.644531 8.269531 C 1.644531 16.195312 1.644531 16.132812 2.464844 17.097656 C 2.980469 17.707031 5.09375 19.207031 5.28125 19.085938 C 5.351562 19.035156 5.386719 16.425781 5.363281 11.855469 L 5.339844 4.695312 L 5.070312 4.085938 C 4.917969 3.742188 4.636719 3.292969 4.4375 3.085938 C 4.011719 2.632812 2.007812 1.21875 1.785156 1.21875 C 1.679688 1.21875 1.644531 2.867188 1.644531 8.269531 Z M 1.644531 8.269531 '/>"
+        "<path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 15.019531 5.171875 C 13.800781 6 13.355469 6.476562 12.992188 7.316406 C 12.765625 7.816406 12.753906 8.144531 12.730469 11.476562 C 12.707031 13.464844 12.742188 15.160156 12.789062 15.242188 C 12.859375 15.367188 13.144531 15.242188 13.90625 14.742188 C 15.160156 13.925781 15.722656 13.390625 16.089844 12.609375 C 16.371094 12.023438 16.371094 11.953125 16.40625 8.195312 C 16.429688 5.132812 16.417969 4.390625 16.289062 4.390625 C 16.207031 4.402344 15.628906 4.742188 15.019531 5.171875 Z M 15.019531 5.171875 '/>"
+        "<path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 7.15625 8.011719 C 7.15625 9.953125 7.21875 11.769531 7.289062 12.074219 C 7.511719 13.085938 8.074219 13.78125 9.457031 14.730469 C 10.152344 15.207031 10.761719 15.574219 10.820312 15.535156 C 10.867188 15.5 10.914062 13.890625 10.914062 11.964844 C 10.914062 8.097656 10.855469 7.644531 10.210938 6.71875 C 9.878906 6.257812 7.558594 4.511719 7.265625 4.511719 C 7.207031 4.511719 7.15625 6.011719 7.15625 8.011719 Z M 7.15625 8.011719 '/>"
+      "</g>"
+      "</svg>"
+    " Marstek"
+    "</a>"
+    "<a class='dropdown-item' href='/configUdpClient'>"
+    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-caret-right' viewBox='0 0 16 16'>"
+      "<path d='M6 12.796V3.204L11.481 8zm.659.753 5.48-4.796a1 1 0 0 0 0-1.506L6.66 2.451C6.011 1.885 5 2.345 5 3.204v9.592a1 1 0 0 0 1.659.753'/>"
+    "</svg>"
+    " UDP client"
+    "</a>"
     "</div>"
     "</li>"
-
-
-
-
-
-
     "<li class='nav-item dropdown'>"
     "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>"
     "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
@@ -261,24 +290,53 @@ const char HTTP_MENU[] PROGMEM =
 // "<a href='/configFiles' class='btn btn-primary mb-2'>Config Files</a>"
 const char HTTP_TOOLS[] PROGMEM =
     "<h4>"
-    "Tools"
+    "Advanced Tools"
     "</h4>"
     "<div class='btn-group-vertical'>"
     //"<a href='/logs' class='btn btn-primary mb-2'>Console</a>"
     "<a href='/debugFiles' class='btn btn-primary mb-2'>"
-    "<svg viewBox='0 0 24 24' style='width:24px' width='24' height='24' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'>"
+    "<svg viewBox='0 0 24 24'  width='24' height='24' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'>"
       "<polyline points='4 17 10 11 4 5'></polyline>"
       "<line x1='12' y1='19' x2='20' y2='19'></line>"
-    "</svg>"
+    "</svg><br>"
     " Debug"
     "</a>"
-    "<a href='/fsbrowser' class='btn btn-primary mb-2'>Device Files</a>"
-    "<a href='/tp' class='btn btn-primary mb-2'>Templates</a>"
+    "<a href='/fsbrowser' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg'  width='24' height='24' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
+      "<path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
+      "<path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
+    "</svg><br>"
+    " Device Files"
+    "</a>"
+    "<a href='/tp' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-filetype-json' viewBox='0 0 16 16'>"
+      "<path fill-rule='evenodd' d='M14 4.5V11h-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM4.151 15.29a1.2 1.2 0 0 1-.111-.449h.764a.58.58 0 0 0 .255.384q.105.073.25.114.142.041.319.041.245 0 .413-.07a.56.56 0 0 0 .255-.193.5.5 0 0 0 .084-.29.39.39 0 0 0-.152-.326q-.152-.12-.463-.193l-.618-.143a1.7 1.7 0 0 1-.539-.214 1 1 0 0 1-.352-.367 1.1 1.1 0 0 1-.123-.524q0-.366.19-.639.192-.272.528-.422.337-.15.777-.149.456 0 .779.152.326.153.5.41.18.255.2.566h-.75a.56.56 0 0 0-.12-.258.6.6 0 0 0-.246-.181.9.9 0 0 0-.37-.068q-.324 0-.512.152a.47.47 0 0 0-.185.384q0 .18.144.3a1 1 0 0 0 .404.175l.621.143q.326.075.566.211a1 1 0 0 1 .375.358q.135.222.135.56 0 .37-.188.656a1.2 1.2 0 0 1-.539.439q-.351.158-.858.158-.381 0-.665-.09a1.4 1.4 0 0 1-.478-.252 1.1 1.1 0 0 1-.29-.375m-3.104-.033a1.3 1.3 0 0 1-.082-.466h.764a.6.6 0 0 0 .074.27.5.5 0 0 0 .454.246q.285 0 .422-.164.137-.165.137-.466v-2.745h.791v2.725q0 .66-.357 1.005-.355.345-.985.345a1.6 1.6 0 0 1-.568-.094 1.15 1.15 0 0 1-.407-.266 1.1 1.1 0 0 1-.243-.39m9.091-1.585v.522q0 .384-.117.641a.86.86 0 0 1-.322.387.9.9 0 0 1-.47.126.9.9 0 0 1-.47-.126.87.87 0 0 1-.32-.387 1.55 1.55 0 0 1-.117-.641v-.522q0-.386.117-.641a.87.87 0 0 1 .32-.387.87.87 0 0 1 .47-.129q.265 0 .47.129a.86.86 0 0 1 .322.387q.117.255.117.641m.803.519v-.513q0-.565-.205-.973a1.46 1.46 0 0 0-.59-.63q-.38-.22-.916-.22-.534 0-.92.22a1.44 1.44 0 0 0-.589.628q-.205.407-.205.975v.513q0 .562.205.973.205.407.589.626.386.217.92.217.536 0 .917-.217.384-.22.589-.626.204-.41.205-.973m1.29-.935v2.675h-.746v-3.999h.662l1.752 2.66h.032v-2.66h.75v4h-.656l-1.761-2.676z'/>"
+    "</svg><br>"
+    " Templates"
+    "</a>"
     //"<a href='/javascript' class='btn btn-primary mb-2'>Javascript</a>"
-    "<a href='/update' class='btn btn-primary mb-2'>Update</a>"
-    "<a href='/backup' class='btn btn-primary mb-2'>Backup</a>"
-    "<a href='/reboot' class='btn btn-primary mb-2'>Reboot</a>"
-    "</div>";
+    "<a href='/update' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-download' viewBox='0 0 16 16'>"
+    "  <path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5'/>"
+    "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
+    "</svg><br>"
+    " Update"
+    "</a>"
+    "<a href='/backup' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-cloud-arrow-up' viewBox='0 0 16 16'>"
+    "  <path fill-rule='evenodd' d='M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708z'/>"
+    "  <path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>"
+    "</svg><br>"
+    " Backup"
+    "</a>"
+    "<a href='/reboot' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
+    "  <path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
+    "  <path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
+    "</svg><br>"
+    " Reboot"
+    "</a>"
+    "</div>"; 
 
 const char HTTP_BACKUP[] PROGMEM =
     "<h4>Backup datas</h4>"
@@ -337,19 +395,22 @@ const char HTTP_BACKUP[] PROGMEM =
 
 const char HTTP_UPDATE[] PROGMEM =
     "<h4>Update firmware</h4>"
+    "<div align='center'>"
     "<div id='update_info'>"
     "<h4>Latest version on GitHub</h4>"
-    "<div id='onlineupdate'>"
+    "<div id='onlineupdate' style='text-align:left;width:480px;'>"
     "<h5 id=releasehead></h5>"
     "<div style='clear:both;'>"
     "<br>"
     "</div>"  
     "<pre id=releasebody>Getting update information from GitHub...</pre>"
     "</div>"
+    
     "You can download the last firmware here : "
     "<a style='margin-left: 40px;' class='pull-right' href='{{linkFirmware}}' >"
     "<button type='button' class='btn btn-success'>Download</button>"
     "</a>"
+    "</div>"
     "<form method='POST' action='/doUpdate' enctype='multipart/form-data' id='upload_form'>"
     "<input type='file' name='update' id='file' onchange='sub(this)' style=display:none accept='.bin'>"
     "<label id='file-input' for='file'>   Choose file...</label>"
@@ -758,6 +819,55 @@ const char HTTP_CONFIG_WEBPUSH[] PROGMEM =
 
     ;
 
+const char HTTP_CONFIG_MARSTEK[] PROGMEM =
+    
+    "<div class='row justify-content-md-center' >"
+    "<div class='col col-md-6'>"
+    "<h4>Smartmeter Marstek</h4>"
+    "<form method='POST' action='saveConfigMarstek'>"
+    "<div class='form-check'>"
+    "<input class='form-check-input' id='enableMarstek' type='checkbox' name='enableMarstek' {{checkedMarstek}} {{disableMarstek}}>"
+    "<label class='form-check-label' for='enableMarstek'> Enable Marstek</label>"
+    "</div>"
+    "Smart meter (ZLinky): <strong>{{ZLinky}}</strong>"
+    "<br><br><button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
+    "</form>"
+    
+    "</div>"
+    "</div>"
+
+    ;
+
+const char HTTP_CONFIG_UDPCLIENT[] PROGMEM =
+    
+    "<div class='row justify-content-md-center' >"
+    "<div class='col col-md-6'>"
+    "<h4>Client UDP</h4>"
+    "<form method='POST' action='saveConfigUDPClient'>"
+    "<div class='form-check'>"
+    "<input class='form-check-input' id='enableUDP' type='checkbox' name='enableUDP' {{checkedUDP}}>"
+    "<label class='form-check-label' for='enableUDP'>Enable UDP</label>"
+    "</div>"
+    "<label for='servUDP'>Server UDP</label>"
+    "<input class='form-control' id='servUDP' type='text' name='servUDP' value='{{servUDP}}' style='{{urlborder}}'>"    
+    "<label for='portUDP'>Port UDP</label>"
+    "<input class='form-control' id='portUDP' type='text' name='portUDP' value='{{portUDP}}' style='{{portborder}}'>"
+    "Datas :<br>"
+    "<div class='form-floating' id='displayCustomUDP' style='{{displayCustomUDP}}'>"
+      "<textarea class='form-control' name='customUDPJson' placeholder='' id='customUDPJson' style='min-height:200px;'>{{customUDPJson}}</textarea>"
+      "<label for='customUDPJson'>Custom JSON</label>"
+    "</div>"
+
+    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
+    "</form>"
+    "<div style='color:red'>{{error}}</div>"
+
+  
+    "</div>"
+    "</div>"
+
+    ;
+
 const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
     "<h4>Config Notification</h4>"
     "<div class='row justify-content-md-center' >"
@@ -823,7 +933,8 @@ const char HTTP_NETWORK[] PROGMEM =
     "</div>"
     "<div class='card-body'>"
     "{{MQTT card}}"
-    //"<i>System :</i><br><Strong>Box voltage :</strong> {{Voltage}} V<br>"
+    "{{Marstek card}}"
+
     "<Strong>Box temperature :</strong> {{Temperature}} °C<br>"
     "</div></div></div>"
     
@@ -1066,6 +1177,19 @@ const char HTTP_FOOTER[] PROGMEM =
     "getFormattedDate();"
     "getAlert();"
     "</script>";
+
+String footer()
+{
+  String result="";
+  
+  result +="<br><hr>";
+  result +="<div align='center' style='font-size:12px;'>";
+  result +=    "Copyright : LiXee 2025 - version : "+ String(VERSION);
+  result +=  "</div>";
+  result+=FPSTR(HTTP_FOOTER);
+
+  return result;
+}
 
 String getMenuGeneralZigbee(String tmp, String selected)
 {
@@ -1896,7 +2020,7 @@ void handleDashboard(AsyncWebServerRequest *request)
   result += F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_DASHBOARD);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   int i = 0;
@@ -2061,7 +2185,7 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_NETWORK);
-  result += FPSTR(HTTP_FOOTER);
+  result += footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -2113,7 +2237,22 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
     result.replace("{{MQTT card}}", "");
   }
 
-
+  if (ConfigSettings.enableMarstek)
+  {
+    String MarstekCard =F("<i>Marstek Infos :</i>");
+    MarstekCard +=F("<br>");
+    MarstekCard +=F("<Strong>Smart meter connected :</strong> ");
+    if (ConfigGeneral.connectedMarstek)
+    {
+      MarstekCard +=F("<img src='/web/img/ok.png'>");
+    }else{
+      MarstekCard +=F("<img src='/web/img/nok.png'>");
+    }
+    MarstekCard +=F(" <br><br>");
+    result.replace("{{Marstek card}}", MarstekCard);
+  }else{
+     result.replace("{{Marstek card}}", "");
+  }
 
   float val;
   float Voltage = 0.0;
@@ -2150,7 +2289,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
      result += FPSTR(HTTP_ENERGY_WATER);
   }
   result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
   String LinkyStatus;
@@ -2461,7 +2600,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     file.close();
     file = root.openNextFile();
   }
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result +="<script>getDeviceValue();</script>";
   result += F("</html>");
   file.close();
@@ -2476,7 +2615,7 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_GENERAL);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   //result = getMenuGeneral(result, "general");
@@ -2502,7 +2641,7 @@ void handleConfigZigbee(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_ZIGBEE);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result = getMenuGeneralZigbee(result, "config");
   
   result.replace("{{macCoordinator}}", String(ZConfig.zigbeeMac,HEX));
@@ -2522,7 +2661,7 @@ void handleConfigHorloge(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_HORLOGE);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   //result = getMenuGeneral(result, "horloge");
@@ -2566,7 +2705,7 @@ void handleConfigMQTT(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_MQTT);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   if (ConfigSettings.enableMqtt)
   {
@@ -2636,7 +2775,7 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_HTTP);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   //result = getMenuGeneral(result, "http");
 
@@ -2687,7 +2826,7 @@ void handleConfigLinky(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_LINKY);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   //result = getMenuGeneral(result, "linky");
@@ -2755,7 +2894,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_GAZ);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   //result = getMenuGeneral(result, "gaz");
@@ -2812,7 +2951,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_WATER);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   //result = getMenuGeneral(result, "water");
@@ -2868,7 +3007,7 @@ void handleConfigNotification(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_NOTIFICATION);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   //result = getMenuGeneral(result, "notif");
@@ -2899,7 +3038,7 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_WEBPUSH);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   //result = getMenuGeneral(result, "webpush");
@@ -2973,6 +3112,95 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
 
   request->send(200, "text/html", result);
 }
+void handleConfigMarstek(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_MARSTEK);
+  
+  result+=footer();
+  result += F("</html>");
+
+  if (ConfigGeneral.ZLinky !="")
+  {
+    result.replace("{{disableMarstek}}","");
+    result.replace("{{ZLinky}}",ConfigGeneral.ZLinky);
+  }else{
+    result.replace("{{disableMarstek}}","disabled");
+    result.replace("{{ZLinky}}","-- None -- Must be paired");
+  }
+
+  if (ConfigSettings.enableMarstek)
+  {
+    result.replace("{{checkedMarstek}}", "Checked"); 
+  }else{
+    result.replace("{{checkedMarstek}}", "");
+  }
+
+  request->send(200, "text/html", result);
+}
+
+void handleConfigUdpClient(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_UDPCLIENT);
+  
+  result+=footer();
+  result += F("</html>");
+
+  result.replace("{{FormattedDate}}", FormattedDate);
+  if (ConfigSettings.enableUDP)
+  {
+    result.replace("{{checkedUDP}}", "Checked"); 
+  }
+  else
+  {
+    result.replace("{{checkedUDP}}", "");
+  }
+
+  if (ConfigGeneral.customUDPJson != "")
+  {
+    result.replace("{{customUDPJson}}", ConfigGeneral.customUDPJson);
+  }else{
+    result.replace("{{customUDPJson}}", "");
+  }
+
+  String error ="Error : ";
+  if (request->arg("error").toInt() > 0)
+  {
+    if ((request->arg("error").toInt() & 2) == 2)
+    {
+      result.replace("{{urlborder}}", "border:1px solid red;");
+      error = error+"Please add an url to the server UDP. <br>";
+      
+    }else{
+      result.replace("{{urlborder}}", "");
+    }
+
+    if ((request->arg("error").toInt() & 1) == 1)
+    {
+      result.replace("{{portborder}}", "border:1px solid red;");
+      error = error+"Please add an UDP port.<br>";
+    }else{
+      result.replace("{{portborder}}", "");
+    }
+    result.replace("{{error}}", error);
+  }else{
+    result.replace("{{error}}", "");
+  }
+  result.replace("{{servUDP}}", String(ConfigGeneral.servUDP));
+  result.replace("{{portUDP}}", String(ConfigGeneral.portUDP));
+  result.replace("{{customUDPJson}}", String(ConfigGeneral.customUDPJson));
+
+  request->send(200, "text/html", result);
+
+}
+
 
 void handleConfigWifi(AsyncWebServerRequest *request)
 {
@@ -2981,7 +3209,7 @@ void handleConfigWifi(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_WIFI);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
 
@@ -3094,7 +3322,7 @@ void handleLogs(AsyncWebServerRequest *request)
   result += F("logRefresh();});");
   result += F("</script>");
 
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   request->send(200, F("text/html"), result);
 }
@@ -3111,7 +3339,7 @@ void handleTools(AsyncWebServerRequest *request)
     result += FPSTR(HTTP_MENU);
     result.replace("{{FormattedDate}}", FormattedDate);
     result += FPSTR(HTTP_TOOLS);
-    result += FPSTR(HTTP_FOOTER);
+    result+=footer();
     result += F("</html>");
     memcpy(buffer,result.c_str(),result.length());
 
@@ -3126,7 +3354,7 @@ void handleTools(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
   result += FPSTR(HTTP_TOOLS);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   request->send(200, F("text/html"), result);*/
@@ -3140,7 +3368,7 @@ void handleTools(AsyncWebServerRequest *request)
   result.replace("{{FormattedDate}}", FormattedDate);
 
   result += FPSTR(HTTP_TOOLS);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
  
   request->send(200,"text/html", result);
@@ -3155,6 +3383,15 @@ void handleTools(AsyncWebServerRequest *request)
 
 }
 
+
+void handleShelly(AsyncWebServerRequest * request) {
+  String result;
+  result = FPSTR(HTTP_SHELLY_EMULE);
+  
+  request->send(200,"application/json", result);
+  
+}
+
 void handleHelp(AsyncWebServerRequest * request) {
   String result;
   result += F("<html>");
@@ -3162,7 +3399,7 @@ void handleHelp(AsyncWebServerRequest * request) {
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
   result += FPSTR(HTTP_HELP);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   result.replace("{{version}}", VERSION);
   
@@ -3188,7 +3425,7 @@ void handleReboot(AsyncWebServerRequest *request)
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("<h4>Reboot ...</h4>");
   result = result + F("</body>");
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/"));
@@ -3489,7 +3726,7 @@ void handleToolBackup(AsyncWebServerRequest *request)
   root.close();
   file.close();
   result.replace("{{listBackupFiles}}", listFiles);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
 
   request->send(200, F("text/html"), result);
@@ -3502,6 +3739,20 @@ int currentLength = 0; //current size of written firmware
 void progressFunc(unsigned int progress,unsigned int total) {
   Serial.printf("%u of %u\r", progress, total);
 };
+
+void runUpdateFirmware(uint8_t *data, size_t len)
+{
+  Update.write(data, len);
+  currentLength += len;
+  // Print dots while waiting for update to finish
+  Serial.print('.');
+  // if current length of written firmware is not equal to total firmware size, repeat
+  if(currentLength != totalLength) return;
+  Update.end(true);
+  Serial.printf("\nUpdate Success, Total Size: %u\nRebooting...\n", currentLength);
+  // Restart ESP32 to see changes 
+  ESP.restart();
+}
 
 void checkUpdateFirmware()
 {
@@ -3537,7 +3788,7 @@ void checkUpdateFirmware()
             // read up to 128 byte
             int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
             // pass to function
-           // runUpdateFirmware(buff, c);
+            runUpdateFirmware(buff, c);
             if(len > 0) {
                 len -= c;
             }
@@ -3563,7 +3814,7 @@ void handleToolUpdate(AsyncWebServerRequest *request)
     result.replace("{{FormattedDate}}", FormattedDate);
     
     result += FPSTR(HTTP_UPDATE);
-    result += FPSTR(HTTP_FOOTER);
+    result+=footer();
     result.replace("{{linkFirmware}}", UPD_FILE);
     result += F("</html>");
 
@@ -3625,7 +3876,7 @@ void handleConfigFiles(AsyncWebServerRequest *request)
   result += F("</div>");
   result += F("</div>");
   result += F("</body>");
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   file.close();
   root.close();
@@ -3685,7 +3936,7 @@ void handleDebugFiles(AsyncWebServerRequest *request)
   result += F("</div>");
   result += F("</div>");
   result += F("</body>");
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   file.close();
   root.close();
@@ -3745,7 +3996,7 @@ void handleFSbrowserBackup(AsyncWebServerRequest *request)
   result += F("</div>");
   result += F("</div>");
   result += F("</body>");
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   file.close();
   root.close();
@@ -3805,7 +4056,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   result += F("</div>");
   result += F("</div>");
   result += F("</body>");
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   file.close();
   root.close();
@@ -3889,7 +4140,7 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += F("</div>");
   result += F("</div>");
   result += F("</body>");
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   file.close();
   root.close();
@@ -4047,7 +4298,7 @@ void handleJavascript(AsyncWebServerRequest *request)
   result += F("</div>");
   result += F("</div>");
   result += F("</body>");
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result += F("</html>");
   file.close();
   root.close();
@@ -4887,6 +5138,100 @@ void handleSaveConfigWebPush(AsyncWebServerRequest *request)
   
 }
 
+void handleSaveConfigMarstek(AsyncWebServerRequest *request)
+{
+  String path = "configGeneral.json";
+  String enableMarstek;
+  if (request->arg("enableMarstek") == "on")
+  {
+    enableMarstek = "1";
+    ConfigSettings.enableMarstek = true;
+  }
+  else
+  {
+    enableMarstek = "0";
+    ConfigSettings.enableMarstek = false;
+  }
+  config_write(path, "enableMarstek", enableMarstek);
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configMarstek"));
+  request->send(response);
+}
+
+
+void handleSaveConfigUDPClient(AsyncWebServerRequest *request)
+{
+
+  String path = "configGeneral.json";
+  String enableUDP;
+  
+  String port = request->arg("portUDP");
+  String url = request->arg("servUDP");
+  bool saveOk=true;
+  uint8_t error=0;
+  
+  if (request->arg("enableUDP") == "on")
+  {
+    if (url == "")
+    {
+      saveOk = false;
+      error=error+2;
+    }
+
+    if (port == "")
+    {
+      saveOk = false;
+      error=error+1;
+    }
+  }
+
+  if (saveOk)
+  {
+    if (request->arg("enableUDP") == "on")
+    {
+      enableUDP = "1";
+      ConfigSettings.enableUDP = true;
+    }
+    else
+    {
+      enableUDP = "0";
+      ConfigSettings.enableUDP = false;
+    }
+    
+    config_write(path, "enableUDP", enableUDP);
+
+    if (request->arg("servUDP"))
+    {
+      strlcpy(ConfigGeneral.servUDP, request->arg("servUDP").c_str(), sizeof(ConfigGeneral.servUDP));
+      config_write(path, "servUDP", String(request->arg("servUDP")));
+    }
+
+    if (request->arg("portUDP"))
+    {
+      strlcpy(ConfigGeneral.portUDP, request->arg("portUDP").c_str(), sizeof(ConfigGeneral.portUDP));
+      config_write(path, "portUDP", String(request->arg("portUDP")));
+    }
+
+    if (request->arg("customUDPJson"))
+    {
+      ConfigGeneral.customUDPJson = String(request->arg("customUDPJson"));
+      config_write(path, "customUDPJson", String(request->arg("customUDPJson")));
+    }
+
+   
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), F("/configUdpClient"));
+    request->send(response);
+
+  }else{
+    AsyncWebServerResponse *response = request->beginResponse(303);
+     String url="/configUdpClient?error="+String(error);
+    response->addHeader(F("Location"), url);
+    request->send(response); 
+  }
+  
+}
+
 
 void handleSaveConfigNotification(AsyncWebServerRequest *request)
 {
@@ -5036,7 +5381,7 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_DEVICES_ZIGBEE);
-  result += FPSTR(HTTP_FOOTER);
+  result+=footer();
   result = getMenuGeneralZigbee(result, "devices");
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("</html>");
@@ -5680,11 +6025,11 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
             "\"state_topic\":\"{{state_topic}}/state\","
             "\"value_template\":\"{{value}}\","
             "\"device\": {"
-                "\"name\":\"LiXee-Box_{{device_name}}\","
+                "\"name\":\"LiXee-GW_{{device_name}}\","
                 "\"sw_version\":\"2.0\","
                 "\"model\":\"HW V2\","
                 "\"manufacturer\":\"LiXee\","
-                "\"identifiers\":[\"LiXee-Box{{device_name}}\"]"
+                "\"identifiers\":[\"LiXee-GW{{device_name}}\"]"
             "}"
         "}";
         datas = FPSTR(HA_discovery_msg);
@@ -6128,6 +6473,7 @@ void initWebServer()
     }
     handleConfigHTTP(request); 
   });
+  
   serverWeb.on("/configWebPush", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6137,7 +6483,25 @@ void initWebServer()
     }
     handleConfigWebPush(request); 
   });
+  serverWeb.on("/configMarstek", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigMarstek(request); 
+  });
   
+  serverWeb.on("/configUdpClient", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigUdpClient(request); 
+  });
   serverWeb.on("/configNotif", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6318,6 +6682,25 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleSaveConfigWebPush(request); 
+  });
+
+  serverWeb.on("/saveConfigMarstek", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigMarstek(request); 
+  });
+  serverWeb.on("/saveConfigUDPClient", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigUDPClient(request); 
   });
 
   serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -6761,6 +7144,18 @@ void initWebServer()
     }
     handleHelp(request); 
   });
+
+  serverWeb.on("/shelly", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleShelly(request); 
+  });
+
+
   serverWeb.on("/getDevices", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (ConfigSettings.enableSecureHttp)
