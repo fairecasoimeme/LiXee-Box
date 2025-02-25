@@ -66,7 +66,7 @@ You can :
    
 ⚠️ **If a device is paired, a green alert appears. You can refresh to see devices properties.**  
   
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/ConfigDevices_1.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_zigbee_devices.png" width="800">  
 
 ## How to template a new zigbee device
 
@@ -201,16 +201,99 @@ Just install esptools and run this command
 
 `esptool.py.exe --chip esp32 --port "COMXX" --baud 460800 --before default_reset --after hard_reset write_flash -z --flash_mode dio --flash_freq 40m --flash_size 16MB 0x1000 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin`
 
+## Home assistant MQTT discover
+
+**LiXee-Gateway** is compatible with the MQTT discover from HA.
+
+Just go to **Gateway** menu --> **MQTT** and enable the feature
+
+Fill the form :
+  * MQTT server
+  * MQTT port
+  * MQTT username
+  * MQTT password
+
+Then click to **Home-Assistant** and **Save**
+Wait a moment and if all it's good, the connected icon will change to green.
+
+Then go to **Network** menu --> **Zigbee**
+
+For each Zigbee devices, a new button **MQTT Discover** appear. Please click on it to create a new device on HA. And that's it.
+<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_Devices_mqtt_discover.png" width="320">  </div>
+
+Wait a moment and go to your HA MQTT devices:
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/HA_Create_MQTT_device.png" width="1024">  
+
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/HA_MQTT_device_entities.png" width="800">
+
 ## Screenshots
 
-### Status network
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/StatusNetwork.png" width="1024">  
+### Devices status
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_status_devices.png" width="800">  
 
 ### Config Wifi
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/ConfigWifi.png" width="1024">  
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_wifi.png" width="800">  
 
+### Config Zigbee
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_zigbee.png" width="800">  
+
+### Config MQTT
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
+
+### Config WebPush
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_webpush.png" width="800">  
+
+### Advanced tools
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_tools.png" width="800">  
+
+### OTA update
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_update.png" width="800">  
+
+### Mobile responsive web page
+<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_mobile_devices.png" width="400">  </div>
+
+## Credits
+
+Thanks to all authors of 3rd party libraries which are used in this project:
+
+* [espressif / arduino-esp32](https://github.com/espressif/arduino-esp32)
+* [rlogiacco/CircularBuffer](https://github.com/rlogiacco/CircularBuffer)
+* [bblanchon/ArduinoJson](https://github.com/bblanchon/ArduinoJson)
+* [paulstoffregen/Time](https://github.com/PaulStoffregen/Time)
+* [marvinroger/AsyncMqttClient](https://github.com/marvinroger/async-mqtt-client)
+* [arkhipenko/TaskScheduler](https://github.com/arkhipenko/TaskScheduler)
+* [me-no-dev/AsyncTCP](https://github.com/me-no-dev/AsyncTCP)
+* [me-no-dev/ESPAsyncWebServer](https://github.com/me-no-dev/ESPAsyncWebServer)
+
+Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
 
 ## Changelog
+
+### V1.1
+* Add UDP client
+* Add Marstek compatibility
+* Fix some bugs
+
+### V1.0 (initial stable version)
+## Initial stable version
+
+* Network Status
+* Devices Status
+* Config WiFi
+* Config Zigbee
+* MQTT gateway
+* WebPush API gateway
+* NTP client
+* HTTP Security
+* Backup / Restore
+* Update
+
+### Compatible devices
+* ZLinky
+* ZiPulses
+* Power socket
+* All other (need template update)
+
 
 ### V1.0a
 * Initial source 
