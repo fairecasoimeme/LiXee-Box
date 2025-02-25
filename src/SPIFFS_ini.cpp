@@ -53,7 +53,7 @@ File safeOpenFile(const char *path, const char *mode) {
   int i=0;
   while (openFilesMap[String(path)]) {
     esp_task_wdt_reset();
-    log_e("Fichier déjà ouvert\r\n");
+    log_e("Fichier déjà ouvert : %s\n",path);
     vTaskDelay(20);
     i++;
 
