@@ -7,6 +7,7 @@
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
 #include "mqtt.h"
+#include "udpclient.h"
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
@@ -50,8 +51,16 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
+            tmpvalue = String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"2820",(String)attribute,tmpvalue.c_str());
+          }
+
+          //UDP client
+          if (ConfigSettings.enableUDP)
+          {
+            String tmpvalue;
+            tmpvalue = String(strtol(tmp.c_str(), NULL, 16));
+            UDPsend(tmpvalue);
           }
 
           // Device update value;
