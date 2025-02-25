@@ -7,7 +7,7 @@
 //#define CIRCULAR_BUFFER_INT_SAFE
 #include <CircularBuffer.h>
 
-#define VERSION "v1.0"
+#define VERSION "v1.1"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
