@@ -21,7 +21,7 @@ Here is a list of some use cases which can be used with **LiXee-WebMQTT-Gateway*
 
 ### Use case n°1
 Your Linky counter is very far and Zigbee protocol is too light to transport datas to the coordinator.
-**Linky (ZLinky) <--> Zigbee <--> LiXee-WebMQTT-Gateway <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz / other**
+**Linky (ZLinky) <--> Zigbee <--> LiXee-Gateway <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz / other**
 
 ### Use case n°2
 You need to relay zigbee devices datas to the cloud (with Web API)
