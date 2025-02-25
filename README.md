@@ -1,6 +1,5 @@
 # LiXee-Gateway
- a Web API and/or MQTT gateway for zigbee devices
-
+A WiFi gateway for zigbee devices
 
 ## Hardware compatibility
 This application can be used with :  
