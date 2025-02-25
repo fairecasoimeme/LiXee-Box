@@ -277,7 +277,7 @@ Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
 * Fix some bugs
 
 ### V1.0 (initial stable version)
-## Initial stable version
+#### Initial stable version
 
 * Network Status
 * Devices Status
@@ -290,7 +290,7 @@ Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
 * Backup / Restore
 * Update
 
-### Compatible devices
+#### Compatible devices
 * ZLinky
 * ZiPulses
 * Power socket
