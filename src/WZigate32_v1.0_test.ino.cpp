@@ -38,6 +38,8 @@ extern "C" {
 #include <lwip/ip_addr.h>
 #include <esp_log.h>
 #include "mail.h"
+#include "AsyncUDP.h"
+
 
 #include <TaskScheduler.h>
 
@@ -97,7 +99,8 @@ unsigned long interval = 60000; // Intervalle de 1 minute en millisecondes
 //char timeServer[]="";
 //char timeServer[] = "51.38.81.135";
 
-
+//UDP Async
+AsyncUDP UdpServer;
 
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
@@ -237,6 +240,130 @@ void SERIAL_RX_CB() {
   }
 }
 
+TaskHandle_t taskTCP;
+
+void TcpTreatment(void * pvParameters)
+{
+  AsyncClient *client;
+  client =  (AsyncClient *)pvParameters;
+
+  while (1)
+  {
+    esp_task_wdt_reset();
+
+    const char* path ="/db/";
+    const char* extension =".json";
+    char name_with_extension[64];
+    strcpy(name_with_extension,path);
+    strcat(name_with_extension,ConfigGeneral.ZLinky);
+    strcat(name_with_extension,extension);
+    File DeviceFile = LittleFS.open(name_with_extension, FILE_READ);
+    if (!DeviceFile|| DeviceFile.isDirectory()) {
+      log_e("failed open");
+      vTaskDelete(taskTCP);
+    }else{
+      JsonObject root;
+      StaticJsonDocument<32> filter;
+      filter["0B04"]= true;
+      DynamicJsonDocument temp(MAXHEAP/2);
+      deserializeJson(temp,DeviceFile, DeserializationOption::Filter(filter));
+      DeviceFile.close();
+      root = temp["0B04"] ;
+
+      String datas = "HM:";
+      datas +=String(strtol(root["1295"],0,16));
+      datas +="|";
+      datas +=String(strtol(root["2319"],0,16));
+      datas +="|";
+      datas +=String(strtol(root["2575"],0,16));
+      
+      if (client->space() > strlen(datas.c_str()) && client->canSend())
+      {
+        log_i("send to Marstek infos : %s\n",datas);
+        client->add(datas.c_str(), strlen(datas.c_str()));
+        client->send();
+      }
+     
+    }
+    vTaskDelay(10000/portTICK_PERIOD_MS);
+  }
+}
+
+
+
+static void handleData(void *arg, AsyncClient *client, void *data, size_t len)
+{
+	log_d("\n data received from client %s \n", client->remoteIP().toString().c_str());
+  if (memcmp(data,"hello",5)==0)
+  {
+    ConfigGeneral.connectedMarstek = true;
+    if (taskTCP!=NULL)
+    {
+      vTaskDelete(taskTCP);
+    }
+    xTaskCreatePinnedToCore(
+                TcpTreatment,   // Function to implement the task 
+                "TcpTreatment", // Name of the task 
+                8*1024,      // Stack size in words 
+                (void *) client,       // Task input parameter 
+                10,          // Priority of the task 
+                &taskTCP,       // Task handle. 
+                1);
+  }
+}
+
+static void handleError(void *arg, AsyncClient *client, int8_t error)
+{
+	log_e("\n connection error %s from client %s \n", client->errorToString(error), client->remoteIP().toString().c_str());
+  ConfigGeneral.connectedMarstek = false;
+}
+
+static void handleDisconnect(void *arg, AsyncClient *client)
+{
+	log_e("\n client %s disconnected \n", client->remoteIP().toString().c_str());
+  ConfigGeneral.connectedMarstek = false;
+}
+
+static void handleTimeOut(void *arg, AsyncClient *client, uint32_t time)
+{
+	log_e("\n client ACK timeout ip: %s \n", client->remoteIP().toString().c_str());
+  ConfigGeneral.connectedMarstek = false;
+}
+
+static void handleNewClient(void *arg, AsyncClient *client)
+{
+	// register events
+	client->onData(&handleData, NULL);
+	client->onError(&handleError, NULL);
+	client->onDisconnect(&handleDisconnect, NULL);
+	client->onTimeout(&handleTimeOut, NULL);
+}
+
+void tcpProcess()
+{
+  AsyncServer *TcpServer = new AsyncServer(12345); // start listening on tcp port 7050
+	TcpServer->onClient(&handleNewClient, TcpServer);
+	TcpServer->begin();
+}
+
+void udpProcess()
+{
+  if (UdpServer.listen(12345)) 
+  {
+    log_i("UDP listening on ip : %d - port : 12345",WiFi.localIP().toString());
+    UdpServer.onPacket([](AsyncUDPPacket packet) 
+    {
+      log_i("receive data : %s",packet.data());
+      if (memcmp(packet.data(), "hame", 4)==0)
+      {
+        log_i("send ACK");
+        packet.print("ack");
+      }
+    });
+  }
+
+}
+
 void datasTreatment(void * pvParameters)
 {
   
@@ -332,7 +459,48 @@ void connectToMqtt() {
 
 }
 
-void WiFiEvent(WiFiEvent_t event) {
+void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
+  addDebugLog(F("WiFi Disconnected"));
+    log_d("%d",info.wifi_sta_disconnected.reason);
+  // added in V2.20:  call disconnect before reconnecting to reset wifi stack
+    if (mqttReconnectTimer != NULL)
+    {
+      xTimerStop(mqttReconnectTimer, 0); 
+    }
+    if (info.wifi_sta_disconnected.reason != 201)
+    {
+      xTimerStart(WifiReconnectTimer, 0);
+    }else{
+      xTimerStop(WifiReconnectTimer,0);
+      WiFi.mode(WIFI_AP);
+      WiFi.disconnect();
+      
+      uint8_t mac[WL_MAC_ADDR_LENGTH];
+      WiFi.softAPmacAddress(mac);
+      String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
+                    String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
+      macID.toUpperCase();
+      String AP_NameString = "LIXEEGW-" + macID;
+
+      char AP_NameChar[AP_NameString.length() + 1];
+      memset(AP_NameChar, 0, AP_NameString.length() + 1);
+
+      for (int i=0; i<AP_NameString.length(); i++)
+        AP_NameChar[i] = AP_NameString.charAt(i);
+
+      String WIFIPASSSTR = "admin"+macID;
+      char WIFIPASS[WIFIPASSSTR.length()+1];
+      memset(WIFIPASS,0,WIFIPASSSTR.length()+1);
+      for (int i=0; i<WIFIPASSSTR.length(); i++)
+        WIFIPASS[i] = WIFIPASSSTR.charAt(i);
+
+      WiFi.softAP(AP_NameChar,WIFIPASS );
+      WiFi.setSleep(false);
+
+    }
+}
+
+void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
 
     case ARDUINO_EVENT_WIFI_READY:
@@ -351,13 +519,10 @@ void WiFiEvent(WiFiEvent_t event) {
       break;
     case ARDUINO_EVENT_WIFI_STA_STOP:
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      addDebugLog(F("WiFi Disconnected"));
-  
-      if (mqttReconnectTimer != NULL)
-      {
-        xTimerStop(mqttReconnectTimer, 0); 
-      }
-      xTimerStart(WifiReconnectTimer, 0);
+      
+     
+
+     
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
       addDebugLog(F("WiFi LOST IP"));
@@ -562,6 +727,13 @@ bool loadConfigGeneral() {
   ConfigGeneral.customMQTT = (int)doc["customMQTT"];
   ConfigGeneral.customMQTTJson =doc["customMQTTJson"].as<String>();
 
+  ConfigSettings.enableUDP = (int)doc["enableUDP"];
+  strlcpy(ConfigGeneral.servUDP, doc["servUDP"] | "", sizeof(ConfigGeneral.servUDP));
+  strlcpy(ConfigGeneral.portUDP, doc["portUDP"] | "", sizeof(ConfigGeneral.portUDP));
+  ConfigGeneral.customUDPJson =doc["customUDPJson"].as<String>();
+
+  ConfigSettings.enableMarstek = (int)doc["enableMarstek"];
+
   ConfigSettings.enableNotif = (int)doc["enableNotif"];
   strlcpy(ConfigGeneral.servSMTP, doc["servSMTP"] | "", sizeof(ConfigGeneral.servSMTP));
   strlcpy(ConfigGeneral.portSMTP, doc["portSMTP"] | "", sizeof(ConfigGeneral.portSMTP));
@@ -667,12 +839,15 @@ bool setupSTAWifi() {
 void reconnectWifi()
 {
   DEBUG_PRINT(F("reconnect to WiFi..."));
-  DEBUG_PRINT(ConfigSettings.ssid);
+  DEBUG_PRINTLN(ConfigSettings.ssid);
   WiFi.disconnect();
   if (WiFi.getMode() == WIFI_MODE_STA)
   {
     if (ConfigSettings.ssid != "")
     {
+
+
+
       WiFi.begin(ConfigSettings.ssid,ConfigSettings.password);
     }
   }
@@ -803,6 +978,7 @@ void setup(void)
   }
   
   WiFi.onEvent(WiFiEvent);
+  WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WifiReconnectTimer = xTimerCreate("WifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(reconnectWifi));
 
   if (ConfigSettings.enableMqtt)
@@ -915,6 +1091,14 @@ void setup(void)
   addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(0)));
   addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(1)));
   
+  if ((ConfigSettings.enableMarstek) && (ConfigGeneral.ZLinky!=""))
+  {
+    udpProcess();
+    tcpProcess();
+  }
+  
+
+
   //esp_task_wdt_init(15, true);
  // esp_task_wdt_add(NULL);
 
@@ -943,6 +1127,8 @@ esp_task_wdt_reset();
                     18,          // Priority of the task 
                     NULL,       // Task handle. 
                     1);
+
+
 
   //initMailClient();
   disableCore0WDT();
