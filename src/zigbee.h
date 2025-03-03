@@ -20,4 +20,5 @@ void SendAction(int command, int ShortAddr, String tmpValue);
 void SendActiveRequest(uint8_t shortAddr[2]);
 void SendSimpleDescriptionRequest(uint8_t shortAddr[2], uint8_t endpoint);
 void SendBasicDescription(uint8_t shortAddr[2], uint8_t endpoint);
-void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
+//void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
+void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);

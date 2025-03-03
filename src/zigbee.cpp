@@ -1097,10 +1097,10 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
     strcat(name_with_extensionTP,String(device_id).c_str());
     strcat(name_with_extensionTP,extension);
 
-    File tpFile = safeOpenFile(name_with_extensionTP, FILE_READ);
+    File tpFile = LittleFS.open(name_with_extensionTP, FILE_READ);
     if (!tpFile|| tpFile.isDirectory()) {
       DEBUG_PRINTLN(F("failed open"));
-      safeCloseFile(tpFile,name_with_extensionTP);
+      tpFile.close();
       return false;
     }else
     {
@@ -1124,11 +1124,18 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
           strcpy(name_with_extension,path);
           strcat(name_with_extension,inifile.c_str());
 
-          File file = safeOpenFile(name_with_extension, "r+");
+          File file = LittleFS.open(name_with_extension, "r+");
           if (!file) {
-            safeOpenFile(name_with_extension, "w+");
+            file = safeOpenFile(name_with_extension, "w+");
             DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
             DEBUG_PRINTLN(path);
+            if (!file)
+            {
+              DEBUG_PRINTLN(F("Impossible de créer le fichier (getPollingDevice) "));
+              safeCloseFile(file,name_with_extension);
+              return false;
+            }
+
           }
           size_t filesize = file.size();
           
@@ -1136,13 +1143,13 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
           if (filesize>0)
           {
             DeserializationError error = deserializeJson(doc, file);
+            file.close();
             if (error) {
               //DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-              safeCloseFile(file,name_with_extension);
+    
               return "Error";
             }
           }
-          safeCloseFile(file,name_with_extension);
           
           for(JsonVariant v : StatusArray) 
           {
@@ -1319,7 +1326,7 @@ void getBind(uint64_t mac, int device_id, String model)
   }
 }
 
-void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType, int len, char* datas)
+/*void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType, int len, char* datas)
 {
   int cluster;
   int attribute;
@@ -1346,7 +1353,7 @@ void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2
     case 1030: //406 occupancy
       OccupancyManage(shortaddr,attribute,DataType,len,datas);
       break;
-    case 257: //0101 dorlock
+    case 257: //0101 doorlock
       DoorlockManage(shortaddr,attribute,DataType,len,datas);
       break;
     case 6: // 0006 onoff
@@ -1363,6 +1370,52 @@ void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2
       break;
     default:
       defaultClusterManage(shortaddr,cluster,attribute,DataType,len,datas);
+      break;
+  
+  }
+}*/
+void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType, int len, char* datas)
+{
+  int cluster;
+  int attribute;
+  
+  cluster = Cluster[0]*256+Cluster[1];
+  attribute = Attribute[0]*256+Attribute[1];
+  
+  switch (cluster) 
+  {
+    case 0:     
+      BasicManage(filename,attribute,DataType,len,datas);
+      break;
+    case 1:     
+      powerManage(filename,attribute,DataType,len,datas);
+      break;
+    case 1026: //402 temperature
+      temperatureManage(filename,attribute,DataType,len,datas);
+      break;
+    case 1029: //402 humidity
+      humidityManage(filename,attribute,DataType,len,datas);
+      break;
+    case 1030: //406 occupancy
+      OccupancyManage(filename,attribute,DataType,len,datas);
+      break;
+    case 257: //0101 doorlock
+      DoorlockManage(filename,attribute,DataType,len,datas);
+      break;
+    case 6: // 0006 onoff
+      OnoffManage(filename,attribute,DataType,len,datas);
+      break;
+    case 65382: //FF66
+      lixeeClusterManage(filename,attribute,DataType,len,datas);
+      break;
+    case 1794: //0702 SM
+      SimpleMeterManage(filename,attribute,DataType,len,datas);
+      break;
+     case 2820: //0B04 ElectricalMeasurement
+      ElectricalMeasurementManage(filename,attribute,DataType,len,datas);
+      break;
+    default:
+      defaultClusterManage(filename,cluster,attribute,DataType,len,datas);
       break;
   
   }
