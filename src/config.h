@@ -147,6 +147,17 @@ typedef struct {
     uint8_t raw[256];
 } SerialPacket;
 
+typedef struct {
+  String section;
+  String key;
+  String value;
+} iniPacket;
+
+typedef struct {
+  int iniPacketSize;
+  iniPacket i[10];
+}WriteIni;
+
 
 typedef struct {
     char name[50];
@@ -191,6 +202,16 @@ typedef struct {
   int attribute;
   String value;
 } Device;
+
+typedef struct{
+  String manufacturer;
+  String model;
+  int shortAddr;
+  int deviceId;
+  String sotfwareVersion;
+  String lastSeen;
+  String LQI;
+} DeviceInfo;
 
 typedef CircularBuffer<char, 4096> LogConsoleType;
 
