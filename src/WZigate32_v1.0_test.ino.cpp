@@ -295,6 +295,7 @@ void TcpTreatment(void * pvParameters)
 static void handleData(void *arg, AsyncClient *client, void *data, size_t len)
 {
 	log_d("\n data received from client %s \n", client->remoteIP().toString().c_str());
+  strncpy(ConfigGeneral.marstekIP,client->remoteIP().toString().c_str(),18);
   if (memcmp(data,"hello",5)==0)
   {
     log_d("get hello\n");
@@ -318,19 +319,20 @@ static void handleData(void *arg, AsyncClient *client, void *data, size_t len)
 static void handleError(void *arg, AsyncClient *client, int8_t error)
 {
 	log_e("\n connection error %s from client %s \n", client->errorToString(error), client->remoteIP().toString().c_str());
-  ConfigGeneral.connectedMarstek = false;
+  //ConfigGeneral.connectedMarstek = false;
 }
 
 static void handleDisconnect(void *arg, AsyncClient *client)
 {
 	log_e("\n client %s disconnected \n", client->remoteIP().toString().c_str());
   ConfigGeneral.connectedMarstek = false;
+  strcpy(ConfigGeneral.marstekIP,"");
 }
 
 static void handleTimeOut(void *arg, AsyncClient *client, uint32_t time)
 {
 	log_e("\n client ACK timeout ip: %s \n", client->remoteIP().toString().c_str());
-  ConfigGeneral.connectedMarstek = false;
+ // ConfigGeneral.connectedMarstek = false;
 }
 
 static void handleNewClient(void *arg, AsyncClient *client)
