@@ -22,8 +22,13 @@
 #include <string.h>
 #include <FS.h>
 #include <LittleFS.h>
+#include "config.h"
 
 bool ini_exist(String path);
+bool ini_writes(String path, WriteIni i);
+DeviceInfo getDeviceInfo(String path);
+
+
 bool ini_write(String path, String section, String key, String value);
 bool copyFile(String srcPath) ;
 bool config_write(String path, String key, String value);

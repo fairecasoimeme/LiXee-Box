@@ -56,7 +56,6 @@ File safeOpenFile(const char *path, const char *mode) {
     log_e("Fichier déjà ouvert : %s\n",path);
     vTaskDelay(20);
     i++;
-
     if (i > 5)
     {
       return File();
@@ -84,14 +83,17 @@ bool copyFile(String srcPath) {
   File srcFile = LittleFS.open("/db/"+srcPath, "r");
   if (!srcFile) {
    log_e("Failed to open source file for reading.");
+    srcFile.close();
     return false;
   }
 
   // Ouvrir/Cree le fichier de destination en écriture
-  File destFile = LittleFS.open("/bk/"+srcPath, "w");
+  String filename = "/bk/"+srcPath;
+  File destFile = safeOpenFile(filename.c_str(), "w");
   if (!destFile) {
     log_e("Failed to open destination file for writing.");
     srcFile.close();
+    safeCloseFile(destFile,filename.c_str());
     return false;
   }
 
@@ -106,7 +108,7 @@ bool copyFile(String srcPath) {
 
   // Fermer les fichiers
   srcFile.close();
-  destFile.close();
+  safeCloseFile(destFile,filename.c_str());
 
   return true;
 }
@@ -134,7 +136,7 @@ bool init_raz_energy(String path, String time)
     strcat(name_with_extension,path.c_str());
     //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
     //{
-      File file = safeOpenFile(name_with_extension, "r+");
+      File file = LittleFS.open(name_with_extension, "r+");
       if (!file)
       {
         file = safeOpenFile(name_with_extension, "w+");
@@ -153,6 +155,7 @@ bool init_raz_energy(String path, String time)
       if (filesize > 0)
       {
         DeserializationError error = deserializeJson(doc, file);
+        file.close();
         if (error)
         {
           String err;
@@ -161,12 +164,11 @@ bool init_raz_energy(String path, String time)
           err += " "+path;
           DEBUG_PRINTLN(err);
           addDebugLog(err);
-          safeCloseFile(file,name_with_extension);
           //xSemaphoreGive(file_Mutex);
           return false;
         }
       }
-      safeCloseFile(file,name_with_extension);
+      
 
       if (time == "hour")
       {
@@ -217,10 +219,10 @@ bool init_raz_energy(String path, String time)
           return false;
         }
       }
-      // Fermer le fichier
-      safeCloseFile(file,name_with_extension);
-      //xSemaphoreGive(file_Mutex);
-      return true;
+    // Fermer le fichier
+    safeCloseFile(file,name_with_extension);
+    //xSemaphoreGive(file_Mutex);
+    return true;
     //}
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
@@ -245,7 +247,7 @@ bool ini_energy(String path, String section, String value)
       strcat(name_with_extension,path.c_str());
       //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
       //{
-        File file = safeOpenFile(name_with_extension, "r+");
+        File file = LittleFS.open(name_with_extension, "r+");
         if (!file)
         {
           file = safeOpenFile(name_with_extension, "w+");
@@ -265,6 +267,7 @@ bool ini_energy(String path, String section, String value)
         if (filesize > 0)
         {
           DeserializationError error = deserializeJson(doc, file);
+          file.close();
           if (error)
           {
             String err;
@@ -272,12 +275,11 @@ bool ini_energy(String path, String section, String value)
             err += error.c_str();
             DEBUG_PRINTLN(err);
             addDebugLog(err);
-            safeCloseFile(file,name_with_extension);
+            
             //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
-        safeCloseFile(file,name_with_extension);
 
         // Ajouter des valeurs dans le fichier json
         long tmpvalue = strtol(value.c_str(), NULL, 16);
@@ -346,7 +348,7 @@ bool ini_trendEnergy(String path, String section, String value)
       strcat(name_with_extension,path.c_str());
       //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
       //{
-        File file = safeOpenFile(name_with_extension, "r");
+        File file = LittleFS.open(name_with_extension, "r");
         if (!file)
         {
           file = safeOpenFile(name_with_extension, "w+");
@@ -366,15 +368,13 @@ bool ini_trendEnergy(String path, String section, String value)
         if (filesize > 0)
         {
           DeserializationError error = deserializeJson(doc, file);
+          file.close();
           if (error)
-          {
-            safeCloseFile(file,name_with_extension);
+          {  
             //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
-        safeCloseFile(file,name_with_extension);
-
         // Ajouter des valeurs dans le fichier json
 
         long tmpvalue = strtol(value.c_str(), NULL, 16);
@@ -585,7 +585,7 @@ bool ini_trendPower(String path, String section, String value)
       strcat(name_with_extension,path.c_str());
       //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
       //{
-        File file = safeOpenFile(name_with_extension, "r");
+        File file = LittleFS.open(name_with_extension, "r");
         if (!file)
         {
           file = safeOpenFile(name_with_extension, "w+");
@@ -605,14 +605,13 @@ bool ini_trendPower(String path, String section, String value)
         if (filesize > 0)
         {
           DeserializationError error = deserializeJson(doc, file);
+          file.close();
           if (error)
           {
-            safeCloseFile(file,name_with_extension);
             //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
-        safeCloseFile(file,name_with_extension);
 
         // Ajouter des valeurs dans le fichier json
         long tmpvalue = strtol(value.c_str(), NULL, 16);
@@ -690,7 +689,7 @@ bool ini_power2(String path,String section,String value)
       strcat(name_with_extension,path.c_str());
       //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
       //{
-        File file = safeOpenFile(name_with_extension, "r");
+        File file = LittleFS.open(name_with_extension, "r");
         if (!file)
         {
           file = safeOpenFile(name_with_extension, "w+");
@@ -713,6 +712,7 @@ bool ini_power2(String path,String section,String value)
           DEBUG_PRINT(F("deserializeJson (iniPower) "));
           DEBUG_PRINTLN(ESP.getFreePsram());
           DeserializationError error = deserializeJson(doc, file);
+          file.close();
           DEBUG_PRINT(F("Memory Usage : "));
           DEBUG_PRINTLN(doc.memoryUsage());
           if (error)
@@ -722,13 +722,10 @@ bool ini_power2(String path,String section,String value)
             err += error.c_str();
             DEBUG_PRINTLN(err);
             addDebugLog(err);
-            
-            safeCloseFile(file,name_with_extension);
             //xSemaphoreGive(file_Mutex);
             return false;
           }
         }
-        safeCloseFile(file,name_with_extension);
 
         long tmpvalue = strtol(value.c_str(), NULL, 16);
 
@@ -957,9 +954,9 @@ using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
   }
 }*/
 
-bool ini_write(String path, String section, String key, String value)
+bool ini_writes(String path, WriteIni ini)
 {
-
+  
   const char* prefix ="/db/";
   char name_with_extension[64];
   strcpy(name_with_extension,prefix);
@@ -967,7 +964,86 @@ bool ini_write(String path, String section, String key, String value)
 
   if (path.length()>0)
   {
-    File file = safeOpenFile(name_with_extension, "r+");
+    File file = LittleFS.open(name_with_extension, "r+");
+    if (!file)
+    {
+      file = safeOpenFile(name_with_extension, "w+");
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+      DEBUG_PRINTLN(path);
+      if (!file)
+      {
+        DEBUG_PRINTLN(F("Impossible de créer le fichier (ini_writes) "));
+        safeCloseFile(file,name_with_extension);
+        return false;
+      }
+      // return false;
+    }
+    size_t filesize = file.size();
+    String filename = String(file.name());
+
+    DynamicJsonDocument doc(MAXHEAP);
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+    if (error)
+    {
+      // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
+      return false;
+    }
+    
+    // Ajouter des valeurs dans le fichier json
+    if (!doc.isNull())
+    {
+      for (int i=0;i<ini.iniPacketSize;i++)
+      {
+        doc[ini.i[i].section][ini.i[i].key] = ini.i[i].value;
+      }
+    
+
+      // serializeJsonPretty(doc, Serial);
+      //  Écrire les données dans le fichier
+      file = safeOpenFile(name_with_extension, "w+");
+      if (!file || file.isDirectory())
+      {
+        DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+        DEBUG_PRINTLN(path);
+        safeCloseFile(file,name_with_extension);
+        return false;
+      }
+
+      if (doc.size()>0)
+      {
+        if (serializeJson(doc, file) == 0)
+        {
+          DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
+          safeCloseFile(file,name_with_extension);
+          return false;
+        }
+      }
+
+      // Fermer le fichier
+      safeCloseFile(file,name_with_extension);
+      return true;
+    }else{
+      return false;
+    }
+    
+  }else{
+    return false;
+  }
+}
+
+bool ini_write(String path, String section, String key, String value)
+{
+
+  
+  const char* prefix ="/db/";
+  char name_with_extension[64];
+  strcpy(name_with_extension,prefix);
+  strcat(name_with_extension,path.c_str());
+
+  if (path.length()>0)
+  {
+    File file = LittleFS.open(name_with_extension, "r+");
     if (!file)
     {
       file = safeOpenFile(name_with_extension, "w+");
@@ -982,48 +1058,53 @@ bool ini_write(String path, String section, String key, String value)
       // return false;
     }
     size_t filesize = file.size();
+    String filename = String(file.name());
 
     DynamicJsonDocument doc(MAXHEAP);
 
-    if (filesize > 0)
+    if (filesize > 50)
     {
       DeserializationError error = deserializeJson(doc, file);
+      file.close();
       if (error)
       {
         // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-        safeCloseFile(file,name_with_extension);
         return false;
       }
     }
-    safeCloseFile(file,name_with_extension);
 
-    // Ajouter des valeurs dans le fichier json
-    doc[section][key] = value;
-
-    // serializeJsonPretty(doc, Serial);
-    //  Écrire les données dans le fichier
-    file = safeOpenFile(name_with_extension, "w+");
-    if (!file || file.isDirectory())
+    if (!doc.isNull())
     {
-      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
-      DEBUG_PRINTLN(path);
+      // Ajouter des valeurs dans le fichier json
+      doc[section][key] = value;
+
+      // serializeJsonPretty(doc, Serial);
+      //  Écrire les données dans le fichier
+      file = safeOpenFile(name_with_extension, "w+");
+      if (!file || file.isDirectory())
+      {
+        DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
+        DEBUG_PRINTLN(path);
+        safeCloseFile(file,name_with_extension);
+        return false;
+      }
+
+      if (doc.size()>0)
+      {
+        if (serializeJson(doc, file) == 0)
+        {
+          DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
+          safeCloseFile(file,name_with_extension);
+          return false;
+        }
+      }
+
+      // Fermer le fichier
       safeCloseFile(file,name_with_extension);
+      return true;
+    }else{
       return false;
     }
-
-    if (doc.size()>0)
-    {
-      if (serializeJson(doc, file) == 0)
-      {
-        DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
-        safeCloseFile(file,name_with_extension);
-        return false;
-      }
-    }
-
-    // Fermer le fichier
-    safeCloseFile(file,name_with_extension);
-    return true;
   }else{
     return false;
   }
@@ -1038,37 +1119,76 @@ String ini_read(String path, String section, String key)
 
   //if (xSemaphoreTake(inifile_Mutex, portMAX_DELAY) == pdTRUE) 
   //{
-  File file = safeOpenFile(name_with_extension, FILE_READ);
+  File file = LittleFS.open(name_with_extension, FILE_READ);
   if (!file || file.isDirectory())
   {
     DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read : "));
     DEBUG_PRINTLN(path);
-    safeCloseFile(file,name_with_extension);
+    file.close();
    // xSemaphoreGive(inifile_Mutex);
     return "Error";
   }
 
   // Analyser le contenu JSON du fichier
-  DynamicJsonDocument doc(MAXHEAP);
+  DynamicJsonDocument doc(60240);
   DeserializationError error = deserializeJson(doc, file);
-
+  file.close();
+  vTaskDelay(10 / portTICK_PERIOD_MS);
   // Vérifier les erreurs de désérialisation
   if (error)
-  {
-    // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-    safeCloseFile(file,name_with_extension);
+  {  
     //xSemaphoreGive(inifile_Mutex);
-    return "Error";
+    return "Error : "+String(error.c_str());
   }
 
   // Accéder aux valeurs dans le fichier INI
-  // const char* valeur = doc[section][key];
-  safeCloseFile(file,name_with_extension);
-  //xSemaphoreGive(inifile_Mutex);
-  vTaskDelay(10 / portTICK_PERIOD_MS);
+
+  
   return doc[section][key];
   
 }
+
+DeviceInfo getDeviceInfo(String path)
+{
+  const char* prefix ="/db/";
+  char name_with_extension[64];
+  strcpy(name_with_extension,prefix);
+  strcat(name_with_extension,path.c_str());
+
+  DeviceInfo di;
+
+  File file = LittleFS.open(name_with_extension, FILE_READ);
+  if (!file || file.isDirectory())
+  {
+    DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read : "));
+    DEBUG_PRINTLN(path);
+    file.close();
+  }
+
+  // Analyser le contenu JSON du fichier
+  DynamicJsonDocument doc(MAXHEAP);
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  vTaskDelay(10 / portTICK_PERIOD_MS);
+  // Vérifier les erreurs de désérialisation
+  if (error)
+  {  
+    return di;
+  }
+
+  di.manufacturer = doc["INFO"]["manufacturer"].as<String>();
+  di.model = doc["INFO"]["model"].as<String>();
+  di.shortAddr = doc["INFO"]["shortAddr"].as<int>();
+  di.deviceId = doc["INFO"]["device_id"].as<int>();
+  di.sotfwareVersion = doc["INFO"]["software_version"].as<String>();
+  di.lastSeen = doc["INFO"]["lastSeen"].as<String>();
+  di.LQI = doc["INFO"]["LQI"].as<String>();
+
+  return di;
+}
+
+
+
 
 String config_read(String path,String key)
 {
@@ -1076,7 +1196,7 @@ String config_read(String path,String key)
   char name_with_extension[64];
   strcpy(name_with_extension,prefix);
   strcat(name_with_extension,path.c_str());
-  File file = safeOpenFile(name_with_extension, "r");
+  File file = LittleFS.open(name_with_extension, "r");
   if (!file)
   {
     DEBUG_PRINTLN(F("Impossible de lire le fichier (config_read) "));
@@ -1086,17 +1206,17 @@ String config_read(String path,String key)
 
   DynamicJsonDocument doc(MAXHEAP);
   DeserializationError error = deserializeJson(doc, file);
+  file.close();
   // Vérifier les erreurs de désérialisation
   if (error)
   {
     // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-    safeCloseFile(file,name_with_extension);
+
     return "Error";
   }
 
   // Accéder aux valeurs dans le fichier INI
   // const char* valeur = doc[key];
-  safeCloseFile(file,name_with_extension);
   return doc[key].as<String>();
 }
 
@@ -1113,7 +1233,7 @@ bool config_write(String path, String key, String value)
   strcpy(name_with_extension,prefix);
   strcat(name_with_extension,path.c_str());
   //  xSemaphoreTake(file_Mutex, portMAX_DELAY);
-    File file = safeOpenFile(name_with_extension, "r+");
+    File file = LittleFS.open(name_with_extension, "r+");
     if (!file)
     {
   //   xSemaphoreGive(file_Mutex);
@@ -1131,23 +1251,18 @@ bool config_write(String path, String key, String value)
     }
 
     size_t filesize = file.size();
-
     DynamicJsonDocument doc(MAXHEAP);
 
     if (filesize > 0)
     {
       DeserializationError error = deserializeJson(doc, file);
+      file.close();
       if (error)
       {
-        // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-        safeCloseFile(file,name_with_extension);
-    //    xSemaphoreGive(file_Mutex);
         return "Error";
       }
     }
-    safeCloseFile(file,name_with_extension);
     //xSemaphoreGive(file_Mutex);
-
     // Ajouter des valeurs dans le fichier json
     doc[key] = value;
 
@@ -1190,7 +1305,8 @@ bool config_write(String path, String key, String value)
 }
 
 
-void scanFilesError(void){
+void scanFilesError(void)
+{
   File root = LittleFS.open("/db");
   if (!root)
   {
@@ -1233,7 +1349,7 @@ void scanFilesError(void){
             if (!filedevice) {
             log_e("filedevice : Failed to open source file for reading.");
             }
-
+            addDebugLog("backup executed");
             log_d("backup go");
             // Buffer de lecture
             uint8_t buffer[2048];
@@ -1248,13 +1364,16 @@ void scanFilesError(void){
             // Fermer les fichiers
             filebk.close();
             filedevice.close();
+            break;
           }
+          vTaskDelay(1);
           filebk = rootbk.openNextFile();
         }
 
       }
       filedevice.close();
     }
+    vTaskDelay(1);
     filedevice = root.openNextFile();
   }
   
