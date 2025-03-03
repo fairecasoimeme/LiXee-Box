@@ -272,8 +272,11 @@ Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
 ## Changelog
 
 ### V1.1
-* Add UDP client
+* Add API commands
 * Add Marstek compatibility
+* Fix HA MQTT discovery
+* Fix files management
+* Optimize some treatment
 * Fix some bugs
 
 ### V1.0 (initial stable version)
