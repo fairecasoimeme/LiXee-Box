@@ -18,7 +18,7 @@ Obviously, you can use this code with **ESP32S3** chip but depend on your board 
 
 ## Uses cases example
 
-Here is a list of some use cases which can be used with **LiXee-WebMQTT-Gateway**.  
+Here is a list of some use cases which can be used with **LiXee-Gateway**.  
 
 ### Use case n°1
 Your Linky counter is very far and Zigbee protocol is too light to transport datas to the coordinator.
@@ -71,7 +71,7 @@ You can :
 ## How to template a new zigbee device
 
 A template file is a JSON structure which give status and actions to a device type. The name of the template file corresponds to the device identification (decimal).
-When a Zigbee device is joining, **LiXee-WebMQTT-Gateway** create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
+When a Zigbee device is joining, **LiXee-Gateway** create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
 
 ### Structure
 Here is the structure :
