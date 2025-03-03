@@ -1347,7 +1347,7 @@ Template * GetTemplate(int deviceId, String model)
           }
           else
           {
-            strlcpy(t->e[i].mqtt_device_class, "", sizeof(t->e[i].mqtt_device_class));
+            strlcpy(t->e[i].mqtt_device_class, "null", sizeof(t->e[i].mqtt_device_class));
           }
           if (temp[model][0][F("status")][i][F("mqtt_state_class")])
           {
@@ -1355,7 +1355,7 @@ Template * GetTemplate(int deviceId, String model)
           }
           else
           {
-            strlcpy(t->e[i].mqtt_state_class, "", sizeof(t->e[i].mqtt_state_class));
+            strlcpy(t->e[i].mqtt_state_class, "null", sizeof(t->e[i].mqtt_state_class));
           }
           if (temp[model][0][F("status")][i][F("mqtt_icon")])
           {
@@ -1414,6 +1414,7 @@ Template * GetTemplate(int deviceId, String model)
             strlcpy(t->e[i].typeJauge, "", sizeof(t->e[i].typeJauge));
           }
           i++;
+          vTaskDelay(1);
         }
         t->StateSize = i;
         i = 0;
@@ -1434,6 +1435,7 @@ Template * GetTemplate(int deviceId, String model)
             t->a[i].visible = 0;
           }
           i++;
+          vTaskDelay(1);
         }
         t->ActionSize = i;
         // tmp = temp[model][0]["bind"];
@@ -1521,6 +1523,7 @@ Template * GetTemplate(int deviceId, String model)
             strlcpy(t->e[i].typeJauge, "", sizeof(t->e[i].typeJauge));
           }
           i++;
+          vTaskDelay(1);
         }
         t->StateSize = i;
         i = 0;
@@ -1541,6 +1544,7 @@ Template * GetTemplate(int deviceId, String model)
             t->a[i].visible = 0;
           }
           i++;
+          vTaskDelay(1);
         }
         t->ActionSize = i;
       }
@@ -2149,6 +2153,7 @@ void handleDashboard(AsyncWebServerRequest *request)
       }
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   file.close();
@@ -2204,6 +2209,7 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
     result.replace("{{GWWifi}}", ConfigSettings.ipGWWiFi);
   }
   
+
   if (ConfigSettings.connectedWifiSta)
   {
     result.replace("{{connectedWifi}}", F("<img src='/web/img/ok.png'>"));
@@ -2467,6 +2473,8 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     // tmp = tmp.substring(10);
     if (tmp.substring(16) == ".json")
     {
+      DeviceInfo di;
+      di = getDeviceInfo(file.name());
       result += F("<div class='col-md-auto col-sm-auto'><div class='card' style='min-width:380px;'><div class='card-header' style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>@Mac : ");
       result += tmp.substring(0, 16);
       result += F("</div>");
@@ -2481,36 +2489,36 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       result += F("<div id='infoDevice");
       result += String(i);
       result += F("' style='display:none;'>");
-      result += "<table width='100%'><tr>";
-      result += F("<td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      result += "<table width='100%' style='font-size:12px;'><tr>";
+      result += F("<td style='font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String manufacturer;
-      manufacturer = GetManufacturer(file.name());
+      manufacturer = di.manufacturer;
       result += manufacturer;
-      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       String model;
-      model = GetModel(file.name());
+      model = di.model;
       result += model;
-      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       char SAddr[5];
-      int ShortAddr = GetShortAddr(file.name());
+      int ShortAddr =di.shortAddr;
       snprintf(SAddr,5,"%04X", ShortAddr);
       result += SAddr;
-      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
       char devId[5];
-      int DeviceId = GetDeviceId(file.name());
+      int DeviceId = di.deviceId;
       snprintf(devId,5, "%04X", DeviceId);
       result += devId;
-      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String SoftVer = GetSoftwareVersion(file.name());
+      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      String SoftVer = di.sotfwareVersion;
       result += SoftVer;
-      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String lastseen = GetLastSeen(file.name());
+      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      String lastseen = di.lastSeen;
       result += lastseen;
-      result += F("</td></tr><tr><td style='font-size:12px;font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      result += GetLQI(file.name());
+      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+      result += di.LQI;
       result += "</td></tr></table></div><hr>";
-      // Get status and action from json
-      
+
+      // Get status and action from json    
       if (TemplateExist(DeviceId))
       {
         Template *t;
@@ -2598,6 +2606,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     }
     i++;
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   result+=footer();
@@ -2862,6 +2871,7 @@ void handleConfigLinky(AsyncWebServerRequest *request)
       }
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   file.close();
@@ -2930,6 +2940,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
       }
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   file.close();
@@ -2987,6 +2998,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
       }
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   file.close();
@@ -3559,6 +3571,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
       file.close(); 
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   
@@ -3590,6 +3603,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
       file.close(); 
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   
@@ -3621,6 +3635,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
       file.close(); 
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   
@@ -3652,6 +3667,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
       file.close(); 
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   
@@ -3685,6 +3701,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
       } 
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   file.close();
@@ -3721,6 +3738,7 @@ void handleToolBackup(AsyncWebServerRequest *request)
       listFiles += F(" o)</a></li>");
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   root.close();
@@ -3856,6 +3874,7 @@ void handleConfigFiles(AsyncWebServerRequest *request)
       result += F(" o)</a></li>");
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   result += F("</ul></nav>");
@@ -3915,6 +3934,7 @@ void handleDebugFiles(AsyncWebServerRequest *request)
       result += F(" o)</a></li>");
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   result += F("</ul></nav>");
@@ -3976,6 +3996,7 @@ void handleFSbrowserBackup(AsyncWebServerRequest *request)
       result += F(" o)</a></li>");
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   result += F("</ul></nav>");
@@ -4036,6 +4057,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
       result += F(" o)</a></li>");
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   result += F("</ul></nav>");
@@ -4119,6 +4141,7 @@ void handleTemplates(AsyncWebServerRequest *request)
       result += F(" o)</a></li>");
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   result += F("</ul></nav>");
@@ -4279,6 +4302,7 @@ void handleJavascript(AsyncWebServerRequest *request)
       }
     }
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
   result += F("</ul></nav>");
@@ -4383,6 +4407,7 @@ void handleSaveDebug(AsyncWebServerRequest *request)
             LittleFS.remove("/debug/"+tmp);
           }
           file.close();
+          vTaskDelay(1);
           file = root.openNextFile();
       }
     }
@@ -5492,6 +5517,7 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     
     i++;
     file.close();
+    vTaskDelay(1);
     file = root.openNextFile();
   }
 
@@ -6015,47 +6041,98 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
       t = GetTemplate(DeviceId, model);
       for (int i = 0; i < t->StateSize; i++)
       {
-        const char* PROGMEM HA_discovery_msg = "{"
-            "\"name\":\"{{name_prop}}\","
-            "\"unique_id\":\"{{unique_id}}\","
-            "\"device_class\":\"{{device_class}}\","
-            "\"state_class\":\"{{state_class}}\","
-            "\"unit_of_measurement\":\"{{unit}}\","
-            "\"icon\":\"mdi:{{mqtt_icon}}\","
-            "\"state_topic\":\"{{state_topic}}/state\","
-            "\"value_template\":\"{{value}}\","
-            "\"device\": {"
-                "\"name\":\"LiXee-GW_{{device_name}}\","
-                "\"sw_version\":\"2.0\","
-                "\"model\":\"HW V2\","
-                "\"manufacturer\":\"LiXee\","
-                "\"identifiers\":[\"LiXee-GW{{device_name}}\"]"
-            "}"
-        "}";
-        datas = FPSTR(HA_discovery_msg);
-        
-        datas.replace("{{name_prop}}", t->e[i].name);
-        datas.replace("{{unique_id}}", IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
-        datas.replace("{{device_class}}", t->e[i].mqtt_device_class);
-        datas.replace("{{state_class}}", t->e[i].mqtt_state_class);
-        datas.replace("{{mqtt_icon}}", t->e[i].mqtt_icon);
-        datas.replace("{{unit}}", t->e[i].unit);
-        datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
-        if ((String(t->e[i].type)=="numeric") || (String(t->e[i].type)=="float"))
+        if (strlen(t->e[i].mqtt_icon)>0)
         {
-          if (t->e[i].coefficient!=1)
+          const char* PROGMEM HA_discovery_msg = "{"
+              "\"name\":\"{{name_prop}}\","
+              "\"unique_id\":\"{{unique_id}}\","
+              "\"device_class\":{{device_class}},"
+              "\"state_class\":{{state_class}},"
+              "{{unit}}"
+              "\"icon\":\"mdi:{{mqtt_icon}}\","
+              "\"state_topic\":\"{{state_topic}}/state\","
+              "\"value_template\":\"{{value}}\","
+              "\"device\": {"
+                  "\"name\":\"LiXee-GW_{{device_name}}\","
+                  "\"sw_version\":\"2.0\","
+                  "\"model\":\"HW V2\","
+                  "\"manufacturer\":\"LiXee\","
+                  "\"identifiers\":[\"LiXee-GW{{device_name}}\"]"
+              "}"
+          "}";
+
+          datas = FPSTR(HA_discovery_msg);
+          
+          datas.replace("{{name_prop}}", t->e[i].name);
+          datas.replace("{{unique_id}}", IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
+          if (memcmp(t->e[i].mqtt_device_class,"null",4)==0)
           {
-            datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+" | float * "+String(t->e[i].coefficient)+"}}");
+            datas.replace("{{device_class}}", t->e[i].mqtt_device_class);
+          }else{
+            String tmp="\""+String(t->e[i].mqtt_device_class)+"\"";
+            datas.replace("{{device_class}}", tmp); 
+          }
+          if (memcmp(t->e[i].mqtt_state_class,"null",4)==0)
+          {
+            datas.replace("{{state_class}}", t->e[i].mqtt_state_class);
+          }else{
+            String tmp="\""+String(t->e[i].mqtt_state_class)+"\"";
+            datas.replace("{{state_class}}", tmp); 
+          }
+          datas.replace("{{mqtt_icon}}", t->e[i].mqtt_icon);
+          if (strlen(t->e[i].unit)>0)
+          {
+            String tmp = "\"unit_of_measurement\":\""+String(t->e[i].unit)+"\",";
+            datas.replace("{{unit}}", tmp);
+          }else{
+            datas.replace("{{unit}}", "");
+          }
+          
+          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
+          if ((String(t->e[i].type)=="numeric") || (String(t->e[i].type)=="float"))
+          {
+            if (t->e[i].coefficient!=1)
+            {
+              datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+" | float * "+String(t->e[i].coefficient)+"}}");
+            }else{
+              datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
+            }
           }else{
             datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
           }
-        }else{
-          datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
-        }
-        datas.replace("{{device_name}}", model+"_"+IEEE);
-        String topic = ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"/config";
+          datas.replace("{{device_name}}", model+"_"+IEEE);
+          String topic = ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"/config";
+          if (model=="ZLinky_TIC")
+          {
+            const char *tmp;
+            bool discoverOk = false;
+            tmp = t->e[i].mode;
+            if ((tmp != NULL) && (tmp[0] != '\0')) 
+            {
+              char * pch;
+              pch = strtok ((char*)tmp,";");
+              while (pch != NULL)
+              {
+                if (atoi(pch) == ConfigGeneral.LinkyMode)
+                {
+                  discoverOk=true;
+                  break;
+                }
+                pch = strtok (NULL, " ;");
+              }
+            }else{
+              discoverOk=true;
+            }
 
-        mqttClient.publish(topic.c_str(),1,true,datas.c_str());
+            if (discoverOk)
+            {
+              mqttClient.publish(topic.c_str(),1,true,datas.c_str());
+            }
+          }else{
+            mqttClient.publish(topic.c_str(),1,true,datas.c_str());
+          }
+          
+        }
       }
       // toutes les actions
     }
@@ -6155,6 +6232,7 @@ void APIgetDevices(AsyncWebServerRequest *request)
       xSemaphoreGive(file_Mutex);
     }
       filedevice.close();
+      vTaskDelay(1);
       filedevice = root.openNextFile();
   }
   result += "}";
@@ -6333,6 +6411,7 @@ void APIgetTemplates(AsyncWebServerRequest *request)
       xSemaphoreGive(file_Mutex);
     }
     filedevice.close();
+    vTaskDelay(1);
     filedevice = root.openNextFile();
   }
   result += "}";
