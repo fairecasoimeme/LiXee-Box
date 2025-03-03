@@ -124,6 +124,7 @@ struct ConfigGeneralStruct {
   char passWebPush[50];
   bool webPushAuth;
   bool connectedMarstek;
+  char marstekIP[18];
   char servUDP[50];
   char portUDP[50];
   String customUDPJson;
