@@ -14,12 +14,12 @@ extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 10> *deviceList;
 
-void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
+void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
-   String inifile;
+  //String inifile;
   char value[256];
   String tmp="";
-  inifile = GetMacAdrr(shortaddr);
+  //inifile = GetMacAdrr(shortaddr);
   if (inifile!="")
   {
     switch (attribute)
@@ -35,12 +35,12 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           }
           log_d("0B04 / 1295 = %s",tmp);
           ini_write(inifile,"0B04", (String)attribute, (String)tmp);
-          ini_trendPower(inifile, (String)attribute, (String) tmp);
-          if (!ini_power2(inifile, (String)attribute, (String) tmp))
+          //ini_trendPower(inifile, (String)attribute, (String) tmp);
+          /*if (!ini_power2(inifile, (String)attribute, (String) tmp))
           {
             String err ="PB ini_pwer"+inifile+": 0xB04/"+(String)attribute+" "+(String)tmp;
             addDebugLog(err);
-          }
+          }*/
           
           //MQTT
           if (ConfigSettings.enableMqtt)
@@ -66,6 +66,7 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
@@ -74,15 +75,14 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
       case 2319:   
         if (ini_exist(inifile))
         {
-          log_d("%s",tmp);
           for(int i=0;i<len;i++)
           {
             sprintf(value, "%02X",datas[i]);
             tmp+=value;
           }
           ini_write(inifile,"0B04", (String)attribute, (String)tmp);
-          ini_trendPower(inifile, (String)attribute, (String) tmp);
-          ini_power2(inifile, (String)attribute, (String) tmp);
+          /*ini_trendPower(inifile, (String)attribute, (String) tmp);
+          ini_power2(inifile, (String)attribute, (String) tmp);*/
           
           //MQTT
           if (ConfigSettings.enableMqtt)
@@ -100,6 +100,7 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
@@ -109,15 +110,14 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
       case 2575:   
         if (ini_exist(inifile))
         {
-          log_d("%s",tmp);
           for(int i=0;i<len;i++)
           {
             sprintf(value, "%02X",datas[i]);
             tmp+=value;
           }
           ini_write(inifile,"0B04", (String)attribute, (String)tmp);
-          ini_trendPower(inifile, (String)attribute, (String) tmp);
-          ini_power2(inifile, (String)attribute, (String) tmp);
+          /*ini_trendPower(inifile, (String)attribute, (String) tmp);
+          ini_power2(inifile, (String)attribute, (String) tmp);*/
           
           //MQTT
           if (ConfigSettings.enableMqtt)
@@ -135,6 +135,7 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
@@ -165,6 +166,7 @@ void ElectricalMeasurementManage(int shortaddr,int attribute,uint8_t datatype,in
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }

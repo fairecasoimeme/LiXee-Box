@@ -36,12 +36,12 @@ void SendOnOffAction(int shortaddr, int endpoint, String value)
     PrioritycommandList->push(trame);
 }
 
-void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
+void OnoffManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
-  String inifile;
+  //String inifile;
   char value[256];
   String tmp="";
-  inifile = GetMacAdrr(shortaddr);
+  //inifile = GetMacAdrr(shortaddr);
   if (inifile != "")
   {
     switch (attribute)
@@ -73,6 +73,7 @@ void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,6,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
@@ -102,6 +103,7 @@ void OnoffManage(int shortaddr,int attribute,uint8_t datatype,int len, char* dat
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,6,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }

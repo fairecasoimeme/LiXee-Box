@@ -12,12 +12,12 @@ extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 10> *deviceList;
 
-void DoorlockManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
+void DoorlockManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
-  String inifile;
+  //String inifile;
   char value[4];
   String tmp="";
-  inifile = GetMacAdrr(shortaddr);
+  //inifile = GetMacAdrr(shortaddr);
   if (inifile !="")
   {
     switch (attribute)
@@ -48,6 +48,7 @@ void DoorlockManage(int shortaddr,int attribute,uint8_t datatype,int len, char* 
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,257,attribute,tmp});
           }
         }

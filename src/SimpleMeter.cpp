@@ -14,12 +14,12 @@ extern ConfigSettingsStruct ConfigSettings;
 
 extern CircularBuffer<Device, 10> *deviceList;
 
-void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
+void SimpleMeterManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
-  String inifile;
+  //String inifile;
   char value[256];
   String tmp="";
-  inifile = GetMacAdrr(shortaddr);
+  //inifile = GetMacAdrr(shortaddr);
   if (inifile!="")
   {
     switch (attribute)
@@ -65,6 +65,7 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
@@ -97,6 +98,7 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           ini_energy(inifile, (String)attribute, (String) tmp);
@@ -131,7 +133,40 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+          }
+        }
+      break;
+       case 776:
+        if (ini_exist(inifile))
+        {
+          String tmp;
+          for(int i=0;i<len;i++)
+          {
+            if(datas[i]>0)
+            {
+              tmp+= datas[i];
+            }
+          }
+          ini_write(inifile,"0702", (String)attribute, (String)tmp);
+          //MQTT
+          if (ConfigSettings.enableMqtt)
+          {
+            mqttPublish(inifile.substring(0,16),"1794",String(attribute),"string",String(tmp));
+          }
+          //WebPush
+          if (ConfigSettings.enableWebPush)
+          {
+
+            WebPush(inifile.substring(0,16),"1794",(String)attribute,String(tmp));
+          }
+
+          // Device update value;
+          if (!deviceList->isFull())
+          {
+            int shortaddr = GetShortAddr(inifile);
+            deviceList->push(Device{shortaddr,1794,attribute,String(tmp)});
           }
         }
       break;
@@ -160,6 +195,7 @@ void SimpleMeterManage(int shortaddr,int attribute,uint8_t datatype,int len, cha
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }

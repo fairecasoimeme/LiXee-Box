@@ -12,12 +12,12 @@ extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 10> *deviceList;
 
-void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datatype,int len, char* datas)
+void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t datatype,int len, char* datas)
 {
-  String inifile;
+  //String inifile;
   char value[4];
   String tmp="";
-  inifile = GetMacAdrr(shortaddr);
+  //inifile = GetMacAdrr(shortaddr);
   if (inifile!="")
   {
     switch (attribute)
@@ -37,7 +37,15 @@ void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datat
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),String(cluster),String(attribute),"string",String(tmp));
+            if ((cluster==2817) && (attribute==13))
+            {
+              String tmpvalue;
+              tmpvalue = String(strtol(tmp.c_str(), NULL, 16));
+              mqttPublish(inifile.substring(0,16),String(cluster),String(attribute),"numeric",String(tmp));
+            }else{
+              mqttPublish(inifile.substring(0,16),String(cluster),String(attribute),"string",String(tmp));
+            }
+            
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -50,6 +58,7 @@ void defaultClusterManage(int shortaddr,int cluster, int attribute,uint8_t datat
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,cluster,attribute,tmp});
           }
           

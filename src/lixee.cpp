@@ -13,15 +13,45 @@ extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 10> *deviceList;
 
 
-void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
+void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
-  String inifile;
+  //String inifile;
   String tmp="";
-  inifile = GetMacAdrr(shortaddr);
+  //inifile = GetMacAdrr(shortaddr);
   if (inifile !="")
   {
     switch (attribute)
-    {       
+    {   
+      case 514:
+      {
+        String tmp="";
+        for(int i=0;i<(len-1);i++)
+        {
+          if(datas[i+1]>0)
+          {
+            tmp+= datas[i+1];
+          }
+        }
+        ini_write(inifile,"FF66", (String)attribute, (String)tmp);
+        //MQTT
+        if (ConfigSettings.enableMqtt)
+        {
+          mqttPublish(inifile.substring(0,16),"65382",String(attribute),"string",String(tmp));
+        }
+      //WebPush
+        if (ConfigSettings.enableWebPush)
+        {
+          WebPush(inifile.substring(0,16),"65382",(String)attribute,String(tmp));
+        }
+
+        // Device update value;
+          if (!deviceList->isFull())
+          {
+            int shortaddr = GetShortAddr(inifile);
+            deviceList->push(Device{shortaddr,65382,attribute,String(tmp)});
+          }
+      } 
+      break;
       case 535:
       {
         if (ini_exist(inifile))
@@ -50,6 +80,7 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,65382,attribute,tmp});
           }
         }
@@ -81,10 +112,12 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
         // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,65382,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
       }
       break;
+     
       default:
         if (ini_exist(inifile))
         {
@@ -112,7 +145,12 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"65382",String(attribute),"numeric",String(tmp));
+            if (datatype == 66)
+            {
+              mqttPublish(inifile.substring(0,16),"65382",String(attribute),"numeric",String(tmp));
+            }else{
+              mqttPublish(inifile.substring(0,16),"65382",String(attribute),"string",String(tmp));
+            }
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
@@ -125,6 +163,7 @@ void lixeeClusterManage(int shortaddr,int attribute,uint8_t datatype,int len, ch
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,65382,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }

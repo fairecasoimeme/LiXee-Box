@@ -12,12 +12,12 @@ extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 10> *deviceList;
 
-void humidityManage(int shortaddr,int attribute,uint8_t datatype,int len, char* datas)
+void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
-  String inifile;
+  //String inifile;
   char value[4];
   String tmp="";
-  inifile = GetMacAdrr(shortaddr);
+  //inifile = GetMacAdrr(shortaddr);
   if (inifile !="")
   {
     switch (attribute)
@@ -48,6 +48,7 @@ void humidityManage(int shortaddr,int attribute,uint8_t datatype,int len, char* 
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
@@ -78,6 +79,7 @@ void humidityManage(int shortaddr,int attribute,uint8_t datatype,int len, char* 
           // Device update value;
           if (!deviceList->isFull())
           {
+            int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1029,attribute,tmp});
           }
         }
