@@ -7,6 +7,7 @@
 #include "esp32s3/rom/rtc.h"
 #include "driver/temp_sensor.h"
 #include <esp_task_wdt.h>
+#include "WiFiProv.h"
 #include <WiFi.h>
 #ifdef BONJOUR_SUPPORT
 #include <ESPmDNS.h>
@@ -246,7 +247,7 @@ void TcpTreatment(void * pvParameters)
 {
   AsyncClient *client;
   client =  (AsyncClient *)pvParameters;
-
+  log_d("TcpTreatment\n");
   while (1)
   {
     esp_task_wdt_reset();
@@ -263,19 +264,19 @@ void TcpTreatment(void * pvParameters)
       vTaskDelete(taskTCP);
     }else{
       JsonObject root;
-      StaticJsonDocument<32> filter;
+      StaticJsonDocument<1024> filter;
       filter["0B04"]= true;
-      DynamicJsonDocument temp(MAXHEAP/2);
+      DynamicJsonDocument temp(MAXHEAP);
       deserializeJson(temp,DeviceFile, DeserializationOption::Filter(filter));
       DeviceFile.close();
       root = temp["0B04"] ;
+       String datas = "HM:";
 
-      String datas = "HM:";
-      datas +=String(strtol(root["1295"],0,16));
+      datas +=String(strtol(root["1295"].as<String>().c_str(),0,16));
       datas +="|";
-      datas +=String(strtol(root["2319"],0,16));
+      datas +=String(strtol(root["2319"].as<String>().c_str(),0,16));
       datas +="|";
-      datas +=String(strtol(root["2575"],0,16));
+      datas +=String(strtol(root["2575"].as<String>().c_str(),0,16));
       
       if (client->space() > strlen(datas.c_str()) && client->canSend())
       {
@@ -296,19 +297,21 @@ static void handleData(void *arg, AsyncClient *client, void *data, size_t len)
 	log_d("\n data received from client %s \n", client->remoteIP().toString().c_str());
   if (memcmp(data,"hello",5)==0)
   {
+    log_d("get hello\n");
     ConfigGeneral.connectedMarstek = true;
     if (taskTCP!=NULL)
     {
       vTaskDelete(taskTCP);
     }
+    log_d("create thread : %d\n",taskTCP);
     xTaskCreatePinnedToCore(
                 TcpTreatment,   // Function to implement the task 
                 "TcpTreatment", // Name of the task 
                 8*1024,      // Stack size in words 
                 (void *) client,       // Task input parameter 
-                10,          // Priority of the task 
+                18,          // Priority of the task 
                 &taskTCP,       // Task handle. 
-                1);
+                0);
   }
 }
 
@@ -500,6 +503,54 @@ void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
     }
 }
 
+const char * pop = ""; // Proof of possession - otherwise called a PIN - string provided by the device, entered by the user in the phone app
+const char * service_name = "LIXEE_GW"; // Name of your device (the Espressif apps expects by default device name starting with "Prov_")
+const char * service_key = NULL; // Password used for SofAP method (NULL = no password needed)
+bool reset_provisioned = true; // When true the library will automatically delete previously provisioned data.
+
+void SysProvEvent(arduino_event_t *sys_event)
+{
+  switch (sys_event->event_id) {
+    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+      Serial.print("\nConnected IP address : ");
+      Serial.println(IPAddress(sys_event->event_info.got_ip.ip_info.ip.addr));
+      ConfigSettings.connectedWifiSta = true;
+      break;
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: Serial.println("\nDisconnected. Connecting to the AP again... "); ConfigSettings.connectedWifiSta = false;break;
+    case ARDUINO_EVENT_PROV_START:            Serial.println("\nProvisioning started\nGive Credentials of your access point using smartphone app"); break;
+    case ARDUINO_EVENT_PROV_CRED_RECV:
+    {
+      Serial.println("\nReceived Wi-Fi credentials");
+      Serial.print("\tSSID : ");
+      Serial.println((const char *)sys_event->event_info.prov_cred_recv.ssid);
+      Serial.print("\tPassword : ");
+      Serial.println((char const *)sys_event->event_info.prov_cred_recv.password);
+      const char *path = "configWifi.json";
+      strcpy(ConfigSettings.ssid,(const char *)sys_event->event_info.prov_cred_recv.ssid);
+      config_write(path,"ssid",String(ConfigSettings.ssid));
+      strcpy(ConfigSettings.password,(const char *)sys_event->event_info.prov_cred_recv.password);
+      config_write(path,"pass",String(ConfigSettings.password));
+      
+      
+      break;
+    }
+    case ARDUINO_EVENT_PROV_CRED_FAIL:
+    {
+      Serial.println("\nProvisioning failed!\nPlease reset to factory and retry provisioning\n");
+      if (sys_event->event_info.prov_fail_reason == WIFI_PROV_STA_AUTH_ERROR) {
+        Serial.println("\nWi-Fi AP password incorrect");
+      } else {
+        Serial.println("\nWi-Fi AP not found....Add API \" nvs_flash_erase() \" before beginProvision()");
+      }
+      ConfigSettings.connectedWifiSta = false;
+      break;
+    }
+    case ARDUINO_EVENT_PROV_CRED_SUCCESS: Serial.println("\nProvisioning Successful");  break;
+    case ARDUINO_EVENT_PROV_END:          Serial.println("\nProvisioning Ends"); break;
+    default:                              break;
+  }
+}
+
 void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
 
@@ -519,7 +570,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
       break;
     case ARDUINO_EVENT_WIFI_STA_STOP:
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      
+      addDebugLog(F("ARDUINO_EVENT_WIFI_STA_DISCONNECTED"));
      
 
      
@@ -535,6 +586,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     case ARDUINO_EVENT_WIFI_STA_GOT_IP:
       connectToMqtt();
       break;
+    
     default:
       break;
   }
@@ -552,7 +604,8 @@ void onMqttConnect(bool sessionPresent) {
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   DEBUG_PRINT(F("Disconnected from MQTT."));
   DEBUG_PRINTLN((uint8_t)reason);
-  
+  addDebugLog("Disconnected from mqtt : "+String((uint8_t)reason));
+
   if ((uint8_t)reason==0)
   {
     esp_restart();
@@ -758,9 +811,9 @@ bool loadConfigGeneral() {
 
 void setupWifiAP()
 {
-  WiFi.mode(WIFI_AP);
   WiFi.disconnect();
-  
+  WiFi.mode(WIFI_AP);
+   
   uint8_t mac[WL_MAC_ADDR_LENGTH];
   WiFi.softAPmacAddress(mac);
   String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
@@ -780,22 +833,22 @@ void setupWifiAP()
   for (int i=0; i<WIFIPASSSTR.length(); i++)
     WIFIPASS[i] = WIFIPASSSTR.charAt(i);
 
-  WiFi.softAP(AP_NameChar,WIFIPASS );
-  WiFi.setSleep(false);
+  WiFi.softAP(AP_NameChar,WIFIPASS ); 
   
 }
 
 bool setupSTAWifi() {
   
-  WiFi.mode(WIFI_STA);
-  DEBUG_PRINTLN(F("WiFi.mode(WIFI_STA)"));
-  WiFi.disconnect();
-  DEBUG_PRINTLN(F("disconnect"));
+  
   vTaskDelay(10);
-  if (ConfigSettings.ssid != "")
+  if (strlen(ConfigSettings.ssid)>0)
   {
+    WiFi.mode(WIFI_STA);
+    DEBUG_PRINTLN(F("WiFi.mode(WIFI_STA)"));
+    WiFi.disconnect();
+    DEBUG_PRINTLN(F("disconnect"));
     WiFi.begin(ConfigSettings.ssid, ConfigSettings.password);
-    WiFi.setSleep(false);
+    //WiFi.setSleep(false);
     DEBUG_PRINTLN(F("WiFi.begin"));
 
     IPAddress ip_address = parse_ip_address(ConfigSettings.ipAddressWiFi);
@@ -805,12 +858,10 @@ bool setupSTAWifi() {
     IPAddress secondaryDNS(8, 8, 4, 4); //optional
     if (!ConfigSettings.enableDHCP)
     {
+      DEBUG_PRINTLN(F("WiFi.config"));
       WiFi.config(ip_address, gateway_address, netmask, primaryDNS,secondaryDNS);
     }
-    DEBUG_PRINTLN(F("WiFi.config"));
-
-
-    int countDelay=20;
+    int countDelay=50;
     while (WiFi.status() != WL_CONNECTED) {
       DEBUG_PRINT(F("."));
       countDelay--;
@@ -840,15 +891,14 @@ void reconnectWifi()
 {
   DEBUG_PRINT(F("reconnect to WiFi..."));
   DEBUG_PRINTLN(ConfigSettings.ssid);
+  addDebugLog("reconnect to WiFi...");
   WiFi.disconnect();
   if (WiFi.getMode() == WIFI_MODE_STA)
   {
     if (ConfigSettings.ssid != "")
     {
-
-
-
       WiFi.begin(ConfigSettings.ssid,ConfigSettings.password);
+      addDebugLog("WiFi begin...");
     }
   }
   
@@ -977,9 +1027,47 @@ void setup(void)
     LittleFS.mkdir("/rt");
   }
   
-  WiFi.onEvent(WiFiEvent);
-  WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   WifiReconnectTimer = xTimerCreate("WifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(reconnectWifi));
+ 
+  if (configOK)
+  {
+    DEBUG_PRINTLN(F("configOK"));  
+    if (!setupSTAWifi())
+    {
+      DEBUG_PRINTLN(F("AP"));
+      setupWifiAP();
+      modeWiFi="AP";
+      /* BLE PROVISIONING */
+      /*#if CONFIG_BLUEDROID_ENABLED && !defined(USE_SOFT_AP)
+        Serial.println("Begin Provisioning using BLE");
+
+        // Sample uuid that user can pass during provisioning using BLE
+        uint8_t uuid[16] = {0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf, 0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02};
+        WiFiProv.beginProvision(
+          WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BLE, WIFI_PROV_SECURITY_1, pop, service_name, service_key, uuid, reset_provisioned
+        );
+      #endif*/
+    }
+    DEBUG_PRINTLN(F("setupSTAWifi"));   
+  }else{
+    
+    setupWifiAP();
+    modeWiFi="AP";
+    DEBUG_PRINTLN(F("AP"));
+  }
+  
+  WiFi.onEvent(WiFiEvent);
+
+  /* BLE PROVISIONING */
+ // WiFi.onEvent(SysProvEvent);
+  WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  
+   //Zeroconf
+  String localdns = "lixee-gw";
+  if(!MDNS.begin(localdns.c_str())) {
+     DEBUG_PRINTLN("Error starting mDNS");
+     //return;
+  }
 
   if (ConfigSettings.enableMqtt)
   {
@@ -998,31 +1086,10 @@ void setup(void)
     {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
     } 
+
+    mqttClient.connect();
   }
- 
-  if (configOK)
-  {
-    DEBUG_PRINTLN(F("configOK"));  
-    if (!setupSTAWifi())
-    {
-      DEBUG_PRINTLN(F("AP"));
-      setupWifiAP();
-      modeWiFi="AP";
-    }
-    DEBUG_PRINTLN(F("setupSTAWifi"));   
-  }else{
-    
-    setupWifiAP();
-    modeWiFi="AP";
-    DEBUG_PRINTLN(F("AP"));
-  }
-  
-   //Zeroconf
-  String localdns = "lixee-gw";
-  if(!MDNS.begin(localdns.c_str())) {
-     DEBUG_PRINTLN("Error starting mDNS");
-     //return;
-  }
+
   esp_task_wdt_reset();
   
   timeClient.setPoolServerName((const char*)ConfigGeneral.ntpserver);
@@ -1096,8 +1163,6 @@ void setup(void)
     udpProcess();
     tcpProcess();
   }
-  
-
 
   //esp_task_wdt_init(15, true);
  // esp_task_wdt_add(NULL);
@@ -1117,16 +1182,16 @@ esp_task_wdt_reset();
                     NULL,       // Task input parameter 
                     17,          // Priority of the task 
                     NULL,       // Task handle. 
-                    0);  
+                    1);  
 
   xTaskCreatePinnedToCore(
                     datasTreatment,   // Function to implement the task 
                     "datasTreatment", // Name of the task 
-                    32*1024,      // Stack size in words 
+                    64*1024,      // Stack size in words 
                     NULL,       // Task input parameter 
                     18,          // Priority of the task 
                     NULL,       // Task handle. 
-                    1);
+                    0);
 
 
 
