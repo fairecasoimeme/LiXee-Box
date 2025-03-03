@@ -218,12 +218,12 @@ const char HTTP_MENU[] PROGMEM =
       "</svg>"
     " Marstek"
     "</a>"
-    "<a class='dropdown-item' href='/configUdpClient'>"
+    /*"<a class='dropdown-item' href='/configUdpClient'>"
     "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-caret-right' viewBox='0 0 16 16'>"
       "<path d='M6 12.796V3.204L11.481 8zm.659.753 5.48-4.796a1 1 0 0 0 0-1.506L6.66 2.451C6.011 1.885 5 2.345 5 3.204v9.592a1 1 0 0 0 1.659.753'/>"
     "</svg>"
     " UDP client"
-    "</a>"
+    "</a>"*/
     "</div>"
     "</li>"
     "<li class='nav-item dropdown'>"
@@ -2254,6 +2254,9 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
     }else{
       MarstekCard +=F("<img src='/web/img/nok.png'>");
     }
+    MarstekCard +="<br>";
+    MarstekCard +="<Strong>Marstek @IP :</strong> ";
+    MarstekCard += ConfigGeneral.marstekIP;
     MarstekCard +=F(" <br><br>");
     result.replace("{{Marstek card}}", MarstekCard);
   }else{
@@ -6189,6 +6192,89 @@ void handleGetFormattedDate(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void APIgetConfig(AsyncWebServerRequest *request)
+{
+  String result;
+
+
+  request->send(200, F("application/json"), result);
+}
+
+void APIgetSystem(AsyncWebServerRequest *request)
+{
+  const char JSON_GET_SYSTEM[] PROGMEM = 
+  "{"
+  "    \"network\" :"
+   "    {"
+   "     \"wifi\":"
+   "     {"
+   "       \"enable\" : {{wifienable}},"
+   "       \"connected\" : {{wificonnected}},"
+   "       \"mode\" : {{wifimode}},"
+   "       \"ip\" : \"{{wifiip}}\","
+   "       \"netmask\" : \"{{wifimask}}\","
+   "       \"gateway\" : \"{{wifigateway}}\""
+   "     }"
+  "    },"
+  "    \"system\" :"
+  "    {"
+  "      \"mqtt\" : "
+  "      {"
+  "        \"enable\" : {{mqttenable}},"
+  "        \"connected\" : {{mqttconected}},"
+   "       \"url\" : \"{{mqtturl}}\","
+  "        \"port\" : {{mqttport}}"
+  "      },"
+  "      \"webpush\" :"
+  "      {"
+  "        \"enable\" : {{webpushenable}},"
+  "        \"auth\" : {{webpushauth}},"
+  "        \"url\" : \"{{webpushurl}}\""
+  "      },"
+  "      \"marstek\" :"
+  "      {"
+  "        \"enable\" : {{marstekenable}},"
+  "        \"connected\" :{{marstekconnected}},"
+  "        \"ip\" : \"{{marstekip}}\""
+  "      },"
+  "      \"infos\" :"
+  "      {"
+  "        \"t\" : {{Temperature}}"
+  "      }"
+  "    }"
+  "  }";
+
+  String result;
+
+  result = FPSTR(JSON_GET_SYSTEM);
+
+  result.replace("{{wifienable}}",String(ConfigSettings.enableWiFi));
+  result.replace("{{wificonnected}}",String(ConfigSettings.connectedWifiSta));
+  result.replace("{{wifimode}}",String(ConfigSettings.dhcp));
+  result.replace("{{wifiip}}",ConfigSettings.ipAddressWiFi);
+  result.replace("{{wifimask}}",ConfigSettings.ipMaskWiFi);
+  result.replace("{{wifigateway}}",ConfigSettings.ipGWWiFi);
+  
+  result.replace("{{mqttenable}}",String(ConfigSettings.enableMqtt));
+  result.replace("{{mqttconected}}",String(mqttClient.connected()));
+  result.replace("{{mqtturl}}",ConfigGeneral.servMQTT);
+  result.replace("{{mqttport}}",String(ConfigGeneral.portMQTT));
+
+  result.replace("{{webpushenable}}",String(ConfigSettings.enableWebPush));
+  result.replace("{{webpushauth}}",String(ConfigGeneral.webPushAuth));
+  result.replace("{{webpushurl}}",ConfigGeneral.servWebPush);
+
+  result.replace("{{marstekenable}}",String(ConfigSettings.enableMarstek));
+  result.replace("{{marstekconnected}}",String(ConfigGeneral.connectedMarstek));
+  result.replace("{{marstekip}}",ConfigGeneral.marstekIP);
+
+  float temperature = 0;
+  temperature = temperatureReadFixed();
+  result.replace("{{Temperature}}", String(temperature));
+
+  request->send(200, F("application/json"), result);
+}
+
 void APIgetDevices(AsyncWebServerRequest *request)
 {
   String result;
@@ -6201,39 +6287,36 @@ void APIgetDevices(AsyncWebServerRequest *request)
   {
 
     String inifile = filedevice.name();
-    if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+
+    File file = LittleFS.open("/db/" + inifile, FILE_READ);
+    if (!file || file.isDirectory())
     {
-      File file = LittleFS.open("/db/" + inifile, FILE_READ);
-      if (!file || file.isDirectory())
-      {
-        DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
-        DEBUG_PRINTLN(inifile);
-        file.close();
-        xSemaphoreGive(file_Mutex);
-      }
-      size_t filesize = file.size();
-      if (inifile.substring(3,4)!="_")
-      {
-        if (filesize > 0)
-        {
-          if (i > 0)
-          {
-            result += ",";
-          }
-          result += "\""+inifile.substring(0,16)+"\" : ";
-          while (file.available())
-          {
-            result += (char)file.read();
-          }
-          i++;
-        }
-      }
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
+      DEBUG_PRINTLN(inifile);
       file.close();
       xSemaphoreGive(file_Mutex);
     }
-      filedevice.close();
-      vTaskDelay(1);
-      filedevice = root.openNextFile();
+    size_t filesize = file.size();
+    if (inifile.substring(3,4)!="_")
+    {
+      if (filesize > 0)
+      {
+        if (i > 0)
+        {
+          result += ",";
+        }
+        result += "\""+inifile.substring(0,16)+"\" : ";
+        while (file.available())
+        {
+          result += (char)file.read();
+        }
+        i++;
+      }
+    }
+    file.close();
+    filedevice.close();
+    vTaskDelay(1);
+    filedevice = root.openNextFile();
   }
   result += "}";
   filedevice.close();
@@ -6253,32 +6336,91 @@ void APIgetDevice(AsyncWebServerRequest *request)
   
     result = "{";
     String inifile = IEEE+".json";
-    if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+    File file = LittleFS.open("/db/" + inifile, FILE_READ);
+    if (!file || file.isDirectory())
     {
-      File file = LittleFS.open("/db/" + inifile, FILE_READ);
-      if (!file || file.isDirectory())
-      {
-        result = "Échec de l'ouverture du fichier : "+ inifile;
-        request->send(500, "text/plain", result);
-        file.close();
-        xSemaphoreGive(file_Mutex);
-      }
-      size_t filesize = file.size();
-      if (filesize > 0)
-      {
-        result += "\""+inifile.substring(0,16)+"\" : ";
-        while (file.available())
-        {
-          result += (char)file.read();
-        }
-      }  
+      result = "Échec de l'ouverture du fichier : "+ inifile;
+      request->send(500, "text/plain", result);
       file.close();
-      xSemaphoreGive(file_Mutex);
-      result += "}";
     }
-    
+    size_t filesize = file.size();
+    if (filesize > 0)
+    {
+      result += "\""+inifile.substring(0,16)+"\" : ";
+      while (file.available())
+      {
+        result += (char)file.read();
+      }
+    }  
+    file.close();
+    result += "}";       
   }else{
     result="{}";
+  }
+
+  request->send(200, F("application/json"), result);
+}
+
+void APIgetLinky(AsyncWebServerRequest *request)
+{
+  String IEEE, result;
+  IEEE = String(ConfigGeneral.ZLinky);
+  if (IEEE.length()>0)
+  {
+    String model;
+    model = GetModel(IEEE+".json");
+    int DeviceId = GetDeviceId(IEEE+".json");
+    result ="{";
+    if (TemplateExist(DeviceId))
+    {
+      Template *t;
+      t = GetTemplate(DeviceId, model);
+      for (int i = 0; i < t->StateSize; i++)
+      {      
+        const char *tmp;
+        bool discoverOk = false;
+        tmp = t->e[i].mode;
+        if ((tmp != NULL) && (tmp[0] != '\0')) 
+        {
+          char * pch;
+          pch = strtok ((char*)tmp,";");
+          while (pch != NULL)
+          {
+            if (atoi(pch) == ConfigGeneral.LinkyMode)
+            {
+              discoverOk=true;
+              break;
+            }
+            pch = strtok (NULL, " ;");
+          }
+        }else{
+          discoverOk=true;
+        }
+
+        if (discoverOk)
+        {
+          if (i>0){result+=",";}
+          result += "\"";
+          result += (String)t->e[i].cluster+"_"+(String)t->e[i].attribute;
+          result += "\" :";
+          String inifile =IEEE+".json";
+          if ((memcmp(t->e[i].type,"numeric",7)==0) || (memcmp(t->e[i].type,"float",5)==0) )
+          {
+            result +=  GetValueStatus(inifile, t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+          }else{
+            result +="\"";
+            result +=  GetValueStatus(inifile, t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+            result +="\"";
+          }
+          
+        }
+
+      }
+
+    }
+    result +="}";
+  }else{
+    result = "{}";
   }
 
   request->send(200, F("application/json"), result);
@@ -6292,33 +6434,26 @@ void APIgetEnergyDevice(AsyncWebServerRequest *request)
   if ((args >0) && (request->hasArg("IEEE")) )
   {
     IEEE = request->arg("IEEE");
-  
     result = "{";
     String inifile = "nrg_"+IEEE+".json";
-    if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+    File file = LittleFS.open("/db/" + inifile, FILE_READ);
+    if (!file || file.isDirectory())
     {
-      File file = LittleFS.open("/db/" + inifile, FILE_READ);
-      if (!file || file.isDirectory())
-      {
-        result = "Échec de l'ouverture du fichier : "+ inifile;
-        request->send(500, "text/plain", result);
-        file.close();
-        xSemaphoreGive(file_Mutex);
-      }
-      size_t filesize = file.size();
-      if (filesize > 0)
-      {
-        result += "\""+inifile.substring(4,20)+"\" : ";
-        while (file.available())
-        {
-          result += (char)file.read();
-        }
-      }  
+      result = "Échec de l'ouverture du fichier : "+ inifile;
+      request->send(500, "text/plain", result);
       file.close();
-      xSemaphoreGive(file_Mutex);
-      result += "}";
     }
-    
+    size_t filesize = file.size();
+    if (filesize > 0)
+    {
+      result += "\""+inifile.substring(4,20)+"\" : ";
+      while (file.available())
+      {
+        result += (char)file.read();
+      }
+    }  
+    file.close();
+    result += "}";    
   }else{
     result="{}";
   }
@@ -6337,29 +6472,25 @@ void APIgetPowerDevice(AsyncWebServerRequest *request)
   
     result = "{";
     String inifile = "pwr_"+IEEE+".json";
-    if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+    File file = LittleFS.open("/db/" + inifile, FILE_READ);
+    if (!file || file.isDirectory())
     {
-      File file = LittleFS.open("/db/" + inifile, FILE_READ);
-      if (!file || file.isDirectory())
-      {
-        result = "Échec de l'ouverture du fichier : "+ inifile;
-        request->send(500, "text/plain", result);
-        file.close();
-        xSemaphoreGive(file_Mutex);
-      }
-      size_t filesize = file.size();
-      if (filesize > 0)
-      {
-        result += "\""+inifile.substring(4,20)+"\" : ";
-        while (file.available())
-        {
-          result += (char)file.read();
-        }
-      }  
+      result = "Échec de l'ouverture du fichier : "+ inifile;
+      request->send(500, "text/plain", result);
       file.close();
-      xSemaphoreGive(file_Mutex);
-      result += "}";
     }
+    size_t filesize = file.size();
+    if (filesize > 0)
+    {
+      result += "\""+inifile.substring(4,20)+"\" : ";
+      while (file.available())
+      {
+        result += (char)file.read();
+      }
+    }  
+    file.close();
+    result += "}";
+    
     
   }else{
     result="{}";
@@ -6381,35 +6512,30 @@ void APIgetTemplates(AsyncWebServerRequest *request)
   {
 
     String inifile = filedevice.name();
-    if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+    File file = LittleFS.open("/tp/" + inifile, FILE_READ);
+    if (!file || file.isDirectory())
     {
-      File file = LittleFS.open("/tp/" + inifile, FILE_READ);
-      if (!file || file.isDirectory())
-      {
-        DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
-        DEBUG_PRINTLN(inifile);
-        file.close();
-        xSemaphoreGive(file_Mutex);
-      }
-      size_t filesize = file.size();
-
-      if (filesize > 0)
-      {
-        if (i > 0)
-        {
-          result += ",";
-        }
-        result += "\""+inifile+"\" : ";
-        while (file.available())
-        {
-          result += (char)file.read();
-        }
-        i++;
-      }
-      
+      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
+      DEBUG_PRINTLN(inifile);
       file.close();
-      xSemaphoreGive(file_Mutex);
     }
+    size_t filesize = file.size();
+
+    if (filesize > 0)
+    {
+      if (i > 0)
+      {
+        result += ",";
+      }
+      result += "\""+inifile+"\" : ";
+      while (file.available())
+      {
+        result += (char)file.read();
+      }
+      i++;
+    }
+    
+    file.close();
     filedevice.close();
     vTaskDelay(1);
     filedevice = root.openNextFile();
@@ -7235,6 +7361,27 @@ void initWebServer()
   });
 
 
+  serverWeb.on("/getSystem", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    APIgetSystem(request); 
+    
+  });
+  serverWeb.on("/getConfig", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    APIgetConfig(request); 
+    
+  });
+
   serverWeb.on("/getDevices", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (ConfigSettings.enableSecureHttp)
@@ -7275,6 +7422,18 @@ void initWebServer()
     APIgetPowerDevice(request); 
     
   });
+  
+  serverWeb.on("/getLinky", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    APIgetLinky(request); 
+    
+  });
+
   serverWeb.on("/getTemplates", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (ConfigSettings.enableSecureHttp)
