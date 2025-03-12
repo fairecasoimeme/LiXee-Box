@@ -33,6 +33,11 @@ The main feature is to relay Zigbee device datas to a website or a MQTT service
 The device can be configured with a local website
 
 You can :  
+* Monitor :
+  * Your zigbee devices with :
+  	* gauge and dashboard
+   	* all properties table	 
+  * Your network status and gateway features
 * Manage ZigBee devices
   * Object creation
   * Template creation
@@ -43,6 +48,13 @@ You can :
 * WebPush API management
   * Url / user / password
   * POST method with JSON format
+* Marstek CT001 Emulation
+  * Can communicate with Marstek battery to enhance energy management.
+* Rules management
+  * You can create rules to :
+  	* act when a zigbee device reach a threasold.
+  	* do load shedding
+  	* route energy
 * Update OTA
 
 
@@ -194,6 +206,105 @@ example : `bind : "1026;1029;1794"`
 |change| |Decimal|| change value to send report| 
 
 
+## How to create rules
+
+For the moment, you have to edit a json file to create / modify / delete rule.  
+For the moment, you can create only 10 rules.  
+One rule can contains one or more conditions.  
+One rule can contains one or more actions.  
+
+### Structure
+Here is the structure :  
+
+    ├── Rule     
+    │   ├── name   
+    │   ├── conditions   
+    │   │   ├── type   
+    │   │   ├── IEEE   
+    │   │   ├── cluster  
+    │   │   ├── attribut  
+    │   │   ├── operator   
+    │   │   ├── value  
+    │   │   ├── logic  
+    │   ├── actions   
+    │   │   ├── type   
+    │   │   ├── IEEE  
+    │   │   ├── endpoint  
+    │   │   ├── value    
+
+### Conditions
+
+|Command|Mandatory|Type|Value|Comment|
+|-------|---------|----|-----|-------|			
+|type|x|String|"device"||   
+|IEEE|x|String||@mac without ':' or '-'|  
+|cluster|x|Decimal||cluster id in decimal|  
+|attribut|x|Decimal||attribute number in decimal|  
+|operator|x|String|"<",">","==","!=",">=","<="|| 
+|value|x|Decimal|| | 
+|logic| |String|"AND","OR"|only needed if there are more than one condition| 
+
+### Actions
+
+|Command|Mandatory|Type|Value|Comment|
+|-------|---------|----|-----|-------|			
+|type|x|String|"onoff"||   
+|IEEE|x|String||@mac without ':' or '-'|  
+|endpoint|x|Decimal||endpoint id in decimal|  
+|value|x|String|||  
+
+For example :  
+
+```json 
+{
+   "rules":[
+    {
+        "name":"rule_1",
+        "conditions" : [
+		{
+		   "type" : "device",
+		   "IEEE" : "00158d0006204fcf",
+		   "cluster" : 2820,
+		   "attribute" : 1295,
+		   "operator" : "<",
+		   "value" : 1000,
+		   "logic" : "AND"
+		}
+        ],
+        "actions" : [
+		{
+		   "type" : "onoff",
+		   "IEEE" : "a4c138bb23185d2c",
+                   "endpoint":1,
+		   "value": "1"
+		}
+        ]
+    }, {
+        "name":"rule_2",
+        "conditions" : [
+		{
+		   "type" : "device",
+		   "IEEE" : "00158d0006204fcf",
+		   "cluster" : 2820,
+		   "attribute" : 1295,
+		   "operator" : ">",
+		   "value" : 1000,
+		   "logic" : "AND"
+		}
+        ],
+        "actions" : [
+		{
+		   "type" : "onoff",
+		   "IEEE" : "a4c138bb23185d2c",
+                   "endpoint":1,
+		   "value": "1"
+		}
+        ]
+    }
+   ]
+}
+```
+
 ## How to flash release
 Just install esptools and run this command
 
@@ -274,6 +385,8 @@ Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
 ### V1.1
 * Add API commands
 * Add Marstek compatibility
+* Add Rules capacity
+* Add Dashboard feature
 * Fix HA MQTT discovery
 * Fix files management
 * Optimize some treatment
