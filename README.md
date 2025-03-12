@@ -341,6 +341,9 @@ Wait a moment and go to your HA MQTT devices:
 
 ## Screenshots
 
+### Dashboard
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_dashboard.png" width="800">  
+
 ### Devices status
 <img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_status_devices.png" width="800">  
 
