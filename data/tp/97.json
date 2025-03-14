@@ -1,34 +1,1027 @@
 {
-	"lumi.sensor_switch.aq2" : [
+      "ZLinky_TIC" : [
 	{
 		"status" : [
-			{
-				"name" : "Clic",
-				"cluster" : "0006",
-				"attribut" : 0
+			    {"name" : "Mode",
+				"cluster" : "FF66",
+				"attribut" : 768,
+				"type": "numeric",
+				"visible":1,
+                                "poll" : 1,
+				"unit": ""
 			},
 			{
-				"name" : "MultiClic",
-				"cluster" : "0000",
-				"attribut" : 32768
+				"name" : "BASE / EAST",
+				"cluster" : "0702",
+				"attribut" : 0,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+                                "jauge":"text",
+				"unit": "Wh"
+			},
+            {
+				"name" : "HC / EJPHN / BBRHCJB / EASF01",
+				"cluster" : "0702",
+				"attribut" : 256,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh"
+			},
+            {
+				"name" : "HP / EJPHPM / BBRHPJB / EASF02",
+				"cluster" : "0702",
+				"attribut" : 258,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh"
+			},
+			{
+				"name" : "BBRHCJW / EASF03",
+				"cluster" : "0702",
+				"attribut" : 260,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh"
+			},
+            {
+				"name" : "BBRHPJW / EASF04",
+				"cluster" : "0702",
+				"attribut" : 262,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh"
+			},
+			{
+				"name" : "BBRHCJR / EASF05",
+				"cluster" : "0702",
+				"attribut" : 264,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh"
+			},
+            {
+				"name" : "BBRHPJB / EASF06",
+				"cluster" : "0702",
+				"attribut" : 266,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh"
+			},
+			{
+				"name" : "EASF07",
+				"cluster" : "0702",
+				"attribut" : 268,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh",
+				"mode":"1;3;5;7"
+			},
+            {
+				"name" : "EASF08",
+				"cluster" : "0702",
+				"attribut" : 270,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh",
+				"mode":"1;3;5;7"
+			},
+			{
+				"name" : "EASF09",
+				"cluster" : "0702",
+				"attribut" : 270,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh",
+				"mode":"1;3;5;7"
+			},
+            {
+				"name" : "EASF10",
+				"cluster" : "0702",
+				"attribut" : 272,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+				"unit": "Wh",
+				"mode":"1;3;5;7"
+			},
+			{
+				"name" : "EAIT",
+				"cluster" : "0702",
+				"attribut" : 1,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"unit": "Wh",
+				"visible":1,
+				"mode" : "5;7"
+			},
+			{
+				"name" : "PAPP / SINSTS",
+				"cluster" : "0B04",
+				"attribut" : 1295,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+                                "jauge":"gauge",
+				"min":0,
+				"max":8000,
+				"unit": "VA"
+			},
+            {
+				"name" : "SINSTS2",
+				"cluster" : "0B04",
+				"attribut" : 2319,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"unit": "VA",
+				"visible":1,
+				"mode":"3;7"
+			},
+                        {
+				"name" : "SINSTS3",
+				"cluster" : "0B04",
+				"attribut" : 2575,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"unit": "VA",
+				"visible":1,
+				"mode":"3;7"
+			},
+			{
+				"name" : "URMS1",
+				"cluster" : "0B04",
+				"attribut" : 1285,
+				"mqtt_device_class" : "voltage",
+				"mqtt_icon" :  "home-lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+				"unit": "V",
+				"mode":"1;3;5;7"
+			},
+			{
+				"name" : "URMS2",
+				"cluster" : "0B04",
+				"attribut" : 2309,
+				"mqtt_device_class" : "voltage",
+				"mqtt_icon" :  "home-lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+				"unit": "V",
+				"mode":"3;7"
+			},
+			{
+				"name" : "URMS3",
+				"cluster" : "0B04",
+				"attribut" : 2565,
+				"mqtt_device_class" : "voltage",
+				"mqtt_icon" :  "home-lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+				"unit": "V",
+				"mode":"3;7"
+			},
+			{
+				"name" : "UMOY1",
+				"cluster" : "0B04",
+				"attribut" : 1297,
+				"mqtt_device_class" : "voltage",
+				"mqtt_icon" :  "home-lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+				"unit": "V",
+				"mode":"1;3;5;7"
+			},
+			{
+				"name" : "UMOY2",
+				"cluster" : "0B04",
+				"attribut" : 2321,
+				"mqtt_device_class" : "voltage",
+				"mqtt_icon" :  "home-lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+				"unit": "V",
+				"mode":"3;7"
+			},
+			{
+				"name" : "UMOY3",
+				"cluster" : "0B04",
+				"attribut" : 2577,
+				"mqtt_device_class" : "voltage",
+				"mqtt_icon" :  "home-lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+				"unit": "V",
+				"mode":"3;7"
+			},
+			{
+				"name" : "PMAX / SMAXN",
+				"cluster" : "0B04",
+				"attribut" : 1293,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"unit": "VA",
+				"visible":1,
+				"poll" : 6
+			},
+			{
+				"name" : "STGE",
+				"cluster" : "FF66",
+				"attribut" : 535,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+				"poll" : 10,
+				"visible":1,
+				"mode":"1;3;5;7"
+
+			},
+			{
+				"name" : "Tarif en cours Histo",
+				"cluster" : "702",
+				"attribut" : 32,
+				"visible":1,
+				"poll" : 10,
+				"visible":1,
+				"mode":"0;2"
+
+			},
+			{
+				"name" : "Tarif en cours Standard",
+				"cluster" : "FF66",
+				"attribut" : 512,
+				"visible":1,
+				"poll" : 10,
+				"visible":1,
+				"mode":"1;3;5;7"
+
+			},
+			{
+				"name" : "Serial Number",
+				"cluster" : "0702",
+				"attribut" : 776,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+				"visible":1
+			},
+			{
+				"name" : "ISOUSC/PREF",
+				"cluster" : "0B01",
+				"attribut" : 13,
+                "unit": "A",
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+				"poll" : 10
+			},
+			{
+				"name" : "PCOUP",
+				"cluster" : "0B01",
+				"attribut" : 14,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "unit": "kVA",
+				"type": "numeric",
+                "visible":1,
+				"poll" : 10
+			},
+			{
+				"name" : "IINST / IRMS1",
+				"cluster" : "0B04",
+				"attribut" : 1288,
+                                "mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                                "jauge":"gauge",
+                                "min":0,
+				"max":20,
+				"unit": "A",
+				"visible":1,
+				"type": "numeric"
+			},
+			{
+				"name" : "IINST2 / IRMS2",
+				"cluster" : "0B04",
+				"attribut" : 2312,
+                "mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2;3;7"
+			},
+			{
+				"name" : "IINST3 / IRMS3",
+				"cluster" : "0B04",
+                "mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"attribut" : 2568,
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2;3;7"
+			},
+			{
+				"name" : "IMAX",
+				"cluster" : "0B04",
+				"attribut" : 1290,
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "unit": "A",
+                "type": "numeric",
+				"poll" : 60,
+                "visible":1,
+                "mode":"0;2"
+			},
+			{
+				"name" : "IMAX2",
+				"cluster" : "0B04",
+				"attribut" : 2314,
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "unit": "A",
+                "type": "numeric",
+				"poll" : 60,
+                "visible":1,
+                "mode":"2"
+			},
+			{
+				"name" : "IMAX3",
+				"cluster" : "0B04",
+				"attribut" : 2570,
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "unit": "A",
+                "type": "numeric",
+				"poll" : 60,
+                "visible":1,
+                "mode":"2"
+			},
+			{
+				"name" : "OPTARIF / NGTF",
+				"cluster" : "FF66",
+				"attribut" : 0,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+				"visible":1,
+				"poll" : 60,
+				"mode":"0;2"
+			},
+			{
+				"name" : "DEMAIN",
+				"cluster" : "FF66",
+				"attribut" : 1,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+				"poll" : 60,
+                "visible":1,
+                "mode":"0;2"
+			},
+			{
+				"name" : "HHPHC",
+				"cluster" : "FF66",
+				"attribut" : 2,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+				"poll" : 60,
+                "visible":1,
+                "mode":"0;2"
+			},
+			{
+				"name" : "PPOT",
+				"cluster" : "FF66",
+				"attribut" : 3,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+                "type": "numeric",
+				"poll" : 60,
+				"visible":1,
+				"mode":"0;2"
+			},
+			{
+				"name" : "PEJP",
+				"cluster" : "FF66",
+				"attribut" : 4,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+				"unit": "Min",
+				"type": "numeric",
+				"visible":1,
+				"mode":"0;2"
+			},
+			{
+				"name" : "ADPS",
+				"cluster" : "FF66",
+				"attribut" : 5,
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"0;2"
+			},
+			{
+				"name" : "ADIR1",
+				"cluster" : "FF66",
+				"attribut" : 6,
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2"
+			},
+			{
+				"name" : "ADIR2",
+				"cluster" : "FF66",
+				"attribut" : 7,
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2"
+			},
+			{
+				"name" : "ADIR3",
+				"cluster" : "FF66",
+				"attribut" : 8,
+				"mqtt_device_class" : "current",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"unit": "A",
+				"type": "numeric",
+				"visible":1,
+				"mode":"2"
+			},
+			{
+				"name" : "NTARF",
+				"cluster" : "FF66",
+				"attribut" : 513,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "eye",
+				"mqtt_state_class" : null,
+				"visible":1,
+				"poll" : 60,
+				"mode":"1;3;5;7"
+			},
+			{
+				"name" : "DATE",
+				"cluster" : "FF66",
+				"attribut" : 514,
+				"mqtt_device_class" : null,
+				"mqtt_icon" :  "alarm",
+				"mqtt_state_class" : null,
+                "visible":1,
+				"poll" : 1,
+                "mode":"1;3;5;7"
+			},
+			{
+				"name" : "EASD01",
+				"cluster" : "FF66",
+				"attribut" : 515,
+                "visible":1,
+                "type": "numeric",
+                "unit": "Wh",
+                "mode":"1;3;5;7"
+			},
+			{
+				"name" : "EASD02",
+				"cluster" : "FF66",
+				"attribut" : 516,
+                "visible":1,
+                "type": "numeric",
+                "unit": "Wh",
+                "mode":"1;3;5;7"
+			},
+			{
+				"name" : "EASD03",
+				"cluster" : "FF66",
+				"attribut" : 517,
+                "visible":1,
+                "type": "numeric",
+                "unit": "Wh",
+                "mode":"1;3;5;7"
+			},
+			{
+				"name" : "EASD04",
+				"cluster" : "FF66",
+				"attribut" : 518,
+                "visible":1,
+                "type": "numeric",
+                "unit": "Wh",
+                "mode":"1;3;5;7"
+			},
+			{
+				"name" : "SINSTI",
+				"cluster" : "FF66",
+				"attribut" : 519,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "VA",
+                "mode":"5;7"
+			},
+			{
+				"name" : "SMAXIN",
+				"cluster" : "FF66",
+				"attribut" : 520,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "VA",
+                "mode":"5;7"
+			},
+			{
+				"name" : "SMAXIN-1",
+				"cluster" : "FF66",
+				"attribut" : 521,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "VA",
+                "poll" : 60,
+                "mode":"5;7"
+			},
+			{
+				"name" : "CCAIN",
+				"cluster" : "FF66",
+				"attribut" : 522,
+				"mqtt_device_class" : "power",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "W",
+                "mode":"5;7"
+			},
+			{
+				"name" : "CCAIN-1",
+				"cluster" : "FF66",
+				"attribut" : 523,
+				"mqtt_device_class" : "power",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "W",
+                "poll" : 60,
+                "mode":"5;7"
+			},
+			{
+				"name" : "SMAXN-1 / SMAXN1-1",
+				"cluster" : "FF66",
+				"attribut" : 530,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "VA",
+                "poll" : 60,
+                "mode":"1;3;5;7"
+			},
+			{
+				"name" : "SMAXN2-1",
+				"cluster" : "FF66",
+				"attribut" : 531,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "VA",
+                "poll" : 60,
+                "mode":"3;5;7"
+			},
+			{
+				"name" : "SMAXN3-1",
+				"cluster" : "FF66",
+				"attribut" : 532,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+                "type": "numeric",
+                "visible":1,
+                "unit": "VA",
+                "poll" : 60,
+                "mode":"3;5;7"
 			}
+		],
+		"bind" : "1794;2820;65382",
+		"report" : [
+			{
+				"cluster" : "0702",
+				"attribut": 0,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 256,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 258,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "0702",
+				"attribut": 260,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 262,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 264,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "0702",
+				"attribut": 266,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 268,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 270,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 272,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},{
+				"cluster" : "0702",
+				"attribut": 1,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1295,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2319,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2575,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1293,
+				"type":41,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1297,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2321,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2577,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1288,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2312,
+				"type":33,
+				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2568,
+				"type":33,
+ 				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 1285,
+				"type":33,
+ 				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2309,
+				"type":33,
+ 				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "0B04",
+				"attribut": 2565,
+				"type":33,
+ 				"min":60,
+				"max":61,
+				"timeout":0,
+				"change":0
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 4,
+				"type":33,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 6,
+				"type":33,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 7,
+				"type":33,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 8,
+				"type":33,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 515,
+				"type":37,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 516,
+				"type":37,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 517,
+				"type":37,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 518,
+				"type":37,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 519,
+				"type":41,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 520,
+				"type":41,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			},
+			{
+				"cluster" : "FF66",
+				"attribut": 522,
+				"type":41,
+				"min":61,
+				"max":300,
+				"timeout":0,
+				"change":1
+			}
+
 		]
-	}
-       ],
+        }],
         "default" : [
-	{
-		"status" : [
+	    {
+			"status" : [
 			{
-				"name" : "Clic",
-				"cluster" : "0012",
-				"attribut" : 85
+				"name" : "Power",
+				"cluster" : "0006",
+				"attribut" : 0,
+				"visible":1
+			}
+			],		
+			"action" : [
+			{
+				"name" : "ON",
+				"command" : 146,
+				"endpoint" : 1,
+				"value" : 1,
+				"visible":1
 			},
 			{
-				"name" : "MultiClic",
-				"cluster" : "0012",
-				"attribut" : 1293
+				"name" : "OFF",
+				"command" : 146,
+				"endpoint" : 1,
+				"value" : 0,
+				"visible":1
+			},
+			{
+				"name" : "TOGGLE",
+				"command" : 146,
+				"endpoint" : 1,
+				"value" : 2,
+				"visible":1
 			}
-		]
-	}
-	]
+			]
+	   }
+   ]
 }
