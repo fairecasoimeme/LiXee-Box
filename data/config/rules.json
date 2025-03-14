@@ -1,27 +1,5 @@
 {
    "rules":[
-    {
-        "name":"rule_1",
-        "conditions" : [
-		{
-		   "type" : "device",
-		   "IEEE" : "00158d0006204fcf",
-		   "cluster" : 2820,
-		   "attribute" : 1295,
-		   "operator" : "==",
-		   "value" : 0,
-                   "occurences" : 1,
-		   "logic" : "AND"
-                  
-		}
-        ],
-        "actions" : [
-		{
-		   "type" : "onoff",
-		   "IEEE" : "",
-		   "value": 2
-		}
-        ]
-    }
+    
    ]
 }
