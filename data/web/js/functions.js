@@ -608,6 +608,34 @@ function getAlert()
 	xhr.send();
 }
 
+function getRuleStatus(name)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			leselect = xhr.responseText;
+			const datas = leselect.split('|');
+			if (datas[0] == "1")
+			{
+				var imsvg = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#1bc600' class='bi bi-bookmark-check-fill' viewBox='0 0 16 16'> \
+								<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5m8.854-9.646a.5.5 0 0 0-.708-.708L7.5 7.793 6.354 6.646a.5.5 0 1 0-.708.708l1.5 1.5a.5.5 0 0 0 .708 0z'/> \
+							</svg>";
+				
+			}else{
+				var imsvg = "<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#c60000' class='bi bi-bookmark-x-fill' viewBox='0 0 16 16'> \
+								<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5M6.854 5.146a.5.5 0 1 0-.708.708L7.293 7 6.146 8.146a.5.5 0 1 0 .708.708L8 7.707l1.146 1.147a.5.5 0 1 0 .708-.708L8.707 7l1.147-1.146a.5.5 0 0 0-.708-.708L8 6.293z'/> \
+							</svg>";
+			}
+			document.getElementById("status_"+name).innerHTML= imsvg;
+			document.getElementById("dateStatus_"+name).innerHTML= datas[1];
+			setTimeout(function(){ getRuleStatus(name); }, 5000);
+		}
+	}
+	xhr.open('GET','getRuleStatus?id='+escape(name),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
 function getDeviceValue()
 {
 	var xhr = getXhr();
