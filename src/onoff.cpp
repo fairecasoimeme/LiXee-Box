@@ -32,7 +32,6 @@ void SendOnOffAction(int shortaddr, int endpoint, String value)
     datas[5]= value.toInt();
     
     memcpy(trame.datas,datas,6);
-    //commandList->push(trame);
     PrioritycommandList->push(trame);
 }
 
