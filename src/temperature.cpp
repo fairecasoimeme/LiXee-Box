@@ -30,19 +30,19 @@ void temperatureManage(String inifile,int attribute,uint8_t datatype,int len, ch
             sprintf(value, "%02X",datas[i]);
             tmp+=value;
           }
-          ini_write(inifile,"1026", (String)attribute, (String)tmp);
+          ini_write(inifile,"0402", (String)attribute, (String)tmp);
           
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"1026",String(attribute),"numeric",String(tmp));
+            mqttPublish(inifile.substring(0,16),"0402",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"1026",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"0402",(String)attribute,tmpvalue.c_str());
           }
 
           // Device update value;
@@ -61,19 +61,19 @@ void temperatureManage(String inifile,int attribute,uint8_t datatype,int len, ch
             sprintf(value, "%02X",datas[i]);
             tmp+=value;
           }
-          ini_write(inifile,"1026", (String)attribute, (String)tmp);
+          ini_write(inifile,"0402", (String)attribute, (String)tmp);
           
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"1026",String(attribute),"string",String(tmp));
+            mqttPublish(inifile.substring(0,16),"0402",String(attribute),"string",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"1026",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"0402",(String)attribute,tmpvalue.c_str());
           }
 
           // Device update value;
