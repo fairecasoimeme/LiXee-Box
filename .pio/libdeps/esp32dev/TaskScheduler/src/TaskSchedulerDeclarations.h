@@ -1,5 +1,5 @@
 // Cooperative multitasking library for Arduino
-// Copyright (c) 2015-2022 Anatoli Arkhipenko
+// Copyright (c) 2015-2023 Anatoli Arkhipenko
 
 #include <stddef.h>
 #include <stdint.h>
@@ -29,6 +29,8 @@
 // #define _TASK_EXTERNAL_TIME      // Custom millis() and micros() methods
 // #define _TASK_THREAD_SAFE        // Enable additional checking for thread safety
 // #define _TASK_SELF_DESTRUCT      // Enable tasks to "self-destruct" after disable
+// #define _TASK_TICKLESS           // Enable support for tickless sleep on FreeRTOS
+// #define _TASK_DO_NOT_YIELD       // Disable yield() method in execute()
 
 class Scheduler;
 
@@ -42,9 +44,15 @@ class Scheduler;
     #define _TASK_SCOPE  private
 #endif
 
+//  task scheduling iteration common options
 #define TASK_IMMEDIATE          0
 #define TASK_FOREVER         (-1)
 #define TASK_ONCE               1
+
+//  options for setIntervalNodelay() method
+#define TASK_INTERVAL_KEEP      0
+#define TASK_INTERVAL_RECALC    1
+#define TASK_INTERVAL_RESET     2
 
 #ifdef _TASK_TIMEOUT
 #define TASK_NOTIMEOUT          0
@@ -61,8 +69,12 @@ class Scheduler;
 #endif
 
 #ifdef _TASK_EXTERNAL_TIME
+uint32_t external_millis();
 #define _task_millis()  external_millis()
+#ifdef _TASK_MICRO_RES
+uint32_t external_micros();
 #define _task_micros()  external_micros()
+#endif  //  _TASK_MICRO_RES
 #endif  //  _TASK_EXTERNAL_TIME
 
 #ifndef _TASK_MICRO_RES
@@ -80,6 +92,12 @@ class Scheduler;
 #define TASK_HOUR     3600000000UL
 
 #endif  // _TASK_MICRO_RES
+
+#ifdef _TASK_TICKLESS
+#define _TASK_NEXTRUN_UNDEFINED 0b0
+#define _TASK_NEXTRUN_IMMEDIATE 0b1
+#define _TASK_NEXTRUN_TIMED     0x10
+#endif  //  _TASK_TICKLESS
 
 #ifdef _TASK_STATUS_REQUEST
 
@@ -226,6 +244,7 @@ class Task {
     INLINE void set(unsigned long aInterval, long aIterations, TaskCallback aCallback,TaskOnEnable aOnEnable=NULL, TaskOnDisable aOnDisable=NULL);
 #endif // _TASK_OO_CALLBACKS
     INLINE void setInterval(unsigned long aInterval);
+    INLINE void setIntervalNodelay(unsigned long aInterval, unsigned int aOption = TASK_INTERVAL_KEEP);
     INLINE unsigned long getInterval();
     INLINE void setIterations(long aIterations);
     INLINE long getIterations();
@@ -357,10 +376,19 @@ class Scheduler {
     INLINE void enableAll();
     INLINE void startNow();                             // reset ALL active tasks to immediate execution NOW.
 #endif
+
     INLINE bool execute();                              // Returns true if none of the tasks' callback methods was invoked (true = idle run)
+
     INLINE Task& currentTask() ;                        // DEPRICATED
     INLINE Task* getCurrentTask() ;                     // Returns pointer to the currently active task
     INLINE long timeUntilNextIteration(Task& aTask);    // return number of ms until next iteration of a given Task
+
+    INLINE unsigned long getActiveTasks() { return iActiveTasks; }
+    INLINE unsigned long getTotalTasks() { return iTotalTasks; }
+    INLINE unsigned long getInvokedTasks() { return iInvokedTasks; }
+#ifdef _TASK_TICKLESS
+    INLINE unsigned long getNextRun() { return iNextRun; }
+#endif
 
 #ifdef _TASK_SLEEP_ON_IDLE_RUN
     INLINE void allowSleep(bool aState = true);
@@ -393,6 +421,10 @@ class Scheduler {
     Task          *iFirst, *iLast, *iCurrent;        // pointers to first, last and current tasks in the chain
 
     volatile bool iPaused, iEnabled;
+    unsigned long iActiveTasks;
+    unsigned long iTotalTasks;
+    unsigned long iInvokedTasks;
+
 #ifdef _TASK_SLEEP_ON_IDLE_RUN
     bool          iAllowSleep;                      // indication if putting MC to IDLE_SLEEP mode is allowed by the program at this time.
 #endif  // _TASK_SLEEP_ON_IDLE_RUN
@@ -406,6 +438,10 @@ class Scheduler {
     unsigned long iCPUCycle;
     unsigned long iCPUIdle;
 #endif  // _TASK_TIMECRITICAL
+
+#ifdef _TASK_TICKLESS
+    unsigned long iNextRun;
+#endif
 };
 
 

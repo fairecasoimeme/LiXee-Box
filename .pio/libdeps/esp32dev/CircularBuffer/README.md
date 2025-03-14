@@ -1,12 +1,22 @@
-### &#x26A0; **IMPORTANT**
- 
-> Please, before submitting a support request read carefully this README and check if an answer already exists among [previously answered questions](https://github.com/rlogiacco/CircularBuffer/issues?q=label:question): do not abuse of the Github issue tracker.
+### ⚠ **IMPORTANT**
+
+> Please, before submitting a support request read carefully this README and check if an answer already exists among [previously answered questions](https://github.com/rlogiacco/CircularBuffer/discussions): do not abuse of the Github issue tracker.
 
 <!-- omit in toc -->
-CircularBuffer [![Build Status][travis-status]][travis]
-=============
-[travis]: https://travis-ci.org/rlogiacco/CircularBuffer
-[travis-status]: https://travis-ci.org/rlogiacco/CircularBuffer.svg?branch=master
+<h1>
+  CircularBuffer
+  <a href=https://github.com/rlogiacco/CircularBuffer/stargazers><img alt="GitHub stars" src=https://img.shields.io/github/stars/rlogiacco/CircularBuffer.svg?style=social&label=Star /></a>
+  <a href=https://github.com/rlogiacco/CircularBuffer/network><img alt="GitHub forks" src=https://img.shields.io/github/forks/rlogiacco/CircularBuffer.svg?style=social&label=Fork /></a>
+  <a href=https://twitter.com/intent/tweet?text=Roll%20your%20data%20on%20embedded%20devices%20easily!&url=https://github.com/rlogiacco/CircularBuffer&hashtags=IoT,Arduino,ESP8266,ESP32><img alt="Tweet" src=https://img.shields.io/twitter/url/http/shields.io.svg?style=social /></a>
+</h1>
+
+[![GitHub version](https://img.shields.io/github/release/rlogiacco/CircularBuffer.svg)](https://github.com/rlogiacco/CircularBuffer/releases)
+[![GitHub download](https://img.shields.io/github/downloads/rlogiacco/CircularBuffer/total.svg)](https://github.com/rlogiacco/CircularBuffer/releases/latest)
+[![GitHub stars](https://img.shields.io/github/stars/rlogiacco/CircularBuffer.svg)](https://github.com/rlogiacco/CircularBuffer/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/rlogiacco/CircularBuffer.svg)](https://github.com/rlogiacco/CircularBuffer/issues)
+[![Build Status](https://img.shields.io/travis/rlogiacco/CircularBuffer.svg?branch=master)](https://travis-ci.org/rlogiacco/CircularBuffer)
+[![License](https://img.shields.io/badge/license-LGPL%203-blue.svg)](https://github.com/rlogiacco/CircularBuffer/blob/master/LICENSE)
+
 
 The library itself has an implicit memory consumption of about *0.5Kb*: 580 bytes (max) of code and 8 bytes of memory, to my calculations. That does not consider the space used to store the items themselves, obviously.
 
@@ -24,6 +34,7 @@ The library itself has an implicit memory consumption of about *0.5Kb*: 580 byte
 - [Limitations](#limitations)
   - [Reclaim dynamic memory](#reclaim-dynamic-memory)
 - [CHANGE LOG](#change-log)
+  - [1.4.0](#140)
   - [1.3.3](#133)
   - [1.3.2](#132)
   - [1.3.1](#131)
@@ -41,7 +52,7 @@ The library itself has an implicit memory consumption of about *0.5Kb*: 580 byte
 When declaring your buffer you should specify the data type it must handle and the buffer capacity: those two parameters will influence the memory consumed by the buffer.
 
 ``` cpp
-#include <CircularBuffer.h>
+#include <CircularBuffer.hpp>
 
 CircularBuffer<byte,100> bytes;     // uses 538 bytes
 CircularBuffer<int,100> ints;       // uses 638 bytes
@@ -84,7 +95,8 @@ buffer.push(-5);  // [2,3,2,1,-5] returns false
 ### Retrieve data
 
 Similarly to data addition, data retrieval can be performed at _tail_ via a `pop()` operation or from _head_ via an `shift()` operation: both cause the element being read to be removed from the buffer.
-Reading from an empty buffer is forbidden (the library will generate a segfault, which most probably will crash the program): see the _additional operations_ listed in the next section to verify the status of the buffer.
+
+> ⚠ Reading data beyond the actual buffer size has an undefined behaviour and is user's responsibility to prevent such boundary violations using the [_additional operations_](#additional-operations) listed in the next section. The library will behave differently depending on the data type and allocation method, but you can safely assume your program will crash if you don't watch your steps.
 
 Non-destructive read operations are also available:
 
@@ -92,7 +104,6 @@ Non-destructive read operations are also available:
 * `last()` returns the element at _tail_
 * an array-like indexed read operation is also available so you can read any element in the buffer using the `[]` operator
 
-Reading data beyond the actual buffer size has an undefined behaviour and is user's responsibility to prevent such boundary violations using the [_additional operations_](#additional-operations) listed in the next section.
 
 ``` cpp
 CircularBuffer<char, 50> buffer; // ['a','b','c','d','e','f','g']
@@ -118,7 +129,9 @@ buffer[15]; // ['c','d','e'] returned value is unpredictable
 * `size()` returns the number of elements currently stored in the buffer; it should be used in conjunction with the `[]` operator to avoid boundary violations: the first element index is always `0` (if buffer is not empty), the last element index is always `size() - 1`
 * `available()` returns the number of elements that can be added before saturating the buffer
 * `capacity()` returns the number of elements the buffer can store, for completeness only as it's user-defined and never changes **REMOVED** from `1.3.0` replaced by the read-only member variable `capacity`
-* `clear()` resets the whole buffer to its initial state
+* `clear()` resets the whole buffer to its initial state (pay attention though, if you had dynamically allocated objects in your buffer, memory used by such object is *not* released: iterate over the buffer contents and release object accordingly to their allocation method)
+* `copyToArray(array)` copies the contents of the buffer to a standard array `array`. The array must be large enough to hold all the elements currently in the buffer.
+* `copyToArray(conversionFn, array)` copies the contents of the buffer to a standard array `array` executing a function on each element, usually a type conversion. The array must be large enough to hold all the elements currently in the buffer. 
 
 ## Advanced Usage
 
@@ -173,7 +186,7 @@ CircularBuffer<short,100> buffer;
 void setup() { }
 
 void loop() {
-	// here i should be declared of type byte rather than unsigned int
+    // here i should be declared of type byte rather than unsigned int
     // in order to maximize the effects of the optimization
     for (byte i = 0; i < buffer.size() - 1; i++) {
         Serial.print(buffer[i]);
@@ -220,6 +233,7 @@ Multiple examples are available in the `examples` folder of the library:
  * [Stack.ino](https://github.com/rlogiacco/CircularBuffer/blob/master/examples/Stack/Stack.ino) on the other end shows how to use the library to represent a LIFO data structure
  * [Struct.ino](https://github.com/rlogiacco/CircularBuffer/blob/master/examples/Struct/Struct.ino) answers to the question _can this library store structured data?_
  * [Interrupts.ino](https://github.com/rlogiacco/CircularBuffer/blob/master/examples/Interrupts/Interrupts.ino) demonstrates the use of the library in interrupt driven code
+ * [Arrays.ino]() demonstrates the use of the `copyToArray()` functions. 
 
 ## Limitations
 
@@ -245,12 +259,16 @@ buffer.push(record);
 if (!buffer.isEmpty()) {
     Record* current = buffer.pop();
     Serial.println(current.value());
-    delete current; // not doing this will leaves the object in memory!!!
+    delete current; // if you don't do this the object memory is lost!!!
 }
 ```
 
 ------------------------
 ## CHANGE LOG
+
+### 1.4.0
+* Resolves #52 adding two new additional methods `copyToArray(array)` and `copyToArray(array, convertFn)`
+* Fixes #28 adding compatibility with Nano 33 BLE by switching for `.h` header extension to `.hpp`
 
 ### 1.3.3
 * Fixes #27 compilation error

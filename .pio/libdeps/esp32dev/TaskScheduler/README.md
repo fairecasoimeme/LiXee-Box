@@ -1,6 +1,6 @@
 # Task Scheduler
 ### Cooperative multitasking for Arduino, ESPx, STM32 and other microcontrollers
-#### Version 3.7.0: 2022-10-10 [Latest updates](https://github.com/arkhipenko/TaskScheduler/wiki/Latest-Updates)
+#### Version 3.8.5: 2024-06-17 [Latest updates](https://github.com/arkhipenko/TaskScheduler/wiki/Latest-Updates)
 
 [![arduino-library-badge](https://www.ardu-badge.com/badge/TaskScheduler.svg?)](https://www.ardu-badge.com/TaskScheduler)[![xscode](https://img.shields.io/badge/Available%20on-xs%3Acode-blue?style=?style=plastic&logo=appveyor&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAMAAACdt4HsAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAAAZQTFRF////////VXz1bAAAAAJ0Uk5T/wDltzBKAAAAlUlEQVR42uzXSwqAMAwE0Mn9L+3Ggtgkk35QwcnSJo9S+yGwM9DCooCbgn4YrJ4CIPUcQF7/XSBbx2TEz4sAZ2q1RAECBAiYBlCtvwN+KiYAlG7UDGj59MViT9hOwEqAhYCtAsUZvL6I6W8c2wcbd+LIWSCHSTeSAAECngN4xxIDSK9f4B9t377Wd7H5Nt7/Xz8eAgwAvesLRjYYPuUAAAAASUVORK5CYII=)](https://xscode.com/arkhipenko/TaskScheduler)
 
@@ -36,6 +36,7 @@ _“Everybody who learns concurrency and thinks they understand it, ends up find
 15. Ability to pause/resume and enable/disable scheduling
 16. Thread-safe scheduling while running under preemptive scheduler (i. e., FreeRTOS)
 17. Optional self-destruction of dynamically created tasks upon disable
+18. Support for "tickless" execution under FreeRTOS (continous sleep until next scheduled task invocation)
 
 Scheduling overhead: between `15` and `18` microseconds per scheduling pass (Arduino UNO rev 3 @ `16MHz` clock, single scheduler w/o prioritization)
 
@@ -80,6 +81,8 @@ Scheduling overhead: between `15` and `18` microseconds per scheduling pass (Ard
 "I encourage you to use it in the Arduino environment, it allows you to save a lot of time (and code lines) wherever you need to schedule, i.e. run many tasks that should to perform at different frequencies and when we want to have the greatest control over the performance of these tasks and we want good diagnostic of errors." - [here](https://www.elektroda.pl/rtvforum/topic3599980.html)
 
 "arkhipenko/TaskScheduler is still my choice for now, especially when I get my pull request in, so we can have that idle 1 ms sleep feature for free." - [here](http://stm32duinoforum.com/forum/viewtopic_f_18_t_4299.html)
+
+"The difference with milis is basically that you don’t have to be using logics to manage the executions, but the module itself does it. This will allow us to make code more readable and easier to maintain. In addition, we must take into account the extra functions it provides, such as saving energy when not in use, or changing settings dynamically." - [here](https://www.electrosoftcloud.com/en/arduino-taskscheduler-no-more-millis-or-delay/)
 
 
 

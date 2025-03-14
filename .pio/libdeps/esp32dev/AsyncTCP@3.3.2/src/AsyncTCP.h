@@ -52,16 +52,16 @@ extern "C" {
 
 // If core is not defined, then we are running in Arduino or PIO
 #ifndef CONFIG_ASYNC_TCP_RUNNING_CORE
-  #define CONFIG_ASYNC_TCP_RUNNING_CORE 0 // any available core
+  #define CONFIG_ASYNC_TCP_RUNNING_CORE -1 // any available core
 #endif
 
 // guard AsyncTCP task with watchdog
 #ifndef CONFIG_ASYNC_TCP_USE_WDT
-  #define CONFIG_ASYNC_TCP_USE_WDT 0
+  #define CONFIG_ASYNC_TCP_USE_WDT 1
 #endif
 
 #ifndef CONFIG_ASYNC_TCP_STACK_SIZE
-  #define CONFIG_ASYNC_TCP_STACK_SIZE 8192 * 2
+  #define CONFIG_ASYNC_TCP_STACK_SIZE 8192 * 4
 #endif
 
 #ifndef CONFIG_ASYNC_TCP_PRIORITY
@@ -69,11 +69,11 @@ extern "C" {
 #endif
 
 #ifndef CONFIG_ASYNC_TCP_QUEUE_SIZE
-  #define CONFIG_ASYNC_TCP_QUEUE_SIZE 256
+  #define CONFIG_ASYNC_TCP_QUEUE_SIZE 64
 #endif
 
 #ifndef CONFIG_ASYNC_TCP_MAX_ACK_TIME
-  #define CONFIG_ASYNC_TCP_MAX_ACK_TIME 60000
+  #define CONFIG_ASYNC_TCP_MAX_ACK_TIME 5000
 #endif
 
 class AsyncClient;

@@ -1,1 +1,1 @@
-{"type": "library", "name": "TaskScheduler", "version": "3.7.0", "spec": {"owner": "arkhipenko", "id": 721, "name": "TaskScheduler", "requirements": null, "uri": null}}
+{"type": "library", "name": "TaskScheduler", "version": "3.8.5", "spec": {"owner": "arkhipenko", "id": 721, "name": "TaskScheduler", "requirements": null, "uri": null}}

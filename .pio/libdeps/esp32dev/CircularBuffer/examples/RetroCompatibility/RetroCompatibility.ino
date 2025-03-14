@@ -1,15 +1,16 @@
+#define CIRCULAR_BUFFER_DEBUG
 #include <CircularBuffer.h>
 
-CircularBuffer<int, 400> buffer;
+CircularBuffer<int, 100> buffer;
 
-unsigned long time = 0;
+unsigned long _time = 0;
 
 #define SAMPLE_PIN A0
 
 void setup() {
 	Serial.begin(9600);
 	pinMode(SAMPLE_PIN, INPUT);
-	time = millis();
+	_time = millis();
 }
 
 void loop() {
@@ -17,13 +18,13 @@ void loop() {
 	int reading = analogRead(A0);
 	buffer.push(reading);
 
-	if (millis() - time >= 500) {
-		time = millis();
+	if (millis() - _time >= 500) {
+		_time = millis();
 		float avg = 0.0;
 		// the following ensures using the right type for the index variable
 		using index_t = decltype(buffer)::index_t;
 		for (index_t i = 0; i < buffer.size(); i++) {
-			avg += buffer[i] / buffer.size();
+			avg += buffer[i] / (float)buffer.size();
 		}
 		Serial.print("Average is ");
 		Serial.println(avg);
