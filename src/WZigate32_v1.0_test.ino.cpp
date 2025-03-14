@@ -684,15 +684,14 @@ bool loadConfigWifi() {
   deserializeJson(doc,configFile);
 
   // affectation des valeurs , si existe pas on place une valeur par defaut
-  ConfigSettings.enableWiFi = (int)doc["enableWiFi"];
+  //ConfigSettings.enableWiFi = (int)doc["enableWiFi"];
+  ConfigSettings.enableWiFi = 1;
   ConfigSettings.enableDHCP = (int)doc["enableDHCP"];
   strlcpy(ConfigSettings.ssid, doc["ssid"] | "", sizeof(ConfigSettings.ssid));
   strlcpy(ConfigSettings.password, doc["pass"] | "", sizeof(ConfigSettings.password));
   strlcpy(ConfigSettings.ipAddressWiFi, doc["ip"] | "", sizeof(ConfigSettings.ipAddressWiFi));
   strlcpy(ConfigSettings.ipMaskWiFi, doc["mask"] | "", sizeof(ConfigSettings.ipMaskWiFi));
   strlcpy(ConfigSettings.ipGWWiFi, doc["gw"] | "", sizeof(ConfigSettings.ipGWWiFi));
-  ConfigSettings.tcpListenPort = TCP_LISTEN_PORT;
-  ConfigSettings.enableWiFi = (int)doc["enableWiFi"];
 
   configFile.close();
   return true;
