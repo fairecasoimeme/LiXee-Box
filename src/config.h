@@ -5,7 +5,7 @@
 
 #include <Arduino.h>
 //#define CIRCULAR_BUFFER_INT_SAFE
-#include <CircularBuffer.h>
+#include <CircularBuffer.hpp>
 
 #define VERSION "v1.1"
 
@@ -213,6 +213,41 @@ typedef struct{
   String lastSeen;
   String LQI;
 } DeviceInfo;
+
+typedef struct
+{
+  char type[20];
+  char IEEE[20];
+  int cluster;
+  int attribute;
+  char op[5];
+  double value;
+  char logic[5];
+  int occurences;
+} RuleCondition;
+
+typedef struct
+{
+  char type[20];
+  char IEEE[20];
+  int endpoint;
+  char value[20];
+} RuleAction;
+
+
+typedef struct{
+  int num;
+  char name[50];
+  int conditionSize;
+  int actionSize;
+  RuleCondition rc[10];
+  RuleAction ra[10];
+} Rule;
+
+/*typedef struct{
+  int ruleSize;
+  Rule r[10]:
+} Rules;*/
 
 typedef CircularBuffer<char, 4096> LogConsoleType;
 
