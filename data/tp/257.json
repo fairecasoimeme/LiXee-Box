@@ -8,7 +8,7 @@
 				"attribut" : 768,
 				"type": "numeric",
 				"visible":1,
-                "poll" : 1,
+                                "poll" : 1,
 				"unit": ""
 			},
 			{
@@ -156,10 +156,13 @@
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
 				"type": "numeric",
+                                "jauge":"gauge",
+				"min":0,
+				"max":8000,
 				"visible":1,
 				"unit": "VA"
 			},
-            {
+                       {
 				"name" : "SINSTS2",
 				"cluster" : "0B04",
 				"attribut" : 2319,
@@ -530,7 +533,7 @@
 				"mqtt_icon" :  "alarm",
 				"mqtt_state_class" : null,
                 "visible":1,
-				"poll" : 60,
+				"poll" : 1,
                 "mode":"1;3;5;7"
 			},
 			{

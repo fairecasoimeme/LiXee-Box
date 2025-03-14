@@ -77,13 +77,14 @@
 				"name" : "Index",
 				"cluster" : "0702",
 				"attribut" : 0,
-				"mqtt_device_class" : "energy",
-				"mqtt_icon" :  "transmission-tower",
-				"mqtt_state_class" : "total_increasing",
+				"mqtt_device_class" : "water",
+				"mqtt_icon" :  "water",
+				"mqtt_state_class" : "total",
 				"type" : "numeric",
 				"coefficient" : 1,
+                                "jauge":"text",
                                 "visible" : 1,
-				"unit" : "Wh"
+				"unit" : "L"
 
 			}
 		],
