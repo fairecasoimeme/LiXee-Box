@@ -1,9 +1,9 @@
 # LiXee-Gateway
-A WiFi gateway for zigbee devices
+A multi protocols gateway for zigbee devices 
 
 ## Hardware compatibility
 This application can be used with :  
-* [LiXee-ZiWifi32](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)  (WiFi only)
+* [LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)  (WiFi only)
   The device is based on :
   * ESP32-S3-WROOM-N16R8 (PSRAM: 8Mo Flash: 16Mo)
   * JN5189 with [ZiGate v2 firmware](https://github.com/fairecasoimeme/ZiGatev2)
@@ -52,7 +52,7 @@ You can :
   * Can communicate with Marstek battery to enhance energy management.
 * Rules management
   * You can create rules to :
-  	* act when a zigbee device reach a threasold.
+  	* act when a zigbee device reach a threshold.
   	* do load shedding
   	* route energy
 * Update OTA
@@ -71,7 +71,7 @@ You can :
 
 ## Pair a device
 
-1. With you web navigator, you can go to `Config` menu then `Devices`  
+1. With your web navigator, you can go to `Config` menu then `Devices`  
 2. You can click on `Add Device` button. The ZiGate coordinator begin the `Permit Join` procedure for 30 seconds.   
 3. The blue LED of your device blink slowly.  
 4. Now, you can execute the pairing device procedure.
@@ -169,7 +169,7 @@ Example of 24321.json device id (5F01 Hex) :
 |type| |String|"numeric","float"| only if you want manage numeric value| 
 |unit| |String|""| only for numeric type| 
 |coefficient| |float|| only for numeric type| 
-|jauge| |String|"Gauge" / "Battery"| only for numeric type| 
+|jauge| |String|"Gauge" / "Battery" / "text" | only for numeric type| 
 |min| |Decimal|| only for jauge = "Gauge"| 
 |max| |Decimal|| only for jauge = "Gauge"| 
 |visible| |Decimal|1 or 0| only if you want to display on dashboard| 
