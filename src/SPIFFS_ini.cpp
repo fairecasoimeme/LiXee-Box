@@ -58,7 +58,7 @@ File safeOpenFile(const char *path, const char *mode) {
     i++;
     if (i > 5)
     {
-      return File();
+      return (File)NULL;
     }
   }
 
@@ -954,7 +954,7 @@ using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
   }
 }*/
 
-bool ini_writes(String path, WriteIni ini)
+bool ini_writes(String path, WriteIni ini, bool create)
 {
   
   const char* prefix ="/db/";
@@ -964,64 +964,65 @@ bool ini_writes(String path, WriteIni ini)
 
   if (path.length()>0)
   {
-    File file = LittleFS.open(name_with_extension, "r+");
-    if (!file)
+    File fileRead = LittleFS.open(name_with_extension, "r");
+    if (!fileRead)
     {
-      file = safeOpenFile(name_with_extension, "w+");
-      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
-      DEBUG_PRINTLN(path);
+      log_e("Erreur lors de l'ouverture du fichier %s\n",path.c_str());
+      File file = safeOpenFile(name_with_extension, "w+");
       if (!file)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (ini_writes) "));
         safeCloseFile(file,name_with_extension);
         return false;
+      }else{
+        safeCloseFile(file,name_with_extension);
+        fileRead = LittleFS.open(name_with_extension, "r");
       }
-      // return false;
     }
-    size_t filesize = file.size();
-    String filename = String(file.name());
+
+    //String filename = String(fileRead.name());
+    int filesize = fileRead.size();
 
     DynamicJsonDocument doc(MAXHEAP);
-    DeserializationError error = deserializeJson(doc, file);
-    file.close();
-    if (error)
+
+    if (filesize>0)
     {
-      // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
-      return false;
+       DeserializationError error = deserializeJson(doc, fileRead);
+       if (error)
+        {
+          log_e("Erreur lors de la désérialisation du fichier : %s\n", error.c_str());
+          return false;
+        }
     }
-    
+   
+    fileRead.close();
     // Ajouter des valeurs dans le fichier json
-    if (!doc.isNull())
+    if (doc.size() >0 || (create))
     {
       for (int i=0;i<ini.iniPacketSize;i++)
       {
         doc[ini.i[i].section][ini.i[i].key] = ini.i[i].value;
       }
     
-
       // serializeJsonPretty(doc, Serial);
       //  Écrire les données dans le fichier
-      file = safeOpenFile(name_with_extension, "w+");
-      if (!file || file.isDirectory())
+      File fileWrite = safeOpenFile(name_with_extension, "w+");
+      if (!fileWrite || fileWrite.isDirectory())
       {
         DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
         DEBUG_PRINTLN(path);
-        safeCloseFile(file,name_with_extension);
+        safeCloseFile(fileWrite,name_with_extension);
         return false;
       }
 
-      if (doc.size()>0)
+      if (serializeJson(doc, fileWrite) == 0)
       {
-        if (serializeJson(doc, file) == 0)
-        {
-          DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
-          safeCloseFile(file,name_with_extension);
-          return false;
-        }
+        DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
+        safeCloseFile(fileWrite,name_with_extension);
+        return false;
       }
-
       // Fermer le fichier
-      safeCloseFile(file,name_with_extension);
+      safeCloseFile(fileWrite,name_with_extension);
       return true;
     }else{
       return false;
@@ -1043,34 +1044,38 @@ bool ini_write(String path, String section, String key, String value)
 
   if (path.length()>0)
   {
-    File file = LittleFS.open(name_with_extension, "r+");
-    if (!file)
+    File fileRead = LittleFS.open(name_with_extension, "r");
+    if (!fileRead)
     {
-      file = safeOpenFile(name_with_extension, "w+");
-      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
-      DEBUG_PRINTLN(path);
+      log_e("Erreur lors de l'ouverture du fichier %s\n",path.c_str());
+      File file = safeOpenFile(name_with_extension, "w+");
       if (!file)
       {
         DEBUG_PRINTLN(F("Impossible de créer le fichier (ini_write) "));
         safeCloseFile(file,name_with_extension);
         return false;
+      }else{
+        safeCloseFile(file,name_with_extension);
+        fileRead = LittleFS.open(name_with_extension, "r");
       }
       // return false;
     }
-    size_t filesize = file.size();
-    String filename = String(file.name());
+    size_t filesize = fileRead.size();
+    String filename = String(fileRead.name());
 
     DynamicJsonDocument doc(MAXHEAP);
 
-    if (filesize > 50)
+    if (filesize > 0)
     {
-      DeserializationError error = deserializeJson(doc, file);
-      file.close();
+      DeserializationError error = deserializeJson(doc, fileRead);
+      fileRead.close();
       if (error)
       {
         // DEBUG_PRINTLN(F("Erreur lors de la désérialisation du fichier"));
         return false;
       }
+    }else{
+      fileRead.close();
     }
 
     if (!doc.isNull())
@@ -1080,27 +1085,27 @@ bool ini_write(String path, String section, String key, String value)
 
       // serializeJsonPretty(doc, Serial);
       //  Écrire les données dans le fichier
-      file = safeOpenFile(name_with_extension, "w+");
-      if (!file || file.isDirectory())
+      File fileWrite = safeOpenFile(name_with_extension, "w+");
+      if (!fileWrite || fileWrite.isDirectory())
       {
         DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
         DEBUG_PRINTLN(path);
-        safeCloseFile(file,name_with_extension);
+        safeCloseFile(fileWrite,name_with_extension);
         return false;
       }
 
       if (doc.size()>0)
       {
-        if (serializeJson(doc, file) == 0)
+        if (serializeJson(doc, fileWrite) == 0)
         {
           DEBUG_PRINTLN(F("Erreur lors de l'écriture dans le fichier"));
-          safeCloseFile(file,name_with_extension);
+          safeCloseFile(fileWrite,name_with_extension);
           return false;
         }
       }
 
       // Fermer le fichier
-      safeCloseFile(file,name_with_extension);
+      safeCloseFile(fileWrite,name_with_extension);
       return true;
     }else{
       return false;
@@ -1233,34 +1238,35 @@ bool config_write(String path, String key, String value)
   strcpy(name_with_extension,prefix);
   strcat(name_with_extension,path.c_str());
   //  xSemaphoreTake(file_Mutex, portMAX_DELAY);
-    File file = LittleFS.open(name_with_extension, "r+");
-    if (!file)
+    File fileRead = LittleFS.open(name_with_extension, "r");
+    if (!fileRead)
     {
-  //   xSemaphoreGive(file_Mutex);
-  //    xSemaphoreTake(file_Mutex, portMAX_DELAY);
-      file = safeOpenFile(name_with_extension, "w+");
-      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier "));
-      DEBUG_PRINTLN(path);
+      log_e("Erreur lors de l'ouverture du fichier %s\n",path.c_str());
+      File file = safeOpenFile(name_with_extension, "w+");
       if (!file)
       {
-        DEBUG_PRINTLN(F("Impossible de créer le fichier (config_write) "));
+        DEBUG_PRINTLN(F("Impossible de créer le fichier (ini_write) "));
         safeCloseFile(file,name_with_extension);
-  //      xSemaphoreGive(file_Mutex);
         return false;
+      }else{
+        safeCloseFile(file,name_with_extension);
+        fileRead = LittleFS.open(name_with_extension, "r");
       }
     }
 
-    size_t filesize = file.size();
+    size_t filesize = fileRead.size();
     DynamicJsonDocument doc(MAXHEAP);
 
     if (filesize > 0)
     {
-      DeserializationError error = deserializeJson(doc, file);
-      file.close();
+      DeserializationError error = deserializeJson(doc, fileRead);
+      fileRead.close();
       if (error)
       {
         return "Error";
       }
+    }else{
+      fileRead.close();
     }
     //xSemaphoreGive(file_Mutex);
     // Ajouter des valeurs dans le fichier json
@@ -1322,7 +1328,8 @@ void scanFilesError(void)
   {
     if (!filedevice.isDirectory())
     {
-      if (filedevice.size() < 50)
+      String tmp = ini_read(filedevice.name(),"INFO","shortAddr");
+      if ((filedevice.size() == 0) || (tmp.length()==0))
       {
         //recherche backup
         File rootbk = LittleFS.open("/bk");

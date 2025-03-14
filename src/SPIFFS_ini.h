@@ -25,7 +25,7 @@
 #include "config.h"
 
 bool ini_exist(String path);
-bool ini_writes(String path, WriteIni i);
+bool ini_writes(String path, WriteIni i,bool create);
 DeviceInfo getDeviceInfo(String path);
 
 
