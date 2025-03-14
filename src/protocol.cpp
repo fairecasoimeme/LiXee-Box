@@ -103,6 +103,7 @@ String GetValueFromShortAddr(int shortAddr,int cluster, int attribute, String va
   /*String inifile;
   inifile = GetMacAdrr(shortAddr);
   return GetValueStatus(inifile, cluster, attribute, String type, float coefficient)*/
+  return "";
 }
 
 String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient)
@@ -110,7 +111,7 @@ String GetValueStatus(String inifile, int key, int attribut, String type, float 
    char tmpKey[5];
    sprintf(tmpKey,"%04X",key);
    String tmp= ini_read(inifile, tmpKey, (String)attribut);  
-
+   
    if (type =="float")
    {
        float tmpint = strtol(tmp.c_str(), NULL, 16);
@@ -160,7 +161,7 @@ String GetMacAdrr(int shortAddr)
   {
       if (!file.isDirectory())
       {
-        if (file.size()>50)
+        if (file.size()>0)
         {
           String tmp =  file.name();
           String Saddr= ini_read(tmp,"INFO", "shortAddr");
@@ -387,58 +388,54 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         l = (uint8_t)protocol.payload[4];
         endpoint = (uint8_t)protocol.payload[5];
         device_id = (uint8_t)protocol.payload[8]*256+(uint8_t)protocol.payload[9];
-
+        
         String path = GetMacAdrr(shortAddr);
         
-        if (ini_exist(path))
-        {
-          WriteIni ini;
-          ini.i[0].section ="INFO";
-          ini.i[0].key = "device_id";
-          ini.i[0].value = (String)device_id;
+        WriteIni ini;
+        ini.i[0].section ="INFO";
+        ini.i[0].key = "device_id";
+        ini.i[0].value = (String)device_id;
 
-          //ini_write(path,"INFO", "device_id", (String)device_id);
-        
-          nbIN= (uint8_t)protocol.payload[11];
-          nbOUT=(uint8_t)protocol.payload[11+(nbIN*2)+1];
-  
-          String tmpIN="";
-          String tmpOUT="";
-          int i;
-          for (i=12;i<(12+(nbIN*2));i=i+2)
-          {
-            int cluster;
-            cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
-            if (i>12){tmpIN+=",";}
-            tmpIN+=String(cluster);
-          
-          }
-          
-          ini.i[1].section =(String)endpoint;
-          ini.i[1].key = "IN";
-          ini.i[1].value = tmpIN;
-
-          //ini_write(path,(String)endpoint, "IN", tmpIN);
+        //ini_write(path,"INFO", "device_id", (String)device_id);
       
-          for (i=((12+(nbIN*2))+1);i<(((12+(nbIN*2))+1)+(nbOUT*2));i=i+2)
-          {
-            int cluster;
-            cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
-            if (i>((12+(nbIN*2))+1)){tmpOUT+=",";}
-            tmpOUT+=(String)cluster;
-          }
+        nbIN= (uint8_t)protocol.payload[11];
+        nbOUT=(uint8_t)protocol.payload[11+(nbIN*2)+1];
 
-          ini.i[2].section =(String)endpoint;
-          ini.i[2].key = "OUT";
-          ini.i[2].value = tmpOUT;
+        String tmpIN="";
+        String tmpOUT="";
+        int i;
+        for (i=12;i<(12+(nbIN*2));i=i+2)
+        {
+          int cluster;
+          cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
+          if (i>12){tmpIN+=",";}
+          tmpIN+=String(cluster);
+        
+        }
+        
+        ini.i[1].section =(String)endpoint;
+        ini.i[1].key = "IN";
+        ini.i[1].value = tmpIN;
 
-          ini.iniPacketSize = 3;
+        //ini_write(path,(String)endpoint, "IN", tmpIN);
+    
+        for (i=((12+(nbIN*2))+1);i<(((12+(nbIN*2))+1)+(nbOUT*2));i=i+2)
+        {
+          int cluster;
+          cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
+          if (i>((12+(nbIN*2))+1)){tmpOUT+=",";}
+          tmpOUT+=(String)cluster;
+        }
 
-          ini_writes(path, ini);
+        ini.i[2].section =(String)endpoint;
+        ini.i[2].key = "OUT";
+        ini.i[2].value = tmpOUT;
 
+        ini.iniPacketSize = 3;
+
+        ini_writes(path, ini, true);
           
           //ini_write(path,(String)endpoint, "OUT", tmpOUT);
-        }
 
         //get info basic (Appli version / Manuf / model)
         if (endpoint ==1)
@@ -503,12 +500,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       case 0x8401:
       {
         log_d("Zone status change notification : ");
-        uint8_t ShortAddr[4];
-        int i;
-        uint8_t Cluster[4];
         
+        int i;
+
         for (i=0;i<2;i++)
         {
+          uint8_t Cluster[4];
           Cluster[i]=(uint8_t)protocol.payload[i+1];
           char tmp[4];
           snprintf(tmp,3,"%02X",protocol.payload[i+1]);
@@ -517,14 +514,13 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         
         for (i=0;i<2;i++)
         {
+          uint8_t ShortAddr[4];
           ShortAddr[i]=(uint8_t)protocol.payload[i+4];
           char tmp[4];
           snprintf(tmp,3,"%02X",protocol.payload[i+4]);
 
         }
 
-
-        
       }
       break;
       case 0x8002:
@@ -541,7 +537,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         {
           Cluster[i]=(uint8_t)protocol.payload[i+3];
         }
-        uint8_t endpoint = (uint8_t)protocol.payload[5];
+        //uint8_t endpoint = (uint8_t)protocol.payload[5];
         uint8_t addressMode = (uint8_t)protocol.payload[7];
         uint8_t ShortAddr[2]; 
         if (addressMode == 2)
@@ -604,7 +600,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           ShortAddr[i]=(uint8_t)protocol.payload[i+1];
         }
               
-        uint8_t endpoint = (uint8_t)protocol.payload[3];
+        //uint8_t endpoint = (uint8_t)protocol.payload[3];
         uint8_t Cluster[2];
         for (i=0;i<2;i++)
         {
@@ -648,7 +644,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           ini.iniPacketSize = 3;
           log_d("before ini_writes");
 
-          ini_writes(inifile, ini);
+          ini_writes(inifile, ini, false);
 
           log_d("after ini_writes");
           // ini_write(inifile,"INFO","LQI",String(lqi));
@@ -760,7 +756,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         char tmp[6];
         snprintf(tmp,5, "%02X%02X",protocol.payload[0],protocol.payload[1]);
         alertList->push(Alert{"Device Joined : "+String(tmp), 0});
-        log_d("Node Joined : %02X%02X- ",protocol.payload[0],protocol.payload[1]);
+        log_d("Node Joined : %02X%02X ",protocol.payload[0],protocol.payload[1]);
 
         for (i=2;i<10;i++)
         {
@@ -780,22 +776,19 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
      
         String path = adMac+".json";
 
-        if (ini_exist(path))
-        {
-          WriteIni ini ;
-          ini.i[0].section ="INFO";
-          ini.i[0].key = "shortAddr";
-          ini.i[0].value = String(ShortAddr);
+        
+        WriteIni ini ;
+        ini.i[0].section ="INFO";
+        ini.i[0].key = "shortAddr";
+        ini.i[0].value = String(ShortAddr);
 
-          ini.i[1].section ="INFO";
-          ini.i[1].key = "LQI";
-          ini.i[1].value = String(lqi);
+        ini.i[1].section ="INFO";
+        ini.i[1].key = "LQI";
+        ini.i[1].value = String(lqi);
 
-          ini.iniPacketSize = 2;
+        ini.iniPacketSize = 2;
 
-          ini_writes(path, ini);
-
-        }
+        ini_writes(path, ini, true);
 
         //ini_write(path,"INFO","shortAddr",String(ShortAddr));
         //ini_write(path,"INFO","LQI",String(lqi));
@@ -1111,7 +1104,7 @@ bool ScanDeviceToPoll()
             int shortAddr;
             int cluster;
             int attribut;
-            int poll;
+            //int poll;
             int last;
             int i=0;
             if (temp.containsKey("poll"))
