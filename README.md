@@ -305,6 +305,221 @@ For example :
 }
 ```
 
+## WEB API
+
+To access to the API command, go to http://<HOST>/<command>
+
+### Commands List
+
+* [getSystem](#getSystem)
+* [getDevices](#getDevices)
+* [getDevice?id=IEEE](#getDevice)
+* [getLinky](#getLinky)
+* [getTemplates](#getTemplates)
+
+
+### Methods
+
+#### getSystem
+
+##### Request
+```bash
+curl -X GET 'https://<HOST>/getSystem'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Response
+```json
+{
+  "network": {
+    "wifi": {
+      "enable": 1,
+      "connected": 1,
+      "mode": 0,
+      "ip": "192.168.0.144",
+      "netmask": "255.255.255.0",
+      "gateway": "192.168.0.254"
+    }
+  },
+  "system": {
+    "mqtt": {
+      "enable": 1,
+      "connected": 1,
+      "url": "192.168.0.21",
+      "port": 1883
+    },
+    "webpush": {
+      "enable": 0,
+      "auth": 0,
+      "url": ""
+    },
+    "marstek": {
+      "enable": 1,
+      "connected": 0,
+      "ip": ""
+    },
+    "infos": {
+      "t": 48.1
+    }
+  }
+}
+```
+#### getDevices
+
+##### Request
+```bash
+curl -X GET 'https://<HOST>/getDevices'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Response
+```json
+{
+  "00158d0006203a63": {
+    "1": {
+      "IN": "0,1,3,1026,1794",
+      "OUT": "4,3,1794"
+    },
+    "INFO": {
+      "shortAddr": "38694",
+      "LQI": "66",
+      "device_id": "263",
+      "lastSeen": "2025-03-14 14:40",
+      "Status": "00",
+      "manufacturer": "LiXee",
+      "model": "ZiPulses",
+      "software_version": "4000-0008"
+    },
+    "0702": {
+      "0": "000000000036"
+    },
+    "0402": {
+      "0": "09F8"
+    },
+    "0001": {
+      "32": "23",
+      "33": "C8"
+    }
+  }
+}
+```
+#### getDevice
+
+##### Request
+```bash
+curl -X GET 'https://<HOST>/getDevice?id=04cf8cdf3c79ce2b'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Response
+```json
+{
+  "04cf8cdf3c79ce2b": {
+    "1": {
+      "IN": "0,2,3,4,5,6,9,1794,2820",
+      "OUT": "10,25"
+    },
+    "242": {
+      "IN": "",
+      "OUT": "33"
+    },
+    "INFO": {
+      "shortAddr": "5561",
+      "LQI": "5C",
+      "device_id": "97",
+      "lastSeen": "2025-03-13 19:30",
+      "Status": "00",
+      "manufacturer": "LUMI",
+      "model": "lumi.plug.maeu01",
+      "software_version": "22"
+    }
+  }
+}
+```
+
+#### getLinky
+
+##### Request
+```bash
+curl -X GET 'https://<HOST>/getLinky'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Response
+```json
+{
+  "65382_768": 0,
+  "1794_0": 28870881,
+  "1794_256": 28870881,
+  "1794_258": 0,
+  "1794_260": 0,
+  "1794_262": 0,
+  "1794_264": 0,
+  "1794_266": 0,
+  "2820_1295": 1560,
+  "2820_1293": 0,
+  "1794_32": "TH..",
+  "1794_776": "022161823588",
+  "2817_13": 45,
+  "2817_14": 0,
+  "2820_1288": 6,
+  "2820_1290": 90,
+  "65382_0": "BASE",
+  "65382_1": "",
+  "65382_2": "00",
+  "65382_3": 0,
+  "65382_4": 0,
+  "65382_5": 0
+}
+```
+#### getTemplates
+
+##### Request
+```bash
+curl -X GET 'https://<HOST>/getTemplates'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Response
+```json
+{
+  "24321.json": {
+    "lumi.sensor_switch.aq2": [
+      {
+        "status": [
+          {
+            "name": "Clic",
+            "cluster": "0006",
+            "attribut": 0
+          },
+          {
+            "name": "MultiClic",
+            "cluster": "0000",
+            "attribut": 32768
+          }
+        ]
+      }
+    ],
+    "default": [
+      {
+        "status": [
+          {
+            "name": "Clic",
+            "cluster": "0012",
+            "attribut": 85
+          },
+          {
+            "name": "MultiClic",
+            "cluster": "0012",
+            "attribut": 1293
+          }
+        ]
+      }
+    ]
+  },.........
+}
+```
+
 ## How to flash release
 Just install esptools and run this command
 
