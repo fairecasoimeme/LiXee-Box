@@ -29,6 +29,7 @@
 #include "protocol.h"
 #include "zigbee.h"
 #include "basic.h"
+#include "rules.h"
 #include "microtar.h"
 
 extern SemaphoreHandle_t file_Mutex;
@@ -123,7 +124,7 @@ const char HTTP_MENU[] PROGMEM =
     "<button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNavDropdown' aria-controls='navbarNavDropdown' aria-expanded='false' aria-label='Toggle navigation'>"
     "<span class='navbar-toggler-icon'></span>"
     "</button>"
-    "<a class='navbar-brand p-0 me-0 me-lg-2' href='/statusNetwork' style='margin-right:0px;'>"
+    "<a class='navbar-brand p-0 me-0 me-lg-2' href='/dashboard' style='margin-right:0px;'>"
       "<div style='display:block-inline;float:left;'><img width='70px' src='web/img/logo.png'> </div>"
       "<div style='float:left;display:block-inline;font-size:12px;font-weight:bold;padding:13px 10px 10px 10px;'> Gateway</div>"
     "</a>"
@@ -142,12 +143,12 @@ const char HTTP_MENU[] PROGMEM =
     "</a>"
     "<div class='dropdown-menu'>"
     //"<a class='dropdown-item' href='statusEnergy'>Energy</a>"
-    "<a class='dropdown-item' href='statusNetwork'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
-      "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
-      "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+    "<a class='dropdown-item' href='dashboard'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-speedometer' viewBox='0 0 16 16'>"
+      "<path d='M8 2a.5.5 0 0 1 .5.5V4a.5.5 0 0 1-1 0V2.5A.5.5 0 0 1 8 2M3.732 3.732a.5.5 0 0 1 .707 0l.915.914a.5.5 0 1 1-.708.708l-.914-.915a.5.5 0 0 1 0-.707M2 8a.5.5 0 0 1 .5-.5h1.586a.5.5 0 0 1 0 1H2.5A.5.5 0 0 1 2 8m9.5 0a.5.5 0 0 1 .5-.5h1.5a.5.5 0 0 1 0 1H12a.5.5 0 0 1-.5-.5m.754-4.246a.39.39 0 0 0-.527-.02L7.547 7.31A.91.91 0 1 0 8.85 8.569l3.434-4.297a.39.39 0 0 0-.029-.518z'/>"
+      "<path fill-rule='evenodd' d='M6.664 15.889A8 8 0 1 1 9.336.11a8 8 0 0 1-2.672 15.78zm-4.665-4.283A11.95 11.95 0 0 1 8 10c2.186 0 4.236.585 6.001 1.606a7 7 0 1 0-12.002 0'/>"
     "</svg>"
-    " Network"
+    " Dashboard"
     "</a>"
     "<a class='dropdown-item' href='statusDevices'>"
     "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
@@ -155,6 +156,13 @@ const char HTTP_MENU[] PROGMEM =
       "<path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
     "</svg>"
     " Devices"
+    "</a>"
+    "<a class='dropdown-item' href='statusNetwork'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
+      "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
+      "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+    "</svg>"
+    " Network"
     "</a>"
     "</div>"
     "</li>"
@@ -248,12 +256,18 @@ const char HTTP_MENU[] PROGMEM =
     "</svg>"
     " Horloge"
     "</a>"
-    "<a class='dropdown-item' href='configHTTP'>"
+    "<a class='dropdown-item' href='/configHTTP'>"
     "<svg style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>"
       "<path d='M2 16C2 13.1716 2 11.7574 2.87868 10.8787C3.75736 10 5.17157 10 8 10H16C18.8284 10 20.2426 10 21.1213 10.8787C22 11.7574 22 13.1716 22 16C22 18.8284 22 20.2426 21.1213 21.1213C20.2426 22 18.8284 22 16 22H8C5.17157 22 3.75736 22 2.87868 21.1213C2 20.2426 2 18.8284 2 16Z' stroke='currentColor' stroke-width='1.5'/>"
       "<path d='M6 10V8C6 4.68629 8.68629 2 12 2C15.3137 2 18 4.68629 18 8V10' stroke='currentColor' stroke-width='1.5' stroke-linecap='round'/>"
     "</svg>"
     " Security"
+    "</a>"
+    "<a class='dropdown-item' href='/configRules'>"
+    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
+      "<path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
+    "</svg>"
+    " Rules"
     "</a>"
     "</div>"
     "</li>"
@@ -313,6 +327,12 @@ const char HTTP_TOOLS[] PROGMEM =
       "<path fill-rule='evenodd' d='M14 4.5V11h-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM4.151 15.29a1.2 1.2 0 0 1-.111-.449h.764a.58.58 0 0 0 .255.384q.105.073.25.114.142.041.319.041.245 0 .413-.07a.56.56 0 0 0 .255-.193.5.5 0 0 0 .084-.29.39.39 0 0 0-.152-.326q-.152-.12-.463-.193l-.618-.143a1.7 1.7 0 0 1-.539-.214 1 1 0 0 1-.352-.367 1.1 1.1 0 0 1-.123-.524q0-.366.19-.639.192-.272.528-.422.337-.15.777-.149.456 0 .779.152.326.153.5.41.18.255.2.566h-.75a.56.56 0 0 0-.12-.258.6.6 0 0 0-.246-.181.9.9 0 0 0-.37-.068q-.324 0-.512.152a.47.47 0 0 0-.185.384q0 .18.144.3a1 1 0 0 0 .404.175l.621.143q.326.075.566.211a1 1 0 0 1 .375.358q.135.222.135.56 0 .37-.188.656a1.2 1.2 0 0 1-.539.439q-.351.158-.858.158-.381 0-.665-.09a1.4 1.4 0 0 1-.478-.252 1.1 1.1 0 0 1-.29-.375m-3.104-.033a1.3 1.3 0 0 1-.082-.466h.764a.6.6 0 0 0 .074.27.5.5 0 0 0 .454.246q.285 0 .422-.164.137-.165.137-.466v-2.745h.791v2.725q0 .66-.357 1.005-.355.345-.985.345a1.6 1.6 0 0 1-.568-.094 1.15 1.15 0 0 1-.407-.266 1.1 1.1 0 0 1-.243-.39m9.091-1.585v.522q0 .384-.117.641a.86.86 0 0 1-.322.387.9.9 0 0 1-.47.126.9.9 0 0 1-.47-.126.87.87 0 0 1-.32-.387 1.55 1.55 0 0 1-.117-.641v-.522q0-.386.117-.641a.87.87 0 0 1 .32-.387.87.87 0 0 1 .47-.129q.265 0 .47.129a.86.86 0 0 1 .322.387q.117.255.117.641m.803.519v-.513q0-.565-.205-.973a1.46 1.46 0 0 0-.59-.63q-.38-.22-.916-.22-.534 0-.92.22a1.44 1.44 0 0 0-.589.628q-.205.407-.205.975v.513q0 .562.205.973.205.407.589.626.386.217.92.217.536 0 .917-.217.384-.22.589-.626.204-.41.205-.973m1.29-.935v2.675h-.746v-3.999h.662l1.752 2.66h.032v-2.66h.75v4h-.656l-1.761-2.676z'/>"
     "</svg><br>"
     " Templates"
+    "</a>"
+    "<a href='/rules' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
+      "<path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
+    "</svg><br>"
+    " Rules"
     "</a>"
     //"<a href='/javascript' class='btn btn-primary mb-2'>Javascript</a>"
     "<a href='/update' class='btn btn-primary mb-2'>"
@@ -495,7 +515,7 @@ const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
           "</button> "
         "</div><br>"
         "<h5>List of devices</h5>"
-        "<div class='row' style='font-size:12px;'>"
+        "<div class='row' style='font-size:12px;--bs-gutter-x: 0.1rem;'>"
           "{{devicesList}}"
         "</div>"
       "</div>"
@@ -582,6 +602,22 @@ const char HTTP_CONFIG_HORLOGE[] PROGMEM =
     "</div>"
     "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
     "</form></div>"
+    "</div>";
+const char HTTP_CONFIG_RULES[] PROGMEM = 
+    "<h4>Config Rules</h4>"
+    "<div align='right'>"
+     /* "<a href='/addRule' type='button' class='btn btn-primary'>"
+      "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
+        "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+        "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
+      "</svg><br>"
+      " Add Rule"
+      "</a> "*/
+    "</div><br>"
+    "<div class='row justify-content-md-center' >"
+    "<div class='col col-md-6'>"
+    "{{rulesList}}"
+    "</div>"
     "</div>";
 
 const char HTTP_CONFIG_LINKY[] PROGMEM =
@@ -977,22 +1013,8 @@ const char HTTP_ROOT[] PROGMEM =
     "{{javascript}}";
 
 const char HTTP_DASHBOARD[] PROGMEM =
-    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
-    "<div class='col' style='padding:0'>"
-    "<div class='card'>"
-    "<div class='card-header'>Energy gauge</div>"
-    "<div id='power_gauge_global' style='height:210px;'></div>"
-    "</div>"
-    "</div>"
-    "<div class='col' style='padding:0'>"
-    "<div class='card'>"
-    "<div class='card-header'>Energy trend</div>"
-    "<div id='power_trend' style='height:210px;'></div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
+    "<h4>Dashboard</h4>"
+    "<div class='row justify-content-md-center justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>"
     "{{dashboard}}" 
     "</div>"
     "{{javascript}}";
@@ -2012,7 +2034,7 @@ void handleRoot(AsyncWebServerRequest *request)
     request->send(response);
   }else{
     AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/statusNetwork"));
+    response->addHeader(F("Location"), F("/dashboard"));
     request->send(response);
   }
 
@@ -2023,134 +2045,143 @@ void handleDashboard(AsyncWebServerRequest *request)
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
+  result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_DASHBOARD);
-  result+=footer();
+  result +=footer();
   result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
 
-  int i = 0;
   String time;
-  int paramsNr = request->params();
-  if (paramsNr > 0)
-  {
-    time = request->arg(i);
-  }
-  else
-  {
-    time = "hour";
-  }
 
   String dashboard = "";
   String js = "";
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
+  int exist = 0;
   while (file)
   {
     String tmp = file.name();
     if (tmp.substring(16) == ".json")
     {
-      if (existDashboard(tmp))
-      {
-        int ShortAddr = GetShortAddr(file.name());
-        int DeviceId = GetDeviceId(file.name());
-        String model;
-        model = GetModel(file.name());
-        dashboard += F("<div class='col col-md-6' style='padding:0;'><div class='card'><div class='card-header'>");
-        String alias = getAliasDashboard(file.name());
+      int ShortAddr = GetShortAddr(file.name());
+      int DeviceId = GetDeviceId(file.name());
+      String model;
+      model = GetModel(file.name());
+      dashboard += F("<div class='col-md-auto col-sm-auto'>");
+      dashboard += F("<div class='card' style='min-width:380px;'>");
+      dashboard += F("<div class='card-header' style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>");
+      String alias = getAliasDashboard(file.name());
 
-        if (alias != "null")
+      if (alias != "null")
+      {
+        dashboard += F("<strong>");
+        dashboard += alias;
+        dashboard += F("</strong>");
+        dashboard += F("<br>(@Mac : ");
+        dashboard += tmp.substring(0, 16);
+        dashboard += F(")");
+      }
+      else
+      {
+        dashboard += F("@Mac : ");
+        dashboard += tmp.substring(0, 16);
+      }
+      dashboard += F("</div>");
+      dashboard += F("<div class='card-body'>");
+      // Get status and action from json
+
+      if (TemplateExist(DeviceId))
+      {
+        Template *t;
+        t = GetTemplate(DeviceId, model);
+        // toutes les propiétés
+        dashboard += F("<div id='status_");
+        dashboard += (String)ShortAddr;
+        dashboard += F("'>");
+
+        for (int i = 0; i < t->StateSize; i++)
         {
-          dashboard += F("<strong>");
-          dashboard += alias;
-          dashboard += F("</strong>");
-          dashboard += F("<br>(@Mac : ");
-          dashboard += tmp.substring(0, 16);
-          dashboard += F(")");
-        }
-        else
-        {
-          dashboard += F("@Mac : ");
-          dashboard += tmp.substring(0, 16);
+          if (t->e[i].visible)
+          {
+
+            if (String(t->e[i].typeJauge) == "gauge")
+            {
+              exist++;
+              dashboard += "<div id='gauge_";
+              dashboard += (String)ShortAddr+String(i);
+              dashboard += F("' style='height:150px;'>");
+              dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
+              dashboard += String(t->e[i].name);
+              dashboard += F("</div>");
+              dashboard += F("</div>");
+              js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+              js += CreateTimeGauge((String)ShortAddr + (String)i);
+              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+            }
+            else if(String(t->e[i].typeJauge) == "battery")
+            {
+              exist++;
+              dashboard += "<div id='gauge_";
+              dashboard += (String)ShortAddr+String(i);
+              dashboard += F("' style='height:150px;'>");
+              dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
+              dashboard += String(t->e[i].name);
+              dashboard += F("</div>");
+              dashboard += F("</div>");
+              js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+              js += CreateTimeGauge((String)ShortAddr + (String)i);
+              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+            }else if(String(t->e[i].typeJauge) == "text")
+            {
+              exist++;
+              dashboard +=F("<div id='text_");
+              dashboard += (String)ShortAddr+String(i);
+              dashboard += F("' style='text-align:center;font-size:12px;'>");
+              dashboard += t->e[i].name;
+              dashboard += F("<br>");
+              dashboard += "<span id='";
+              dashboard += F("label_");
+              dashboard += (String)ShortAddr;
+              dashboard += F("_");
+              dashboard += t->e[i].cluster;
+              dashboard += F("_");
+              dashboard += t->e[i].attribute;
+              dashboard += F("' style='font-size:24px;font-family :\"Courier New\", Courier, monospace;'>");
+              dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);             
+              dashboard += F("</span>&nbsp;");
+              dashboard += String(t->e[i].unit);
+              dashboard += F("</div><br>");
+              js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
+
+            }
+          }
         }
         dashboard += F("</div>");
-        dashboard += F("<div class='card-body'>");
-        // Get status and action from json
+        dashboard += F("<div id='action_");
+        dashboard += (String)ShortAddr;
+        dashboard += F("'>");
+        // toutes les actions
 
-        if (TemplateExist(DeviceId))
+        for (int i = 0; i < t->ActionSize; i++)
         {
-          Template *t;
-          t = GetTemplate(DeviceId, model);
-          // toutes les propiétés
-          dashboard += F("<div id='status_");
-          dashboard += (String)ShortAddr;
-          dashboard += F("'>");
-
-          for (int i = 0; i < t->StateSize; i++)
+          if (t->a[i].visible)
           {
-            if (t->e[i].visible)
-            {
-              
-              if (String(t->e[i].typeJauge) == "gauge")
-              {
-                dashboard += "<div id='gauge_";
-                dashboard += (String)ShortAddr+String(i);
-                dashboard += F("' style='height:200px;'>");
-                dashboard += F("</div>");
-                js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
-                js += CreateTimeGauge((String)ShortAddr + (String)i);
-                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
-              }
-              else if(String(t->e[i].typeJauge) == "battery")
-              {
-                dashboard += "<div id='gauge_";
-                dashboard += (String)ShortAddr+String(i);
-                dashboard += F("' style='height:200px;'>");
-                dashboard += F("</div>");
-                js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
-                js += CreateTimeGauge((String)ShortAddr + (String)i);
-                js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + tmp.substring(0, 16) + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
-              }
-              else
-              {
-                dashboard += t->e[i].name;
-                dashboard += " : <span id='";
-                dashboard += F("label_");
-                dashboard += (String)ShortAddr;
-                dashboard += F("_");
-                dashboard += t->e[i].cluster;
-                dashboard += F("_");
-                dashboard += t->e[i].attribute;
-                dashboard += F("'>");
-                dashboard += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
-                dashboard += F("</span><br>");
-                js += "refreshLabel('"+String(file.name())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
-              }
-            }
+            exist++;
+            dashboard += F("<button onclick=\"ZigbeeAction(");
+            dashboard += ShortAddr;
+            dashboard += ",";
+            dashboard += t->a[i].command;
+            dashboard += ",";
+            dashboard += t->a[i].value;
+            dashboard += ");\" class='btn btn-primary mb-2'>";
+            dashboard += t->a[i].name;
+            dashboard += F("</button>&nbsp;");
           }
-          dashboard += F("</div>");
-          dashboard += F("<div id='action_");
-          dashboard += (String)ShortAddr;
-          dashboard += F("'>");
-          // toutes les actions
-
-          for (int i = 0; i < t->ActionSize; i++)
-          {
-            if (t->a[i].visible)
-            {
-              dashboard += F("<button onclick=\"ZigbeeAction(");
-              dashboard += ShortAddr;
-              dashboard += ",";
-              dashboard += t->a[i].command;
-              dashboard += ",";
-              dashboard += t->a[i].value;
-              dashboard += ");\" class='btn btn-primary mb-2'>";
-              dashboard += t->a[i].name;
-              dashboard += F("</button>");
-            }
-          }
-          dashboard += F("</div>");
         }
-        dashboard += F("</div></div></div>");
+        dashboard += F("</div>");
       }
+      dashboard += F("</div></div></div>");
+      
     }
     file.close();
     vTaskDelay(1);
@@ -2158,22 +2189,19 @@ void handleDashboard(AsyncWebServerRequest *request)
   }
   file.close();
   root.close();
-  result.replace("{{dashboard}}", dashboard);
+
+  if (exist>0)
+  {
+    result.replace("{{dashboard}}", dashboard);
+  }else{
+    result.replace("{{dashboard}}", "<div align='center' style='font-size:28px;font-weight:bold;'>No dashboard datas yet</div>");
+  }
+  
 
   String javascript = "";
   javascript = F("<script language='javascript'>");
   javascript += F("$(document).ready(function() {");
-  javascript += F("loadPowerGaugeAbo(1");
-  javascript += F(",'");
-  javascript += String(ConfigGeneral.ZLinky);
-  javascript += F("','1295','");
-  javascript += time;
-  javascript += F("');");
-  javascript += F("refreshDashboard('");
-  javascript += String(ConfigGeneral.ZLinky);
-  javascript += F("','1295','");
-  javascript += time;
-  javascript += F("');");
+
   javascript += js;
   javascript += F("});");
 
@@ -2463,12 +2491,12 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   result.replace("{{FormattedDate}}", FormattedDate);
   
   //result += F("<h5>List of devices</h5>");
-  result += F("<div class='row justify-content-sm-center'>");
+  result += F("<div class='row justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>");
   result += F("<h4>Status Devices</h4>");
   String str = "";
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
-
+  int exist = 0;
   int i=0;
   while (file)
   {
@@ -2476,6 +2504,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     // tmp = tmp.substring(10);
     if (tmp.substring(16) == ".json")
     {
+      exist++;
       DeviceInfo di;
       di = getDeviceInfo(file.name());
       result += F("<div class='col-md-auto col-sm-auto'><div class='card' style='min-width:380px;'><div class='card-header' style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>@Mac : ");
@@ -2612,8 +2641,15 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     vTaskDelay(1);
     file = root.openNextFile();
   }
+  
+
+  if (exist>0)
+  {
+    result +="<script>getDeviceValue();</script>";
+  }else{
+    result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>";
+  }
   result+=footer();
-  result +="<script>getDeviceValue();</script>";
   result += F("</html>");
   file.close();
   root.close();
@@ -2826,6 +2862,95 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
     result.replace("{{passHTTP}}", "********");
   }else{
     result.replace("{{passHTTP}}", "");
+  }
+
+  request->send(200, "text/html", result);
+}
+
+void handleConfigRules(AsyncWebServerRequest *request)
+{
+  String result;
+  result = "<html>";
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_RULES);
+  result += footer();
+  result += "</html>";
+
+  Rule rules[10];
+  int ruleCount = 0;
+  jsonToRules(rules, ruleCount);
+
+  String rulesList="<table class='table table-striped table-hover'>";
+  rulesList+="<thead>";
+    rulesList+="<tr>";
+      rulesList+="<th scope='col'>Name</th>";
+      rulesList+="<th scope='col' width='50px;'>Status</th>";
+      rulesList+="<th scope='col' width='150px;'>Last Date</th>";
+      rulesList+="<th scope='col' width='100px;'>Actions</th>";
+    rulesList+="</tr>";
+  rulesList+="</thead>";
+
+  int exist=0;
+  String js="";
+  for (int i=0;i<ruleCount;i++)
+  {
+    exist++;
+    rulesList+="<tr>";
+      rulesList+="<td scope='row'>";
+        rulesList+=rules[i].name;
+      rulesList+="</td>";
+      rulesList+="<td>";
+        int status = getStatusRule(rules[i].name);
+        js += "getRuleStatus('";
+        js +=rules[i].name;
+        js +="');";
+        rulesList+="<span id='status_";
+        rulesList+=rules[i].name;
+        rulesList+="'>";
+        if (status)
+        {
+          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#1bc600' class='bi bi-bookmark-check-fill' viewBox='0 0 16 16'>";
+            rulesList+="<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5m8.854-9.646a.5.5 0 0 0-.708-.708L7.5 7.793 6.354 6.646a.5.5 0 1 0-.708.708l1.5 1.5a.5.5 0 0 0 .708 0z'/>";
+          rulesList+="</svg>";
+        }else{
+          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#c60000' class='bi bi-bookmark-x-fill' viewBox='0 0 16 16'>";
+            rulesList+="<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5M6.854 5.146a.5.5 0 1 0-.708.708L7.293 7 6.146 8.146a.5.5 0 1 0 .708.708L8 7.707l1.146 1.147a.5.5 0 1 0 .708-.708L8.707 7l1.147-1.146a.5.5 0 0 0-.708-.708L8 6.293z'/>";
+          rulesList+="</svg>";
+        }
+      rulesList+="</span>";
+      rulesList+="</td>";
+      rulesList+="<td>";
+        rulesList+="<span id='dateStatus_";
+          rulesList+=rules[i].name;
+        rulesList+="'>";  
+        rulesList+=getLastDateRule(rules[i].name);
+      rulesList+="</span>";
+      rulesList+="</td>";
+      rulesList+="<td>";
+        /*rulesList+="<button type='button' class='btn btn-warning'>";
+          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-pencil-square' viewBox='0 0 16 16'>";
+            rulesList+="<path d='M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z'/>";
+            rulesList+="<path fill-rule='evenodd' d='M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z'/>";
+          rulesList+="</svg>";
+        rulesList+="</button>";
+        rulesList+="<button type='button' class='btn btn-danger'>";
+          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-x-square' viewBox='0 0 16 16'>";
+            rulesList+="<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>";
+            rulesList+="<path d='M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708'/>";
+          rulesList+="</svg>";
+        rulesList+="</button>";*/
+      rulesList+="</td>";
+    rulesList+="</tr>";
+  }
+  rulesList+="</table>";
+  result.replace("{{rulesList}}",rulesList);
+
+  if (exist>0)
+  {
+    result +="<script>"+js+"</script>";
+  }else{
+    result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No rules yet</div> <br>";
   }
 
   request->send(200, "text/html", result);
@@ -3138,7 +3263,7 @@ void handleConfigMarstek(AsyncWebServerRequest *request)
   result+=footer();
   result += F("</html>");
 
-  if (ConfigGeneral.ZLinky !="")
+  if (strlen(ConfigGeneral.ZLinky) >0)
   {
     result.replace("{{disableMarstek}}","");
     result.replace("{{ZLinky}}",ConfigGeneral.ZLinky);
@@ -3677,6 +3802,42 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   root.close();
   file.close();
 
+  //backup backup
+  root = LittleFS.open("/bk");
+  file = root.openNextFile();
+  esp_task_wdt_reset();
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = F("bk/");
+      tmp += file.name();
+      if (strcmp(tmp.substring(19,24).c_str(),".json")==0)
+      {
+        DEBUG_PRINT("mtar_write_file_header : ");
+        DEBUG_PRINTLN(tmp.c_str());
+        error = mtar_write_file_header(&tar, tmp.c_str(), file.size());
+        DEBUG_PRINTLN(mtar_strerror(error));
+        String buff="";
+        while (file.available())
+        { 
+          buff+=(char)file.read();
+        }
+        DEBUG_PRINT("mtar_write_data : ");
+        error = mtar_write_data(&tar, buff.c_str(), strlen(buff.c_str()));
+        DEBUG_PRINTLN(mtar_strerror(error));
+      }
+      
+      file.close(); 
+    }
+    file.close();
+    vTaskDelay(1);
+    file = root.openNextFile();
+  }
+  
+  root.close();
+  file.close();
+
   error =mtar_finalize(&tar);
   DEBUG_PRINTLN(mtar_strerror(error));
   error =mtar_close(&tar);
@@ -4173,6 +4334,71 @@ void handleTemplates(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void handleRules(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result += F("<h4>Rules</h4>");
+  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
+  result += F("      <div class='navbar-header'>");
+  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
+  result += F("      </div>");
+  result += F("<ul class='nav navbar-nav'>");
+  String str = "";
+  File root = LittleFS.open("/config");
+  File file = root.openNextFile();
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = file.name();
+      if (strcmp(file.name(),"rules.json")==0)
+      {
+        // tmp = tmp.substring(11);
+        result += F("<li><a href='#' onClick=\"readfile('");
+        result += tmp;
+        result += F("','config');document.getElementById('actions').style.display = 'block';\">");
+        result += tmp;
+        result += F(" ( ");
+        result += file.size();
+        result += F(" o)</a></li>");
+      }
+      
+    }
+    file.close();
+    vTaskDelay(1);
+    file = root.openNextFile();
+  }
+  file.close();
+  root.close();
+
+  result += F("</ul></nav>");
+  result += F("<div class='container-fluid' >");
+  result += F("  <div class='app-main-content'>");
+  result += F("<form method='POST' action='saveFileRules'>");
+  result += F("<div class='form-group'>");
+  result += F(" <label for='file'>File : <span id='title'></span></label>");
+  result += F("<input type='hidden' name='filename' id='filename' value=''>");
+  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
+  result += F("</textarea>");
+  result += F("</div>");
+  result += F("<div id='actions' style='display:none;'>");
+  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Save</button>&nbsp;");
+  result += F("</div>");
+  result += F("</Form>");
+
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</body>");
+  result+=footer();
+  result += F("</html>");
+  
+  request->send(200, F("text/html"), result);
+}
+
 void handleSaveDevice(AsyncWebServerRequest *request)
 {
   if (request->method() != HTTP_POST)
@@ -4268,6 +4494,55 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
     request->send(response);
   }
 }
+
+void handleSaveRules(AsyncWebServerRequest *request)
+{
+  if (request->method() != HTTP_POST)
+  {
+    request->send(405, F("text/plain"), F("Method Not Allowed"));
+  }
+  else
+  {
+    uint8_t i = 0;
+
+    String filename = "/config/" + request->arg(i);
+    String content = request->arg(1);
+    String action = request->arg(2);
+
+    if (action == "save")
+    {
+      File file = LittleFS.open(filename.c_str(), "w+");
+      if (!file || file.isDirectory())
+      {
+        DEBUG_PRINT(F("Failed to open file for reading\r\n"));
+        file.close();
+        return;
+      }
+      
+      int bytesWritten = file.print(content);
+
+      if (bytesWritten > 0)
+      {
+        DEBUG_PRINTLN(F("File was written"));
+        DEBUG_PRINTLN(bytesWritten);
+      }
+      else
+      {
+        DEBUG_PRINTLN(F("File write failed"));
+      }
+
+      file.close();
+    }
+    else if (action == "delete")
+    {
+      LittleFS.remove(filename);
+    }
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), F("/rules"));
+    request->send(response);
+  }
+}
+
 
 void handleJavascript(AsyncWebServerRequest *request)
 {
@@ -5419,12 +5694,14 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
   int i=0;
+  int exist = 0;
   while (file)
   {
     String tmp = file.name();
     // tmp = tmp.substring(10);
     if (tmp.substring(16) == ".json")
     {
+      exist++;
       devices += F("<div class='col-md-auto col-sm-auto'><div class='card' style='min-width:380px;' ><div class='card-header'  style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;' >@Mac : ");
       devices += tmp.substring(0, 16);
       devices += F("</div>");
@@ -5504,7 +5781,7 @@ void handleConfigDevices(AsyncWebServerRequest *request)
         devices += F("</button>");
       
         devices += F("<button onclick=\"deleteDevice('");
-        devices += ShortAddr;
+        devices += tmp.substring(0, 16);
         devices += "');\" class='btn btn-danger mb-2'>";
         devices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>";
         devices +=  "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>";
@@ -5524,10 +5801,12 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     file = root.openNextFile();
   }
 
-
-
-  result.replace("{{devicesList}}", devices);
-
+  if (exist>0)
+  {
+    result.replace("{{devicesList}}", devices);
+  }else{
+    result.replace("{{devicesList}}", "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> ");
+  }
 
   file.close();
   root.close();
@@ -5995,11 +6274,22 @@ void handleGetAlert(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void handleGetRuleStatus(AsyncWebServerRequest *request)
+{
+
+  int i = 0;
+  String name = request->arg(i);
+  int value = getStatusRule(name.c_str());
+  String lastDate = getLastDateRule(name.c_str());
+  String result = String(value)+"|"+lastDate;
+
+  request->send(200, F("text/html"), result);
+}
+
 void handleGetDeviceValue(AsyncWebServerRequest *request)
 {
 
   String result = "";
-
   if (!deviceList->isEmpty())
   {
     int i=0;
@@ -6150,11 +6440,9 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
 void handleDeleteDevice(AsyncWebServerRequest *request)
 {
 
-  String SA, tmpMac;
+  String tmpMac;
   int i = 0;
-  SA = request->arg(i);
-  tmpMac = GetMacAdrr(SA.toInt());
-  tmpMac = tmpMac.substring(0, 16);
+  tmpMac = request->arg(i);
   uint8_t mac[9];
   sscanf(tmpMac.c_str(), "%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5], &mac[6], &mac[7]);
   uint64_t macInt = (uint64_t)mac[0] << 56 |
@@ -6172,7 +6460,11 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
   int res;
   res = LittleFS.remove(filename);
 
-  if (res == 0)
+  String filenamebk = "/bk/" + tmpMac + ".json";
+  int resbk;
+  resbk = LittleFS.remove(filenamebk);
+
+  if ((res == 0) && (resbk == 0))
   {
     AsyncWebServerResponse *response = request->beginResponse(303);
     response->addHeader(F("Location"), F("/configDevices"));
@@ -6678,7 +6970,15 @@ void initWebServer()
     }
     handleConfigHTTP(request); 
   });
-  
+  serverWeb.on("/configRules", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigRules(request); 
+  });
   serverWeb.on("/configWebPush", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6798,6 +7098,16 @@ void initWebServer()
     }
     handleSaveTemplates(request); 
   });
+  serverWeb.on("/saveFileRules", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveRules(request); 
+  });
+  
   serverWeb.on("/saveFileJavascript", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -6990,11 +7300,11 @@ void initWebServer()
   );
   serverWeb.on("/readFile", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    /*if (ConfigSettings.enableSecureHttp)
+    if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
-    }*/
+    }
     handleReadfile(request); 
   });
   serverWeb.on("/getLogBuffer", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -7108,11 +7418,11 @@ void initWebServer()
   });
   serverWeb.on("/configFiles", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    /*if (ConfigSettings.enableSecureHttp)
+    if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
-    }*/
+    }
     handleConfigFiles(request); 
   });
   serverWeb.on("/debugFiles", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -7150,6 +7460,15 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleTemplates(request); 
+  });
+   serverWeb.on("/rules", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleRules(request); 
   });
   serverWeb.on("/javascript", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -7313,6 +7632,15 @@ void initWebServer()
     }
     handleGetDeviceValue(request); 
   });
+  serverWeb.on("/getRuleStatus", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetRuleStatus(request); 
+  });
   serverWeb.on("/getAlert", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -7447,6 +7775,9 @@ void initWebServer()
 
   serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/functions.js", LittleFS, "/web/js/functions.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/raphael-min.js", LittleFS, "/web/js/raphael-min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/morris.min.js", LittleFS, "/web/js/morris.min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/justgage.min.js", LittleFS, "/web/js/justgage.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/bootstrap.min.js", LittleFS, "/web/js/bootstrap.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/bootstrap.bundle.min.js.map", LittleFS, "/web/js/bootstrap.map").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css").setCacheControl("max-age=600");
