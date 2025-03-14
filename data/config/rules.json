@@ -7,10 +7,12 @@
 		   "type" : "device",
 		   "IEEE" : "00158d0006204fcf",
 		   "cluster" : 2820,
-		   "attributes" : 1295,
+		   "attribute" : 1295,
 		   "operator" : "==",
 		   "value" : 0,
+                   "occurences" : 1,
 		   "logic" : "AND"
+                  
 		}
         ],
         "actions" : [
