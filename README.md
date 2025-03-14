@@ -359,6 +359,9 @@ Wait a moment and go to your HA MQTT devices:
 ### Config WebPush
 <img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_webpush.png" width="800">  
 
+### Rules
+<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_rules.png" width="800">  
+
 ### Advanced tools
 <img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_tools.png" width="800">  
 
