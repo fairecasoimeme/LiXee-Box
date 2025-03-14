@@ -17,6 +17,7 @@ extern "C" {
 	#include "freertos/timers.h"
 }
 #include <AsyncMqttClient.h>
+#include "tuya.h"
 //#include <NTPClient_Generic.h>
 #include <time.h>
 #include "NTPClient.h"
@@ -41,6 +42,7 @@ extern "C" {
 #include "mail.h"
 #include "AsyncUDP.h"
 
+#include "rules.h"
 
 #include <TaskScheduler.h>
 
@@ -173,7 +175,13 @@ DEBUG_PRINTLN(F("config_write"));
   config_write(path, "epoch", epochTime);
 DEBUG_PRINTLN(F("config_write OK"));
 
-
+  //rules
+ DEBUG_PRINTLN(F("Rules -->")); 
+  Rule rules[10];
+  int ruleCount = 0;
+  jsonToRules(rules, ruleCount);
+  applyRules(rules, ruleCount);
+   
 
 }
 
@@ -408,7 +416,6 @@ void datasTreatment(void * pvParameters)
 void SerialTask( void * pvParameters)
 {
   size_t bytes_read;
-  char output_sprintf[5];
   uint8_t packetRead[BUFFER_SIZE];
   while(true)
   {
@@ -606,12 +613,12 @@ void onMqttConnect(bool sessionPresent) {
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   DEBUG_PRINT(F("Disconnected from MQTT."));
   DEBUG_PRINTLN((uint8_t)reason);
-  addDebugLog("Disconnected from mqtt : "+String((uint8_t)reason));
+ // addDebugLog("Disconnected from mqtt : "+String((uint8_t)reason));
 
-  if ((uint8_t)reason==0)
+  /*if ((uint8_t)reason==0)
   {
     esp_restart();
-  }
+  }*/
 
   if (WiFi.isConnected()) {
     xTimerStart(mqttReconnectTimer, 0);
@@ -897,7 +904,7 @@ void reconnectWifi()
   WiFi.disconnect();
   if (WiFi.getMode() == WIFI_MODE_STA)
   {
-    if (ConfigSettings.ssid != "")
+    if (String(ConfigSettings.ssid).length()>0)
     {
       WiFi.begin(ConfigSettings.ssid,ConfigSettings.password);
       addDebugLog("WiFi begin...");
@@ -1200,7 +1207,14 @@ esp_task_wdt_reset();
   //initMailClient();
   disableCore0WDT();
 
+  //init tuya
+  //initTuya();
 
+  Rule rules[10];
+  int ruleCount = 0;
+  jsonToRules(rules, ruleCount);
+  applyRules(rules, ruleCount);
+  
 }
 
 WiFiClient client;
@@ -1210,11 +1224,11 @@ void loop(void)
   esp_task_wdt_reset();
 
   runner.execute();
-  size_t bytes_read;
-  unsigned long currentTime = millis();
+
+  //unsigned long currentTime = millis();
   //char output_sprintf[5];
   //String packetRead;
-  uint8_t packetRead[BUFFER_SIZE];
+  //uint8_t packetRead[BUFFER_SIZE];
   
   #define min(a,b) ((a)<(b)?(a):(b))
   
