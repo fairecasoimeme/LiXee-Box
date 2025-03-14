@@ -2,7 +2,8 @@
       "ZLinky_TIC" : [
 	{
 		"status" : [
-			    {"name" : "Mode",
+			{   
+			    "name" : "Mode",
 				"cluster" : "FF66",
 				"attribut" : 768,
 				"type": "numeric",
