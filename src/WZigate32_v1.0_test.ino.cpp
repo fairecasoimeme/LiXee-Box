@@ -46,6 +46,7 @@ extern "C" {
 
 #include <TaskScheduler.h>
 
+
 // application config
 unsigned long timeLog;
 ConfigSettingsStruct ConfigSettings;
@@ -269,12 +270,15 @@ void TcpTreatment(void * pvParameters)
     File DeviceFile = LittleFS.open(name_with_extension, FILE_READ);
     if (!DeviceFile|| DeviceFile.isDirectory()) {
       log_e("failed open");
-      vTaskDelete(taskTCP);
+      if (taskTCP!=NULL)
+      {
+        vTaskDelete(taskTCP);
+      }
     }else{
       JsonObject root;
       StaticJsonDocument<1024> filter;
       filter["0B04"]= true;
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,DeviceFile, DeserializationOption::Filter(filter));
       DeviceFile.close();
       root = temp["0B04"] ;
@@ -308,11 +312,12 @@ static void handleData(void *arg, AsyncClient *client, void *data, size_t len)
   {
     log_d("get hello\n");
     ConfigGeneral.connectedMarstek = true;
+    log_d("create thread : %d\n",taskTCP);
     if (taskTCP!=NULL)
     {
       vTaskDelete(taskTCP);
     }
-    log_d("create thread : %d\n",taskTCP);
+    
     xTaskCreatePinnedToCore(
                 TcpTreatment,   // Function to implement the task 
                 "TcpTreatment", // Name of the task 
@@ -566,10 +571,13 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     case ARDUINO_EVENT_WIFI_READY:
       addDebugLog(F("WiFi Ready"));
       break;
-    
-    
-    case ARDUINO_EVENT_WIFI_AP_START:
-        
+    case ARDUINO_EVENT_WIFI_STA_START:
+      ConfigGeneral.scanNumber = -1;
+    break;
+    case ARDUINO_EVENT_WIFI_SCAN_DONE:
+      ConfigGeneral.scanNumber = info.wifi_scan_done.number;
+    break;
+    case ARDUINO_EVENT_WIFI_AP_START: 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
       addDebugLog(F("WiFi Connected"));
       if (WifiReconnectTimer != NULL)
@@ -680,7 +688,7 @@ bool loadConfigWifi() {
     return false;
   }
 
-  DynamicJsonDocument doc(10192);
+  SpiRamJsonDocument doc(10192);
   deserializeJson(doc,configFile);
 
   // affectation des valeurs , si existe pas on place une valeur par defaut
@@ -706,7 +714,7 @@ bool loadConfigGeneral() {
     return false;
   }
 
-  DynamicJsonDocument doc(10192);
+  SpiRamJsonDocument doc(10192);
   deserializeJson(doc,configFile);
 
   ConfigGeneral.firstStart = (int)doc["firstStart"];
@@ -1195,7 +1203,7 @@ esp_task_wdt_reset();
   xTaskCreatePinnedToCore(
                     datasTreatment,   // Function to implement the task 
                     "datasTreatment", // Name of the task 
-                    64*1024,      // Stack size in words 
+                    32*1024,      // Stack size in words 
                     NULL,       // Task input parameter 
                     18,          // Priority of the task 
                     NULL,       // Task handle. 
@@ -1290,6 +1298,7 @@ void loop(void)
   }*/
 
   //vTaskDelay(10);
+  yield();
 }
 
 

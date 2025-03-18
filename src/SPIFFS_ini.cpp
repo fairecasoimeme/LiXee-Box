@@ -151,7 +151,7 @@ bool init_raz_energy(String path, String time)
         }
       }
       size_t filesize = file.size();
-      DynamicJsonDocument doc(MAXHEAP);
+      SpiRamJsonDocument doc(MAXHEAP);
       if (filesize > 0)
       {
         DeserializationError error = deserializeJson(doc, file);
@@ -263,7 +263,7 @@ bool ini_energy(String path, String section, String value)
         }
         size_t filesize = file.size();
 
-        DynamicJsonDocument doc(MAXHEAP);
+        SpiRamJsonDocument doc(MAXHEAP);
         if (filesize > 0)
         {
           DeserializationError error = deserializeJson(doc, file);
@@ -363,7 +363,7 @@ bool ini_trendEnergy(String path, String section, String value)
           }
         }
         size_t filesize = file.size();
-        DynamicJsonDocument doc(MAXHEAP);
+        SpiRamJsonDocument doc(MAXHEAP);
 
         if (filesize > 0)
         {
@@ -600,7 +600,7 @@ bool ini_trendPower(String path, String section, String value)
           }
         }
         size_t filesize = file.size();
-        DynamicJsonDocument doc(MAXHEAP);
+        SpiRamJsonDocument doc(MAXHEAP);
 
         if (filesize > 0)
         {
@@ -705,7 +705,7 @@ bool ini_power2(String path,String section,String value)
         }
         size_t filesize = file.size();
 
-        DynamicJsonDocument doc(MAXHEAP);
+        SpiRamJsonDocument doc(MAXHEAP);
 
         if (filesize > 0)
         {
@@ -817,7 +817,7 @@ bool ini_power2(String path,String section,String value)
   }
 }
 
-struct SpiRamAllocator {
+/*struct SpiRamAllocator {
         void* allocate(size_t size) {
                 return ps_malloc(size);
 
@@ -825,9 +825,12 @@ struct SpiRamAllocator {
         void deallocate(void* pointer) {
                 free(pointer);
         }
+        void* reallocate(void* pointer, size_t new_size) {
+          return realloc(pointer, new_size);  // Réallouer si nécessaire
+        }
 };
 
-using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
+using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;*/
 
 /*bool ini_power(String path, String section, String value)
 {
@@ -983,7 +986,7 @@ bool ini_writes(String path, WriteIni ini, bool create)
     //String filename = String(fileRead.name());
     int filesize = fileRead.size();
 
-    DynamicJsonDocument doc(MAXHEAP);
+    SpiRamJsonDocument doc(MAXHEAP);
 
     if (filesize>0)
     {
@@ -1063,7 +1066,7 @@ bool ini_write(String path, String section, String key, String value)
     size_t filesize = fileRead.size();
     String filename = String(fileRead.name());
 
-    DynamicJsonDocument doc(MAXHEAP);
+    SpiRamJsonDocument  doc(MAXHEAP);
 
     if (filesize > 0)
     {
@@ -1135,7 +1138,7 @@ String ini_read(String path, String section, String key)
   }
 
   // Analyser le contenu JSON du fichier
-  DynamicJsonDocument doc(60240);
+  SpiRamJsonDocument doc(60240);
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -1171,7 +1174,7 @@ DeviceInfo getDeviceInfo(String path)
   }
 
   // Analyser le contenu JSON du fichier
-  DynamicJsonDocument doc(MAXHEAP);
+  SpiRamJsonDocument doc(MAXHEAP);
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -1209,7 +1212,7 @@ String config_read(String path,String key)
     return "Error";
   }
 
-  DynamicJsonDocument doc(MAXHEAP);
+  SpiRamJsonDocument doc(MAXHEAP);
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   // Vérifier les erreurs de désérialisation
@@ -1255,7 +1258,7 @@ bool config_write(String path, String key, String value)
     }
 
     size_t filesize = fileRead.size();
-    DynamicJsonDocument doc(MAXHEAP);
+    SpiRamJsonDocument doc(MAXHEAP);
 
     if (filesize > 0)
     {

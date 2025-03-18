@@ -364,7 +364,7 @@ float getTarifPower(String IEEE, int power)
     DeviceFile.close();
     DEBUG_PRINTLN(F("failed open"));
   }else{
-    DynamicJsonDocument temp(MAXHEAP);
+    SpiRamJsonDocument temp(MAXHEAP);
     deserializeJson(temp,DeviceFile);
     //JsonObject root = temp["hours"].as<JsonObject>();
     DeviceFile.close();
@@ -400,7 +400,7 @@ String getTrendEnergyEuros(String IEEE)
   if (!DeviceFile|| DeviceFile.isDirectory()) {
     DEBUG_PRINTLN(F("failed open"));
   }else{
-    DynamicJsonDocument temp(MAXHEAP);
+    SpiRamJsonDocument temp(MAXHEAP);
     deserializeJson(temp,DeviceFile);
     //JsonObject root = temp["hours"].as<JsonObject>();
     DeviceFile.close();
@@ -441,7 +441,7 @@ String getLinkyDatas(String IEEE)
     DEBUG_PRINTLN(F("failed open"));
     return result;
   }else{
-    DynamicJsonDocument temp(4096);
+    SpiRamJsonDocument temp(4096);
     deserializeJson(temp,DeviceFile);
     result+="<div id='datasLinky' style='display:inline-block;float:left;'>";
     if (temp["0702"]["776"])
@@ -608,7 +608,7 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
       return "error";
     }else{
   
-      DynamicJsonDocument temp(MAXHEAP/2);
+      SpiRamJsonDocument temp(MAXHEAP/2);
       deserializeJson(temp,DeviceFile);
       DeviceFile.close();
       if ((temp["0B04"][Attribute]) && ( temp["0B01"]["13"]))
@@ -631,7 +631,7 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
       DEBUG_PRINTLN(F("failed open"));
       return "error";
     }else{
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,DeviceFile);
       JsonObject root;
       if (Time =="day")
@@ -719,7 +719,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
       return "";
     }else
     {
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,DeviceFile);
       DeviceFile.close();
       //DEBUG_PRINTLN(temp[Attribute]["trend"].as<int>());
@@ -788,7 +788,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
       DEBUG_PRINTLN(F("failed open"));
       return "error";
     }else{
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,DeviceFile);
       JsonObject root;
       if (Time =="day")
@@ -933,7 +933,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
       DEBUG_PRINTLN(F("failed open"));
       return "";
     }else{
-      DynamicJsonDocument temp(4096);
+      SpiRamJsonDocument temp(4096);
       deserializeJson(temp,DeviceFile);
       DeviceFile.close();
       if ((temp["0B04"][Attribute]))
@@ -955,7 +955,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
       DEBUG_PRINTLN(F("failed open"));
       return "error";
     }else{
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,DeviceFile);
       JsonObject root;
       if (Time=="day")
@@ -1037,7 +1037,7 @@ String getPowerGaugeTimeDay(String IEEE, String Attribute)
     DEBUG_PRINTLN(F("failed open"));
     return "";
   }else{
-    DynamicJsonDocument temp(MAXHEAP);
+    SpiRamJsonDocument temp(MAXHEAP);
     deserializeJson(temp,DeviceFile);
     if ((temp[Attribute]["minute"][Hour+":"+Minute]) && (temp[Attribute]["min"]) && (temp[Attribute]["max"]))
     {
@@ -1104,7 +1104,7 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
       return false;
     }else
     {
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,tpFile);
       if (temp.containsKey(model))
       {
@@ -1139,7 +1139,7 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
           }
           size_t filesize = file.size();
           
-          DynamicJsonDocument doc(MAXHEAP);
+          SpiRamJsonDocument doc(MAXHEAP);
           if (filesize>0)
           {
             DeserializationError error = deserializeJson(doc, file);
@@ -1221,7 +1221,7 @@ void getConfigReport(uint8_t shortAddr[2], int device_id, String model)
       
     }else
     {
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,tpFile);
        
       if (temp.containsKey(model))
@@ -1303,7 +1303,7 @@ void getBind(uint64_t mac, int device_id, String model)
       tpFile.close();
     }else
     {
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,tpFile);
       const char *tmp; 
       

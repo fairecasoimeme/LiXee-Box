@@ -27,7 +27,7 @@ void WebPush(String IEEE, String cluster, String attribut, String value)
     http.addHeader("Content-Type", "application/json");
 
     // Création du JSON à envoyer
-    DynamicJsonDocument doc(1024);
+    SpiRamJsonDocument doc(1024);
     doc["IEEE"] = IEEE;
     doc["cluster"] = cluster;
     doc["attribute"] = attribut;

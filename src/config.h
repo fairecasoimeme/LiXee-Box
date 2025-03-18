@@ -6,8 +6,10 @@
 #include <Arduino.h>
 //#define CIRCULAR_BUFFER_INT_SAFE
 #include <CircularBuffer.hpp>
+#include <ArduinoJson.h>
+#include <malloc.h>
 
-#define VERSION "v1.1"
+#define VERSION "v1.2"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -134,6 +136,7 @@ struct ConfigGeneralStruct {
   char unitWater[3];
   char tarifGaz[10];
   char tarifWater[10];
+  int scanNumber;
 };
 
 
@@ -250,6 +253,23 @@ typedef struct{
 } Rules;*/
 
 typedef CircularBuffer<char, 4096> LogConsoleType;
+
+struct SpiRamAllocator {
+  void* allocate(size_t size) {
+    return ps_malloc(size);  // Allouer dans la PSRAM
+  }
+
+  void deallocate(void* pointer) {
+    free(pointer);  // Libérer l'allocation
+  }
+
+  void* reallocate(void* pointer, size_t new_size) {
+    return realloc(pointer, new_size);  // Réallouer si nécessaire
+  }
+};
+
+// Définir un type de document JSON qui utilise la PSRAM
+using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
 
 #define DEBUG_ON
 

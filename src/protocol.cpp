@@ -75,7 +75,7 @@ String GetNameStatus(int deviceId,String cluster, int attribut, String model)
       
     }else
     {
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp,tpFile);
       tpFile.close();
       
@@ -159,25 +159,26 @@ String GetMacAdrr(int shortAddr)
   File file = root.openNextFile();
   while (file) 
   {
-      if (!file.isDirectory())
+    esp_task_wdt_reset();
+    if (!file.isDirectory())
+    {
+      if (file.size()>0)
       {
-        if (file.size()>0)
-        {
-          String tmp =  file.name();
-          String Saddr= ini_read(tmp,"INFO", "shortAddr");
+        String tmp =  file.name();
+        String Saddr= ini_read(tmp,"INFO", "shortAddr");
 
-          if (shortAddr==atoi(Saddr.c_str()))
-          {
-            file.close();
-            vTaskDelay(1);
-            root.close();
-            return tmp;
-          }   
-        }
+        if (shortAddr==atoi(Saddr.c_str()))
+        {
+          file.close();
+          vTaskDelay(1);
+          root.close();
+          return tmp;
+        }   
       }
-      file.close();
-      vTaskDelay(1);
-      file = root.openNextFile(); 
+    }
+    file.close();
+    vTaskDelay(1);
+    file = root.openNextFile(); 
   }  
   root.close();
 
@@ -642,11 +643,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           ini.i[2].value = "00";
 
           ini.iniPacketSize = 3;
-          log_d("before ini_writes");
-
           ini_writes(inifile, ini, false);
 
-          log_d("after ini_writes");
           // ini_write(inifile,"INFO","LQI",String(lqi));
           // ini_write(inifile,"INFO","Status","00");
 
@@ -1092,7 +1090,7 @@ bool ScanDeviceToPoll()
           }
           
           // Analyser le contenu JSON du fichier
-          DynamicJsonDocument temp(MAXHEAP);
+          SpiRamJsonDocument temp(MAXHEAP);
           DeserializationError error = deserializeJson(temp, file);
           file.close();
           if (error) 

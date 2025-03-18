@@ -21,7 +21,7 @@ void jsonToRules(Rule* rules, int& ruleCount) {
     }
     else
     {
-        DynamicJsonDocument doc(MAXHEAP);
+        SpiRamJsonDocument doc(MAXHEAP);
     
         // Parse the JSON string
         DeserializationError error = deserializeJson(doc, RulesFile);

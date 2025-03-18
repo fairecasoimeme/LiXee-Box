@@ -1120,7 +1120,7 @@ const char HTTP_CONFIG_WIFI[] PROGMEM =
     "</div>"*/
     "<div class='form-group'>"
     "<label for='ssid'>SSID</label>"
-    "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}' style='{{ssidborder}}'> <a onclick='scanNetwork();' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>"
+    "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}' style='{{ssidborder}}'> <a onclick='scanNetwork(-1);' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>"
     "</div>"
     "<div class='form-group'>"
     "<label for='pass'>Password</label>"
@@ -1317,7 +1317,93 @@ bool TemplateExist(int deviceId)
   }
 }
 
-Template * GetTemplate(int deviceId, String model)
+void setTemplateElement(State &e, JsonVariant v) 
+{
+    strlcpy(e.name, v[F("name")], sizeof(e.name));
+    e.cluster = (int)strtol(v[F("cluster")], nullptr, 16);
+    e.attribute = v[F("attribut")];
+    strlcpy(e.type, v[F("type")] | "", sizeof(e.type));
+    strlcpy(e.mqtt_device_class, v[F("mqtt_device_class")] | "null", sizeof(e.mqtt_device_class));
+    strlcpy(e.mqtt_state_class, v[F("mqtt_state_class")] | "null", sizeof(e.mqtt_state_class));
+    strlcpy(e.mqtt_icon, v[F("mqtt_icon")] | "", sizeof(e.mqtt_icon));
+    e.coefficient = v[F("coefficient")] | 1.0;
+    strlcpy(e.unit, v[F("unit")] | "", sizeof(e.unit));
+    e.visible = v[F("visible")].as<int>() == 1;
+    strlcpy(e.mode, v[F("mode")] | "", sizeof(e.mode));
+    if (!v[F("jauge")].isNull()) {
+        strlcpy(e.typeJauge, v[F("jauge")], sizeof(e.typeJauge));
+        e.jaugeMin = v[F("min")].as<int>();
+        e.jaugeMax = v[F("max")].as<int>();
+    } else {
+        strlcpy(e.typeJauge, "", sizeof(e.typeJauge));
+    }
+}
+
+void parseStatusArray(JsonArray statusArray, Template* t) 
+{
+    int i = 0;
+    for (JsonVariant v : statusArray) 
+    {
+        setTemplateElement(t->e[i], v);
+        i++;
+        vTaskDelay(1);
+    }
+    t->StateSize = i;
+}
+
+void parseActionArray(JsonArray actionArray, Template* t) 
+{
+    int i = 0;
+    for (JsonVariant v : actionArray) 
+    {
+        strlcpy(t->a[i].name, v[F("name")], sizeof(t->a[i].name));
+        t->a[i].command = v[F("command")];
+        t->a[i].value = v[F("value")];
+        t->a[i].visible = v[F("visible")].as<int>() == 1;
+        i++;
+        vTaskDelay(1);
+    }
+    t->ActionSize = i;
+}
+
+
+
+Template* GetTemplate(int deviceId, String model) 
+{
+    Template *t = (Template *) ps_malloc(sizeof(Template));
+    if (deviceId <= 0) {
+        return t;
+    }
+
+    // Construire le chemin du fichier
+    String filePath = "/tp/" + String(deviceId) + ".json";
+    File tpFile = LittleFS.open(filePath, FILE_READ);
+
+    if (!tpFile || tpFile.isDirectory()) {
+        DEBUG_PRINTLN(F("failed open"));
+        return t;
+    }
+
+    SpiRamJsonDocument doc(MAXHEAP);
+    DeserializationError error = deserializeJson(doc, tpFile);
+    tpFile.close();
+    if (error) {
+        DEBUG_PRINTLN(F("deserializeJson failed"));
+        return t;
+    }
+
+    // Déterminer le modèle à utiliser
+    const char* modelKey = doc.containsKey(model) ? model.c_str() : "default";
+    JsonArray statusArray = doc[modelKey][0][F("status")].as<JsonArray>();
+    JsonArray actionArray = doc[modelKey][0][F("action")].as<JsonArray>();
+
+    parseStatusArray(statusArray, t);
+    parseActionArray(actionArray, t);
+
+    return t;
+}
+
+/*Template * GetTemplate(int deviceId, String model)
 {
   Template *t = (Template *) ps_malloc(sizeof(Template));
   if (deviceId>0)
@@ -1581,7 +1667,7 @@ Template * GetTemplate(int deviceId, String model)
     
   }
   return t;
-}
+}*/
 
 bool existDashboard(String inifile)
 {
@@ -1698,7 +1784,7 @@ String CreateTimeGauge(String div)
   result += F("if(xhr.readyState == 4 ){");
   result += F("leselect = xhr.responseText;");
   result += "Gauge" + div + ".refresh(leselect);";
-  result += "setTimeout(function(){ refreshGauge" + div + "(IEEE,cluster,attr,type,coefficient); }, 60000);";
+  result += "setTimeout(function(){ refreshGauge" + div + "(IEEE,cluster,attr,type,coefficient); }, 5000);";
   result += F("}");
   result += F("};");
   result += F("xhr.open('GET','loadGaugeDashboard?IEEE='+escape(IEEE)+'&cluster='+escape(cluster)+'&attribute='+escape(attr)+'&type='+escape(type)+'&coefficient='+escape(coefficient),true);");
@@ -4817,18 +4903,27 @@ void handleLogBuffer(AsyncWebServerRequest *request)
 
 void handleScanNetwork(AsyncWebServerRequest * request)
 {
-   String result="";
-  
-   int n = WiFi.scanNetworks();
+  int i = 0;
+  String ret = request->arg(i);
+  String result=""; 
+  if (ret == "-1")
+  {
+     WiFi.scanNetworks(true);
+  }
+ 
+  int n = WiFi.scanComplete();
 
-   if (n == 0) {
+  if (n>=0)
+  { 
+    if (ConfigGeneral.scanNumber == 0) 
+    {
       result = " <label for='ssid'>SSID</label>";
       result += "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}'> <a onclick='scanNetwork();' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>";
-    } else {
+    } else if (ConfigGeneral.scanNumber > 0) {
       
-       result = "<select name='WIFISSID' onChange='updateSSID(this.value);'>";
-       result += "<OPTION value=''>--Choose SSID--</OPTION>";
-       for (int i = 0; i < n; ++i) {
+      result = "<select name='WIFISSID' onChange='updateSSID(this.value);'>";
+      result += "<OPTION value=''>--Choose SSID--</OPTION>";
+      for (int i = 0; i < ConfigGeneral.scanNumber; ++i) {
             result += "<OPTION value='";
             result +=WiFi.SSID(i);
             result +="'>";
@@ -4836,8 +4931,12 @@ void handleScanNetwork(AsyncWebServerRequest * request)
             result+="</OPTION>";
         }
         result += "</select>";
-    }  
-    request->send(200, F("text/html"), String(n)+"|"+result);
+    } 
+    ConfigGeneral.scanNumber = -1;
+    WiFi.scanDelete();
+  } 
+
+  request->send(200, F("text/html"), String(n)+"|"+result);
 }
 
 void handleClearConsole(AsyncWebServerRequest *request)
@@ -5648,7 +5747,7 @@ void handleSaveWifi(AsyncWebServerRequest *request)
     const char *path = "/config/configWifi.json";
     StringConfig = "{\"enableDHCP\":" + enableDHCP + ",\"ssid\":\"" + ssid + "\",\"pass\":\"" + pass + "\",\"ip\":\"" + ipAddress + "\",\"mask\":\"" + ipMask + "\",\"gw\":\"" + ipGW + "\",\"tcpListenPort\":\"" + tcpListenPort + "\"}";
     StaticJsonDocument<512> jsonBuffer;
-    DynamicJsonDocument doc(MAXHEAP);
+    SpiRamJsonDocument doc(MAXHEAP);
     deserializeJson(doc, StringConfig);
 
     File configFile = LittleFS.open(path, FILE_WRITE);
@@ -5999,7 +6098,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
     {
       StaticJsonDocument<32> filter;
       filter["hours"]["graph"] = true;
-      DynamicJsonDocument temp(MAXHEAP /2);
+      SpiRamJsonDocument temp(MAXHEAP /2);
       error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
       root = temp["hours"]["graph"];    
 
@@ -6008,14 +6107,14 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
       
       StaticJsonDocument<32> filter;
       filter["days"]["graph"] = true;
-      DynamicJsonDocument temp(MAXHEAP /2);
+      SpiRamJsonDocument temp(MAXHEAP /2);
       error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
       root = temp["days"]["graph"]; 
     }else if (time == "month")
     {
       StaticJsonDocument<32> filter;
       filter["months"]["graph"] = true;
-      DynamicJsonDocument temp(MAXHEAP /2);
+      SpiRamJsonDocument temp(MAXHEAP /2);
       error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
       root = temp["months"]["graph"]; 
       
@@ -6023,7 +6122,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
     {
       StaticJsonDocument<32> filter;
       filter["years"]["graph"] = true;
-      DynamicJsonDocument temp(MAXHEAP /2);
+      SpiRamJsonDocument temp(MAXHEAP /2);
       error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
       root = temp["years"]["graph"]; 
     }
