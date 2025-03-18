@@ -137,7 +137,7 @@ function logRefresh()
 	xhr.send();
 }
 
-function scanNetwork()
+function scanNetwork(ret)
 {
 	document.getElementById("networks").innerHTML="<img src='/web/img/wait.gif'>";
 	var xhr = getXhr();	
@@ -149,12 +149,13 @@ function scanNetwork()
 			{
 				document.getElementById("networks").innerHTML=datas[1];
 			}else{
-				scanNetwork();
+
+				setTimeout(function(){ scanNetwork(0); }, 1000);
 			}
 			
 		}
 	}
-	xhr.open("GET","scanNetwork",true);
+	xhr.open("GET","scanNetwork?ret="+escape(ret),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
@@ -390,7 +391,7 @@ function refreshLabel(file,shortaddr,cluster,attribute,type,coefficient,unit)
 		if(xhr.readyState == 4 ){
 			leselect = xhr.responseText;
 			document.getElementById("label_"+shortaddr+"_"+cluster+"_"+attribute).innerHTML=leselect;
-			setTimeout(function(){ refreshLabel(file,shortaddr,cluster,attribute,type,coefficient,unit); }, 60000);
+			setTimeout(function(){ refreshLabel(file,shortaddr,cluster,attribute,type,coefficient,unit); }, 5000);
 		}
 	}
 	xhr.open("GET","refreshLabel?file="+escape(file)+"&cluster="+escape(cluster)+"&attribute="+escape(attribute)+"&type="+escape(type)+"&coeff="+escape(coefficient)+"&unit="+escape(unit),true);
@@ -488,7 +489,7 @@ function loadGaugeDashboard(div,IEEE,cluster,attribute,type,coefficient,min,max,
 						relativeGaugeSize: true,
 						refreshAnimationTime: 1000
 				  });	
-			setTimeout(function(){ loadGaugeDashboard(div,IEEE,cluster,attribute,type,coefficient,min,max,label) }, 60000);
+			setTimeout(function(){ loadGaugeDashboard(div,IEEE,cluster,attribute,type,coefficient,min,max,label) }, 5000);
 		}
 	}
 	xhr.open("GET","loadGaugeDashboard?IEEE="+escape(IEEE)+"&cluster="+escape(cluster)+"&attribute="+escape(attribute)+"&type="+escape(type)+"&coefficient="+escape(coefficient),true);
