@@ -71,7 +71,7 @@ You can :
 
 ## Pair a device
 
-1. With your web navigator, you can go to `Config` menu then `Devices`  
+1. With your web navigator, you can go to `Network` menu then `Zigbee`  
 2. You can click on `Add Device` button. The ZiGate coordinator begin the `Permit Join` procedure for 30 seconds.   
 3. The blue LED of your device blink slowly.  
 4. Now, you can execute the pairing device procedure.
