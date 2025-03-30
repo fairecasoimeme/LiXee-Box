@@ -1258,7 +1258,7 @@ bool config_write(String path, String key, String value)
     }
 
     size_t filesize = fileRead.size();
-    SpiRamJsonDocument doc(MAXHEAP);
+    SpiRamJsonDocument doc(9600);
 
     if (filesize > 0)
     {
