@@ -270,7 +270,7 @@ void datasManage(char packet[256],int count)
   size_t HeapSize = ESP.getHeapSize();
   size_t freeMemory = ESP.getFreeHeap();
   size_t freeMemoryPS = ESP.getFreePsram();
-  log_d("Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),HeapSize,freeMemory,freeMemoryPS,uxTaskGetStackHighWaterMark(NULL));
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),HeapSize,freeMemory,freeMemoryPS,uxTaskGetStackHighWaterMark(NULL));
 }
 
 void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
@@ -1002,6 +1002,7 @@ void protocolDatas(uint8_t sp[4092], size_t len)
             xSemaphoreTake(QueuePrio_Mutex, portMAX_DELAY);
             PriorityQueuePacket->push(sp);
             xSemaphoreGive(QueuePrio_Mutex);
+            log_w("ProtocolDats - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
           }
         }else if((type == 0x8011) || (type == 0x8012))
         {
@@ -1012,6 +1013,7 @@ void protocolDatas(uint8_t sp[4092], size_t len)
             xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
             QueuePacket->push(sp);
             xSemaphoreGive(Queue_Mutex);
+            log_w("ProtocolDats - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
           }else{
             addDebugLog("QueuePacket FULL !");
             while (!QueuePacket->isEmpty())
