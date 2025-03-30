@@ -612,6 +612,17 @@ Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
 
 ## Changelog
 
+### V1.2
+* Add mDNS service for lixee-assist
+* Add api to set WiFi
+* Add poll webpage
+* Fix wifi enable bug
+* Fix Scan Wifi network
+* Fix Json file load to PSRAM
+* Reboot when wifi is configured
+* Fix memory leak
+* Enhance memory use
+
 ### V1.1
 * Add API commands
 * Add Marstek compatibility
