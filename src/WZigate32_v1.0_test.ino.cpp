@@ -44,6 +44,8 @@ extern "C" {
 
 #include "rules.h"
 
+bool executeReboot=false;
+
 #include <TaskScheduler.h>
 
 
@@ -105,7 +107,7 @@ unsigned long interval = 60000; // Intervalle de 1 minute en millisecondes
 
 //UDP Async
 AsyncUDP UdpServer;
-
+AsyncServer *TcpServer;
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t WifiReconnectTimer;
@@ -128,10 +130,12 @@ SET_LOOP_TASK_STACK_SIZE(24*1024); // 24KB
 
 //callback timer
 void scanCallback();
+void delayRebootCallBack();
 
 void sendPacket();
 
 Task scan(60000, TASK_FOREVER, &scanCallback);
+Task delayReboot(1000, TASK_ONCE, &delayRebootCallBack);
 Scheduler runner;
 
 void initCircularBuffer()
@@ -156,6 +160,11 @@ void initCircularBuffer()
   new (QueuePacket) CircularBuffer<SerialPacket,300>();
 }
 
+void delayRebootCallBack()
+{
+  DEBUG_PRINTLN("reboot...");
+  ESP.restart();
+}
 
 void scanCallback()
 {
@@ -296,7 +305,7 @@ void TcpTreatment(void * pvParameters)
         client->add(datas.c_str(), strlen(datas.c_str()));
         client->send();
       }
-     
+      log_w("TcpTreatement : uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
     }
     vTaskDelay(10000/portTICK_PERIOD_MS);
   }
@@ -359,7 +368,7 @@ static void handleNewClient(void *arg, AsyncClient *client)
 
 void tcpProcess()
 {
-  AsyncServer *TcpServer = new AsyncServer(12345); // start listening on tcp port 7050
+  TcpServer = new AsyncServer(12345); 
 	TcpServer->onClient(&handleNewClient, TcpServer);
 	TcpServer->begin();
 }
@@ -825,16 +834,24 @@ bool loadConfigGeneral() {
   return true;
 }
 
-void setupWifiAP()
+String getIDWifi()
 {
-  WiFi.disconnect();
-  WiFi.mode(WIFI_AP);
-   
   uint8_t mac[WL_MAC_ADDR_LENGTH];
   WiFi.softAPmacAddress(mac);
   String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
                  String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
   macID.toUpperCase();
+
+  return macID;
+}
+
+void setupWifiAP()
+{
+  WiFi.disconnect();
+  WiFi.mode(WIFI_AP);
+   
+  String macID = getIDWifi();
+
   String AP_NameString = "LIXEEGW-" + macID;
 
   char AP_NameChar[AP_NameString.length() + 1];
@@ -1053,6 +1070,7 @@ void setup(void)
       DEBUG_PRINTLN(F("AP"));
       setupWifiAP();
       modeWiFi="AP";
+      
       /* BLE PROVISIONING */
       /*#if CONFIG_BLUEDROID_ENABLED && !defined(USE_SOFT_AP)
         Serial.println("Begin Provisioning using BLE");
@@ -1060,7 +1078,7 @@ void setup(void)
         // Sample uuid that user can pass during provisioning using BLE
         uint8_t uuid[16] = {0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf, 0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02};
         WiFiProv.beginProvision(
-          WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BLE, WIFI_PROV_SECURITY_1, pop, service_name, service_key, uuid, reset_provisioned
+          WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BLE, WIFI_PROV_SECURITY_0, pop, service_name, service_key, uuid, reset_provisioned
         );
       #endif*/
     }
@@ -1075,14 +1093,15 @@ void setup(void)
   WiFi.onEvent(WiFiEvent);
 
   /* BLE PROVISIONING */
- // WiFi.onEvent(SysProvEvent);
+  WiFi.onEvent(SysProvEvent);
   WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   
    //Zeroconf
-  String localdns = "lixee-gw";
+  String localdns = "lixeegw-"+getIDWifi();
+
   if(!MDNS.begin(localdns.c_str())) {
      DEBUG_PRINTLN("Error starting mDNS");
-     //return;
+     
   }
 
   if (ConfigSettings.enableMqtt)
@@ -1115,6 +1134,10 @@ void setup(void)
   vTaskDelay(2000);
   
   initWebServer();
+
+  DEBUG_PRINTLN("MDNS add http");
+  MDNS.addService("http", "tcp", 80);
+
   //server.begin();
   vTaskDelay(2000);
 
@@ -1131,6 +1154,7 @@ void setup(void)
   DEBUG_PRINTLN(F("add networkState"));
   commandList->push(Packet{0x0011, 0x0000,0});
   commandList->push(Packet{0x0009, 0x0000,0});
+  esp_task_wdt_reset();
   vTaskDelay(2000);
   DEBUG_PRINTLN(F("start network"));
   commandList->push(Packet{0x0024, 0x0000,0});
@@ -1194,7 +1218,7 @@ esp_task_wdt_reset();
  xTaskCreatePinnedToCore(
                     SerialTask,   // Function to implement the task 
                     "SerialTask", // Name of the task 
-                    32*1024,      // Stack size in words 
+                    8*1024,      // Stack size in words 
                     NULL,       // Task input parameter 
                     17,          // Priority of the task 
                     NULL,       // Task handle. 
@@ -1221,16 +1245,28 @@ esp_task_wdt_reset();
   int ruleCount = 0;
   jsonToRules(rules, ruleCount);
   applyRules(rules, ruleCount);
+
+
+  //BleInit();
   
 }
 
 WiFiClient client;
+
 
 void loop(void)
 {
   esp_task_wdt_reset();
 
   runner.execute();
+
+  if (executeReboot)
+  {
+    executeReboot=false;
+    runner.addTask(delayReboot);
+    delayReboot.enableDelayed(1000);
+  }
+  
 
   //unsigned long currentTime = millis();
   //char output_sprintf[5];
@@ -1297,8 +1333,8 @@ void loop(void)
     
   }*/
 
-  //vTaskDelay(10);
-  yield();
+  vTaskDelay(10);
+
 }
 
 
