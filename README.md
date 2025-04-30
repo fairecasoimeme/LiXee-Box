@@ -1,5 +1,5 @@
 # LiXee-Box
-A multi protocols BOX for zigbee devices 
+A multi protocols gateway for zigbee devices 
 
 ## Hardware compatibility
 This application can be used with :  
