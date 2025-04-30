@@ -1,5 +1,5 @@
-# LiXee-Gateway
-A multi protocols gateway for zigbee devices 
+# LiXee-Box
+A multi protocols BOX for zigbee devices 
 
 ## Hardware compatibility
 This application can be used with :  
@@ -7,8 +7,8 @@ This application can be used with :
   The device is based on :
   * ESP32-S3-WROOM-N16R8 (PSRAM: 8Mo Flash: 16Mo)
   * JN5189 with [ZiGate v2 firmware](https://github.com/fairecasoimeme/ZiGatev2)
-<table><tr><td><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/LiXee_ZiWiFi32_face.png" width="480"></td>
-<td><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/LiXee_ZiWiFi32_pile.png" width="480">  </td></tr></table>
+<table><tr><td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_face.png" width="480"></td>
+<td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_pile.png" width="480">  </td></tr></table>
       
 Obviously, you can use this code with **ESP32S3** chip but depend on your board pins connexions. 
 
@@ -18,11 +18,11 @@ Obviously, you can use this code with **ESP32S3** chip but depend on your board 
 
 ## Uses cases example
 
-Here is a list of some use cases which can be used with **LiXee-Gateway**.  
+Here is a list of some use cases which can be used with **LiXee-Box**.  
 
 ### Use case n°1
 Your Linky counter is very far and Zigbee protocol is too light to transport datas to the coordinator.
-**Linky (ZLinky) <--> Zigbee <--> LiXee-Gateway <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz / other**
+**Linky (ZLinky) <--> Zigbee <--> LiXee-Box <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz / other**
 
 ### Use case n°2
 You need to relay zigbee devices datas to the cloud (with Web API)
@@ -78,12 +78,12 @@ You can :
    
 ⚠️ **If a device is paired, a green alert appears. You can refresh to see devices properties.**  
   
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_zigbee_devices.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_devices.png" width="800">  
 
 ## How to template a new zigbee device
 
 A template file is a JSON structure which give status and actions to a device type. The name of the template file corresponds to the device identification (decimal).
-When a Zigbee device is joining, **LiXee-Gateway** create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
+When a Zigbee device is joining, **LiXee-Box** create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
 
 ### Structure
 Here is the structure :
@@ -543,7 +543,7 @@ esptool.py.exe --chip esp32 --port "COMXX" \
 
 Just go to **Gateway** menu --> **MQTT** and enable the feature
 
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
 
 Fill the form :
   * MQTT server
@@ -557,44 +557,44 @@ Wait a moment and if all it's good, the connected icon will change to green.
 Then go to **Network** menu --> **Zigbee**
 
 For each Zigbee devices, a new button **MQTT Discover** appear. Please click on it to create a new device on HA. And that's it.
-<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_Devices_mqtt_discover.png" width="320">  </div>
+<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_Devices_mqtt_discover.png" width="320">  </div>
 
 Wait a moment and go to your HA MQTT devices:
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/HA_Create_MQTT_device.png" width="1024">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_Create_MQTT_device.png" width="1024">  
 
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/HA_MQTT_device_entities.png" width="800">
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_MQTT_device_entities.png" width="800">
 
 ## Screenshots
 
 ### Dashboard
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_dashboard.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_dashboard.png" width="800">  
 
 ### Devices status
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_status_devices.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_status_devices.png" width="800">  
 
 ### Config Wifi
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_wifi.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_wifi.png" width="800">  
 
 ### Config Zigbee
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_zigbee.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee.png" width="800">  
 
 ### Config MQTT
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
 
 ### Config WebPush
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_config_webpush.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_webpush.png" width="800">  
 
 ### Rules
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_rules.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_rules.png" width="800">  
 
 ### Advanced tools
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_tools.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_tools.png" width="800">  
 
 ### OTA update
-<img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_update.png" width="800">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_update.png" width="800">  
 
 ### Mobile responsive web page
-<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Gateway/blob/master/doc/screenshots/LiXee-GW_mobile_devices.png" width="400">  </div>
+<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_mobile_devices.png" width="400">  </div>
 
 ## Credits
 
