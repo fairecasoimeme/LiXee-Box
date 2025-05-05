@@ -6,7 +6,9 @@
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
 #include "mqtt.h"
+#include "device.h"
 
+extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -25,15 +27,15 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
       case 0:
         //manufacturer   
         
+          
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
-        {  
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-    
-          ini_write(inifile,"0406", "0", (String)tmp);
+        {
+          //ini_write(inifile,"0406", "0", (String)tmp);
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -54,16 +56,26 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
             deviceList->push(Device{shortaddr,1030,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0406"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
+          }
+        }
         break;       
       default:
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          ini_write(inifile,"0406", (String)attribute, (String)tmp);
+          //ini_write(inifile,"0406", (String)attribute, (String)tmp);
 
           //MQTT
           if (ConfigSettings.enableMqtt)
@@ -83,6 +95,15 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
           {
             int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1030,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+          }
+        }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0406"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
           }
         }
         break;

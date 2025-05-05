@@ -6,7 +6,9 @@
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
 #include "mqtt.h"
+#include "device.h"
 
+extern std::vector<DeviceData*> devices;
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
@@ -16,15 +18,33 @@ extern ConfigSettingsStruct ConfigSettings;
 String GetManufacturer(String inifile)
 {
   // ini_open(inifile);
-   String tmp= ini_read(inifile,"INFO", "manufacturer");  
-   return tmp;
+   //String tmp= ini_read(inifile,"INFO", "manufacturer");  
+   //return tmp;
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      return device->getInfo().manufacturer;
+    }
+  }
+  return String("");
 }
 
 String GetModel(String inifile)
 {
   // ini_open(inifile);
-   String tmp= ini_read(inifile,"INFO", "model");  
-   return tmp;
+  // String tmp= ini_read(inifile,"INFO", "model");  
+  // return tmp;
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      return device->getInfo().model;
+    }
+  }
+  return String("");
 }
 
 void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
@@ -40,15 +60,16 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
     {
       case 4:
         //manufacturer         
+        
+        char manufacturer[50];
+        for(int i=0;i<len;i++)
+        {
+          manufacturer[i]=datas[i];
+        }
+        manufacturer[len]='\0';
         if (ini_exist(inifile))
         {
-          char manufacturer[50];
-          for(int i=0;i<len;i++)
-          {
-            manufacturer[i]=datas[i];
-          }
-          manufacturer[len]='\0';
-          ini_write(inifile,"INFO", "manufacturer", (String)manufacturer);
+          //ini_write(inifile,"INFO", "manufacturer", (String)manufacturer);
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -64,19 +85,28 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
 
          
         }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setInfoManufacturer(manufacturer);
+            break;
+          }
+        }
         break;       
       case 5:
         //model    
+        
+        char model[50];
+        for(int i=0;i<len;i++)
+        {
+          model[i]=datas[i];
+        }
+        model[len]='\0';
         if (ini_exist(inifile))
         {
-          char model[50];
-          for(int i=0;i<len;i++)
-          {
-            model[i]=datas[i];
-          }
-          model[len]='\0';
-          // memcpy(model,datas,len);
-          ini_write(inifile,"INFO", "model", (String)model);
+          //ini_write(inifile,"INFO", "model", (String)model);
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -90,31 +120,49 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
             WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
           }
         }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setInfoModel(model);
+            break;
+          }
+        }
         break; 
       case 1:
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
+          //ini_write(inifile,"INFO", "software_version", (String)strtol(tmp.c_str(), NULL, 16));
+        }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
+            device->setValue(std::string("0000"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
           }
-          ini_write(inifile,"INFO", "software_version", (String)strtol(tmp.c_str(), NULL, 16));
-
-
         }
         break;
       case 16384:
         //SoftVersion  ZLinky        
+        
+        char soft[10];
+        for(int i=0;i<len;i++)
+        {
+          soft[i]=datas[i];
+        }
+        soft[len]='\0';
         if (ini_exist(inifile))
         {
-          char soft[10];
-          for(int i=0;i<len;i++)
-          {
-            soft[i]=datas[i];
-          }
-          soft[len]='\0';
-          ini_write(inifile,"INFO", "software_version", (String)soft);
+          //ini_write(inifile,"INFO", "software_version", (String)soft);
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -128,16 +176,26 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
             WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
           }
         }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setInfoSoftVersion(soft);
+            break;
+          }
+        }
         break;         
       default:
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          ini_write(inifile,"0000", (String)attribute, (String)tmp);
+          //ini_write(inifile,"0000", (String)attribute, (String)tmp);
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -149,6 +207,15 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
+          }
+        }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0000"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
           }
         }
         break;

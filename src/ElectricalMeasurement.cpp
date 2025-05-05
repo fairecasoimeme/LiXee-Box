@@ -8,7 +8,10 @@
 #include <WebPush.h>
 #include "mqtt.h"
 #include "udpclient.h"
+#include "device.h"
+#include "powerHistory.h"
 
+extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -24,24 +27,16 @@ void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,i
   {
     switch (attribute)
     {
-      case 1295:   
+      case 1295:  
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
+
         if (ini_exist(inifile))
         {
-          
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          log_d("0B04 / 1295 = %s",tmp);
-          ini_write(inifile,"0B04", (String)attribute, (String)tmp);
-          //ini_trendPower(inifile, (String)attribute, (String) tmp);
-          /*if (!ini_power2(inifile, (String)attribute, (String) tmp))
-          {
-            String err ="PB ini_pwer"+inifile+": 0xB04/"+(String)attribute+" "+(String)tmp;
-            addDebugLog(err);
-          }*/
-          
+
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -71,16 +66,29 @@ void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,i
           }
           
         }
+        
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0B04"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            addMeasurement(device->powerHistory, attribute,strtol(tmp.c_str(), NULL, 16));
+            break;
+          }
+        }
+
         break;  
       case 2319:   
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          ini_write(inifile,"0B04", (String)attribute, (String)tmp);
+          //ini_write(inifile,"0B04", (String)attribute, (String)tmp);
           /*ini_trendPower(inifile, (String)attribute, (String) tmp);
           ini_power2(inifile, (String)attribute, (String) tmp);*/
           
@@ -104,18 +112,30 @@ void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,i
             deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
           
+        }
+
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0B04"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            addMeasurement(device->powerHistory, attribute,strtol(tmp.c_str(), NULL, 16));
+            break;
+          }
         }
         
         break; 
       case 2575:   
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          ini_write(inifile,"0B04", (String)attribute, (String)tmp);
+          //ini_write(inifile,"0B04", (String)attribute, (String)tmp);
           /*ini_trendPower(inifile, (String)attribute, (String) tmp);
           ini_power2(inifile, (String)attribute, (String) tmp);*/
           
@@ -137,19 +157,33 @@ void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,i
           {
             int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+            
           }
           
         }
+
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0B04"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            addMeasurement(device->powerHistory, attribute,strtol(tmp.c_str(), NULL, 16));
+            break;
+          }
+        }
+
         break;  
       default:
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          ini_write(inifile,"0B04", (String)attribute, (String)tmp);
+          //ini_write(inifile,"0B04", (String)attribute, (String)tmp);
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -168,6 +202,15 @@ void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,i
           {
             int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,2820,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+          }
+        }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0B04"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
           }
         }
         break;        

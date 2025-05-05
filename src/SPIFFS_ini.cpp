@@ -126,7 +126,11 @@ bool ini_exist(String path)
   }
 }
 
-bool init_raz_energy(String path, String time)
+
+
+
+
+/*bool init_raz_energy(String path, String time)
 {
   if (path.length() > 0)
   {
@@ -233,7 +237,7 @@ bool init_raz_energy(String path, String time)
   }
   // Délai pour simuler une tâche
   
-}
+}*/
 
 bool ini_energy(String path, String section, String value)
 {

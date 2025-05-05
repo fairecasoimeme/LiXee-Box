@@ -31,6 +31,9 @@
 #include "basic.h"
 #include "rules.h"
 #include "microtar.h"
+#include "device.h"
+
+extern std::vector<DeviceData*> devices;
 
 extern SemaphoreHandle_t file_Mutex;
 
@@ -46,11 +49,13 @@ extern CircularBuffer<Alert, 10> *alertList;
 extern CircularBuffer<Device, 10> *deviceList;
 
 extern bool executeReboot;
+extern bool updatePending ;
 
 int maxDayOfTheMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 String section[12] = { "0", "1", "256", "258" , "260", "262", "264" ,"266", "268", "270", "272", "274"};
 
 extern String Hour;
+extern String Minute;
 extern String Day;
 extern String Month;
 extern String Year;
@@ -59,8 +64,9 @@ extern String FormattedDate;
 HTTPClient clientWeb;
 
 AsyncWebServer serverWeb(80);
+AsyncEventSource events("/events");
 
-#define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/firmware.bin"
+#define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/update.tar"
 
 const char HTTP_SHELLY_EMULE[] PROGMEM = 
 
@@ -80,34 +86,34 @@ const char HTTP_SHELLY_EMULE[] PROGMEM =
 
 "}";
 
-const char HTTP_HELP[] PROGMEM =  
-    "<h4>About</h4>"
-    "<h5>Version : {{version}}</h5>"
-   " <h5>Shop & description</h5>"
-    "You can go to this url :</br>"
-    "<a href=\"https://lixee.fr/\" target='_blank'>Shop </a></br>"
-
-    "<h5>Firmware Source & Issues</h5>"
-    "Please go here :</br>"
-    "<a href=\"https://github.com/fairecasoimeme/LiXee-Gateway\" target='_blank'>Sources</a>";
-
-
 const char HTTP_HEADER[] PROGMEM = 
     "<head>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
-    "<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
+    "<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
+    //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
     "<script type='text/javascript' src='web/js/functions.js'></script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+    "<style>"
+      "body {"
+        "background-color: #f7f9fc;"
+        "font-family: 'Inter', sans-serif;"
+      "}"
+     ".card {"
+        "border-radius: 1rem;"
+        "box-shadow: 0 4px 6px rgba(0,0,0,0.05);"
+      "}"
+    "</style>"
      "</head>";
 
 
 const char HTTP_HEADERGRAPH[] PROGMEM = 
     "<head>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
-    "<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
+    "<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
+    //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>" 
     "<script type='text/javascript' src='web/js/raphael-min.js'></script>"
     "<script type='text/javascript' src='web/js/morris.min.js'></script>"
     "<script type='text/javascript' src='web/js/justgage.min.js'></script>"
@@ -116,6 +122,24 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+    "<style>"
+      "body {"
+        "background-color: #f7f9fc;"
+        "font-family: 'Inter', sans-serif;"
+      "}"
+     ".card {"
+        "border-radius: 1rem;"
+        "box-shadow: 0 4px 6px rgba(0,0,0,0.05);"
+      "}"
+      ".link {"
+        "color : rgba(0,0,0);"
+        "text-decoration: none !important;"
+        "font-size: 24px;"
+      "}"
+      ".link.active {"
+        "text-decoration: underline !important;"
+      "}"
+    "</style>"
     "</head>";
 
 
@@ -126,9 +150,9 @@ const char HTTP_MENU[] PROGMEM =
    "<button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNavDropdown' aria-controls='navbarNavDropdown' aria-expanded='false' aria-label='Toggle navigation'>"
    "<span class='navbar-toggler-icon'></span>"
    "</button>"
-   "<a class='navbar-brand p-0 me-0 me-lg-2' href='/dashboard' style='margin-right:0px;'>"
+   "<a class='navbar-brand p-0 me-0 me-lg-2' href='/' style='margin-right:0px;'>"
    "  <div style='display:block-inline;float:left;'><img width='70px' src='web/img/logo.png'> </div>"
-   "  <div style='float:left;display:block-inline;font-size:12px;font-weight:bold;padding:13px 10px 10px 10px;'> Gateway</div>"
+   "  <div style='float:left;display:block-inline;font-size:16px;font-weight:bold;padding:10px 10px 10px 10px;'> Box</div>"
    "</a>"
    "<div id='navbarNavDropdown' class='collapse navbar-collapse justify-content-center'>"
    "<ul class='navbar-nav mc-auto mb-2 mb-lg-0'>"
@@ -147,6 +171,12 @@ const char HTTP_MENU[] PROGMEM =
    "  <path fill-rule='evenodd' d='M6.664 15.889A8 8 0 1 1 9.336.11a8 8 0 0 1-2.672 15.78zm-4.665-4.283A11.95 11.95 0 0 1 8 10c2.186 0 4.236.585 6.001 1.606a7 7 0 1 0-12.002 0'/>"
    "</svg>"
    " Dashboard"
+   "</a>"
+   "<a class='dropdown-item' href='statusEnergy'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-flower1' viewBox='0 0 16 16'>"
+    "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
+  "</svg>"
+   " Energy"
    "</a>"
    "<a class='dropdown-item' href='statusDevices'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
@@ -260,6 +290,13 @@ const char HTTP_MENU[] PROGMEM =
    "</svg>"
    " Rules"
    "</a>"
+   "<a class='dropdown-item' href='/update'>"
+   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-download' viewBox='0 0 16 16'>"
+    "  <path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5'/>"
+    "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
+    "</svg>"
+   " Update"
+   "</a>"
    "</div>"
    "</li>"
    "<li class='nav-item'>"
@@ -313,6 +350,12 @@ const char HTTP_TOOLS[] PROGMEM =
     "</svg><br>"
     " Device Files"
     "</a>"
+    "<a href='/hst' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-filetype-json' viewBox='0 0 16 16'>"
+      "<path fill-rule='evenodd' d='M14 4.5V11h-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM4.151 15.29a1.2 1.2 0 0 1-.111-.449h.764a.58.58 0 0 0 .255.384q.105.073.25.114.142.041.319.041.245 0 .413-.07a.56.56 0 0 0 .255-.193.5.5 0 0 0 .084-.29.39.39 0 0 0-.152-.326q-.152-.12-.463-.193l-.618-.143a1.7 1.7 0 0 1-.539-.214 1 1 0 0 1-.352-.367 1.1 1.1 0 0 1-.123-.524q0-.366.19-.639.192-.272.528-.422.337-.15.777-.149.456 0 .779.152.326.153.5.41.18.255.2.566h-.75a.56.56 0 0 0-.12-.258.6.6 0 0 0-.246-.181.9.9 0 0 0-.37-.068q-.324 0-.512.152a.47.47 0 0 0-.185.384q0 .18.144.3a1 1 0 0 0 .404.175l.621.143q.326.075.566.211a1 1 0 0 1 .375.358q.135.222.135.56 0 .37-.188.656a1.2 1.2 0 0 1-.539.439q-.351.158-.858.158-.381 0-.665-.09a1.4 1.4 0 0 1-.478-.252 1.1 1.1 0 0 1-.29-.375m-3.104-.033a1.3 1.3 0 0 1-.082-.466h.764a.6.6 0 0 0 .074.27.5.5 0 0 0 .454.246q.285 0 .422-.164.137-.165.137-.466v-2.745h.791v2.725q0 .66-.357 1.005-.355.345-.985.345a1.6 1.6 0 0 1-.568-.094 1.15 1.15 0 0 1-.407-.266 1.1 1.1 0 0 1-.243-.39m9.091-1.585v.522q0 .384-.117.641a.86.86 0 0 1-.322.387.9.9 0 0 1-.47.126.9.9 0 0 1-.47-.126.87.87 0 0 1-.32-.387 1.55 1.55 0 0 1-.117-.641v-.522q0-.386.117-.641a.87.87 0 0 1 .32-.387.87.87 0 0 1 .47-.129q.265 0 .47.129a.86.86 0 0 1 .322.387q.117.255.117.641m.803.519v-.513q0-.565-.205-.973a1.46 1.46 0 0 0-.59-.63q-.38-.22-.916-.22-.534 0-.92.22a1.44 1.44 0 0 0-.589.628q-.205.407-.205.975v.513q0 .562.205.973.205.407.589.626.386.217.92.217.536 0 .917-.217.384-.22.589-.626.204-.41.205-.973m1.29-.935v2.675h-.746v-3.999h.662l1.752 2.66h.032v-2.66h.75v4h-.656l-1.761-2.676z'/>"
+    "</svg><br>"
+    " History"
+    "</a>"
     "<a href='/tp' class='btn btn-primary mb-2'>"
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-filetype-json' viewBox='0 0 16 16'>"
       "<path fill-rule='evenodd' d='M14 4.5V11h-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM4.151 15.29a1.2 1.2 0 0 1-.111-.449h.764a.58.58 0 0 0 .255.384q.105.073.25.114.142.041.319.041.245 0 .413-.07a.56.56 0 0 0 .255-.193.5.5 0 0 0 .084-.29.39.39 0 0 0-.152-.326q-.152-.12-.463-.193l-.618-.143a1.7 1.7 0 0 1-.539-.214 1 1 0 0 1-.352-.367 1.1 1.1 0 0 1-.123-.524q0-.366.19-.639.192-.272.528-.422.337-.15.777-.149.456 0 .779.152.326.153.5.41.18.255.2.566h-.75a.56.56 0 0 0-.12-.258.6.6 0 0 0-.246-.181.9.9 0 0 0-.37-.068q-.324 0-.512.152a.47.47 0 0 0-.185.384q0 .18.144.3a1 1 0 0 0 .404.175l.621.143q.326.075.566.211a1 1 0 0 1 .375.358q.135.222.135.56 0 .37-.188.656a1.2 1.2 0 0 1-.539.439q-.351.158-.858.158-.381 0-.665-.09a1.4 1.4 0 0 1-.478-.252 1.1 1.1 0 0 1-.29-.375m-3.104-.033a1.3 1.3 0 0 1-.082-.466h.764a.6.6 0 0 0 .074.27.5.5 0 0 0 .454.246q.285 0 .422-.164.137-.165.137-.466v-2.745h.791v2.725q0 .66-.357 1.005-.355.345-.985.345a1.6 1.6 0 0 1-.568-.094 1.15 1.15 0 0 1-.407-.266 1.1 1.1 0 0 1-.243-.39m9.091-1.585v.522q0 .384-.117.641a.86.86 0 0 1-.322.387.9.9 0 0 1-.47.126.9.9 0 0 1-.47-.126.87.87 0 0 1-.32-.387 1.55 1.55 0 0 1-.117-.641v-.522q0-.386.117-.641a.87.87 0 0 1 .32-.387.87.87 0 0 1 .47-.129q.265 0 .47.129a.86.86 0 0 1 .322.387q.117.255.117.641m.803.519v-.513q0-.565-.205-.973a1.46 1.46 0 0 0-.59-.63q-.38-.22-.916-.22-.534 0-.92.22a1.44 1.44 0 0 0-.589.628q-.205.407-.205.975v.513q0 .562.205.973.205.407.589.626.386.217.92.217.536 0 .917-.217.384-.22.589-.626.204-.41.205-.973m1.29-.935v2.675h-.746v-3.999h.662l1.752 2.66h.032v-2.66h.75v4h-.656l-1.761-2.676z'/>"
@@ -349,18 +392,10 @@ const char HTTP_TOOLS[] PROGMEM =
     "</a>"
     "</div>"; 
 
-const char HTTP_BACKUP[] PROGMEM =
-    "<h4>Backup datas</h4>"
-    "<a href='#' class='btn btn-primary mb-2' onClick='createBackupFile()'>Create Backup</a>"
-    "<div id='createBackupFile'>"
-    "</div>"
-    "<h4>Restore datas</h4>"
-    "<div id='restoreBackupFile'>"
-    "{{listBackupFiles}}"
-    "</div>"
-    "<form method='POST' action='/doRestore' enctype='multipart/form-data' id='upload_form'>"
-    "<input type='file' name='update' id='file' onchange='sub(this)' style=display:none accept='.tar'>"
-    "<label id='file-input' for='file'>Choose backup...</label>"
+const char HTTP_HISTORY[] PROGMEM = 
+    "<form method='POST' action='/doUploadHistory' enctype='multipart/form-data' id='upload_form'>"
+    "<input type='file' name='update' id='file' onchange='sub(this)' style=display:none accept='*.*'>"
+    "<label id='file-input' for='file'>Choose history...</label>"
     "<input type='submit' class='btn btn-warning mb-2' value='Restore'>"
     "<br><br>"
     "<div id='prg'></div>"
@@ -376,7 +411,7 @@ const char HTTP_BACKUP[] PROGMEM =
     "var form = $('#upload_form')[0];"
     "var data = new FormData(form);"
     "$.ajax({"
-    "url: '/doRestore',"
+    "url: '/doUploadHistory',"
     "type: 'POST',"
     "data: data,"
     "contentType: false,"
@@ -395,79 +430,377 @@ const char HTTP_BACKUP[] PROGMEM =
     "success:function(d, s) {"
     "console.log('success!');"
     "$('#prg').html('restore completed!<br>Rebooting!');"
-    "window.location.href='/backup';"
+    "window.location.href='/hst';"
     "},"
     "error: function (a, b, c) {"
     "}"
     "});"
     "});"
     "</script>";
-    ;
 
-const char HTTP_UPDATE[] PROGMEM =
-    "<h4>Update firmware</h4>"
-    "<div align='center'>"
-    "<div id='update_info'>"
-    "<h4>Latest version on GitHub</h4>"
-    "<div id='onlineupdate' style='text-align:left;width:480px;'>"
-    "<h5 id=releasehead></h5>"
-    "<div style='clear:both;'>"
-    "<br>"
-    "</div>"  
-    "<pre id=releasebody>Getting update information from GitHub...</pre>"
+const char HTTP_BACKUP[] PROGMEM =
+    "<h4>Backup datas</h4>"
+    "<a href='#' class='btn btn-primary mb-2' onClick='createBackupFile()'>Create Backup</a>"
+    "<div id='createBackupFile'>"
     "</div>"
-    
-    "You can download the last firmware here : "
-    "<a style='margin-left: 40px;' class='pull-right' href='{{linkFirmware}}' >"
-    "<button type='button' class='btn btn-success'>Download</button>"
-    "</a>"
+    "<h4>Restore datas</h4>"
+    "<div id='restoreBackupFile'>"
+    "{{listBackupFiles}}"
     "</div>"
-    "<form method='POST' action='/doUpdate' enctype='multipart/form-data' id='upload_form'>"
-    "<input type='file' name='update' id='file' onchange='sub(this)' style=display:none accept='.bin'>"
-    "<label id='file-input' for='file'>   Choose file...</label>"
-    "<input type='submit' class='btn btn-warning mb-2' value='Update'>"
-    "<br><br>"
-    "<div id='prg'></div>"
-    "<br><div id='prgbar'><div id='bar'></div></div><br></form>"
-    
-  
-    "<script language='javascript'>getLatestReleaseInfo();</script>"
+    /*"<form method='POST' action='/doRestore' enctype='multipart/form-data' id='upload_form'>"
+      "<input type='file' name='update' id='file'  style=display:none accept='.tar'>" //onchange='sub(this)'
+      "<label id='file-input' for='file'>Choose backup...</label>"
+      "<input type='submit' class='btn btn-warning mb-2' value='Restore'>"
+      "<br><br>"
+      "<progress id='prg' value='0' max='100' style='width:100%'></progress>"
+      "<p id='prgbar'>0%</p><br>"
+    "</form>"*/
+    "<div class='container py-5'>"
+    "   <h1 class='mb-4'>Update</h1>"
+    "   <form id='frm' class='mb-4'>"
+    "     <div class='mb-3'>"
+    "       <label for='f' class='form-label'>Select the file</label>"
+    "       <input class='form-control' type='file' id='f' name='archive' accept='.tar'>"
+    "     </div>"
+    "     <button type='submit' class='btn btn-primary'>Start</button>"
+    "   </form>"
+    "   <div class='progress mb-2' style='height: 1.5rem;'>"
+    "     <div"
+    "       id='bar'"
+    "       class='progress-bar progress-bar-striped progress-bar-animated'"
+    "       role='progressbar'"
+    "       aria-valuemin='0' aria-valuemax='100'"
+    "       style='width: 0%;'>"
+    "       0%"
+    "     </div>"
+    "   </div>"
+    "   <div id='status' class='text-muted'>Prêt.</div>"
+    "</div>"
+
     "<script>"
-    "function sub(obj){"
-    "var fileName = obj.value.split('\\\\');"
-    "document.getElementById('file-input').innerHTML = '   '+ fileName[fileName.length-1];"
-    "};"
-    "$('form').submit(function(e){"
-    "e.preventDefault();"
-    "var form = $('#upload_form')[0];"
-    "var data = new FormData(form);"
-    "$.ajax({"
-    "url: '/doUpdate',"
-    "type: 'POST',"
-    "data: data,"
-    "contentType: false,"
-    "processData:false,"
-    "xhr: function() {"
-    "var xhr = new window.XMLHttpRequest();"
-    "xhr.upload.addEventListener('progress', function(evt) {"
-    "if (evt.lengthComputable) {"
-    "var per = evt.loaded / evt.total;"
-    "$('#prg').html(Math.round(per*100) + '%');"
-    "$('#bar').css('width',Math.round(per*100) + '%');"
-    "}"
-    "}, false);"
-    "return xhr;"
-    "},"
-    "success:function(d, s) {"
-    "console.log('success!');"
-    "$('#prg').html('Update completed!<br>Rebooting!');"
-    "window.location.href='/';"
-    "},"
-    "error: function (a, b, c) {"
-    "}"
-    "});"
-    "});"
-    "</script>";
+       "  const frm = document.getElementById('frm'),"
+       "        f   = document.getElementById('f'),"
+       "        bar = document.getElementById('bar'),"
+       "        st  = document.getElementById('status');"
+
+       "  frm.addEventListener('submit', e => {"
+       "    e.preventDefault();"
+       "    const file = f.files[0];"
+       "    if (!file) return alert('Choisissez un .tar');"
+
+       "    const xhr = new XMLHttpRequest();"
+       "    xhr.open('POST','/doRestore');"
+
+       "    xhr.upload.onprogress = ev => {"
+       "      if (ev.lengthComputable) {"
+       "        const pct = Math.round(ev.loaded/ev.total*100);"
+       "        bar.style.width = pct + '%';"
+       "        bar.textContent = pct + '%';"
+       "      }"
+       "    };"
+
+       "    xhr.onload = () => {"
+       "      if (xhr.status === 200) {"
+       "        bar.classList.remove('progress-bar-animated');"
+       "        st.textContent = 'Rebooting ...';"
+       "      } else {"
+       "         bar.classList.remove('progress-bar-animated');"
+       "         bar.classList.add('bg-danger');"
+       "         st.textContent = 'Error: ' + xhr.status;"
+       "      }"
+       "    };"
+
+       "    const fd = new FormData();"
+       "    fd.append('archive', file, file.name);"
+       "    xhr.send(fd);"
+            
+       "    st.textContent = 'Loading ...';"
+       "     bar.classList.add('progress-bar-animated');"
+       "     bar.classList.remove('bg-danger');"
+       "     bar.style.width = '0%';"
+       "     bar.textContent = '0%';"
+
+       "  });"
+       "</script>"
+
+    ;
+    
+   /*<div class="container py-5">
+    <h4 class="mb-4">Update firmware</h4>
+    <div align='center'>
+      <div id='update_info' class='card p-4'>
+        <h5>Latest version on GitHub</h5>
+          <div id='onlineupdate' style='text-align:left'>
+            <h6 id=releasehead></h6>
+            <br>
+            <pre id=releasebody>Getting update information from GitHub...</pre>
+          </div>
+          <button id="btnUpdate" class="btn btn-primary mb-3">
+            Update
+          </button>
+          <div id="statusDL" class="text-muted">Ready.</div>
+          <div class="progress" style="height:1.5rem">
+          <div id="barDL" class="progress-bar" role="progressbar"
+              style="width:0%" aria-valuemin="0" aria-valuemax="100">
+            0%
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary mb-3" onClick="toggleDiv('updateManual');"> Manual </button>
+  </div>
+  <div class='container py-5' id="updateManual" style="display:none;">
+     <form id='frm' class='mb-4'>
+       <div class='mb-3'>
+         <label for='f' class='form-label'>Select the file</label>
+         <input class='form-control' type='file' id='f' name='archive' accept='.tar'>
+       </div>
+       <button type='submit' class='btn btn-primary'>Start</button>
+     </form>
+     <div class='progress mb-2' style='height: 1.5rem;'>
+       <div
+         id='bar'
+         class='progress-bar progress-bar-striped progress-bar-animated'
+         role='progressbar'
+         aria-valuemin='0' aria-valuemax='100'
+         style='width: 0%;'>
+         0%
+       </div>
+     </div>
+     <div id='status' class='text-muted'>Prêt.</div>
+  </div>*/
+const char HTTP_UPDATE[] PROGMEM = R"(
+    <div class="container py-5">
+    <h4 class="mb-4">Update firmware</h4>
+
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs" id="updateTab" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link active"
+          id="auto-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#auto"
+          type="button"
+          role="tab"
+          aria-controls="auto"
+          aria-selected="true">
+          Automatique
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link"
+          id="manual-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#manual"
+          type="button"
+          role="tab"
+          aria-controls="manual"
+          aria-selected="false">
+          Manuel
+        </button>
+      </li>
+    </ul>
+
+    <!-- Tab contents -->
+    <div class="tab-content" id="updateTabContent">
+      <!-- Onglet Automatique -->
+      <div
+        class="tab-pane fade show active"
+        id="auto"
+        role="tabpanel"
+        aria-labelledby="auto-tab">
+
+        <div align="center">
+          <div id="update_info" class="card p-4">
+            <h5>Latest version on GitHub</h5>
+            <div id="onlineupdate" style="text-align:left">
+              <h6 id="releasehead"></h6>
+              <br>
+              <pre id="releasebody">Getting update information from GitHub...</pre>
+            </div>
+            <div id="autoBtn">
+              <button id="btnUpdate" style="width:100%" class="btn btn-primary mb-3">
+                Update
+              </button>
+              <div id="statusDL" class="text-muted">Ready.</div>
+
+              <div class="progress" style="height:1.5rem">
+                <div
+                  id="barDL"
+                  class="progress-bar"
+                  role="progressbar"
+                  style="width:0%"
+                  aria-valuemin="0"
+                  aria-valuemax="100">
+                  0%
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Onglet Manuel -->
+      <div
+        class="tab-pane fade"
+        id="manual"
+        role="tabpanel"
+        aria-labelledby="manual-tab">
+        <div class="card p-4">
+        <div align='center'>
+        <form id="frm">
+          <div class="mb-3">
+            <label for="f" class="form-label">Select the file</label>
+            <input
+              class="form-control"
+              type="file"
+              id="f"
+              name="archive"
+              accept=".tar">
+          </div>
+          <button type="submit" style="width:100%" class="btn btn-primary mb-3">Update</button>
+        </form>
+        
+        <div id="status" class="text-muted">Ready.</div>
+        <div class="progress" style="height:1.5rem">
+          <div
+            id="barP"
+            class="progress-bar"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            style="width:0%">
+            0%
+          </div>
+        </div>
+        </div>
+        
+        </div>
+      </div>
+    </div>
+  </div>
+    
+  <script>
+      function getReleaseInfo() {
+        $.getJSON("https://api.github.com/repos/fairecasoimeme/LiXee-Gateway/releases/latest").done(function(release) {
+            var asset = release.assets[0];
+            var downloadCount = 0;
+            for (var i = 0; i < release.assets.length; i++) {
+            downloadCount += release.assets[i].download_count;
+          }
+          var oneHour = 60 * 60 * 1000;
+          var oneDay = 24 * oneHour;
+          var dateDiff = new Date() - new Date(release.published_at);
+          var timeAgo;
+          if (dateDiff < oneDay) {
+            timeAgo = (dateDiff / oneHour).toFixed(1) + " hours ago";
+          } else {
+            timeAgo = (dateDiff / oneDay).toFixed(1) + " days ago";
+          }
+
+          var releaseInfo = release.name; //+ " was updated " + timeAgo + " and downloaded " + downloadCount.toLocaleString() + " times.";
+
+          var version = release.tag_name;
+          if (version == "{{version}}")
+          {
+            $("#autoBtn").text("No update needed");
+          }else{
+            $("#autoBtn").show();
+            
+          }
+          $("#downloadupdate").attr("href", asset.browser_download_url);
+          $("#releasehead").text(releaseInfo);
+          $("#releasebody").text(release.body);
+          $("#releaseinfo").fadeIn("slow");
+        });
+      }
+
+      getReleaseInfo();
+      const btn = document.getElementById('btnUpdate'),
+            stdl  = document.getElementById('statusDL');
+            bardl  = document.getElementById('barDL');
+
+      const es = new EventSource('/events');
+      es.addEventListener('updateStatusAuto', e => {
+        stdl.textContent = e.data;
+      });
+      
+      es.addEventListener('updateProgress', e => {
+        const pct = parseInt(e.data);
+        barDL.style.width = pct+'%';
+        barDL.textContent = pct+'%';
+      });
+      es.addEventListener('reboot', e => {
+        location.reload();
+      });
+      
+      btn.addEventListener('click', () => {
+        stdl.textContent = 'Starting…';
+        fetch('/downloadUpdate', { method: 'POST' })
+          .then(resp => {
+            if (resp.ok) {
+              stdl.textContent = 'Starting. please wait ...';
+              btn.disabled = true;
+            } else {
+              stdl.textContent = 'Erreur: ' + resp.status;
+            }
+          })
+          .then(text => {
+            stdl.textContent = text;  // par exemple "Mise à jour programmée"
+          })
+          .catch(err => {
+            stdl.textContent = 'Network error';
+          });
+      });
+
+      const frm = document.getElementById('frm'),
+            f   = document.getElementById('f'),
+            bar = document.getElementById('barP'),
+            st  = document.getElementById('status');
+      
+      es.addEventListener('updateStatusManuel', e => {
+        st.textContent = e.data;
+      });
+
+      frm.addEventListener('submit', e => {
+        e.preventDefault();
+        const file = f.files[0];
+        if (!file) return alert('Choisissez un .tar');
+
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST','/doRestore');
+
+        xhr.upload.onprogress = ev => {
+          if (ev.lengthComputable) {
+            const pct = Math.round(ev.loaded/ev.total*100);
+            bar.style.width = pct + '%';
+            bar.textContent = pct + '%';
+          }
+        };
+        xhr.onload = () => {
+          if (xhr.status === 200) {
+            setTimeout(() => {
+                window.location.href='/';
+            }, 2000);
+          } else {
+              st.textContent = 'Error: ' + xhr.status;
+          }
+        };
+        const fd = new FormData();
+        fd.append('archive', file, file.name);
+        xhr.send(fd);
+          bar.style.width = '0%';
+          bar.textContent = '0%';
+      });
+
+      
+
+
+    </script>)";
 
 const char HTTP_CONFIG_MENU_ZIGBEE[] PROGMEM =
     "<a href='/configDevices' style='width:100px;height:64px;' class='btn btn-primary mb-1 {{menu_config_devices}}' >"
@@ -488,7 +821,7 @@ const char HTTP_CONFIG_MENU_ZIGBEE[] PROGMEM =
 
 const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
 
-    "<div class='row justify-content-md-center' >"
+    "<div class='row p-4 justify-content-md-center' >"
       "<div class='col-sm-2'>"
         "<div class='btn-group-horizontal'>"
           "{{menu_config_zigbee}}"
@@ -496,30 +829,30 @@ const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
       "</div>"
       "<div class='col-sm-10'>"
         "<h4>Config Zigbee Devices</h4>"
-        "<div align='right'>"
-          "<button type='button' onclick='cmd(\"PermitJoin\");' class='btn btn-primary'>"
-          "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
+        "<div class='d-flex justify-content-end'>"
+          "<a class='btn btn-primary mb-1' href='/assistDevice' style='width:120px;height:64px;'>"
+          "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
             "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
             "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
           "</svg><br>"
           " Add Device"
-          "</button> "
+          "</a> "
         "</div><br>"
         "<h5>List of devices</h5>"
-        "<div class='row' style='font-size:12px;--bs-gutter-x: 0.1rem;'>"
+        "<div class='row g-4' style='font-size:12px;'>"
           "{{devicesList}}"
         "</div>"
       "</div>"
-
-
+      "</div>"
 ;
 
 
 const char HTTP_CONFIG_GENERAL[] PROGMEM =
     
+    "<h4>General</h4>"
     "<div class='row justify-content-md-center' >"
     "<div class='col col-md-6'>"
-    "<h4>General</h4>"
+    
     "<form method='POST' action='saveConfigGeneral'>" 
     "<div class='form-check'>"
     "<input class='form-check-input' id='debugSerial' type='checkbox' name='debugSerial' {{checkedDebug}}>"
@@ -530,131 +863,158 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM =
     "</div>";
 
 const char HTTP_CONFIG_ZIGBEE[] PROGMEM =  
-    "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config_zigbee}}"
-    "</div>"
-    "</div>"
+    "<div class='row p-4 justify-content-md-center' >"
+      "<div class='col-sm-2'>"
+        "<div class='btn-group-horizontal'>"
+          "{{menu_config_zigbee}}"
+        "</div>"
+      "</div>"
     "<div class='col-sm-10'>"
-    "<h4>Config Zigbee</h4>"
-    "<div align='right'>"
-    "<button type='button' onclick='cmd(\"Reset\");' class='btn btn-primary'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='#FFFFFF' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
-      "<path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
-      "<path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
-    "</svg>"
-    " Reset"
-    "</button> "
-    "<button type='button' onClick=\"if (confirm('Are you sure ?')==true){cmd('ErasePDM');}else{return false;};\" class='btn btn-danger'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>"
-      "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>"
-      "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>"
-    "</svg>"
-    " RAZ"
-    "</button> "
+      "<h4>Config Zigbee</h4>"
+      "<div align='right'>"
+        "<button type='button' onclick='cmd(\"Reset\");' class='btn btn-primary'>"
+        "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='#FFFFFF' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
+          "<path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
+          "<path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
+        "</svg>"
+        " Reset"
+        "</button> "
+        "<button type='button' onClick=\"if (confirm('Are you sure ?')==true){cmd('ErasePDM');}else{return false;};\" class='btn btn-danger'>"
+        "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>"
+          "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>"
+          "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>"
+        "</svg>"
+        " RAZ"
+        "</button> "
+      "</div>"
+      "<h5 class='card-title mb-4'>Parameters</h5>"
+      "<div class='card mx-auto shadow-sm' >"
+        "<div class='card-body'>"
+          "<div class='mb-3'>"
+            "<span> @MAC coordinator : </span>{{macCoordinator}}<br>"
+            "<span> Version coordinator : </span>{{versionCoordinator}}<br>"
+            "<span> Network : </span>{{networkCoordinator}}<br>"
+            "<label for='SetMaskChannel'>Set channel mask</label>"
+            "<input class='form-control' id='SetMaskChannel' type='text' name='SetMaskChannel' value='{{SetMaskChannel}}'><br>"
+            "<button type='button' onclick='cmd(\"SetChannelMask\",document.getElementById(\"SetMaskChannel\").value);' class='btn btn-primary'>Set Channel</button><br> "
+          "</div>"
+        "</div>"
+      "</div>"  
     "</div>"
-    "<h5>Parameters</h5>"
-    "<span> @MAC coordinator : </span>{{macCoordinator}}<br>"
-    "<span> Version coordinator : </span>{{versionCoordinator}}<br>"
-    "<span> Network : </span>{{networkCoordinator}}<br>"
-    "<label for='SetMaskChannel'>Set channel mask</label>"
-    "<input class='form-control' id='SetMaskChannel' type='text' name='SetMaskChannel' value='{{SetMaskChannel}}'>"
-    "<button type='button' onclick='cmd(\"SetChannelMask\",document.getElementById(\"SetMaskChannel\").value);' class='btn btn-primary'>Set Channel</button><br> "
-    /*"<h5>Console</h5>"
-    "<button type='button' onclick='cmd(\"ClearConsole\");document.getElementById(\"console\").value=\"\";' class='btn btn-primary'>Clear Console</button> "
-    "<button type='button' onclick='cmd(\"GetVersion\");' class='btn btn-primary'>Get Version</button> "
-    
-    "<br>Raw datas : <br><textarea id='console' rows='16' style='width:100%;'></textarea>"*/
-    "</div>"
-    "</div>"
-   /*"<script language='javascript'>"
-    "$(document).ready(function() {"
-    "logRefresh();});"
-    "</script>";*/
-    ;
-const char HTTP_CONFIG_HORLOGE[] PROGMEM =
-    
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    "<h4>Time</h4>"
-    "<form method='POST' action='saveConfigHorloge'>"
-    "<div class='form-check'>"
-    "<h5>NTP Server</h5>"
-    "<span> Datetime : </span>{{FormattedDate}}"
-    "<br><label for='ntpserver'>NTP server URL</label>"
-    "<input class='form-control' id='ntpserver' type='text' name='ntpserver' value='{{ntpserver}}'>"
-    "<label for='timeoffset'>Time Offset</label>"
-    "<input class='form-control' id='timeoffset' type='text' name='timeoffset' value='{{timeoffset}}'>"
-    "<label for='timezone'>Time Zone</label>"
-    "<input class='form-control' id='timezone' type='text' name='timezone' value='{{timezone}}'>"
-    "<label for='epochtime'>UTC epoch date</label>"
-    "<input class='form-control' id='epochtime' type='text' name='epochtime' value='{{epochtime}}'>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form></div>"
-    "</div>";
-const char HTTP_CONFIG_RULES[] PROGMEM = 
-    "<h4>Config Rules</h4>"
-    "<div align='right'>"
-     /* "<a href='/addRule' type='button' class='btn btn-primary'>"
-      "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
-        "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
-        "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
-      "</svg><br>"
-      " Add Rule"
-      "</a> "*/
-    "</div><br>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    "{{rulesList}}"
-    "</div>"
-    "</div>";
+  "</div>"    ;
 
-const char HTTP_CONFIG_LINKY[] PROGMEM =
-    "<h4>Config Linky</h4>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigLinky'>"
-    "<div class='form-check'>"
-    "<h5>Device</h5>"
-    "{{selectDevices}}"
-    "<h5>Tarifs</h5>"
-    "<label for='tarifAbo'>Tarif abonnement (€)</label>"
-    "<input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'>"
-    "<label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label>"
-    "<input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'>"
-    "<label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€)</label>"
-    "<input class='form-control' id='tarifCTA' type='text' name='tarifCTA' value='{{tarifCTA}}'>"
-    "<label for='tarifIdx1'>Tarif BASE/EAST  (€)</label>"
-    "<input class='form-control' id='tarifIdx1' type='text' name='tarifIdx1' value='{{tarifIdx1}}'>"
-    "<label for='tarifIdx2'>Tarif HC/EJPHN/BBRHCJB/EASF01 (€)</label>"
-    "<input class='form-control' id='tarifIdx2' type='text' name='tarifIdx2' value='{{tarifIdx2}}'>"
-    "<label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€)</label>"
-    "<input class='form-control' id='tarifIdx3' type='text' name='tarifIdx3' value='{{tarifIdx3}}'>"
-    "<label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€)</label>"
-    "<input class='form-control' id='tarifIdx4' type='text' name='tarifIdx4' value='{{tarifIdx4}}'>"
-    "<label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€)</label>"
-    "<input class='form-control' id='tarifIdx5' type='text' name='tarifIdx5' value='{{tarifIdx5}}'>"
-    "<label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€)</label>"
-    "<input class='form-control' id='tarifIdx6' type='text' name='tarifIdx6' value='{{tarifIdx6}}'>"
-    "<label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€)</label>"
-    "<input class='form-control' id='tarifIdx7' type='text' name='tarifIdx7' value='{{tarifIdx7}}'>"
-    "<label for='tarifIdx8'>Tarif EASF07 (€)</label>"
-    "<input class='form-control' id='tarifIdx8' type='text' name='tarifIdx8' value='{{tarifIdx8}}'>"
-    "<label for='tarifIdx9'>Tarif EASF08 (€)</label>"
-    "<input class='form-control' id='tarifIdx9' type='text' name='tarifIdx9' value='{{tarifIdx9}}'>"
-    "<label for='tarifIdx10'>Tarif EASF09 (€)</label>"
-    "<input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'>"
-    "<br>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form></div>"
-    "</div>";
+const char HTTP_CONFIG_HORLOGE[] PROGMEM = R"(
+  <div class='container p-4'>
+    <h4 class='card-title mb-4'>Config Time</h4>
+    <div class='card mx-auto shadow-sm' >
+      <div class="card-body">
+        <form method='POST' action='saveConfigHorloge'>
+        <span> Datetime : </span><br><br>{{FormattedDate}}
+        <div class="mb-3">
+          <label for='ntpserver'>NTP server URL</label>
+          <input class='form-control' id='ntpserver' type='text' name='ntpserver' value='{{ntpserver}}'>
+        </div>
+        <div class="mb-3">
+          <label for='timeoffset'>Time Offset</label>
+          <input class='form-control' id='timeoffset' type='text' name='timeoffset' value='{{timeoffset}}'>
+        </div>
+        <div class="mb-3">
+          <label for='timezone'>Time Zone</label>
+          <input class='form-control' id='timezone' type='text' name='timezone' value='{{timezone}}'>
+        </div>
+        <div class="mb-3">
+          <label for='epochtime'>UTC epoch date</label>
+          <input class='form-control' id='epochtime' type='text' name='epochtime' value='{{epochtime}}'>
+        <br>
+        <div class="d-flex justify-content-end">
+          <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Save</button>
+        </div>
+        </form>
+        <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>
+      </div>
+    </div>
+  </div>
+)";
+
+const char HTTP_CONFIG_RULES[] PROGMEM = R"(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Config Rules</h4>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body">
+          {{rulesList}}
+        </div>
+      </div>
+    </div>
+
+)";
+
+const char HTTP_CONFIG_LINKY[] PROGMEM = R"(
+     <div class='container p-4'>
+      <h4 class='card-title mb-4'>Config Linky Tariff</h4>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body"> 
+          <form method='POST' action='saveConfigLinky'> 
+            <div class='form-check'> 
+              <h5>Device</h5> 
+              {{selectDevices}} 
+              <h5>Tarifs</h5> 
+              
+              <div class="mb-3">
+                <label for='tarifAbo'>Tarif abonnement (€)</label> 
+                <input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label> 
+                <input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€)</label> 
+                <input class='form-control' id='tarifCTA' type='text' name='tarifCTA' value='{{tarifCTA}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx2'>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (€)</label> 
+                <input class='form-control' id='tarifIdx2' type='text' name='tarifIdx2' value='{{tarifIdx2}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€)</label> 
+                <input class='form-control' id='tarifIdx3' type='text' name='tarifIdx3' value='{{tarifIdx3}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€)</label> 
+                <input class='form-control' id='tarifIdx4' type='text' name='tarifIdx4' value='{{tarifIdx4}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€)</label> 
+                <input class='form-control' id='tarifIdx5' type='text' name='tarifIdx5' value='{{tarifIdx5}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€)</label> 
+                <input class='form-control' id='tarifIdx6' type='text' name='tarifIdx6' value='{{tarifIdx6}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€)</label> 
+                <input class='form-control' id='tarifIdx7' type='text' name='tarifIdx7' value='{{tarifIdx7}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx8'>Tarif EASF07 (€)</label> 
+                <input class='form-control' id='tarifIdx8' type='text' name='tarifIdx8' value='{{tarifIdx8}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx9'>Tarif EASF08 (€)</label> 
+                <input class='form-control' id='tarifIdx9' type='text' name='tarifIdx9' value='{{tarifIdx9}}'> 
+              </div>
+              <div class="mb-3">
+                <label for='tarifIdx10'>Tarif EASF09 (€)</label> 
+                <input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'> 
+              </div>
+            </div> 
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-warning btn-lg">Save</button>
+            </div>
+          </form>
+        </div> 
+      </div>
+     </div> )";
 
 const char HTTP_CONFIG_GAZ[] PROGMEM =
     "<h4>Config Gaz</h4>"
@@ -708,162 +1068,189 @@ const char HTTP_CONFIG_WATER[] PROGMEM =
     "</form></div>"
     "</div>";
 
-const char HTTP_CONFIG_MQTT[] PROGMEM =
-    
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    "<h4>MQTT</h4>"
-    "<form method='POST' action='saveConfigMQTT'>"   
-    "<div class='form-check'>"
-      "<input class='form-check-input' id='enableMqtt' type='checkbox' name='enableMqtt' {{checkedMqtt}}>"
-      "<label class='form-check-label' for='enableMqtt'>Enable MQTT</label>"
-    "</div>"
-    "<div class='form-check'>"
-      "<label for='servMQTT'>MQTT server</label>"
-      "<input class='form-control' id='servMQTT' type='text' name='servMQTT' value='{{servMQTT}}'>"
-      "<label for='portMQTT'>MQTT port</label>"
-      "<input class='form-control' id='portMQTT' type='text' name='portMQTT' value='{{portMQTT}}'>"
-      "<label for='clientIDMQTT'>MQTT Client ID</label>"
-      "<input class='form-control' id='clientIDMQTT' type='text' name='clientIDMQTT' value='{{clientIDMQTT}}'>"
-      "<label for='userMQTT'>MQTT username</label>"
-      "<input class='form-control' id='userMQTT' type='text' name='userMQTT' value='{{userMQTT}}'>"
-      "<label for='passMQTT'>MQTT password</label>"
-      "<input class='form-control' id='passMQTT' type='password' name='passMQTT' value='{{passMQTT}}'>"
-      "<label for='headerMQTT'>MQTT topic header</label>"
-      "<input class='form-control' id='headerMQTT' type='text' name='headerMQTT' value='{{headerMQTT}}'>"
-    "</div>"
-    "<div class='form-check'>"
-      "<input class='form-check-input' id='ha' type='radio' name='appliMQTT' value='HA' {{checkedHA}} onClick='document.getElementById(\"displayCustomMQTT\").style.display=\"none\";document.getElementById(\"headerMQTT\").value=\"homeassistant/sensor/\";'>"
-      "<label class='form-check-label' for='ha'>Home-Assistant</label>"
-    "</div>"
-    "<div class='form-check'>"
-      "<input class='form-check-input' id='TB' type='radio' name='appliMQTT' value='TB' {{checkedTB}} onClick='document.getElementById(\"displayCustomMQTT\").style.display=\"none\";document.getElementById(\"headerMQTT\").value=\"v1/gateway/telemetry\";'>"
-      "<label class='form-check-label' for='TB'>ThingsBoard</label>"
-    "</div>"
-    "<div class='form-check'>"
-      "<input class='form-check-input' id='custom' type='radio' name='appliMQTT' value='custom' onClick='document.getElementById(\"displayCustomMQTT\").style.display=\"block\";' {{checkedCustom}}>"
-      "<label class='form-check-label' for='custom'>Custom</label>"
-    "</div>"
-    "<div class='form-floating' id='displayCustomMQTT' style='{{displayCustomMQTT}}'>"
-      "<textarea class='form-control' name='customMQTTJson' placeholder='' id='customMQTTJson' style='min-height:200px;'>{{customMQTTJson}}</textarea>"
-      "<label for='customMQTTJson'>Custom JSON</label>"
-    "</div>"
-    "<br><Strong>Connected : </strong><span id='mqttStatus'><img src='web/img/wait.gif' /></span>"
-    "<br>"
- 
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form></div>"
-    "</div>"
-    " <script>"
+ const char HTTP_CONFIG_MQTT[] PROGMEM = R"(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Config MQTT</h4>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body">
+        <form method='POST' action='saveConfigMQTT'>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="enableMqtt" name='enableMqtt' {{checkedMqtt}}>
+            <label class="form-check-label" for="enableMqtt">Enable MQTT</label>
+          </div>
+          <div class="mb-3">
+            <label for='servMQTT' class="form-label">MQTT server</label>
+            <input class='form-control' id='servMQTT' type='text' name='servMQTT' value='{{servMQTT}}'>
+          </div>
+          <div class="mb-3">
+            <label for='portMQTT' class="form-label">MQTT port</label>
+            <input class='form-control' id='portMQTT' type='text' name='portMQTT' value='{{portMQTT}}'>
+          </div>
+          <div class="mb-3">
+            <label for='clientIDMQTT' class="form-label">MQTT Client ID</label>
+            <input class='form-control' id='clientIDMQTT' type='text' name='clientIDMQTT' value='{{clientIDMQTT}}'>
+          </div>
+          <div class="mb-3">
+            <label for='userMQTT' class="form-label">MQTT username</label>
+            <input class='form-control' id='userMQTT' type='text' name='userMQTT' value='{{userMQTT}}'>
+          </div>
+          <div class="mb-3">
+            <label for='passMQTT' class="form-label">MQTT password</label>
+            <input class='form-control' id='passMQTT' type='password' name='passMQTT' value='{{passMQTT}}'>
+          </div>
+          <div class="mb-3">
+            <label for='headerMQTT' class="form-label">MQTT topic header</label>
+            <input class='form-control' id='headerMQTT' type='text' name='headerMQTT' value='{{headerMQTT}}'>
+          </div>
 
-    "   function fetchStatus(){"
-    "      $.ajax({"
-    "        url: '/getMQTTStatus',"
-    "        type: 'GET',"
-    "        success:function(data) {"
-    "         if (data=='1')"
-    "          {"
-    "            $('#mqttStatus').html('<img src=\"web/img/ok.png\" />');"
-    "          }else{"
-    "            $('#mqttStatus').html('<img src=\"web/img/nok.png\" />');"
-    "          }"
-    "        }"
-    "      });"
-    "    }"
+          <div class='form-check'>
+            <input class='form-check-input' id='ha' type='radio' name='appliMQTT' value='HA' {{checkedHA}} onClick='document.getElementById("displayCustomMQTT").style.display="none";document.getElementById("headerMQTT").value="homeassistant/sensor/";'>
+            <label class='form-check-label' for='ha'>Home-Assistant</label>
+          </div>
+          <div class='form-check'>
+            <input class='form-check-input' id='TB' type='radio' name='appliMQTT' value='TB' {{checkedTB}} onClick='document.getElementById("displayCustomMQTT").style.display="none";document.getElementById("headerMQTT").value="v1/gateway/telemetry";'>
+            <label class='form-check-label' for='TB'>ThingsBoard</label>
+          </div>
+          <div class='form-check'>
+            <input class='form-check-input' id='custom' type='radio' name='appliMQTT' value='custom' onClick='document.getElementById("displayCustomMQTT").style.display="block";' {{checkedCustom}}>
+            <label class='form-check-label' for='custom'>Custom</label>
+          </div>
+          <div class='form-floating' id='displayCustomMQTT' style='{{displayCustomMQTT}}'>
+            <textarea class='form-control' name='customMQTTJson' placeholder='' id='customMQTTJson' style='min-height:200px;'>{{customMQTTJson}}</textarea>
+            <label for='customMQTTJson'>Custom JSON</label>
+          </div>
+          <br><Strong>Connected : </strong><span id='mqttStatus'><img src='web/img/wait.gif' /></span>
+          <br>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-warning btn-lg">Save</button>
+          </div>
+        </form>
+        </div>
+      </div>
+    </div>
+    <script>
+      function fetchStatus(){
+        $.ajax({
+          url: '/getMQTTStatus',
+          type: 'GET',
+          success:function(data) {
+            if (data=='1')
+            {
+              $('#mqttStatus').html('<img src="web/img/ok.png" />');
+            }else{
+                $('#mqttStatus').html('<img src="web/img/nok.png" />');
+            }
+          }
+        });
+      }
+      $(document).ready(function() {
+          setTimeout(function(){fetchStatus();setInterval(fetchStatus,2000);},5000); 
+      });
+    </script>      
+ )";
 
-    " $(document).ready(function() {"
-    "     setTimeout(function(){fetchStatus();setInterval(fetchStatus,2000);},5000);"
-    "    "
-    " });"
-    "  </script>"
-    ;
+ const char HTTP_CONFIG_HTTP[] PROGMEM = R"(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Config Security</h4>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body"> 
+          <form method='POST' action='saveConfigHTTP'>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="enableSecureHttp" name='enableSecureHttp' {{checkedHttp}}>
+            <label class="form-check-label" for="enableSecureHttp">Enable HTTP authentification</label>
+          </div>
+          <div class="mb-3">
+            <label for='userHTTP' class="form-label">HTTP username</label>
+            <input class='form-control' id='userHTTP' type='text' name='userHTTP' value='{{userHTTP}}' style='{{userborder}}'>
+          </div>
+          <div class="mb-3">
+            <label for='passHTTP' class="form-label">HTTP password</label>
+            <input class='form-control' id='passHTTP' type='password' name='passHTTP' value='{{passHTTP}}' style='{{passborder}}'>
+          </div>
+          <br>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-warning btn-lg">Save</button>
+          </div>
+          </form>
+          <div style='color:red'>{{error}}</div>
+        </div>
+      </div>
+    </div>
+ )";
 
-const char HTTP_CONFIG_HTTP[] PROGMEM =
-    
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    "<h4>Security</h4>"
-    "<form method='POST' action='saveConfigHTTP'>"
-    "<div class='form-check'>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='enableSecureHttp' type='checkbox' name='enableSecureHttp' {{checkedHttp}}>"
-    "<label class='form-check-label' for='enableSecureHttp'>Enable HTTP authentification</label>"
-    "</div>"
-    "<label for='userHTTP'>HTTP username</label>"
-    "<input class='form-control' id='userHTTP' type='text' name='userHTTP' value='{{userHTTP}}' style='{{userborder}}'>"
-    "<label for='passHTTP'>HTTP password</label>"
-    "<input class='form-control' id='passHTTP' type='password' name='passHTTP' value='{{passHTTP}}' style='{{passborder}}'>"
-    "<br>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form>"
-    "<div style='color:red'>{{error}}</div>"
-    "</div>"
-    "</div>";
+ const char HTTP_CONFIG_WEBPUSH[] PROGMEM = R"(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Config WebPush</h4>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body">
+          <form method='POST' action='saveConfigWebPush'>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="enableWebPush" name='enableWebPush' {{checkedWebPush}}>
+            <label class="form-check-label" for="enableWebPush">Enable WebPush</label>
+          </div> 
+          <div class="mb-3">
+            <label for='servWebPush' class="form-label">Server HTTP</label>
+            <input class='form-control' id='servWebPush' type='text' name='servWebPush' value='{{servWebPush}}' style='{{urlborder}}'>
+          </div>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="webPushAuth" name='webPushAuth' {{checkedWebPushAuth}} onClick='toggleDiv("authWebPush");'>
+            <label class="form-check-label" for="webPushAuth">Enable Authentification</label>
+          </div> 
+          <div id='authWebPush' style='{{displayWebPushAuth}}'>
+            <h5>Authentification</h5>
+            <div class="mb-3">
+              <label for='userWebPush' class="form-label">Username</label>
+              <input class='form-control' id='userWebPush' type='text' name='userWebPush' value='{{userWebPush}}' style='{{userborder}}'>
+            </div>
+            <div class="mb-3">
+              <label for='passWebPush' class="form-label">Password</label>
+              <input class='form-control' id='passWebPush' type='password' name='passWebPush' value='{{passWebPush}}' style='{{passborder}}'>
+            </div>
+          </div>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-warning btn-lg">Save</button>
+          </div>
+          </form>
+          <div style='color:red'>{{error}}</div>
+        </div> 
+      </div>
+      <br><br><h5>HTTP datas sent example</h5>
+      Header : POST
+      <br>Content-Type : JSON
+      <br>Content :
+      <br>
+      <pre><code>
+      {
+        &nbsp;&nbsp;"IEEE" : "@mac",  
+        &nbsp;&nbsp;"cluster" : "decimal",  
+        &nbsp;&nbsp;"attribute" : "decimal",  
+        &nbsp;&nbsp;"value" : "decimal / string" 
+      }
+      </code></pre>
+    </div>
+          
+ )";
 
-const char HTTP_CONFIG_WEBPUSH[] PROGMEM =
-    
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    "<h4>WebPush</h4>"
-    "<form method='POST' action='saveConfigWebPush'>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='enableWebPush' type='checkbox' name='enableWebPush' {{checkedWebPush}}>"
-    "<label class='form-check-label' for='enableWebPush'>Enable WebPush</label>"
-    "</div>"
-    "<label for='servWebPush'>Server HTTP</label>"
-    "<input class='form-control' id='servWebPush' type='text' name='servWebPush' value='{{servWebPush}}' style='{{urlborder}}'>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='webPushAuth' type='checkbox' name='webPushAuth' {{checkedWebPushAuth}} onClick='toggleDiv(\"authWebPush\");'>"
-    "<label class='form-check-label' for='webPushAuth'>Enable Authentification</label>"
-    "</div>"
-    "<div id='authWebPush' style='{{displayWebPushAuth}}'>"
-    "<h5>Authentification</h5>"
-    "<label for='userWebPush'>Username</label>"
-    "<input class='form-control' id='userWebPush' type='text' name='userWebPush' value='{{userWebPush}}' style='{{userborder}}'>"
-    "<label for='passWebPush'>password</label>"
-    "<input class='form-control' id='passWebPush' type='password' name='passWebPush' value='{{passWebPush}}' style='{{passborder}}'>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form>"
-    "<div style='color:red'>{{error}}</div>"
-    
-    
-    "<h5>HTTP datas sent example</h5>"
-    "Header : POST"
-    "<br>Content-Type : JSON"
-    "<br>Content :"
-    "<br><pre><code>"
-    "{"
-    "   <br>&nbsp;&nbsp;\"IEEE\" : \"@mac\","  
-    "   <br>&nbsp;&nbsp;\"cluster\" : \"decimal\","  
-    "   <br>&nbsp;&nbsp;\"attribute\" : \"decimal\","  
-    "   <br>&nbsp;&nbsp;\"value\" : \"decimal / string\""  
-    "<br>}"
-    "</code></pre>"
-    "</div>"
-    "</div>"
-
-    ;
-
-const char HTTP_CONFIG_MARSTEK[] PROGMEM =
-    
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    "<h4>Smartmeter Marstek</h4>"
-    "<form method='POST' action='saveConfigMarstek'>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='enableMarstek' type='checkbox' name='enableMarstek' {{checkedMarstek}} {{disableMarstek}}>"
-    "<label class='form-check-label' for='enableMarstek'> Enable Marstek</label>"
-    "</div>"
-    "Smart meter (ZLinky): <strong>{{ZLinky}}</strong>"
-    "<br><br><button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form>"
-    
-    "</div>"
-    "</div>"
-
-    ;
+ const char HTTP_CONFIG_MARSTEK[] PROGMEM = R"(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Config Smartmeter Marstek</h4>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body">
+          <form method='POST' action='saveConfigMarstek'>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="enableMarstek" name='enableMarstek' {{checkedMarstek}} {{disableMarstek}}>
+            <label class="form-check-label" for="enableMarstek">Enable Marstek</label>
+          </div> 
+          Smart meter (ZLinky): <strong>{{ZLinky}}</strong><bR>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Save</button>
+          </div>
+          </form>
+          <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>
+        </div>
+      </div>
+    </div>
+ )";
 
 const char HTTP_CONFIG_UDPCLIENT[] PROGMEM =
     
@@ -923,48 +1310,51 @@ const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
     "</div>";
 
 const char HTTP_NETWORK[] PROGMEM =
-    
-    "<div class='row justify-content-md-center justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>"
-    "<div class='col col-md-6'>"
-    "<h4>Network status</h4>"
-    "<div class='card'>"
-    "<div class='card-header'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
-      "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
-      "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
-    "</svg>"
-    " Wifi"
-    "</div>"
-    "<div class='card-body'>"
-    "<div id='wifiConfig'>"
-    "<strong>Enable : </strong>{{enableWifi}}"
-    "<br><strong>Connected : </strong>{{connectedWifi}}"
-    "<br><strong>SSID : </strong>{{ssidWifi}}"
-    "<br><strong>Mode : </strong>{{modeWifi}}"
-    "<br><strong>@IP : </strong>{{ipWifi}}"
-    "<br><strong>@Mask : </strong>{{maskWifi}}"
-    "<br><strong>@GW : </strong>{{GWWifi}}"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div><br>"
-    "<div class='row justify-content-md-center justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>"
-    "<div class='col col-md-6'><div class='card'><div class='card-header'>"
-    "<svg style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>"
-      "<path d='M12 16.75C11.8019 16.7474 11.6126 16.6676 11.4725 16.5275C11.3324 16.3874 11.2526 16.1981 11.25 16V11C11.25 10.8011 11.329 10.6103 11.4697 10.4697C11.6103 10.329 11.8011 10.25 12 10.25C12.1989 10.25 12.3897 10.329 12.5303 10.4697C12.671 10.6103 12.75 10.8011 12.75 11V16C12.7474 16.1981 12.6676 16.3874 12.5275 16.5275C12.3874 16.6676 12.1981 16.7474 12 16.75Z' fill='#000000'/>"
-      "<path d='M12 9.25C11.8019 9.24741 11.6126 9.16756 11.4725 9.02747C11.3324 8.88737 11.2526 8.69811 11.25 8.5V8C11.25 7.80109 11.329 7.61032 11.4697 7.46967C11.6103 7.32902 11.8011 7.25 12 7.25C12.1989 7.25 12.3897 7.32902 12.5303 7.46967C12.671 7.61032 12.75 7.80109 12.75 8V8.5C12.7474 8.69811 12.6676 8.88737 12.5275 9.02747C12.3874 9.16756 12.1981 9.24741 12 9.25Z' fill='#000000'/>"
-      "<path d='M12 21C10.22 21 8.47991 20.4722 6.99987 19.4832C5.51983 18.4943 4.36628 17.0887 3.68509 15.4442C3.0039 13.7996 2.82567 11.99 3.17294 10.2442C3.5202 8.49836 4.37737 6.89472 5.63604 5.63604C6.89472 4.37737 8.49836 3.5202 10.2442 3.17294C11.99 2.82567 13.7996 3.0039 15.4442 3.68509C17.0887 4.36628 18.4943 5.51983 19.4832 6.99987C20.4722 8.47991 21 10.22 21 12C21 14.387 20.0518 16.6761 18.364 18.364C16.6761 20.0518 14.387 21 12 21ZM12 4.5C10.5166 4.5 9.0666 4.93987 7.83323 5.76398C6.59986 6.58809 5.63856 7.75943 5.07091 9.12988C4.50325 10.5003 4.35473 12.0083 4.64411 13.4632C4.9335 14.918 5.64781 16.2544 6.6967 17.3033C7.7456 18.3522 9.08197 19.0665 10.5368 19.3559C11.9917 19.6453 13.4997 19.4968 14.8701 18.9291C16.2406 18.3614 17.4119 17.4001 18.236 16.1668C19.0601 14.9334 19.5 13.4834 19.5 12C19.5 10.0109 18.7098 8.10323 17.3033 6.6967C15.8968 5.29018 13.9891 4.5 12 4.5Z' fill='#000000'/>"
-    "</svg>"
-    " System Infos"
-    "</div>"
-    "<div class='card-body'>"
-    "{{MQTT card}}"
-    "{{Marstek card}}"
-
-    "<Strong>Box temperature :</strong> {{Temperature}} °C<br>"
-    "</div></div></div>"
-    
+    "<div class='container py-4' >"
+      "<h4>Network status</h4>"
+      "<div class='row g-4'>"
+        "<div class='col'>"
+          "<div class='card'>"
+            "<div class='card-header'>"
+              "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
+                "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
+                "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+              "</svg>"
+              " Wifi"
+            "</div>"
+            "<div class='card-body'>"
+              "<div id='wifiConfig'>"
+                "<strong>Enable : </strong>{{enableWifi}}"
+                "<br><strong>Connected : </strong>{{connectedWifi}}"
+                "<br><strong>SSID : </strong>{{ssidWifi}}"
+                "<br><strong>Mode : </strong>{{modeWifi}}"
+                "<br><strong>@IP : </strong>{{ipWifi}}"
+                "<br><strong>@Mask : </strong>{{maskWifi}}"
+                "<br><strong>@GW : </strong>{{GWWifi}}"
+              "</div>"
+            "</div>"
+          "</div>"
+        "</div>"
+      "</div><br>"
+      "<div class='row g-4'>"
+        "<div class='col'>"
+          "<div class='card'>"
+            "<div class='card-header'>"
+              "<svg style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' xmlns='http://www.w3.org/2000/svg'>"
+                "<path d='M12 16.75C11.8019 16.7474 11.6126 16.6676 11.4725 16.5275C11.3324 16.3874 11.2526 16.1981 11.25 16V11C11.25 10.8011 11.329 10.6103 11.4697 10.4697C11.6103 10.329 11.8011 10.25 12 10.25C12.1989 10.25 12.3897 10.329 12.5303 10.4697C12.671 10.6103 12.75 10.8011 12.75 11V16C12.7474 16.1981 12.6676 16.3874 12.5275 16.5275C12.3874 16.6676 12.1981 16.7474 12 16.75Z' fill='#000000'/>"
+                "<path d='M12 9.25C11.8019 9.24741 11.6126 9.16756 11.4725 9.02747C11.3324 8.88737 11.2526 8.69811 11.25 8.5V8C11.25 7.80109 11.329 7.61032 11.4697 7.46967C11.6103 7.32902 11.8011 7.25 12 7.25C12.1989 7.25 12.3897 7.32902 12.5303 7.46967C12.671 7.61032 12.75 7.80109 12.75 8V8.5C12.7474 8.69811 12.6676 8.88737 12.5275 9.02747C12.3874 9.16756 12.1981 9.24741 12 9.25Z' fill='#000000'/>"
+                "<path d='M12 21C10.22 21 8.47991 20.4722 6.99987 19.4832C5.51983 18.4943 4.36628 17.0887 3.68509 15.4442C3.0039 13.7996 2.82567 11.99 3.17294 10.2442C3.5202 8.49836 4.37737 6.89472 5.63604 5.63604C6.89472 4.37737 8.49836 3.5202 10.2442 3.17294C11.99 2.82567 13.7996 3.0039 15.4442 3.68509C17.0887 4.36628 18.4943 5.51983 19.4832 6.99987C20.4722 8.47991 21 10.22 21 12C21 14.387 20.0518 16.6761 18.364 18.364C16.6761 20.0518 14.387 21 12 21ZM12 4.5C10.5166 4.5 9.0666 4.93987 7.83323 5.76398C6.59986 6.58809 5.63856 7.75943 5.07091 9.12988C4.50325 10.5003 4.35473 12.0083 4.64411 13.4632C4.9335 14.918 5.64781 16.2544 6.6967 17.3033C7.7456 18.3522 9.08197 19.0665 10.5368 19.3559C11.9917 19.6453 13.4997 19.4968 14.8701 18.9291C16.2406 18.3614 17.4119 17.4001 18.236 16.1668C19.0601 14.9334 19.5 13.4834 19.5 12C19.5 10.0109 18.7098 8.10323 17.3033 6.6967C15.8968 5.29018 13.9891 4.5 12 4.5Z' fill='#000000'/>"
+              "</svg>"
+              " System Infos"
+            "</div>"
+            "<div class='card-body'>"
+              "{{MQTT card}}"
+              "{{Marstek card}}"
+              "<Strong>Box temperature :</strong> {{Temperature}} °C<br>"
+            "</div>"
+          "</div>"
+        "</div>"
+      "</div>"
     "</div>";
 
 const char HTTP_ROOT[] PROGMEM =
@@ -982,7 +1372,7 @@ const char HTTP_ROOT[] PROGMEM =
     "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
     "<div class='col col-md-6'>"
     "<div class='card' >"
-    "<div class='card-header'>Energy gauge</div>"
+    "<div class='card-header' style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>Energy gauge</div>"
     "<div class='card-body' style='min-height:272px;'>"
     "<div id='power_gauge_global' style='height:230px;'></div>"
     "</div>"
@@ -990,7 +1380,7 @@ const char HTTP_ROOT[] PROGMEM =
     "</div>"
     "<div class='col col-md-6'>"
     "<div class='card'>"
-    "<div class='card-header'>Energy trend</div>"
+    "<div class='card-header' style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>Energy trend</div>"
     "<div class='card-body' style='min-height:272px;'>"
     "<div id='power_trend'></div>"
     "</div>"
@@ -1004,147 +1394,185 @@ const char HTTP_ROOT[] PROGMEM =
     "{{javascript}}";
 
 const char HTTP_DASHBOARD[] PROGMEM =
-    "<h4>Dashboard</h4>"
-    "<div class='row justify-content-md-center justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>"
-    "{{dashboard}}" 
+    
+    "<div class='container py-4' >"
+      "<h4>Dashboard</h4>"
+      "<div class='row justify-content-start gx-4 gy-4' id='masonry-grid'>" //style='--bs-gutter-x: 0.3rem;' data-masonry='{\"percentPosition\": true }'
+        "{{dashboard}}" 
+      "</div>"
     "</div>"
     "{{javascript}}";
 
 const char HTTP_ENERGY[] PROGMEM =
+    
+    "<div class='container'>"
     "<h4>Energy status</h4>" 
-    "<div class='row'>"
-    "<div class='col-sm-12'>"
-    "<Select class='form-select form-select-lg mb-3' aria-label='.form-select-lg example' name='time' onChange=\"window.location.href='?time='+this.value\">"
-    "<option value='hour' {{selectedHour}}>Hour</option>"
-    "<option value='day' {{selectedDay}}>Day</option>"
-    "<option value='month' {{selectedMonth}}>Month</option>"
-    "<option value='year' {{selectedYear}}>Year</option>"
-    "</select>"
-    "</div>"
+    "<div class='row g-4'>"
+        "<div class='col-md-12'>"
+            "<div class='nav justify-content-end'>"
+              "<a class='link' href='?time=hour'>H</a>&nbsp;"
+              "<a class='link' href='?time=day'>D</a>&nbsp;"
+              "<a class='link' href='?time=month'>M</a>&nbsp;"
+              "<a class='link' href='?time=year'>Y</a>&nbsp;"
+            "</div>"
+         "</div>"
+      "</div>"
     "</div>";
 
 const char HTTP_ENERGY_LINKY[] PROGMEM =
+    
     "<div class='row'>"
       "<div class='col-sm-12'>"
         "{{LinkyStatus}}"
       "</div>"
     "</div>"
-    "<div class='row' style='--bs-gutter-x: 0.3rem;'>"
+    "<div class='container py-4'>"
+    "<div class='row g-4' style=''>"
       "{{power_gauge}}"
-      "<div class='col-lg-2'>"
-        "<div class='card'>"
-          "<div class='card-header'>Energy trend</div>"
-          "<div class='card-body' style='min-height:272px;'>"
+      "<div class='col-md-4'>"
+        "<div class='card p-4'>"
+          "<h5 class='card-title' style=''>Energy trend</h5>"
+          "<a href='/configLinky' class='position-absolute bottom-0 end-0 p-4 text-muted'" 
+            "title='Paramétrer la tarification'>"
+            "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
+              "<circle cx='12' cy='12' r='3'></circle>"
+              "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
+            "</svg>"
+          "</a>"
+          "<div class='card-body' style='min-height:270px;min-width:200px;'>"
             "<div id='power_trend'></div>"
           "</div>"
         "</div>"
       "</div>"
-      "<div class='col-lg-4'>"
-        "<div class='card'>"
-          "<div class='card-header'>Linky Datas</div>"
-          "<div class='card-body' style='min-height:272px;'>"
+      "<div class='col-md-12'>"
+        "<div class='card p-4'>"
+          "<h5 class='card-title' style=''>Linky Datas</h5>"
+          "<div class='card-body' style='min-height:270px;'>"
             "<div id='power_data'></div>"
+          "</div>"
+        "</div>"
+      "</div>"   
+      "<div class='col-md-12' style='display:{{stylePowerChart}}'>"
+        "<div class='card p-4'>"
+          "<h5 class='card-title'>Real Time Power chart</h5>"
+          "<div class='card-body'>"
+              "<div id='power-chart'></div>"
+          "</div>"
+        "</div>"
+      "</div>"
+      "<div class='col-md-12'>"
+        "<div class='card p-4'>"
+          "<h5 class='card-title'>Energy Usage</h5>"
+          "<div class='card-body'>"
+              "<div id='energy-chart'></div>"
+          "</div>"
+        "</div>"
+      "</div>"
+      "<div class='col-md-12' style='display:{{styleProdChart}}'>"
+        "<div class='card p-4'>"
+          "<h5 class='card-title'>Production injection</h5>"
+          "<div class='card-body'>"
+              "<div id='production-chart'></div>"
+          "</div>"
+        "</div>"
+      "</div>"
+    "</div>";
+
+const char HTTP_ENERGY_GAZ[] PROGMEM =
+
+    "<br><div class='row g-4'>"
+    "<div class='col-md-12'>"
+        "<div class='card p-4'>"
+          "<h5 class='card-title'>Gaz Usage</h5>"
+          "<div class='card-body'>"
+              "<div id='gaz-chart'></div>"
           "</div>"
         "</div>"
       "</div>"
     "</div>"
-    "<div class='row' style='display:{{stylePowerChart}}'>"
-    "<div class='col-sm-12'>"
-    "<div class='card'>"
-    "<div class='card-header'>Real Time Power chart</div>"
-    "<div class='card-body'>"
-    "<div id='power-chart'></div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "<div class='row'  style='--bs-gutter-x: 0.3rem;'>"
-    "<div class='col-sm-12'>"
-    "<div class='card'>"
-    "<div class='card-header'>Energy Usage</div>"
-    "<div class='card-body'>"
-    "<div id='energy-chart'></div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>";
-
-const char HTTP_ENERGY_GAZ[] PROGMEM =
-    "<div class='row'>"
-    "<div class='col-sm-12'>"
-    "<div class='card'>"
-    "<div class='card-header'>Gaz consumption</div>"
-    "<div class='card-body'>"
-    "<div id='gaz-chart'></div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>";
+;
 
 const char HTTP_ENERGY_WATER[] PROGMEM =
-    "<div class='row'>"
-    "<div class='col-sm-12'>"
-    "<div class='card'>"
-    "<div class='card-header'>Water consumption</div>"
-    "<div class='card-body'>"
-    "<div id='water-chart'></div>"
-    "</div>"
-    "</div>"
-    "</div>"
-    "</div>"
+    "<br><div class='row g-4'>"
+    "<div class='col-md-12'>"
+        "<div class='card p-4'>"
+          "<h5 class='card-title'>Water Usage</h5>"
+          "<div class='card-body'>"
+              "<div id='water-chart'></div>"
+          "</div>"
+        "</div>"
+      "</div>"
     "</div>";
+  
 const char HTTP_ENERGY_JAVASCRIPT[] PROGMEM =
     "{{javascript}}";
 
-const char HTTP_CONFIG_WIFI[] PROGMEM =
-   
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    "<h4>Config WiFi</h4>"
-    "<form method='POST' action='saveWifi'>"
-    /*"<div class='form-check'>"
-    "<input class='form-check-input' id='wifiEnable' type='checkbox' name='wifiEnable' {{checkedWiFi}}>"
-    "<label class='form-check-label' for='wifiEnable'>Enable</label>"
-    "</div>"*/
-    "<div class='form-group'>"
-    "<label for='ssid'>SSID</label>"
-    "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}' style='{{ssidborder}}'> <a onclick='scanNetwork(-1);' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label for='pass'>Password</label>"
-    "<input class='form-control' id='pass' type='password' name='WIFIpassword' value='{{password}}' style='{{passborder}}'>"
-    "</div>"
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='DHCPEnable' type='checkbox' name='DHCPEnable' {{checkedDHCP}} onClick='toggleDiv(\"static\");'>"
-    "<label class='form-check-label' for='DHCPEnable'>DHCP</label>"
-    "</div>"
-    "<div id='static' style='display:{{static}}'>"
-    "<div class='form-group'>"
-    "<label for='ip'>@IP</label>"
-    "<input class='form-control' id='ip' type='text' name='ipAddress' value='{{ip}}' style='{{ipborder}}'>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label for='mask'>@Mask</label>"
-    "<input class='form-control' id='mask' type='text' name='ipMask' value='{{mask}}' style='{{ipmask}}'>"
-    "</div>"
-    "<div class='form-group'>"
-    "<label for='gateway'>@Gateway</label>"
-    "<input type='text' class='form-control' id='gateway' name='ipGW' value='{{gw}}' style='{{ipgw}}'>"
-    "</div>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save' onclick='document.getElementById(\"reboot\").style.display=\"block\";'>Save</button>"
-    "</form>"
-    "<div style='color:red'>{{error}}</div>"
-    "<div style='color:red'>{{ipError}}</div>"
-    "<div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>"
-    ;
+const char HTTP_CONFIG_WIFI[] PROGMEM = R"(
+  <div class="container p-4">
+    <h4 class="card-title mb-4">Config WiFi</h4>
+    <div class="card mx-auto shadow-sm">
+      <div class="card-body">
+        <form method='POST' action='saveWifi'>
+          <!-- SSID -->
+          <div class="mb-3">
+            <label for="ssid" class="form-label">SSID</label>
+            <div class="input-group">
+              <input type="text" class="form-control" id="ssid" name='WIFISSID' placeholder="SSID" value='{{ssid}}' style='{{ssidborder}}'>
+              <button class="btn btn-primary" type="button" id="scanBtn" onclick='scanNetwork(-1);'>Scan</button>
+            </div>
+            <div id='networks'></div>
+          </div>
+          <!-- Password -->
+          <div class="mb-3">
+            <label for="password" class="form-label">Password</label>
+            <input type="password" class="form-control" id="password"  name='WIFIpassword' value='{{password}}' style='{{passborder}}'>
+          </div>
+          <!-- DHCP Toggle -->
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="dhcpSwitch" name='DHCPEnable' {{checkedDHCP}} onClick="toggleDiv('static');">
+            <label class="form-check-label" for="dhcpSwitch">DHCP</label>
+          </div>
+          <div id='static' style='display:{{static}}'>
+            <div id="staticFields">
+              <div class="mb-3">
+                <input type="text" class="form-control mb-2" id="ip" name='ipAddress' value='{{ip}}' style='{{ipborder}}'>
+                <input type="text" class="form-control mb-2" id="mask" name='ipMask' value='{{mask}}' style='{{ipmask}}'>
+                <input type="text" class="form-control" id="gateway"  name='ipGW' value='{{gw}}' style='{{ipgw}}'>
+              </div>
+            </div>
+          </div>
+          <!-- Save Button -->
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Save</button>
+          </div>
+        </form>
+        <div style='color:red'>{{error}}</div>
+        <div style='color:red'>{{ipError}}</div>
+        <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>
+      </div>
+    </div>
+  </div>
+  )";
+
 const char HTTP_CREATE_DEVICE[] PROGMEM =
     "<h4>Create device file</h4>"
     "<div class='row justify-content-md-center' >"
     "<div class='col col-md-6'><form method='POST' action='saveFileDevice'>"
+    "<div class='form-group'>"
+    "<label for='filename'>@ mac</label>"
+    "<input class='form-control' id='filename' type='text' name='filename' value=''> "
+    "</div>"
+    "<div class='form-group'>"
+    " <label for='file'>Content</label>"
+    " <textarea class='form-control' id='file' name='file' rows='20'>"
+    "</textarea>"
+    "</div>"
+    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Save</button>"
+    "</form>";
+const char HTTP_CREATE_HISTORY[] PROGMEM =
+    "<h4>Create history file</h4>"
+    "<div class='row justify-content-md-center' >"
+    "<div class='col col-md-6'><form method='POST' action='saveFileHistory'>"
     "<div class='form-group'>"
     "<label for='filename'>@ mac</label>"
     "<input class='form-control' id='filename' type='text' name='filename' value=''> "
@@ -1186,11 +1614,177 @@ const char HTTP_DEVICE[] PROGMEM =
     "</div></div></div>";
 
 const char HTTP_FOOTER[] PROGMEM = R"(
+    <script type='text/javascript' src='web/js/bootstrap.min.js'></script>
     <script language='javascript'>
     getFormattedDate();
     getAlert();
     </script>
     )";
+const char HTTP_FOOTER_ASSIST[] PROGMEM = R"(
+    <script type='text/javascript' src='web/js/bootstrap.min.js'></script>
+    <script language='javascript'>
+    getFormattedDate();
+    </script>
+    )";
+
+const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
+
+<div class="container py-5">
+      <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+          <div class="card shadow-lg">
+            <div class="card-body">
+              <!-- Barre de progression -->
+              <div class="progress mb-4" style="height:0.5rem;">
+                <div id="progressBar" class="progress-bar bg-primary" role="progressbar" style="width:25%"></div>
+              </div>
+
+              <!-- Titre & icône -->
+              <div class="d-flex align-items-center mb-3">
+                <svg id="icon" fill="#0f70b7" style='width:48px;' width='32' height='32' viewBox='0 0 24 24' role='img' xmlns='http://www.w3.org/2000/svg'></svg>
+                <h5 class="mb-0" id="stepTitle">Mettre la passerelle en mode appairage</h5>
+              </div>
+
+              <!-- Description -->
+              <p id="stepDesc" class="mb-4">Assurez-vous que votre passerelle Zigbee est sous tension puis cliquez sur Démarrer l'appairage.</p>
+
+              <!-- Zone dynamique -->
+              <div id="dynamicZone"></div>
+
+              <!-- Actions -->
+              <div class="d-flex justify-content-around pt-5">
+                <button id="prevBtn" class="btn btn-outline-secondary" style="display:none;" >Précédent</button>
+                <button id="nextBtn" class="btn btn-primary">Suivant</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const steps = [
+        {
+          title: "Alimenter l'appareil",
+          desc: "Allumez ou branchez l'appareil à associer. Référez-vous à la notice pour le passer en mode appairage (ex. appui 5s sur le bouton).",
+          icon: '<path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path>',
+        },
+        {
+          title: "Mode jumelage de la LiXee-Box",
+          desc: "Vérifiez que la LiXee-Box clignote",
+          icon: '<path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path>',
+        },
+        {
+          title: "Recherche de l'appareil",
+          desc: "Nous scannons le réseau… Cela peut prendre jusqu'à 30s. Votre appareil apparaîtra automatiquement ci-dessous.",
+          icon: '<path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path>',
+        },
+        {
+          title: "Nommer & enregistrer",
+          desc: "Choisissez un nom puis cliquez sur Enregistrer.",
+          icon: '<path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path>',
+        },
+      ];
+
+      let current = 0;
+      const progress   = document.getElementById('progressBar');
+      const iconEl     = document.getElementById('icon');
+      const titleEl    = document.getElementById('stepTitle');
+      const descEl     = document.getElementById('stepDesc');
+      const dynamic    = document.getElementById('dynamicZone');
+      const prevBtn    = document.getElementById('prevBtn');
+      const nextBtn    = document.getElementById('nextBtn');
+
+      function render(){
+        const step = steps[current];
+        progress.style.width = ((current+1)/steps.length)*100 + '%';
+        iconEl.innerHTML = step.icon;
+        titleEl.textContent = step.title;
+        descEl.textContent  = step.desc;
+        dynamic.innerHTML   = '';
+        
+        if(current === 0){
+          dynamic.innerHTML = `<div class="d-flex flex-column align-items-center gap-2">
+           <img src="web/img/zlinky.gif" width="120px">
+          </div>`;
+          nextBtn.style.display='block';
+        }else if(current === 1){
+          dynamic.innerHTML = `<div class="d-flex flex-column align-items-center gap-2">
+           <img src="web/img/ziwifi32.gif" width="120px">
+          </div>`;
+          nextBtn.style.display='block';
+        }else if(current === 2){
+          dynamic.innerHTML = `<div id="deviceFound" class="d-flex flex-column align-items-center gap-2">
+            <div class="spinner-border text-primary spinner-border-lg" role="status"></div>
+            <span>Recherche en cours…</span>
+          </div>`;
+          nextBtn.style.display='none';
+        }else if(current === 3){
+          dynamic.innerHTML = `<div class="mb-3">
+            <label class="form-label">Nom de l'appareil</label>
+            <input type="text" id="alias" class="form-control" required>
+          </div>`;
+          nextBtn.style.display='block';
+        }
+        if (current > 0){
+          prevBtn.style.display='block';
+        }else{
+          prevBtn.style.display='none';         
+        }
+        nextBtn.textContent = current < steps.length - 1 ? 'Suivant' : 'Enregistrer';
+      }
+
+      prevBtn.addEventListener('click', () => {
+        if(current > 0){ current--; render(); }
+      });
+      var IEEE;
+      nextBtn.addEventListener('click', () => {
+        if(current < steps.length - 1){
+          if (current === 0) {
+            cmd("PermitJoinAssist");
+          }else if (current === 1) {
+            getAlert();
+          }else if (current === 2) {
+            IEEE = document.getElementById('newDevice').innerHTML;
+          }
+          current++; 
+          render(); 
+        } else {
+          var alias = document.getElementById('alias').value;
+          setAlias(IEEE,alias);
+        }
+      });
+
+      render();
+    </script>
+
+)";
+
+const char HTTP_HELP[] PROGMEM =  R"(
+    <div class="container p-4">
+      <h4 class="card-title mb-4">About</h4>
+      <div class="card mx-auto shadow-sm">
+        <div class="card-body">
+          <h5>Version : {{version}}</h5>
+          You can go to this url :</br>
+          <a href="https://lixee.fr/" target='_blank'>Shop </a></br><br>
+          <h5>Firmware Source & Issues</h5>
+          Please go here :</br>
+          <a href="https://github.com/fairecasoimeme/LiXee-Gateway" target='_blank'>Sources</a>
+        </div>
+      </div>
+    </div>
+)";
+/*const char HTTP_HELP[] PROGMEM =  
+    "<h4>About</h4>"
+    "<h5>Version : {{version}}</h5>"
+   " <h5>Shop & description</h5>"
+    "You can go to this url :</br>"
+    "<a href=\"https://lixee.fr/\" target='_blank'>Shop </a></br>"
+
+    "<h5>Firmware Source & Issues</h5>"
+    "Please go here :</br>"
+    "<a href=\"https://github.com/fairecasoimeme/LiXee-Gateway\" target='_blank'>Sources</a>";*/
 
 String footer()
 {
@@ -1201,6 +1795,19 @@ String footer()
   result +=    "Copyright : LiXee 2025 - version : "+ String(VERSION);
   result +=  "</div>";
   result+=FPSTR(HTTP_FOOTER);
+
+  return result;
+}
+
+String footerAssist()
+{
+  String result="";
+  
+  result +="<br><hr>";
+  result +="<div align='center' style='font-size:12px;'>";
+  result +=    "Copyright : LiXee 2025 - version : "+ String(VERSION);
+  result +=  "</div>";
+  result+=FPSTR(HTTP_FOOTER_ASSIST);
 
   return result;
 }
@@ -1856,6 +2463,10 @@ String createEnergyGraph(String IEEE, String Type, String barColor)
   {
     JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":\""+String(ConfigGeneral.coeffWater)+"\",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
     result += "0";
+  }else if (Type=="production")
+  {
+    JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":\"1\",\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
+    result += "1";
   }
   JsonEuros += "}";
   result += F("],");
@@ -2101,24 +2712,214 @@ void handleNotFound(AsyncWebServerRequest *request)
 
 void handleRoot(AsyncWebServerRequest *request)
 {
-
-  if (!ConfigGeneral.firstStart)
+  if (sizeof(ConfigSettings.ssid)==0)
   {
-    String path = "configGeneral.json";
-    ConfigGeneral.firstStart=1;
-    config_write(path, "firstStart", "1");
+    // rediriger vers config Wifi assist
     AsyncWebServerResponse *response = request->beginResponse(303);
     response->addHeader(F("Location"), F("/configWiFi"));
     request->send(response);
   }else{
-    AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/dashboard"));
-    request->send(response);
+    if (devices.size()==0)
+    {
+      //rediriger vers page jumelage assist
+      AsyncWebServerResponse *response = request->beginResponse(303);
+      response->addHeader(F("Location"), F("/assistDevice"));
+      request->send(response);
+    }else{
+      //rediriger vers page energy
+      AsyncWebServerResponse *response = request->beginResponse(303);
+      response->addHeader(F("Location"), F("/statusEnergy"));
+      request->send(response);
+    }
   }
 
 }
 
 void handleDashboard(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADERGRAPH);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_DASHBOARD);
+  result +=footer();
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+
+  String time;
+
+  String dashboard = "";
+  String js = "";
+  int exist = 0;
+
+  for (size_t ident = 0; ident < devices.size(); ident++) 
+  {
+    DeviceData* device = devices[ident];
+
+      int ShortAddr = device->getInfo().shortAddr.toInt();
+      int DeviceId = device->getInfo().device_id.toInt();
+      String model;
+      model = device->getInfo().model;
+      dashboard += F("<div class='col-12 col-sm-12 col-md-12 col-lg-5 col-xl-4 d-flex'>"); //col-md-auto col-sm-auto
+      dashboard += F("<div class='card p-4 flex-fill' style='min-width:380px;'>"); //min-width:380px;
+      dashboard += F("<h5 class='card-title' >"); //style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>
+      String alias = "null";
+
+      if (alias != "null")
+      {
+        dashboard += F("<strong>");
+        dashboard += alias;
+        dashboard += F("</strong>");
+        dashboard += F("<br>(@Mac : ");
+        dashboard += device->getDeviceID();
+        dashboard += F(")");
+      }
+      else
+      {
+        dashboard += F("@Mac : ");
+        dashboard += device->getDeviceID();
+      }
+      dashboard += F("</h5>");
+      dashboard += F("<div class='card-body'>");
+      // Get status and action from json
+
+      if (TemplateExist(DeviceId))
+      {
+        Template *t;
+        t = GetTemplate(DeviceId, model);
+        // toutes les propiétés
+        dashboard += F("<div id='status_");
+        dashboard += (String)ShortAddr;
+        dashboard += F("'>");
+
+        for (int i = 0; i < t->StateSize; i++)
+        {
+          if (t->e[i].visible)
+          {
+
+            if (String(t->e[i].typeJauge) == "gauge")
+            {
+              exist++;
+              dashboard += "<div id='gauge_";
+              dashboard += (String)ShortAddr+String(i);
+              dashboard += F("' style='height:150px;'>");
+              dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
+              dashboard += String(t->e[i].name);
+              dashboard += F("</div>");
+              dashboard += F("</div>");
+              js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+              js += CreateTimeGauge((String)ShortAddr + (String)i);
+              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+            }
+            else if(String(t->e[i].typeJauge) == "battery")
+            {
+              exist++;
+              dashboard += "<div id='gauge_";
+              dashboard += (String)ShortAddr+String(i);
+              dashboard += F("' style='height:150px;'>");
+              dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
+              dashboard += String(t->e[i].name);
+              dashboard += F("</div>");
+              dashboard += F("</div>");
+              js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+              js += CreateTimeGauge((String)ShortAddr + (String)i);
+              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+            }else if(String(t->e[i].typeJauge) == "text")
+            {
+              exist++;
+              dashboard +=F("<div id='text_");
+              dashboard += (String)ShortAddr+String(i);
+              dashboard += F("' style='text-align:center;font-size:12px;'>");
+              dashboard += t->e[i].name;
+              dashboard += F("<br>");
+              dashboard += "<span id='";
+              dashboard += F("label_");
+              dashboard += (String)ShortAddr;
+              dashboard += F("_");
+              dashboard += t->e[i].cluster;
+              dashboard += F("_");
+              dashboard += t->e[i].attribute;
+              dashboard += F("' style='font-size:24px;font-family :\"Courier New\", Courier, monospace;'>");
+              dashboard += GetValueStatus(device->getDeviceID(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);             
+              dashboard += F("</span>&nbsp;");
+              dashboard += String(t->e[i].unit);
+              dashboard += F("</div><br>");
+              js += "refreshLabel('"+String(device->getDeviceID())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
+
+            }
+          }
+        }
+        dashboard += F("</div>");
+        dashboard += F("<div id='action_");
+        dashboard += (String)ShortAddr;
+        dashboard += F("'>");
+        // toutes les actions
+
+        for (int i = 0; i < t->ActionSize; i++)
+        {
+          if (t->a[i].visible)
+          {
+            exist++;
+            dashboard += F("<button onclick=\"ZigbeeAction(");
+            dashboard += ShortAddr;
+            dashboard += ",";
+            dashboard += t->a[i].command;
+            dashboard += ",";
+            dashboard += t->a[i].value;
+            dashboard += ");\" class='btn btn-primary mb-2'>";
+            dashboard += t->a[i].name;
+            dashboard += F("</button>&nbsp;");
+          }
+        }
+        dashboard += F("</div>");
+        free(t);
+      }
+      dashboard += F("</div></div></div>");
+
+    vTaskDelay(1);
+    
+  }
+
+  if (exist>0)
+  {
+    result.replace("{{dashboard}}", dashboard);
+  }else{
+    result.replace("{{dashboard}}", "<div align='center' style='font-size:28px;font-weight:bold;'>No dashboard datas yet</div>");
+  }
+  
+
+  String javascript = "";
+  javascript = F("<script language='javascript'>");
+  javascript += F("$(document).ready(function() {");
+  javascript += js;
+
+
+    javascript += "const grid = document.querySelector('#masonry-grid');";
+    javascript += "const msnry = new Masonry(grid, {";
+      javascript += "itemSelector: '.col-12',";
+      javascript += "percentPosition: true";
+      javascript += "});";
+
+      javascript += "const observer = new ResizeObserver(() => {";
+        javascript += "msnry.layout();";
+        javascript += "});";
+
+        javascript += "document.querySelectorAll('.col-12').forEach(card => observer.observe(card));";
+
+  javascript += F("});");
+
+  javascript += F("</script>");
+  result.replace("{{javascript}}", javascript);
+
+  request->send(200, "text/html", result);
+
+
+
+}
+
+
+
+/*void handleDashboard(AsyncWebServerRequest *request)
 {
   String result;
   result += F("<html>");
@@ -2288,7 +3089,7 @@ void handleDashboard(AsyncWebServerRequest *request)
   result.replace("{{javascript}}", javascript);
 
   request->send(200, "text/html", result);
-}
+}*/
 
 void handleStatusNetwork(AsyncWebServerRequest *request)
 {
@@ -2404,12 +3205,29 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   {
      result += FPSTR(HTTP_ENERGY_WATER);
   }
+
   result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
+  result +=  R"(<script>
+            document.addEventListener('DOMContentLoaded', () => {
+              const params  = new URLSearchParams(window.location.search);
+              // Si aucun ?time, on choisit 'hour' par défaut
+              const current = params.has('time') ? params.get('time') : 'hour';
+
+              document.querySelectorAll('.link').forEach(link => {
+                const linkTime = new URL(link.href, window.location.href)
+                                  .searchParams.get('time');
+                if (linkTime === current) {
+                  link.classList.add('active');
+                }
+              });
+            });
+          </script>)";
   result+=footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
   String LinkyStatus;
-  String tmpStatus= ini_read(String(ConfigGeneral.ZLinky)+".json","INFO","Status");
+  
+  String tmpStatus = getDeviceStatus(String(ConfigGeneral.ZLinky)+".json");
   if (tmpStatus =="d4")
   {
     LinkyStatus="<div class='alert alert-danger' role='alert'>Device Offline</div>";
@@ -2433,55 +3251,47 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
   if (time == "hour")
   {
-    result.replace("{{selectedHour}}", F("selected"));
-    result.replace("{{selectedDay}}", F(""));
-    result.replace("{{selectedMonth}}", F(""));
-    result.replace("{{selectedYear}}", F(""));
     result.replace("{{stylePowerChart}}", F("block"));
   }
-  else if (time == "day")
-  {
-    result.replace("{{selectedHour}}", F(""));
-    result.replace("{{selectedDay}}", F("selected"));
-    result.replace("{{selectedMonth}}", F(""));
-    result.replace("{{selectedYear}}", F(""));
+  else{
     result.replace("{{stylePowerChart}}", F("none"));
   }
-  else if (time == "month")
+
+  if (strcmp(ConfigGeneral.Production,"")==0)
   {
-    result.replace("{{selectedHour}}", F(""));
-    result.replace("{{selectedDay}}", F(""));
-    result.replace("{{selectedMonth}}", F("selected"));
-    result.replace("{{selectedYear}}", F(""));
-    result.replace("{{stylePowerChart}}", F("none"));
+    result.replace("{{styleProdChart}}", F("none"));
+  }else{
+    result.replace("{{styleProdChart}}", F("block"));
   }
-  else if (time == "year")
-  {
-    result.replace("{{selectedHour}}", F(""));
-    result.replace("{{selectedDay}}", F(""));
-    result.replace("{{selectedMonth}}", F(""));
-    result.replace("{{selectedYear}}", F("selected"));
-    result.replace("{{stylePowerChart}}", F("none"));
-  }
-  ConfigGeneral.LinkyMode = ini_read(String(ConfigGeneral.ZLinky)+".json","FF66", "768").toInt();
+
+  ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
   String powerGauge="";
+
   if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
   {
-     powerGauge=F("<div class='col-lg-6'>");
-          powerGauge +=F("<div class='card'>");
-            powerGauge +=F("<div class='card-header'>Energy gauge</div>");
-            powerGauge +=F("<div class='card-body' style='min-height:272px;'>");
-              powerGauge +=F("<div id='power_gauge_global' style='width:30%;display:inline-block;'></div>");
-              powerGauge +=F("<div id='power_gauge_global2' style='width:30%;display:inline-block;'></div>");
-              powerGauge +=F("<div id='power_gauge_global3' style='width:30%;display:inline-block;'></div>");
+     powerGauge=F("<div class='col-md-8'>");
+          powerGauge +=F("<div class='card p-4'>");
+            powerGauge +=F("<h5 class='card-title' style=''>Energy gauge</h5>");
+            powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
+              powerGauge += F("<div class='row'>");
+                powerGauge += F("<div class='col-12 col-sm-6 col-lg-4 mb-3'>");
+                  powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
+                powerGauge +=F("</div>");
+                powerGauge += F("<div class='col-12 col-sm-6 col-lg-4 mb-3'>");
+                  powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
+                powerGauge +=F("</div>");
+                powerGauge += F("<div class='col-12 col-sm-6 col-lg-4 mb-3'>");
+                  powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
+                powerGauge +=F("</div>");
+              powerGauge +=F("</div>");
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
         powerGauge +=F("</div>");
   }else{
-    powerGauge =F("<div class='col-lg-6'>");
-          powerGauge +=F("<div class='card'>");
-            powerGauge +=F("<div class='card-header'>Energy gauge</div>");
-            powerGauge +=F("<div class='card-body' style='min-height:272px;'>");
+    powerGauge =F("<div class='col-md-8'>");
+          powerGauge +=F("<div class='card p-4'>");
+            powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
+            powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
               powerGauge +=F("<div id='power_gauge_global' style='height:230px;'></div>");
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
@@ -2528,6 +3338,33 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += F("','1295','");
     javascript += time;
     javascript += F("');");
+
+    if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+    {
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','1295','");
+      javascript += time;
+      javascript += F("');");
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','2319','");
+      javascript += time;
+      javascript += F("');");
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','2575','");
+      javascript += time;
+      javascript += F("');");
+
+    }else{
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','1295','");
+      javascript += time;
+      javascript += F("');");
+    }
+
   }
   if (strcmp(ConfigGeneral.Gaz,"")!=0)
   {
@@ -2547,6 +3384,15 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += time;
     javascript += F("');");
   }
+  if (strcmp(ConfigGeneral.Production,"")!=0)
+  {
+    javascript += createEnergyGraph(ConfigGeneral.Production, "production","['#2e86c1','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += F("refreshStatusProduction('");
+    javascript += String(ConfigGeneral.Production);
+    javascript += F("','");
+    javascript += time;
+    javascript += F("');");
+  }
 
   javascript += F("});");
   javascript += F("</script>");
@@ -2557,6 +3403,197 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 }
 
 void handleStatusDevices(AsyncWebServerRequest *request)
+{
+  if(!deviceList->isEmpty())
+  {
+    deviceList->clear();
+  }
+  String result;
+
+  result = F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  
+  //result += F("<h5>List of devices</h5>");
+  
+  result += F("<div class='container py-4'>");
+  result += F("<h4>Status Devices</h4>");
+  result += F("<div class='row g-4' id='masonry-grid' style=''>"); // data-masonry='{\"percentPosition\": true }'
+  
+  String str = "";
+  int exist = 0;
+  for (size_t ident = 0; ident < devices.size(); ident++) 
+  {
+    DeviceData* device = devices[ident];
+    
+    exist++;
+    result += F("<div class='col-12 col-sm-12 col-md-12 col-lg-5 col-xl-4 d-flex'>");
+    result += F("<div class='card p-4 flex-fill' style='min-width:380px;'>"); //min-width:380px;
+    result += F("<h5 class='card-title'>@Mac : ");
+    result += device->getDeviceID();
+    result += F("</h5>");
+    result += F("<div class='card-body'>");
+    result += F("<a data-toggle='collapse' data-target='#infoDevice");
+    result += String(ident);
+    result +=F("' role='button' aria-expanded='true' aria-controls='infoDevice");
+    result += String(ident);
+    result += F("' onclick=\"toggleDiv('infoDevice");
+    result += String(ident);
+    result += F("')\">+ Info</a>");
+    result += F("<div id='infoDevice");
+    result += String(ident);
+    result += F("' style='display:none;'>");
+    result += "<table width='100%' style='font-size:12px;'><tr>";
+    result += F("<td style='font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    result += device->getInfo().manufacturer;
+    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    result += device->getInfo().model;
+    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    char SAddr[5];
+    int ShortAddr =device->getInfo().shortAddr.toInt();
+    snprintf(SAddr,5,"%04X", ShortAddr);
+    result += SAddr;
+    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    char devId[5];
+    int DeviceId = device->getInfo().device_id.toInt();
+    snprintf(devId,5, "%04X", DeviceId);
+    result += devId;
+    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    result += device->getInfo().software_version;
+    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    result += device->getInfo().lastSeen;
+    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    result += device->getInfo().LQI;
+    result += "</td></tr></table></div><hr>";
+
+    // Get status and action from json    
+    if (TemplateExist(DeviceId))
+    {
+      Template *t;
+      t = GetTemplate(DeviceId, device->getInfo().model);
+      // toutes les propiétés
+      result += F("<div id='status_");
+      result += (String)device->getInfo().shortAddr;
+      result += F("'>");
+      result += F("<table width='100%' style='font-size:12px;'>");
+      for (int i = 0; i < t->StateSize; i++)
+      {
+        if (t->e[i].visible)
+        {
+          if (device->getInfo().model == "ZLinky_TIC")
+          {
+            const char *tmp;
+            bool afficheOK = false;
+            tmp = t->e[i].mode;
+            if ((tmp != NULL) && (tmp[0] != '\0')) 
+            {
+              char * pch;
+              pch = strtok ((char*)tmp,";");
+              while (pch != NULL)
+              {
+                if (atoi(pch) == device->getInfo().linkyMode.toInt())
+                {
+                  afficheOK=true;
+                  break;
+                }
+                pch = strtok (NULL, " ;");
+              }
+            }else{
+              afficheOK=true;
+            }
+
+            if (afficheOK){
+              result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
+              result += t->e[i].name;
+              result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+              result += "<span id='";
+              result += String(ShortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
+              result +="'>";
+              result += GetValueStatus(device->getDeviceID(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+              result += "</span></td>";
+              result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
+              result += F("</td>");
+              result +="</td></tr>";
+            }
+          }else{
+            result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
+            result += t->e[i].name;
+            result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+            result += "<span id='";
+            result += String(device->getInfo().shortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
+            result +="'>";
+            result +=GetValueStatus(device->getDeviceID(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+            result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
+            result += F("</td>");
+            result +="</td></tr>";
+          }
+        }
+      }
+      result += F("</table></div><br>");
+      result += F("<div id='action_");
+      result += (String)device->getInfo().shortAddr;
+      result += F("'>");
+      // toutes les actions
+      for (int i = 0; i < t->ActionSize; i++)
+      {
+
+        result += F("<button onclick=\"ZigbeeAction(");
+        result += device->getInfo().shortAddr;
+        result += ",";
+        result += t->a[i].command;
+        result += ",";
+        result += t->a[i].value;
+        result += ");\" class='btn btn-primary mb-2'>";
+        result += t->a[i].name;
+        result += F("</button>");
+      }
+      result += F("</div>");
+      free(t);
+    }
+    result += F("</div></div></div>");
+    
+    vTaskDelay(1);
+  }
+  result += F("</div>");
+  result += F("</div>");
+  
+  
+
+
+  if (exist>0)
+  {
+    result +="<script>getDeviceValue();</script>";
+    result += F("<script language='javascript'>");
+    result += F("$(document).ready(function() {");
+    result += "const grid = document.querySelector('#masonry-grid');";
+      result += "const msnry = new Masonry(grid, {";
+      result += "itemSelector: '.col-12',";
+        result += "percentPosition: true";
+        result += "});";
+
+        result += "const observer = new ResizeObserver(() => {";
+        result += "msnry.layout();";
+          result += "});";
+
+          result += "document.querySelectorAll('.col-12').forEach(card => observer.observe(card));";
+
+          result += F("});");
+
+    result += F("</script>");
+  }else{
+    result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>";
+  }
+  result+=footer();
+  result += F("</html>");
+
+
+  request->send(200, F("text/html"), result);
+
+}
+
+
+/*void handleStatusDevices(AsyncWebServerRequest *request)
 {
   if(!deviceList->isEmpty())
   {
@@ -2733,7 +3770,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   file.close();
   root.close();
   request->send(200, F("text/html"), result);
-}
+}*/
 
 void handleConfigGeneral(AsyncWebServerRequest *request)
 {
@@ -2773,8 +3810,13 @@ void handleConfigZigbee(AsyncWebServerRequest *request)
   
   result.replace("{{macCoordinator}}", String(ZConfig.zigbeeMac,HEX));
   result.replace("{{versionCoordinator}}", "SDK: "+String(ZConfig.sdk, DEC)+" Ver: "+String(ZConfig.application));
-  result.replace("{{networkCoordinator}}", String(ZConfig.network));
-
+  if (ZConfig.network == 1)
+  {
+    result.replace("{{networkCoordinator}}", "<img src='web/img/ok.png' />");
+  }else{
+    result.replace("{{networkCoordinator}}", "<img src='web/img/nok.png' />");
+  }
+  
   result.replace("{{FormattedDate}}", FormattedDate);
   result.replace("{{SetMaskChannel}}", String(ZConfig.channel));
 
@@ -3358,7 +4400,7 @@ void handleConfigMarstek(AsyncWebServerRequest *request)
     result.replace("{{checkedMarstek}}", "");
   }
 
-  request->send(200, "text/html", result);
+   request->send(200, "text/html", result);
 }
 
 void handleConfigUdpClient(AsyncWebServerRequest *request)
@@ -3653,6 +4695,201 @@ void handleReboot(AsyncWebServerRequest *request)
   hard_restart();
 }
 
+/*static void ensureDirs(const String &fullPath)
+{
+    size_t pos = 1;                     // on saute le ‘/’ initial
+    while ((pos = fullPath.indexOf('/', pos)) != -1) {
+        String dir = fullPath.substring(0, pos);
+        if (!LittleFS.exists(dir)) LittleFS.mkdir(dir);
+        ++pos;
+    }
+}
+
+void untarToLittleFS(const char *tarPath)
+{
+    mtar_t tar;
+    mtar_open(&tar, tarPath, "r");
+
+    mtar_header_t h;
+    while (mtar_read_header(&tar, &h) != MTAR_ENULLRECORD) {
+        esp_task_wdt_reset();
+        String path = "/" + String(h.name);          // Chemin LittleFS voulu
+        
+        if (h.type == '5') {                     // Entrée = répertoire
+            if (!LittleFS.exists(path)) LittleFS.mkdir(path);
+            mtar_next(&tar);
+            continue;
+        }
+
+        ensureDirs(path);                            // Crée les dossiers
+
+        File f = LittleFS.open(path, FILE_WRITE);    // FILE_WRITE = "w+"
+        if (!f) { Serial.printf("Can't open %s\n", path.c_str()); break; }
+
+       //recopier le contenu sans tout charger en RAM  
+        log_w("fichier : %s - size : %d",path.c_str(),h.size);
+        uint8_t buf[512];
+        uint32_t remaining = h.size;
+        while (remaining) {
+            uint32_t n = remaining > sizeof(buf) ? sizeof(buf) : remaining;
+            mtar_read_data(&tar, buf, n);
+            f.write(buf, n);
+            remaining -= n;
+            vTaskDelay(1);
+        }
+        f.close();
+
+        mtar_next(&tar);                             // passe à l’en‑tête suivant
+    }
+    mtar_close(&tar);
+}
+
+void handleDoRestore(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+  String logmessage="";
+  if (!index){
+    DEBUG_PRINTLN(F("Restore start..."));
+    request->_tempFile = LittleFS.open("/rt/" + filename, "w+");
+  }
+
+  if (len) {
+    // stream the incoming chunk to the opened file
+    request->_tempFile.write(data, len);
+    
+    logmessage = "Writing file: " + String(filename) + " index=" + String(index) + " len=" + String(len);
+    DEBUG_PRINTLN(logmessage);
+  }
+
+  if (final) {
+    // close the file handle as the upload is now done
+    logmessage = "Upload Complete: " + String(filename) + ",size: " + String(index + len);
+    request->_tempFile.close();
+    DEBUG_PRINTLN(logmessage);
+    String path = "/rt/"+filename;
+    untarToLittleFS(path.c_str());
+    request->redirect("/backup");
+    
+  }
+}
+
+*/
+
+static void ensureDirs(const String &fullPath) {
+  size_t pos = 1;
+  while ((pos = fullPath.indexOf('/', pos)) != -1) {
+    String dir = fullPath.substring(0, pos);
+    if (!LittleFS.exists(dir)) LittleFS.mkdir(dir);
+    ++pos;
+  }
+}
+
+// parcourt le .tar, flash le firmware et écrit les autres fichiers
+static void untarApplyAndRestore(const char *tarPath) {
+  mtar_t tar;
+  if (mtar_open(&tar, tarPath, "r") != 0) {
+    log_e("mtar_open failed");
+    return;
+  }
+
+  bool fwStarted = false;
+  mtar_header_t h;
+  while (mtar_read_header(&tar, &h) == MTAR_ESUCCESS) {
+    esp_task_wdt_reset();
+    String name = String(h.name);
+    // dossier ?
+    if (h.type == '5') {
+      String dir = "/" + name;
+      if (!LittleFS.exists(dir)) LittleFS.mkdir(dir);
+      mtar_next(&tar);
+      continue;
+    }
+
+    // fichier
+    if (name == "firmware.bin") {
+      // démarrage de l'OTA
+      if (!fwStarted) {
+        if (!Update.begin(h.size, U_FLASH)) {
+          Update.printError(Serial);
+          return;
+        }
+        fwStarted = true;
+      }
+      // stream vers le flash
+      uint32_t rem = h.size;
+      uint8_t buf[512];
+      while (rem) {
+        esp_task_wdt_reset();
+        uint32_t n = rem > sizeof(buf) ? sizeof(buf) : rem;
+        mtar_read_data(&tar, buf, n);
+        if (Update.write(buf, n) != n) {
+          Update.printError(Serial);
+        }
+        rem -= n;
+      }
+      // fin de l’image
+      if (!Update.end(true)) {
+        Update.printError(Serial);
+      } else {
+        log_i("Firmware flashed");
+      }
+    } else {
+      // écriture dans LittleFS
+      String path = "/" + name;
+      ensureDirs(path);
+      File f = LittleFS.open(path, FILE_WRITE);
+      if (!f) {
+        log_e("Can't open %s\n", path.c_str());
+        break;
+      }
+      uint32_t rem = h.size;
+      uint8_t buf[512];
+      log_w("fichier : %s - size : %d",path.c_str(),h.size);
+      while (rem) {
+        esp_task_wdt_reset();
+        uint32_t n = rem > sizeof(buf) ? sizeof(buf) : rem;
+        mtar_read_data(&tar, buf, n);
+        f.write(buf, n);
+        rem -= n;
+      }
+      f.close();
+    }
+    mtar_next(&tar);
+  }
+  mtar_close(&tar);
+
+  LittleFS.remove(tarPath);
+
+}
+
+// handler unique pour l’upload .tar
+void handleDoRestore(AsyncWebServerRequest *request,
+                         const String& filename, size_t index,
+                         uint8_t *data, size_t len, bool final) {
+  static const char *tmpPath = "/rt/upload.tar";
+  if (!index) {
+    // premier chunk : créer le fichier temporaire
+    if (LittleFS.exists(tmpPath)) LittleFS.remove(tmpPath);
+    request->_tempFile = LittleFS.open(tmpPath, "w+");
+    log_i("Upload start");
+    events.send("Downloading ...", "updateStatusManuel");
+  }
+  // écrire chunk dans le .tar temporaire
+  request->_tempFile.write(data, len);
+  if (final) {
+    request->_tempFile.close();
+    events.send("Installation ...", "updateStatusManuel");
+    untarApplyAndRestore(tmpPath);
+    events.send("Rebooting ...", "updateStatusManuel");
+
+    executeReboot=true;
+    
+    request->send(200, "text/plain", "Mise à jour terminée");
+
+
+
+  }
+}
+
+
 size_t content_len;
 #define U_PART U_SPIFFS
 
@@ -3686,15 +4923,14 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size
   }
 }
 
-void printProgress(size_t prg, size_t sz) {
+/*void printProgress(size_t prg, size_t sz) {
   Serial.printf("%d%%\n", (prg*100)/content_len);
-}
+}*/
 
-void handleDoRestore(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+void handleDoUploadHistory(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
   String logmessage="";
   if (!index){
-    DEBUG_PRINTLN(F("Restore start..."));
-    request->_tempFile = LittleFS.open("/rt/" + filename, "w+");
+    request->_tempFile = LittleFS.open("/hst/" + filename, "w+");
   }
 
   if (len) {
@@ -3709,41 +4945,10 @@ void handleDoRestore(AsyncWebServerRequest *request, const String& filename, siz
     // close the file handle as the upload is now done
     logmessage = "Upload Complete: " + String(filename) + ",size: " + String(index + len);
     request->_tempFile.close();
-    DEBUG_PRINTLN(logmessage);
-
-    mtar_t tar;
-    mtar_header_t h;
-    char *p;
-
-    /* Open archive for reading */
-    String path = "/rt/"+filename;
-    DEBUG_PRINTLN(path);
-    int err;
-    err = mtar_open(&tar, path.c_str(), "r");
-    DEBUG_PRINTLN(mtar_strerror(err));
-
-    while ( (err=mtar_read_header(&tar, &h)) != MTAR_ENULLRECORD ) {
-      DEBUG_PRINTLN(mtar_strerror(err));
-      
-      mtar_find(&tar, h.name, &h);
-      p = (char *)calloc(1, h.size + 1);
-      mtar_read_data(&tar, p, h.size);
-      
-      String path = "/";
-      path +=h.name;
-
-      File file = LittleFS.open(path.c_str(),"w");
-      file.print(p);
-      free(p);
-      file.close();
-      mtar_next(&tar);
-    }
-
-    /* Close archive */
-    mtar_close(&tar);
-    request->redirect("/backup");
+    request->redirect("/hst");
   }
 }
+
 
 void handleToolCreateBackup(AsyncWebServerRequest *request)
 {
@@ -3848,6 +5053,40 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   
   root.close();
   file.close();
+
+
+//backup history
+  root = LittleFS.open("/hst");
+  file = root.openNextFile();
+  esp_task_wdt_reset();
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = F("hst/");
+      tmp += file.name();
+      DEBUG_PRINT("mtar_write_file_header : ");
+      DEBUG_PRINTLN(tmp.c_str());
+      error = mtar_write_file_header(&tar, tmp.c_str(), file.size());
+      DEBUG_PRINTLN(mtar_strerror(error));
+      String buff="";
+      while (file.available())
+      { 
+        buff+=(char)file.read();
+      }
+      DEBUG_PRINT("mtar_write_data : ");
+      error = mtar_write_data(&tar, buff.c_str(), strlen(buff.c_str()));
+      DEBUG_PRINTLN(mtar_strerror(error));
+      file.close(); 
+    }
+    file.close();
+    vTaskDelay(1);
+    file = root.openNextFile();
+  }
+  
+  root.close();
+  file.close();
+
 
   //backup template
   root = LittleFS.open("/tp");
@@ -4015,56 +5254,74 @@ void runUpdateFirmware(uint8_t *data, size_t len)
   ESP.restart();
 }
 
-void checkUpdateFirmware()
+bool checkUpdateFirmware()
 {
   clientWeb.begin(UPD_FILE);
   clientWeb.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); 
   // Get file, just to check if each reachable
-  int resp = clientWeb.GET();
-  DEBUG_PRINT("Response: ");
-  DEBUG_PRINTLN(resp);
-  // If file is reachable, start downloading
+  int resp = clientWeb.GET(); 
+
+  int64_t contentLength = clientWeb.getSize();
+  if (contentLength <= 0) {
+    log_e("Taille inconnue ou invalide");
+    clientWeb.end();
+    return false;
+  }
+
+
   if(resp == HTTP_CODE_OK) 
   {   
-      // get length of document (is -1 when Server sends no Content-Length header)
-      totalLength = clientWeb.getSize();
-      // transfer to local variable
-      int len = totalLength;
-      // this is required to start firmware update process
-      Update.begin(UPDATE_SIZE_UNKNOWN);
-      Update.onProgress(progressFunc);
-      DEBUG_PRINT("FW Size: ");
-      
-      DEBUG_PRINTLN(totalLength);
-      // create buffer for read
-      uint8_t buff[128] = { 0 };
-      // get tcp stream
-      WiFiClient * stream = clientWeb.getStreamPtr();
-      // read all data from server
-      DEBUG_PRINTLN("Updating firmware...");
-      while(clientWeb.connected() && (len > 0 || len == -1)) {
-          // get available data size
-          size_t size = stream->available();
-          if(size) {
-            // read up to 128 byte
-            int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
-            // pass to function
-            runUpdateFirmware(buff, c);
-            if(len > 0) {
-                len -= c;
-            }
-          }
-          //DEBUG_PRINT("Bytes left to flash ");
-          //DEBUG_PRINTLN(len);
-           //delay(1);
+    File f = LittleFS.open("/bk/update.tar", "w");
+    if (!f) {
+      log_e("Impossible d'ouvrir /bk/update.tar en écriture");
+      clientWeb.end();
+      return false;
+    }
+
+    const size_t BUF_SZ = 400 * 1024;  // 1Mo
+    uint8_t *buff = (uint8_t*) heap_caps_malloc(BUF_SZ, MALLOC_CAP_SPIRAM);
+    if (!buff) {
+      f.close(); 
+      clientWeb.end();
+      return false;
+    }
+
+    WiFiClient * stream = clientWeb.getStreamPtr();
+    int64_t bytesRead = 0;
+
+    while(bytesRead < contentLength) {
+      esp_task_wdt_reset();
+      // get available data size
+      size_t size = stream->available();
+      if (!size) {
+        esp_task_wdt_reset();
+        delay(1);
+        continue;
       }
+      size_t toRead = min<size_t>( min<size_t>(size, BUF_SZ),
+                               contentLength - bytesRead );
+
+      int c = stream->readBytes(buff, toRead);
+      if (c > 0){
+        f.write(buff, c);
+        bytesRead += c;
+        // Progress event (optionnel)
+        int pct = (bytesRead * 100) / contentLength;
+        events.send(String(pct), "updateProgress");
+      } 
+    }
+    heap_caps_free(buff);
+    f.close();
+
+  } else {
+    log_e("Cannot download firmware file. Only HTTP response 200: OK is supported. Double check firmware location #defined in UPD_FILE.");
+    return false;
   }
-  else
-  {
-    DEBUG_PRINTLN("Cannot download firmware file. Only HTTP response 200: OK is supported. Double check firmware location #defined in UPD_FILE.");
-  }
+  events.send("100", "updateProgress");
   clientWeb.end();
+  return true;
 }
+
 
 void handleToolUpdate(AsyncWebServerRequest *request)
 {
@@ -4077,10 +5334,10 @@ void handleToolUpdate(AsyncWebServerRequest *request)
     result += FPSTR(HTTP_UPDATE);
     result+=footer();
     result.replace("{{linkFirmware}}", UPD_FILE);
+    result.replace("{{version}}", VERSION);
     result += F("</html>");
 
     request->send(200, F("text/html"), result);
-    //checkUpdateFirmware();
 }
 
 
@@ -4340,6 +5597,80 @@ void handleCreateDevice(AsyncWebServerRequest *request)
   request->send(200, "text/html", result);
 }
 
+void handleCreateHistory(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_HISTORY);
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  request->send(200, "text/html", result);
+}
+
+void handleHistory(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result += F("<h4>History</h4>");
+  result += F("<div align='right'><a href='/createHistory' class='btn btn-primary mb-2'>+ New</a></div>");
+  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
+  result += F("      <div class='navbar-header'>");
+  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
+  result += F("      </div>");
+  result += F("<ul class='nav navbar-nav'>");
+
+  String str = "";
+  File root = LittleFS.open("/hst");
+  File file = root.openNextFile();
+  while (file)
+  {
+    if (!file.isDirectory())
+    {
+      String tmp = file.name();
+      // tmp = tmp.substring(11);
+      result += F("<li><a href='#' onClick=\"readfile('");
+      result += tmp;
+      result += F("','hst');document.getElementById('actions').style.display = 'block';\">");
+      result += tmp;
+      result += F(" ( ");
+      result += file.size();
+      result += F(" o)</a></li>");
+    }
+    file.close();
+    vTaskDelay(1);
+    file = root.openNextFile();
+  }
+  result += F("</ul></nav>");
+  result += F("<div class='container-fluid' >");
+  result += F("  <div class='app-main-content'>");
+  result += F("<form method='POST' action='saveFileHistory'>");
+  result += F("<div class='form-group'>");
+  result += F(" <label for='file'>File : <span id='title'></span></label>");
+  result += F("<input type='hidden' name='filename' id='filename' value=''>");
+  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
+  result += F("</textarea>");
+  result += F("</div>");
+  result += F("<div id='actions' style='display:none;'>");
+  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Save</button>&nbsp;");
+  result += F("<button type='submit' name='delete' value='delete' class='btn btn-danger mb-2' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete</button>");
+  result += F("</div>");
+  result += F("</Form>");
+
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</body>");
+  result+=footer();
+  result += F("</html>");
+  file.close();
+  root.close();
+  request->send(200, F("text/html"), result);
+}
+
 void handleCreateTemplate(AsyncWebServerRequest *request)
 {
   String result;
@@ -4351,6 +5682,8 @@ void handleCreateTemplate(AsyncWebServerRequest *request)
   result.replace("{{FormattedDate}}", FormattedDate);
   request->send(200, "text/html", result);
 }
+
+
 void handleTemplates(AsyncWebServerRequest *request)
 {
   String result;
@@ -4522,6 +5855,58 @@ void handleSaveDevice(AsyncWebServerRequest *request)
     }
     AsyncWebServerResponse *response = request->beginResponse(303);
     response->addHeader(F("Location"), F("/fsbrowser"));
+    request->send(response);
+  }
+}
+
+
+void handleSaveHistory(AsyncWebServerRequest *request)
+{
+
+  if (request->method() != HTTP_POST)
+  {
+    request->send(405, F("text/plain"), F("Method Not Allowed"));
+  }
+  else
+  {
+    uint8_t i = 0;
+
+    String filename = "/hst/" + request->arg(i);
+    Serial.println(filename);
+
+    String content = request->arg(1);
+    String action = request->arg(2);
+
+    if (action == "save")
+    {
+      File file = LittleFS.open(filename.c_str(), "w+");
+      if (!file || file.isDirectory())
+      {
+        DEBUG_PRINT(F("Failed to open file for reading\r\n"));
+        file.close();
+        return;
+      }
+      
+      int bytesWritten = file.print(content);
+
+      if (bytesWritten > 0)
+      {
+        DEBUG_PRINTLN(F("File was written"));
+        DEBUG_PRINTLN(bytesWritten);
+      }
+      else
+      {
+        DEBUG_PRINTLN(F("File write failed"));
+      }
+
+      file.close();
+    }
+    else if (action == "delete")
+    {
+      LittleFS.remove(filename);
+    }
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), F("/hst"));
     request->send(response);
   }
 }
@@ -4867,6 +6252,7 @@ void handleSaveDatabase(AsyncWebServerRequest *request)
 void handleReadfile(AsyncWebServerRequest *request)
 {
   String result;
+  result.reserve(MAXHEAP);
   int i = 0;
   String repertory = request->arg(i);
   String filename = "/" + repertory + "/" + request->arg(1);
@@ -4879,11 +6265,27 @@ void handleReadfile(AsyncWebServerRequest *request)
     return;
   }
 
-  while (file.available())
+  size_t fileSize = file.size();
+  // Allocation d'un buffer dans la PSRAM avec heap_caps_malloc 
+  char* buffer = (char*) heap_caps_malloc(fileSize + 1, MALLOC_CAP_SPIRAM); 
+  if (!buffer) { 
+    Serial.println("Erreur d'allocation dans la PSRAM"); 
+    file.close(); 
+  }
+
+  size_t readBytes = file.readBytes(buffer, fileSize); 
+  buffer[readBytes] = '\0';
+  file.close();
+
+  result = String(buffer,readBytes);
+  
+  heap_caps_free(buffer); 
+
+ /* while (file.available())
   {
     result += (char)file.read();
   }
-  file.close();
+  file.close();*/
   request->send(200, F("text/html"), result);
 }
 
@@ -4981,6 +6383,24 @@ void handleSetChannelMask(AsyncWebServerRequest *request)
 
   request->send(200, F("text/html"), "");
 }
+
+
+void handlePermitJoinAssist(AsyncWebServerRequest *request)
+{
+  uint8_t datas[4];
+  Packet trame;
+  datas[0] = 0xFF;
+  datas[1] = 0xFC;
+  datas[2] = 0x1E;
+  datas[3] = 0x00;
+
+  trame.cmd = 0x0049;
+  trame.len = 0x0004;
+  memcpy(trame.datas, datas, 4);
+  PrioritycommandList->push(trame);
+  request->send(200, F("text/html"), "");
+}
+
 
 void handlePermitJoin(AsyncWebServerRequest *request)
 {
@@ -5098,10 +6518,31 @@ void handleSaveConfigHorloge(AsyncWebServerRequest *request)
 
   }
 
-  request->send(200, "text/html", "Save config OK ! <br><form method='GET' action='reboot'><input type='submit' name='reboot' value='Reboot'></form>");
-  /*AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/configHorloge"));
-  request->send(response);*/
+  executeReboot=true;
+  
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/"));
+  request->send(response);
+}
+
+void handleSetAlias(AsyncWebServerRequest *request)
+{
+  String IEEE = request->arg("ieee");
+  String alias = request->arg("alias");
+  String result = "NOK";
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == IEEE)
+    {
+      device->setInfoAlias(alias);
+      result = "OK";
+      break;
+    }
+  }
+
+  request->send(200, F("text/html"), result);
+
 }
 
 void handleSaveConfigLinky(AsyncWebServerRequest *request)
@@ -5548,8 +6989,10 @@ void handleSaveConfigMarstek(AsyncWebServerRequest *request)
     ConfigSettings.enableMarstek = false;
   }
   config_write(path, "enableMarstek", enableMarstek);
+
+  executeReboot = true;
   AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/configMarstek"));
+  response->addHeader(F("Location"), F("/"));
   request->send(response);
 }
 
@@ -5673,12 +7116,35 @@ void handleSaveConfigNotification(AsyncWebServerRequest *request)
   request->send(response);
 }
 
+void APISetResetDevice(AsyncWebServerRequest *request)
+{
+  String result="";
+  if (request->method() != HTTP_POST)
+  {
+    result="{\"result\" : false}";
+  }
+  else
+  {
+
+    String path="configWifi.json";
+    config_write(path,"ssid","");
+    config_write(path,"pass","");
+    result="{\"result\": true}";
+    executeReboot = true;
+
+  }
+  AsyncWebServerResponse *response = request->beginResponse(200, F("application/json"), result);
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  request->send(response);
+
+}
+
 void APISetConfigWiFi(AsyncWebServerRequest *request)
 {
   String result="";
   if (request->method() != HTTP_POST)
   {
-    request->send(405, F("text/plain"), F("Method Not Allowed"));
+    result="{\"result\" : false}";
   }
   else
   {
@@ -5796,10 +7262,13 @@ void handleSaveWifi(AsyncWebServerRequest *request)
       }
     }
     configFile.close();
+
+    executeReboot=true;
+
     AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/reboot"));
+    response->addHeader(F("Location"), F("/"));
     request->send(response);
-    //request->send(200, "text/html", "Save config OK ! <br><form method='GET' action='reboot'><input type='submit' name='reboot' value='Reboot'></form>");
+
   }else{
     AsyncWebServerResponse *response = request->beginResponse(303);
     String url="/configWiFi?error="+String(error)+"&ipError="+String(ipError);
@@ -5822,126 +7291,105 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   result += F("</html>");
 
   String str = "";
-  String devices="";
-  File root = LittleFS.open("/db");
-  File file = root.openNextFile();
-  int i=0;
-  int exist = 0;
-  while (file)
+  String zdevices="";
+   int exist = 0;
+
+  for (size_t ident = 0; ident < devices.size(); ident++) 
   {
-    String tmp = file.name();
-    // tmp = tmp.substring(10);
-    if (tmp.substring(16) == ".json")
-    {
-      exist++;
-      devices += F("<div class='col-md-auto col-sm-auto'><div class='card' style='min-width:380px;' ><div class='card-header'  style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;' >@Mac : ");
-      devices += tmp.substring(0, 16);
-      devices += F("</div>");
-      devices += F("<div class='card-body'>");
-      devices += "<table width='100%' style='font-size:12px;'><tr>";
-      devices += F("<td style='font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String manufacturer;
-      manufacturer = GetManufacturer(file.name());
-      devices += manufacturer;
-      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String model;
-      model = GetModel(file.name());
-      devices += model;
-      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      char SAddr[5];
-      int ShortAddr = GetShortAddr(file.name());
-      snprintf(SAddr,5, "%04X", ShortAddr);
-      devices += SAddr;
-      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      char devId[5];
-      int DeviceId = GetDeviceId(file.name());
-      snprintf(devId,5, "%04X", DeviceId);
-      devices += devId;
-      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String SoftVer = GetSoftwareVersion(file.name());
-      devices += SoftVer;
-      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String lastseen = GetLastSeen(file.name());
-      devices += lastseen;
-      devices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      devices += GetLQI(file.name());
-      devices += "</td></tr></table>";
-     
-      // Paramétrages
-      devices += F("<hr>");
-        //infos
-        
-        devices += F("<button onclick=\"ZigbeeSendRequest(");
-        devices += ShortAddr;
-        devices += ",";
-        if (model=="ZLinky_TIC")
-        {
-          devices += "0,16384";
-        }else{
-          devices += "0,1";
-        }
-        
-        devices += ");\" class='btn btn-info mb-2'>";
-        devices += "Version";
-        devices += F("</button>");
+    DeviceData* device = devices[ident];
 
-
-        //modif
-        devices +="<div align='right'>";
-        if (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT )
-        {
-          devices += F("<button onclick=\"sendMqttDiscover('");
-          devices += ShortAddr;
-          devices += "');\" class='btn btn-warning mb-2'>";
-          devices +="<svg role='img' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' style='width:24px;' height='24' width='24'>";
-          devices +=  "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z' fill='currentColor' stroke-width='1'></path>";
-          devices +="</svg>";
-          //devices += "MQTT Discover";
-          devices += F("</button>");
-        }
-
-        devices += F("<button onclick=\"ZigbeeSendRequest(");
-        devices += ShortAddr;
-        devices += ",";
-        devices += "0,5";
-        devices += ");\" class='btn btn-warning mb-2'>";
-        devices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>";
-        devices +=  "<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>";
-        devices +=  "<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>";
-        devices +="</svg>";
-        //devices += " Refresh";
-        devices += F("</button>");
-      
-        devices += F("<button onclick=\"deleteDevice('");
-        devices += tmp.substring(0, 16);
-        devices += "');\" class='btn btn-danger mb-2'>";
-        devices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>";
-        devices +=  "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>";
-        devices +=  "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>";
-        devices +="</svg>";
-        //devices += " Delete";
-        devices += F("</button>");
-      devices += F("</div>");
-      devices += F("</div>");
-      devices += F("</div></div><br>");
-      
-    }
+    exist++;
+    zdevices += F("<div class='col-10 col-sm-auto col-md-auto col-lg-auto col-xl-auto'><div class='card p-4' style='' ><h5 class='card-title' >@Mac : ");
+    zdevices += device->getDeviceID();
+    zdevices += F("</h5>");
+    zdevices += F("<div class='card-body'>");
+    zdevices += "<table width='100%' style='font-size:12px;'><tr>";
+    zdevices += F("<td style='font-weight:bold;color:#555;width:90px;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += device->getInfo().manufacturer;
+    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += device->getInfo().model;
+    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    char SAddr[5];
+    int ShortAddr = device->getInfo().shortAddr.toInt();
+    snprintf(SAddr,5, "%04X", ShortAddr);
+    zdevices += SAddr;
+    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    char devId[5];
+    int DeviceId = device->getInfo().device_id.toInt();
+    snprintf(devId,5, "%04X", DeviceId);
+    zdevices += devId;
+    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += device->getInfo().software_version;
+    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += device->getInfo().lastSeen;
+    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += device->getInfo().LQI;
+    zdevices += "</td></tr></table>";
     
-    i++;
-    file.close();
-    vTaskDelay(1);
-    file = root.openNextFile();
+    // Paramétrages
+    zdevices += F("<hr>");
+      //modif
+      zdevices +="<div class='d-flex justify-content-end'>";
+      if (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT )
+      {
+        zdevices += F("<button onclick=\"sendMqttDiscover('");
+        zdevices += device->getInfo().shortAddr;
+        zdevices += "');\" class='btn btn-warning mb-2'>";
+        zdevices +="<svg role='img' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' style='width:24px;' height='24' width='24'>";
+        zdevices +=  "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z' fill='currentColor' stroke-width='1'></path>";
+        zdevices +="</svg>";
+        //devices += "MQTT Discover";
+        zdevices += F("</button>&nbsp;");
+      }
+
+      zdevices += F("<button onclick=\"ZigbeeSendRequest(");
+      zdevices += device->getInfo().shortAddr;
+      zdevices += ",";
+      zdevices += "0,5";
+      zdevices += ");\" class='btn btn-warning mb-2'>";
+      zdevices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>";
+      zdevices +=  "<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>";
+      zdevices +=  "<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>";
+      zdevices +="</svg>";
+
+      zdevices += F("</button>&nbsp;");
+    
+      zdevices += F("<button onclick=\"deleteDevice('");
+      zdevices += device->getDeviceID();
+      zdevices += "');\" class='btn btn-danger mb-2'>";
+      zdevices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>";
+      zdevices +=  "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>";
+      zdevices +=  "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>";
+      zdevices +="</svg>";
+      //devices += " Delete";
+      zdevices += F("</button>&nbsp;");
+    zdevices += F("</div>");
+    zdevices += F("</div>");
+    zdevices += F("</div></div><br>");
   }
 
   if (exist>0)
   {
-    result.replace("{{devicesList}}", devices);
+    result.replace("{{devicesList}}", zdevices);
   }else{
     result.replace("{{devicesList}}", "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> ");
   }
 
-  file.close();
-  root.close();
+  request->send(200, F("text/html"), result);
+}
+
+void handleAssistDevice(AsyncWebServerRequest *request)
+{
+  String result;
+
+  result = F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_ASSIST_DEVICE);
+  result+=footerAssist();
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result += F("</html>");
+
   request->send(200, F("text/html"), result);
 }
 
@@ -5995,7 +7443,7 @@ void handleLoadGaugeDashboard(AsyncWebServerRequest *request)
   Attribute = request->arg(2);
   Type = request->arg(3);
   Coefficient = request->arg(4);
-  result = GetValueStatus(IEEE + ".json", Cluster.toInt(), Attribute.toInt(), (String)Type, Coefficient.toFloat());
+  result = GetValueStatus(IEEE, Cluster.toInt(), Attribute.toInt(), (String)Type, Coefficient.toFloat());
 
   request->send(200, F("text/html"), result);
 }
@@ -6078,34 +7526,18 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
   IEEE = request->arg(i);
   Attribute = request->arg(1);
   
-  //result = getPowerDatas(IEEE, "power", Attribute, "minute");
- 
-  //request->send(200, F("application/json"), result);
-
-
-
-  //request->send(LittleFS, "/db/"+Attribute+"_"+IEEE+".json", "application/json");
-  request->send(LittleFS, "/db/pwr_"+IEEE+".json", "application/json");
-
-  /*String path = "/db/"+Attribute+"_"+IEEE+".json";
-  File DeviceFile = LittleFS.open(path, FILE_READ);
-  if (!DeviceFile|| DeviceFile.isDirectory()) {
-    DEBUG_PRINTLN(F("failed open"));
-  }else
+  for (size_t i = 0; i < devices.size(); i++) 
   {
-    AsyncResponseStream *response = request->beginResponseStream("application/json",[](uint8_t *buffer, size_t maxLen, size_t index)->size_t {
-      while (DeviceFile.available()) {
-        response->print(DeviceFile.read());
-      }  
-      DeviceFile.close();
-    });
-    request->send(response);
-  }*/
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == IEEE)
+    {
+      String now = Hour+":"+Minute;
+      request->send(200, F("application/json"), toJson(device->powerHistory,now));
+      break;
+    }
+  }
 
- 
 }
-
-
 
 void handleLoadEnergyChart(AsyncWebServerRequest *request)
 {
@@ -6116,7 +7548,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
   IEEE = request->arg(i);
   time = request->arg(1);
   
-  String path = "/db/nrg_" + IEEE + ".json";
+  String path = "/hst/nrg_" + IEEE + ".json";
 
   File DeviceFile = LittleFS.open(path, FILE_READ);
   if (!DeviceFile || DeviceFile.isDirectory())
@@ -6363,19 +7795,6 @@ void handleLoadEnergyChart(AsyncWebServerRequest *request)
 }
 
 
-void handleLoadTrendEnergyEuros(AsyncWebServerRequest *request)
-{
-
-  String IEEE, result;
-  int i = 0;
-  IEEE = request->arg(i);
-
-  result = getTrendEnergyEuros(IEEE);
-  // result = createEnergyGraph(IEEE);
-
-  request->send(200, F("application/json"), result);
-}
-
 void handleLoadLabelEnergy(AsyncWebServerRequest *request)
 {
 
@@ -6551,10 +7970,10 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
 
             if (discoverOk)
             {
-              mqttClient.publish(topic.c_str(),1,true,datas.c_str());
+              mqttClient.publish(topic.c_str(),0,true,datas.c_str());
             }
           }else{
-            mqttClient.publish(topic.c_str(),1,true,datas.c_str());
+            mqttClient.publish(topic.c_str(),0,true,datas.c_str());
           }
           
         }
@@ -6595,6 +8014,17 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
   String filenamebk = "/bk/" + tmpMac + ".json";
   int resbk;
   resbk = LittleFS.remove(filenamebk);
+
+  for (auto it = devices.begin(); it != devices.end(); ++it) 
+  {
+    if ((*it)->getDeviceID() == tmpMac) 
+    {
+      (*it)->~DeviceData();
+      free(*it);
+      devices.erase(it);
+      break;
+    }
+  }
 
   if ((res == 0) && (resbk == 0))
   {
@@ -6971,6 +8401,23 @@ void APIgetTemplates(AsyncWebServerRequest *request)
   request->send(200, F("application/json"), result);
 }
 
+void launchUpdateTask() {
+  // Désactive le watchdog si besoin
+  esp_task_wdt_reset();
+  events.send("Starting update ...", "updateStatusAuto");
+  if (checkUpdateFirmware())
+  {
+    events.send("Download complete ...", "updateStatusAuto");
+    untarApplyAndRestore("/bk/update.tar");
+    executeReboot=true;
+    events.send("Update complete, rebooting …", "updateStatusAuto");
+    events.send("", "reboot");
+  }else{
+    events.send("Download error", "updateStatusAuto");
+  }
+}
+
+
 void initWebServer()
 {
 
@@ -7167,6 +8614,26 @@ void initWebServer()
     }
     handleConfigDevices(request); 
   });
+  serverWeb.on("/assistDevice", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleAssistDevice(request); 
+  });
+
+  serverWeb.on("/downloadUpdate", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    request->send(200,"text/plain","starting download");
+    updatePending = true;
+  });
   serverWeb.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -7221,6 +8688,17 @@ void initWebServer()
     }
     handleSaveDevice(request); 
   });
+  serverWeb.on("/saveFileHistory", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveHistory(request); 
+  });
+  
+
   serverWeb.on("/saveFileTemplates", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -7430,6 +8908,20 @@ void initWebServer()
           handleDoRestore(request, filename, index, data, len, final);
         }
   );
+  serverWeb.on("/doUploadHistory", HTTP_POST,
+    [](AsyncWebServerRequest *request) {},
+    [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
+                  size_t len, bool final) 
+        {
+          if (ConfigSettings.enableSecureHttp)
+          {
+            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+              return request->requestAuthentication();
+          }
+          handleDoUploadHistory(request, filename, index, data, len, final);
+        }
+  );
+
   serverWeb.on("/readFile", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -7512,6 +9004,16 @@ void initWebServer()
     }
     handlePermitJoin(request); 
   });
+
+  serverWeb.on("/cmdPermitJoinAssist", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handlePermitJoinAssist(request); 
+  });
   serverWeb.on("/cmdRawMode", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -7584,6 +9086,15 @@ void initWebServer()
     }
     handleFSbrowserBackup(request); 
   });
+  serverWeb.on("/hst", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleHistory(request); 
+  });
   serverWeb.on("/tp", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -7619,6 +9130,15 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleCreateDevice(request); 
+  });
+  serverWeb.on("/createHistory", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleCreateHistory(request); 
   });
   serverWeb.on("/createTemplate", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -7728,15 +9248,7 @@ void initWebServer()
     }
     handleLoadEnergyChart(request); 
   });
-  serverWeb.on("/loadTrendEnergyEuros", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
-    handleLoadTrendEnergyEuros(request); 
-  });
+ 
   serverWeb.on("/loadLabelEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -7811,11 +9323,6 @@ void initWebServer()
   });
   serverWeb.on("/poll", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
     request->send(200,"text/html", "ok");
   });
 
@@ -7840,6 +9347,15 @@ void initWebServer()
     APIgetSystem(request); 
     
   });
+  serverWeb.on("/setAlias", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSetAlias(request); 
+  });
   serverWeb.on("/setConfigWiFi", HTTP_POST, [](AsyncWebServerRequest *request)
   {
     if (ConfigSettings.enableSecureHttp)
@@ -7848,6 +9364,16 @@ void initWebServer()
         return request->requestAuthentication();
     }
     APISetConfigWiFi(request); 
+    
+  });
+  serverWeb.on("/setResetDevice", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    APISetResetDevice(request); 
     
   });
 
@@ -7936,15 +9462,21 @@ void initWebServer()
   serverWeb.serveStatic("/web/js/justgage.min.js", LittleFS, "/web/js/justgage.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/bootstrap.min.js", LittleFS, "/web/js/bootstrap.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/bootstrap.bundle.min.js.map", LittleFS, "/web/js/bootstrap.map").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/masonry.pkgd.min.js", LittleFS, "/web/js/masonry.pkgd.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/style.css", LittleFS, "/web/css/style.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/logo.png", LittleFS, "/web/img/logo.png").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/wait.gif", LittleFS, "/web/img/wait.gif").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/img/ziwifi32.gif", LittleFS, "/web/img/ziwifi32.gif").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/img/zlinky.gif", LittleFS, "/web/img/zlinky.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");
   serverWeb.onNotFound(handleNotFound);
 
-  serverWeb.begin();
+  serverWeb.addHandler(&events);
 
-  Update.onProgress(printProgress);
+  serverWeb.begin();
+  
+
+  //Update.onProgress(printProgress);
 }

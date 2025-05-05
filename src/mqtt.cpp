@@ -57,6 +57,6 @@ void mqttPublish(String IEEE, String cluster, String attribute, String type, Str
 
         mqttClient.publish(ConfigGeneral.headerMQTT, 0, true, tmpvalue.c_str());
     }
-    
+    vTaskDelay(10);
     
 }

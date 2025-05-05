@@ -40,7 +40,8 @@ bool ini_power2(String path, String section, String value);
 bool ini_trendPower(String path, String section, String value);
 bool ini_trendEnergy(String path, String section, String value);
 
-bool init_raz_energy(String path, String time);
+//bool init_raz_energy(String path, String time);
+//bool init_raz_energy(DeviceData* device, const String &periodStr);
 
 void scanFilesError(void);
 

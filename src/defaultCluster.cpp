@@ -6,7 +6,9 @@
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
 #include "mqtt.h"
+#include "device.h"
 
+extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -23,16 +25,18 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
     switch (attribute)
     {       
       default:
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
+        char clusterHex[5];
+        snprintf(clusterHex,5,"%04X",cluster);
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          char clusterHex[5];
-          snprintf(clusterHex,5,"%04X",cluster);
-          ini_write(inifile,clusterHex, (String)attribute, (String)tmp);
+        
+          //ini_write(inifile,clusterHex, (String)attribute, (String)tmp);
 
           //MQTT
           if (ConfigSettings.enableMqtt)
@@ -62,6 +66,15 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
             deviceList->push(Device{shortaddr,cluster,attribute,tmp});
           }
           
+        }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string(clusterHex),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
+          }
         }
         break;
     }

@@ -177,7 +177,7 @@ function cmd(val,param="")
 function loadLinkyDatas(IEEE)
 {
 	var xhr = getXhr();
-	document.getElementById("power_data").innerHTML="<img src='/web/img/wait.gif'>";
+	//document.getElementById("power_data").innerHTML="<img src='/web/img/wait.gif'>";
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			leselect = xhr.responseText;
@@ -201,11 +201,34 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 			{
 				if (time=='hour')
 				{
-					labelTime='VA (Ph1)';
+					labelTime= Math.floor(datas[2]) + ' W';
+					powerGaugeAbo1 = new JustGage({
+						id: 'power_gauge_global',
+						value: datas[0],
+						min: 0,
+						max: datas[1],
+						title: 'Target',
+						label: labelTime,
+						gaugeWidthScale: 0.6,
+						pointer: true,
+						textRenderer: function (val) {
+							return val+' VA';
+						},
+						pointerOptions: {
+						    toplength: -15,
+						    bottomlength: 10,
+						    bottomwidth: 12,
+						    color: '#8e8e93',
+						    stroke: '#ffffff',
+						    stroke_width: 3,
+						    stroke_linecap: 'round'
+						},
+						relativeGaugeSize: true,
+						refreshAnimationTime: 1000
+					});
 				}else{
 					labelTime='Wh';
-				}
-				powerGaugeAbo1 = new JustGage({
+					powerGaugeAbo1 = new JustGage({
 						id: 'power_gauge_global',
 						value: datas[0],
 						min: 0,
@@ -225,7 +248,9 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 						},
 						relativeGaugeSize: true,
 						refreshAnimationTime: 1000
-				});
+					});
+				}
+				
 			}else if (phase==2)
 			{
 				if (time=='hour')
@@ -314,12 +339,12 @@ function getLabelEnergy(datas,row, barColor, options, index)
 			if (value!=0)
 			{
 				if (i>0){sep="<br>";}else{sep="";}
-				result+= sep +"<span style='color:"+colors[i]+";'>"+ item.name +" : "+value+" "+unit+" / "+(Math.round(value*item.price)/1000)+"â‚¬</span>";
+				result+= sep +"<span style='color:"+colors[i]+";'>"+ item.name +" : "+value+" "+unit+" / "+(Math.round(value*item.price)/1000)+" €</span>";
 			}
 		} 
 		i++;
 	}
-    result+="<br><span style='color:red;font-weight:bold;'>Total : "+total+" "+ unit+" / "+Math.round(totalEuro)+" â‚¬</span>";
+    result+="<br><span style='color:red;font-weight:bold;'>Total : "+total+" "+ unit+" / "+Math.round(totalEuro)+" €</span>";
 	return result;
   
 }
@@ -359,6 +384,20 @@ function loadWaterChart(IEEE,time)
 	xhr.send();
 }
 
+function loadProductionChart(IEEE,time)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			var datas = JSON.parse(xhr.responseText);
+			productionChart.setData(datas);
+		}
+	}
+	xhr.open("GET","loadEnergyChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
 function refreshStatusGaz(IEEE,time)
 {
 	loadGazChart(IEEE,time);
@@ -371,17 +410,25 @@ function refreshStatusWater(IEEE,time)
 	setTimeout(function(){refreshStatusWater(IEEE,time); }, 60000);
 }
 
+function refreshStatusProduction(IEEE,time)
+{
+	loadProductionChart(IEEE,time);
+	setTimeout(function(){refreshStatusProduction(IEEE,time); }, 60000);
+}
+
 function refreshStatusEnergy(IEEE,attribute,time)
 {
-	refreshGaugeAbo(IEEE,attribute,time);
+	//refreshGaugeAbo(IEEE,attribute,time);
 	loadPowerTrend(IEEE,attribute,time);
 	loadLinkyDatas(IEEE);
+	loadEnergyChart(IEEE,time);
 	if (time=='hour')
 	{
 		loadPowerChart(IEEE,attribute);
+		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time); }, 15000);
+	}else{
+		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time); }, 60000);
 	}
-	loadEnergyChart(IEEE,time);
-	setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time); }, 60000);
 }
 
 function refreshLabel(file,shortaddr,cluster,attribute,type,coefficient,unit)
@@ -405,9 +452,18 @@ function refreshGaugeAbo(IEEE,attribute,time)
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			leselect = xhr.responseText;
-			//document.getElementById(mac).innerHTML=leselect;
-			powerGaugeAbo1.refresh(leselect);
-			//setTimeout(function(){ refreshGaugeAbo(IEEE,attribute);loadPowerTrend(IEEE,attribute);loadLinkyDatas(IEEE);loadPowerChart(IEEE,attribute);loadEnergyChart(IEEE,'hour');}, 60000);
+			const datas = leselect.split(';');
+			if (attribute == "1295")
+			{
+				powerGaugeAbo1.refresh(datas[0],datas[1],datas[2],datas[3]);
+			}else if (attribute == "2319")
+			{
+				powerGaugeAbo2.refresh(datas[0],datas[1],datas[2],datas[3]);
+			}else if (attribute == "2575")
+			{
+				powerGaugeAbo3.refresh(datas[0],datas[1],datas[2],datas[3]);
+			}
+			setTimeout(function(){refreshGaugeAbo(IEEE,attribute,time); },15000);
 		}
 	}
 	xhr.open("GET","refreshGaugeAbo?IEEE="+escape(IEEE)+"&attribute="+escape(attribute)+"&time="+escape(time),true);
@@ -418,7 +474,7 @@ function refreshGaugeAbo(IEEE,attribute,time)
 function loadPowerTrend(IEEE,attribute,time)
 {
 	var xhr = getXhr();
-	document.getElementById("power_trend").innerHTML="<img src='/web/img/wait.gif'>";
+	//document.getElementById("power_trend").innerHTML="<img src='/web/img/wait.gif'>";
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			
@@ -578,7 +634,7 @@ function getAlert()
 					element.classList.add("alert-success");
 					document.getElementById('alert').innerHTML=datas[1];
 					document.getElementById('alert').style.display='block';
-					pause = 0;
+					pause = 6;
 				}else if (datas[0]==1){
 					var element = document.getElementById("alert");
 					element.classList.remove("alert-success");
@@ -594,6 +650,10 @@ function getAlert()
 					document.getElementById('alert').style.display='block';
 					pause=6; 
 					setTimeout(function(){ location.reload();}, 30000);
+				}if (datas[0]==3)
+				{
+					document.getElementById('deviceFound').innerHTML='<svg id="icon" fill="#0f70b7" style="width:48px;" width="32" height="32" viewBox="0 0 24 24" role="img" xmlns="http://www.w3.org/2000/svg"><path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path></svg> '+datas[1];
+					document.getElementById('nextBtn').style.display='block';
 				}
 			}else{
 				if (pause>0){pause--;}
@@ -605,6 +665,23 @@ function getAlert()
 		}
 	}
 	xhr.open('GET','getAlert',true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
+function setAlias(IEEE,alias)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			leselect = xhr.responseText;
+			if (leselect =="OK")
+			{
+				window.location.href = '/configDevices';
+			}
+		}
+	}
+	xhr.open('GET','setAlias?ieee='+escape(IEEE)+'&alias='+escape(alias),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }

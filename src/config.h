@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v1.2"
+#define VERSION "v2.0b"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -22,9 +22,6 @@
 
 #define RXD2 17//17//17 
 #define TXD2 18//18//16 
-
-
-
 
 #define MAXHEAP 1000000//ESP.getMaxAllocHeap() //(ESP.getFreeHeap() / 2) //96000
 extern String FormattedDate;
@@ -42,8 +39,6 @@ struct ConfigSettingsStruct {
   char ipAddressWiFi[18];
   char ipMaskWiFi[16];
   char ipGWWiFi[18];
-  
-  
   bool dhcp;
   char ipAddress[18];
   char ipMask[16];
@@ -84,6 +79,7 @@ struct ZiGateInfosStruct {
 struct ConfigGeneralStruct {
   int firstStart;
   char ZLinky[20];
+  char Production[20];
   char Gaz[20];
   char Water[20];
   int LinkyMode;
@@ -105,6 +101,7 @@ struct ConfigGeneralStruct {
   char tarifAbo[10];
   char tarifCSPE[10];
   char tarifCTA[10];
+  char tarifProd[10];
   char servSMTP[50];
   char portSMTP[50];
   char userSMTP[50];
@@ -132,6 +129,7 @@ struct ConfigGeneralStruct {
   String customUDPJson;
   float coeffGaz;
   float coeffWater;
+  float coeffProduction;
   char unitGaz[3];
   char unitWater[3];
   char tarifGaz[10];
@@ -247,12 +245,7 @@ typedef struct{
   RuleAction ra[10];
 } Rule;
 
-/*typedef struct{
-  int ruleSize;
-  Rule r[10]:
-} Rules;*/
-
-typedef CircularBuffer<char, 4096> LogConsoleType;
+//typedef CircularBuffer<char, 4096> LogConsoleType;
 
 struct SpiRamAllocator {
   void* allocate(size_t size) {

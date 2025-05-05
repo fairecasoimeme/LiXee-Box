@@ -6,7 +6,9 @@
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
 #include "mqtt.h"
+#include "device.h"
 
+extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -24,14 +26,15 @@ void powerManage(String inifile,int attribute,uint8_t datatype,int len, char* da
     {   
       case 32:
       case 33:
-         if (ini_exist(inifile))
+         
+        for(int i=0;i<len;i++)
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
-          ini_write(inifile,"0001", (String)attribute, (String)tmp);
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
+        if (ini_exist(inifile))
+        {
+          //ini_write(inifile,"0001", (String)attribute, (String)tmp);
           
           //MQTT
           if (ConfigSettings.enableMqtt)
@@ -53,15 +56,25 @@ void powerManage(String inifile,int attribute,uint8_t datatype,int len, char* da
             deviceList->push(Device{shortaddr,1,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
         }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0001"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
+          }
+        }
       break;    
       default:
+        
+        for(int i=0;i<len;i++)
+        {
+          sprintf(value, "%02X",datas[i]);
+          tmp+=value;
+        }
         if (ini_exist(inifile))
         {
-          for(int i=0;i<len;i++)
-          {
-            sprintf(value, "%02X",datas[i]);
-            tmp+=value;
-          }
           ini_write(inifile,"0001", (String)attribute, (String)tmp);
           
           //MQTT
@@ -82,6 +95,15 @@ void powerManage(String inifile,int attribute,uint8_t datatype,int len, char* da
           {
             int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1,attribute,tmp});
+          }
+        }
+        for (size_t i = 0; i < devices.size(); i++) 
+        {
+          DeviceData* device = devices[i];
+          if (device->getDeviceID() == inifile.substring(0, 16))
+          {
+            device->setValue(std::string("0001"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            break;
           }
         }
         break;

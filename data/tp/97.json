@@ -315,12 +315,12 @@
 				"name" : "ISOUSC/PREF",
 				"cluster" : "0B01",
 				"attribut" : 13,
-                "unit": "A",
+                                "unit": "A",
 				"mqtt_device_class" : "current",
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
-                "type": "numeric",
-                "visible":1,
+                               "type": "numeric",
+                               "visible":1,
 				"poll" : 10
 			},
 			{
@@ -330,9 +330,9 @@
 				"mqtt_device_class" : "apparent_power",
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
-                "unit": "kVA",
+                                "unit": "kVA",
 				"type": "numeric",
-                "visible":1,
+                                "visible":1,
 				"poll" : 10
 			},
 			{
@@ -353,7 +353,7 @@
 				"name" : "IINST2 / IRMS2",
 				"cluster" : "0B04",
 				"attribut" : 2312,
-                "mqtt_device_class" : "current",
+                                "mqtt_device_class" : "current",
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
 				"unit": "A",
@@ -364,7 +364,7 @@
 			{
 				"name" : "IINST3 / IRMS3",
 				"cluster" : "0B04",
-                "mqtt_device_class" : "current",
+                                "mqtt_device_class" : "current",
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
 				"attribut" : 2568,
@@ -380,11 +380,11 @@
 				"mqtt_device_class" : "current",
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
-                "unit": "A",
-                "type": "numeric",
+                                "unit": "A",
+                                "type": "numeric",
 				"poll" : 60,
-                "visible":1,
-                "mode":"0;2"
+                                "visible":1,
+                               "mode":"0;2"
 			},
 			{
 				"name" : "IMAX2",
@@ -393,11 +393,11 @@
 				"mqtt_device_class" : "current",
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
-                "unit": "A",
-                "type": "numeric",
+                                "unit": "A",
+                                "type": "numeric",
 				"poll" : 60,
-                "visible":1,
-                "mode":"2"
+                                "visible":1,
+                                "mode":"2"
 			},
 			{
 				"name" : "IMAX3",
@@ -406,11 +406,11 @@
 				"mqtt_device_class" : "current",
 				"mqtt_icon" :  "lightning-bolt",
 				"mqtt_state_class" : "measurement",
-                "unit": "A",
-                "type": "numeric",
+                                "unit": "A",
+                                "type": "numeric",
 				"poll" : 60,
-                "visible":1,
-                "mode":"2"
+                                "visible":1,
+                                "mode":"2"
 			},
 			{
 				"name" : "OPTARIF / NGTF",
@@ -431,8 +431,8 @@
 				"mqtt_icon" :  "eye",
 				"mqtt_state_class" : null,
 				"poll" : 60,
-                "visible":1,
-                "mode":"0;2"
+                                "visible":1,
+                                "mode":"0;2"
 			},
 			{
 				"name" : "HHPHC",
@@ -442,8 +442,8 @@
 				"mqtt_icon" :  "eye",
 				"mqtt_state_class" : null,
 				"poll" : 60,
-                "visible":1,
-                "mode":"0;2"
+                                "visible":1,
+                                "mode":"0;2"
 			},
 			{
 				"name" : "PPOT",
@@ -452,7 +452,7 @@
 				"mqtt_device_class" : null,
 				"mqtt_icon" :  "eye",
 				"mqtt_state_class" : null,
-                "type": "numeric",
+                                "type": "numeric",
 				"poll" : 60,
 				"visible":1,
 				"mode":"0;2"
@@ -535,9 +535,9 @@
 				"mqtt_device_class" : null,
 				"mqtt_icon" :  "alarm",
 				"mqtt_state_class" : null,
-                "visible":1,
+                                "visible":1,
 				"poll" : 1,
-                "mode":"1;3;5;7"
+                                "mode":"1;3;5;7"
 			},
 			{
 				"name" : "EASD01",
@@ -691,111 +691,111 @@
 				"cluster" : "0702",
 				"attribut": 256,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},{
 				"cluster" : "0702",
 				"attribut": 258,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},
 			{
 				"cluster" : "0702",
 				"attribut": 260,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},{
 				"cluster" : "0702",
 				"attribut": 262,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},{
 				"cluster" : "0702",
 				"attribut": 264,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},
 			{
 				"cluster" : "0702",
 				"attribut": 266,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},{
 				"cluster" : "0702",
 				"attribut": 268,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},{
 				"cluster" : "0702",
 				"attribut": 270,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},{
 				"cluster" : "0702",
 				"attribut": 272,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},{
 				"cluster" : "0702",
 				"attribut": 1,
 				"type":37,
-				"min":60,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},
 			{
 				"cluster" : "0B04",
 				"attribut": 1295,
 				"type":33,
-				"min":60,
-				"max":61,
+				"min":1,
+				"max":20,
 				"timeout":0,
-				"change":0
+				"change":200
 			},
 			{
 				"cluster" : "0B04",
 				"attribut": 2319,
 				"type":33,
-				"min":60,
-				"max":61,
+				"min":1,
+				"max":20,
 				"timeout":0,
-				"change":0
+				"change":200
 			},
 			{
 				"cluster" : "0B04",
 				"attribut": 2575,
 				"type":33,
-				"min":60,
-				"max":61,
+				"min":1,
+				"max":20,
 				"timeout":0,
-				"change":0
+				"change":200
 			},
 			{
 				"cluster" : "0B04",
@@ -963,10 +963,10 @@
 				"cluster" : "FF66",
 				"attribut": 519,
 				"type":41,
-				"min":61,
+				"min":1,
 				"max":300,
 				"timeout":0,
-				"change":1
+				"change":10
 			},
 			{
 				"cluster" : "FF66",

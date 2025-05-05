@@ -32,3 +32,4 @@ void APIgetDevices();
 
 void checkUpdateFirmware();
 void runUpdateFirmware(uint8_t *data, size_t len);
+void launchUpdateTask();

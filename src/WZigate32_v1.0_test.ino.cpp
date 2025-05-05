@@ -35,7 +35,7 @@ extern "C" {
 #include "log.h"
 #include "flash.h"
 #include "protocol.h"
-
+#include "zigbee.h"
 #include <driver/uart.h>
 #include <lwip/ip_addr.h>
 #include <esp_log.h>
@@ -44,7 +44,16 @@ extern "C" {
 
 #include "rules.h"
 
+#include <esp_heap_caps.h>
+#include "device.h"
+#include "powerHistory.h"
+#include "energyHistory.h"
+
+
+std::vector<DeviceData*> devices;
+
 bool executeReboot=false;
+bool updatePending = false;
 
 #include <TaskScheduler.h>
 
@@ -168,6 +177,7 @@ void delayRebootCallBack()
 
 void scanCallback()
 {
+  
   DEBUG_PRINTLN(F("Lancement du Poll"));
 
   ScanDeviceToPoll();
@@ -191,8 +201,23 @@ DEBUG_PRINTLN(F("config_write OK"));
   int ruleCount = 0;
   jsonToRules(rules, ruleCount);
   applyRules(rules, ruleCount);
-   
 
+  log_e("Sauvegarde de tous les devices");
+  for (auto d : devices) {
+      d->saveToFile();
+      if (d->getInfo().model=="ZLinky_TIC")
+      {
+        savePowerHistory(d->getDeviceID(),d->powerHistory);  
+        saveEnergyHistory(d->getDeviceID(),d->energyHistory);
+      }  
+
+      if (d->getInfo().model=="ZiPulses")
+      {
+        saveEnergyHistory(d->getDeviceID(),d->energyHistory);
+      }
+  } 
+  log_e("ScanDevicesToRAZ");
+  ScanDevicesToRAZ();
 }
 
 
@@ -270,43 +295,21 @@ void TcpTreatment(void * pvParameters)
   {
     esp_task_wdt_reset();
 
-    const char* path ="/db/";
-    const char* extension =".json";
-    char name_with_extension[64];
-    strcpy(name_with_extension,path);
-    strcat(name_with_extension,ConfigGeneral.ZLinky);
-    strcat(name_with_extension,extension);
-    File DeviceFile = LittleFS.open(name_with_extension, FILE_READ);
-    if (!DeviceFile|| DeviceFile.isDirectory()) {
-      log_e("failed open");
-      if (taskTCP!=NULL)
-      {
-        vTaskDelete(taskTCP);
-      }
-    }else{
-      JsonObject root;
-      StaticJsonDocument<1024> filter;
-      filter["0B04"]= true;
-      SpiRamJsonDocument temp(MAXHEAP);
-      deserializeJson(temp,DeviceFile, DeserializationOption::Filter(filter));
-      DeviceFile.close();
-      root = temp["0B04"] ;
-       String datas = "HM:";
-
-      datas +=String(strtol(root["1295"].as<String>().c_str(),0,16));
-      datas +="|";
-      datas +=String(strtol(root["2319"].as<String>().c_str(),0,16));
-      datas +="|";
-      datas +=String(strtol(root["2575"].as<String>().c_str(),0,16));
-      
-      if (client->space() > strlen(datas.c_str()) && client->canSend())
-      {
-        log_i("send to Marstek infos : %s\n",datas);
-        client->add(datas.c_str(), strlen(datas.c_str()));
-        client->send();
-      }
-      log_w("TcpTreatement : uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
+    String datas = "HM:";
+    datas +=String(strtol(getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","0B04","1295").c_str(),0,16));
+    datas +="|";
+    datas +=String(strtol(getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","0B04","2319").c_str(),0,16));
+    datas +="|";
+    datas +=String(strtol(getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","0B04","2575").c_str(),0,16));
+    
+    if (client->space() > strlen(datas.c_str()) && client->canSend())
+    {
+      log_i("send to Marstek infos : %s\n",datas.c_str());
+      client->add(datas.c_str(), strlen(datas.c_str()));
+      client->send();
     }
+    log_w("TcpTreatement : uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
+
     vTaskDelay(10000/portTICK_PERIOD_MS);
   }
 }
@@ -531,49 +534,6 @@ const char * service_name = "LIXEE_GW"; // Name of your device (the Espressif ap
 const char * service_key = NULL; // Password used for SofAP method (NULL = no password needed)
 bool reset_provisioned = true; // When true the library will automatically delete previously provisioned data.
 
-void SysProvEvent(arduino_event_t *sys_event)
-{
-  switch (sys_event->event_id) {
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      Serial.print("\nConnected IP address : ");
-      Serial.println(IPAddress(sys_event->event_info.got_ip.ip_info.ip.addr));
-      ConfigSettings.connectedWifiSta = true;
-      break;
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: Serial.println("\nDisconnected. Connecting to the AP again... "); ConfigSettings.connectedWifiSta = false;break;
-    case ARDUINO_EVENT_PROV_START:            Serial.println("\nProvisioning started\nGive Credentials of your access point using smartphone app"); break;
-    case ARDUINO_EVENT_PROV_CRED_RECV:
-    {
-      Serial.println("\nReceived Wi-Fi credentials");
-      Serial.print("\tSSID : ");
-      Serial.println((const char *)sys_event->event_info.prov_cred_recv.ssid);
-      Serial.print("\tPassword : ");
-      Serial.println((char const *)sys_event->event_info.prov_cred_recv.password);
-      const char *path = "configWifi.json";
-      strcpy(ConfigSettings.ssid,(const char *)sys_event->event_info.prov_cred_recv.ssid);
-      config_write(path,"ssid",String(ConfigSettings.ssid));
-      strcpy(ConfigSettings.password,(const char *)sys_event->event_info.prov_cred_recv.password);
-      config_write(path,"pass",String(ConfigSettings.password));
-      
-      
-      break;
-    }
-    case ARDUINO_EVENT_PROV_CRED_FAIL:
-    {
-      Serial.println("\nProvisioning failed!\nPlease reset to factory and retry provisioning\n");
-      if (sys_event->event_info.prov_fail_reason == WIFI_PROV_STA_AUTH_ERROR) {
-        Serial.println("\nWi-Fi AP password incorrect");
-      } else {
-        Serial.println("\nWi-Fi AP not found....Add API \" nvs_flash_erase() \" before beginProvision()");
-      }
-      ConfigSettings.connectedWifiSta = false;
-      break;
-    }
-    case ARDUINO_EVENT_PROV_CRED_SUCCESS: Serial.println("\nProvisioning Successful");  break;
-    case ARDUINO_EVENT_PROV_END:          Serial.println("\nProvisioning Ends"); break;
-    default:                              break;
-  }
-}
-
 void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
 
@@ -687,6 +647,83 @@ void initTempSensor(){
     temp_sensor_start();
 }
 
+
+
+//-------------------------------------
+// Fonction : Parcourir un répertoire
+// pour trouver tous les .json
+//-------------------------------------
+void loadAllDevices(const char* dirPath) {
+    // On ouvre le répertoire
+    File root = LittleFS.open(dirPath);
+    if (!root || !root.isDirectory()) {
+        Serial.printf("Le chemin '%s' n'est pas un dossier ou est inaccessible.\n", dirPath);
+        return;
+    }
+
+    // Parcourt le contenu
+    while (true) {
+        File entry = root.openNextFile();
+        if (!entry) {
+            // Plus de fichiers
+            break;
+        }
+
+        // On ignore si c'est un sous-dossier
+        if (entry.isDirectory()) {
+            entry.close();
+            continue;
+        }
+
+        String filename = entry.name(); // ex: "/devices/19869.json"
+        entry.close();
+
+        // Vérifier que ça se termine par .json
+        if (!filename.endsWith(".json")) {
+            continue;
+        }
+
+        // Extraire le deviceID (nom du fichier sans .json)
+        // Par exemple, si filename = "/devices/19869.json"
+        // On veut "19869" comme deviceID
+        int lastSlash = filename.lastIndexOf('/');
+        int lastDot   = filename.lastIndexOf('.');
+        String deviceID = filename.substring(lastSlash + 1, lastDot);
+
+        // On crée un DeviceData pour ce fichier
+        // (filename = "/devices/19869.json", deviceID = "19869")
+        // --- Allocation en PSRAM ---
+        size_t sz = sizeof(DeviceData);
+        void* mem = heap_caps_malloc(sz, MALLOC_CAP_SPIRAM);
+        if (!mem) {
+          log_e("Erreur ps_malloc pour %s", filename.c_str());
+          continue; // ou break
+        }
+        log_w("avant  Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
+        DeviceData *dev = new (mem) DeviceData("/db/"+filename, deviceID);
+        
+        // On charge
+        if (dev->loadFromFile()) {
+         
+          if (dev->getInfo().model =="ZLinky_TIC")
+          {
+            parsePowerHistory(dev->getDeviceID(),dev->powerHistory);
+            parseDeviceHistory(dev->getDeviceID(),dev->energyHistory);
+          }    
+          
+          if (dev->getInfo().model =="ZiPulses")
+          {
+            parseDeviceHistory(dev->getDeviceID(),dev->energyHistory);
+          }  
+          devices.push_back(dev);
+        }
+        log_w("apres Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+        
+    }
+}
+
+
 bool loadConfigWifi() {
   const char * path = "/config/configWifi.json";
   
@@ -739,6 +776,7 @@ bool loadConfigGeneral() {
     #define DEBUG_PRINTLN(x) */
   }
   strlcpy(ConfigGeneral.ZLinky, doc["ZLinky"] | "", sizeof(ConfigGeneral.ZLinky));
+  strlcpy(ConfigGeneral.Production, doc["Production"] | "", sizeof(ConfigGeneral.Production));
   strlcpy(ConfigGeneral.Gaz, doc["Gaz"] | "", sizeof(ConfigGeneral.Gaz));
   strlcpy(ConfigGeneral.tarifGaz, doc["tarifGaz"] | "0", sizeof(ConfigGeneral.tarifGaz));
   strlcpy(ConfigGeneral.unitGaz, doc["unitGaz"] | "m3", sizeof(ConfigGeneral.unitGaz));
@@ -792,6 +830,8 @@ bool loadConfigGeneral() {
   strlcpy(ConfigGeneral.tarifIdx8, doc["tarifIdx8"] | "0", sizeof(ConfigGeneral.tarifIdx8));
   strlcpy(ConfigGeneral.tarifIdx9, doc["tarifIdx9"] | "0", sizeof(ConfigGeneral.tarifIdx9));
   strlcpy(ConfigGeneral.tarifIdx10, doc["tarifIdx10"] | "0", sizeof(ConfigGeneral.tarifIdx10));
+
+  strlcpy(ConfigGeneral.tarifProd, doc["tarifProd"] | "0", sizeof(ConfigGeneral.tarifProd));
 
   ConfigSettings.enableMqtt = (int)doc["enableMqtt"];
   strlcpy(ConfigGeneral.servMQTT, doc["servMQTT"] | "", sizeof(ConfigGeneral.servMQTT));
@@ -959,7 +999,6 @@ void monitor_heap(void) {
 
 void setup(void)
 {  
-  
   ZiGateMode=PRODUCTION;
   initTempSensor();
  
@@ -987,26 +1026,7 @@ void setup(void)
   DEBUG_PRINTLN(F("Send data to UART0 in order to activate the RX callback"));
 
   initCircularBuffer();
- /* delay(1000);
-// creates a mutex object to control access to files
- file_Mutex = xSemaphoreCreateMutex();
-  if (file_Mutex == NULL) {
-    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
-    while (true) {
-      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
-      delay(1000);
-    }
-  }
 
-  // creates a mutex object to control access to files
-  inifile_Mutex = xSemaphoreCreateMutex();
-  if (inifile_Mutex == NULL) {
-    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
-    while (true) {
-      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
-      delay(1000);
-    }
-  }*/
 
   // creates a mutex object to control access to files
   Queue_Mutex = xSemaphoreCreateMutex();
@@ -1047,6 +1067,10 @@ void setup(void)
   {
     LittleFS.mkdir("/db");
   }
+   if (!LittleFS.exists("/hst"))
+  {
+    LittleFS.mkdir("/hst");
+  }
   if (!LittleFS.exists("/debug"))
   {
     LittleFS.mkdir("/debug");
@@ -1061,7 +1085,23 @@ void setup(void)
   }
   
   WifiReconnectTimer = xTimerCreate("WifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(reconnectWifi));
- 
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
+
+  loadAllDevices("/db");
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
+
+  for (size_t i = 0; i < devices.size(); i++) {
+    DeviceData* device = devices[i];
+    String sa = device->getInfo().shortAddr;
+    String power = device->getValue("0B04","1295");
+
+    Serial.println("Device " + String(i) + " shortAddr = " + sa +" power = " + power);
+  }
+
   if (configOK)
   {
     DEBUG_PRINTLN(F("configOK"));  
@@ -1070,17 +1110,6 @@ void setup(void)
       DEBUG_PRINTLN(F("AP"));
       setupWifiAP();
       modeWiFi="AP";
-      
-      /* BLE PROVISIONING */
-      /*#if CONFIG_BLUEDROID_ENABLED && !defined(USE_SOFT_AP)
-        Serial.println("Begin Provisioning using BLE");
-
-        // Sample uuid that user can pass during provisioning using BLE
-        uint8_t uuid[16] = {0xb4, 0xdf, 0x5a, 0x1c, 0x3f, 0x6b, 0xf4, 0xbf, 0xea, 0x4a, 0x82, 0x03, 0x04, 0x90, 0x1a, 0x02};
-        WiFiProv.beginProvision(
-          WIFI_PROV_SCHEME_BLE, WIFI_PROV_SCHEME_HANDLER_FREE_BLE, WIFI_PROV_SECURITY_0, pop, service_name, service_key, uuid, reset_provisioned
-        );
-      #endif*/
     }
     DEBUG_PRINTLN(F("setupSTAWifi"));   
   }else{
@@ -1089,11 +1118,12 @@ void setup(void)
     modeWiFi="AP";
     DEBUG_PRINTLN(F("AP"));
   }
-  
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
   WiFi.onEvent(WiFiEvent);
 
-  /* BLE PROVISIONING */
-  WiFi.onEvent(SysProvEvent);
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
   WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   
    //Zeroconf
@@ -1103,11 +1133,14 @@ void setup(void)
      DEBUG_PRINTLN("Error starting mDNS");
      
   }
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
 
   if (ConfigSettings.enableMqtt)
   {
     DEBUG_PRINTLN(F("enableMqtt"));
     mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+
     mqttClient.onConnect(onMqttConnect);
     mqttClient.onDisconnect(onMqttDisconnect);
     mqttClient.onSubscribe(onMqttSubscribe);
@@ -1124,6 +1157,7 @@ void setup(void)
 
     mqttClient.connect();
   }
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
   esp_task_wdt_reset();
   
@@ -1131,18 +1165,24 @@ void setup(void)
   timeClient.setTimeOffset((3600 * ConfigGeneral.timeoffset));
   timeClient.setTimeZone(ConfigGeneral.timezone);
   timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS);
-  vTaskDelay(2000);
-  
+
+  vTaskDelay(200);
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
   initWebServer();
 
   DEBUG_PRINTLN("MDNS add http");
   MDNS.addService("http", "tcp", 80);
 
   //server.begin();
-  vTaskDelay(2000);
+  vTaskDelay(200);
 
   //Verification empty files
   scanFilesError();
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
 
   pinMode(RESET_ZIGATE, OUTPUT);
   pinMode(FLASH_ZIGATE, OUTPUT);
@@ -1153,21 +1193,26 @@ void setup(void)
   digitalWrite(RESET_ZIGATE, 1);
   DEBUG_PRINTLN(F("add networkState"));
   commandList->push(Packet{0x0011, 0x0000,0});
+  vTaskDelay(20);
   commandList->push(Packet{0x0009, 0x0000,0});
   esp_task_wdt_reset();
-  vTaskDelay(2000);
+  vTaskDelay(200);
   DEBUG_PRINTLN(F("start network"));
   commandList->push(Packet{0x0024, 0x0000,0});
+  vTaskDelay(20);
   DEBUG_PRINTLN(F("add getversion"));
   commandList->push(Packet{0x0010, 0x0000,0});
+  vTaskDelay(20);
   DEBUG_PRINTLN(F("add networkState"));
   commandList->push(Packet{0x0025, 0x0000,0});
+  vTaskDelay(20);
  esp_task_wdt_reset();
   timeClient.begin();
   bool NTPOK = timeClient.forceUpdate();
   log_e("NTPOK : %d\r\n",NTPOK);
 
- 
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
 
   if (NTPOK)
   {  
@@ -1227,12 +1272,14 @@ esp_task_wdt_reset();
   xTaskCreatePinnedToCore(
                     datasTreatment,   // Function to implement the task 
                     "datasTreatment", // Name of the task 
-                    32*1024,      // Stack size in words 
+                    28*1024,      // Stack size in words 
                     NULL,       // Task input parameter 
                     18,          // Priority of the task 
                     NULL,       // Task handle. 
                     0);
 
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
 
   //initMailClient();
@@ -1265,6 +1312,11 @@ void loop(void)
     executeReboot=false;
     runner.addTask(delayReboot);
     delayReboot.enableDelayed(1000);
+  }
+
+  if (updatePending) {
+    updatePending = false;       // on n'exécute qu'une fois
+    launchUpdateTask();
   }
   
 

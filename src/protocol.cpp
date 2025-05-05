@@ -1,6 +1,6 @@
 #include <esp_task_wdt.h>
 #include <Arduino.h>
-
+#include <vector>
 #include <esp_system.h>
 #include "protocol.h"
 #define ARDUINOJSON_USE_LONG_LONG 1
@@ -13,8 +13,9 @@
 #include "log.h"
 #include "zigbee.h"
 #include "basic.h"
+#include "device.h"
 
-
+extern std::vector<DeviceData*> devices;
 
 extern struct ZigbeeConfig ZConfig;
 extern CircularBuffer<Packet, 100> *commandList;
@@ -106,7 +107,44 @@ String GetValueFromShortAddr(int shortAddr,int cluster, int attribute, String va
   return "";
 }
 
-String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient)
+String GetValueStatus(String IEEE, int key, int attribut, String type, float coefficient)
+{
+  String tmp;
+  char tmpKey[5];
+  sprintf(tmpKey,"%04X",key);
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+      DeviceData* device = devices[i];
+      if (device->getDeviceID() == IEEE)
+      {
+        tmp = device->getValue(std::string(tmpKey),std::string(String(attribut).c_str()));
+        break;
+      }
+  }
+
+  if (type =="float")
+   {
+       float tmpint = strtol(tmp.c_str(), NULL, 16);
+       if (coefficient != 1)
+       {
+        tmpint = tmpint * coefficient;
+       }
+       tmp=String(tmpint); 
+   }else if (type =="numeric"){
+      int tmpint = strtol(tmp.c_str(), NULL, 16);
+      if (coefficient != 1)
+       {
+        tmpint = tmpint * coefficient;
+       }
+       tmp=String(tmpint); 
+   }
+   
+   return tmp;
+
+}
+
+
+/*String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient)
 {
    char tmpKey[5];
    sprintf(tmpKey,"%04X",key);
@@ -130,20 +168,39 @@ String GetValueStatus(String inifile, int key, int attribut, String type, float 
    }
    
    return tmp;
-}
+}*/
 
 void lastSeen(int shortAddr)
 {
   String path = GetMacAdrr(shortAddr);
-  String tmpTime; 
-  ini_write(path,"INFO", "lastSeen", FormattedDate);
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == path.substring(0,16))
+    {
+      device->setInfoLastseen(FormattedDate);
+      break;
+    }
+  }
+  //ini_write(path,"INFO", "lastSeen", FormattedDate);
 
 }
 
 String GetMacAdrr(int shortAddr)
 {
+
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getInfo().shortAddr.toInt() == shortAddr)
+    {
+      return device->getDeviceID()+".json";
+    }
+  }
+
+
  // char SAddr[20];
-  File root = LittleFS.open("/db");
+/*File root = LittleFS.open("/db");
   if (!root)
   {
     log_e("Erreur d'ouverture du répertoire db");
@@ -181,7 +238,7 @@ String GetMacAdrr(int shortAddr)
     file = root.openNextFile(); 
   }  
   root.close();
-
+*/
   // Search on backup
   scanFilesError();
 
@@ -190,36 +247,147 @@ String GetMacAdrr(int shortAddr)
 
 String GetLastSeen(String inifile)
 {
-   String tmp= ini_read(inifile,"INFO", "lastSeen");  
-   return tmp;
+   /*String tmp= ini_read(inifile,"INFO", "lastSeen");  
+   return tmp;*/
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0,16))
+    {
+      return device->getInfo().lastSeen;
+    }
+  }
+  return String("");
 }
 
 String GetLQI(String inifile)
 {
-   String tmp= ini_read(inifile,"INFO", "LQI");  
+   /*String tmp= ini_read(inifile,"INFO", "LQI");  
    int tmp2 = (int) strtol(tmp.c_str(), 0, 16);
-   return String(tmp2);
+   return String(tmp2);*/
+   for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0,16))
+    {
+      return device->getInfo().LQI;
+    }
+  }
+  return String("");
 }
 
 
 int GetShortAddr(String inifile)
 {
    //ini_open(inifile);
-   String tmp= ini_read(inifile,"INFO", "shortAddr");  
-   return tmp.toInt();
+   /*String tmp= ini_read(inifile,"INFO", "shortAddr");  
+   return tmp.toInt();*/
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0,16))
+    {
+      return device->getInfo().shortAddr.toInt();
+    }
+  }
+  return 0;
 }
 
 int GetDeviceId(String inifile)
 {
-   String tmp= ini_read(inifile,"INFO", "device_id");  
-   return tmp.toInt();
+   /*String tmp= ini_read(inifile,"INFO", "device_id");  
+   return tmp.toInt();*/
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0,16))
+    {
+      return device->getInfo().device_id.toInt();
+    }
+  }
+  return 0;
 }
 
 String GetSoftwareVersion(String inifile)
 {
-  String tmp= ini_read(inifile,"INFO", "software_version"); 
-  return tmp;
+  /*String tmp= ini_read(inifile,"INFO", "software_version"); 
+  return tmp;*/
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0,16))
+    {
+      return device->getInfo().software_version;
+    }
+  }
+  return String("");
 }
+
+void SetInfoStatus( String inifile, String val)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      device->setInfoStatus(val);
+      break;
+    }
+  }
+}
+
+void SetInfoDeviceId( String inifile, String val)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      device->setInfoDeviceID(val);
+      break;
+    }
+  }
+}
+
+void SetInfoLastseen( String inifile, String val)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      device->setInfoLastseen(val);
+      break;
+    }
+  }
+}
+
+void SetInfoLQI( String inifile, String val)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      device->setInfoLQI(val);
+      break;
+    }
+  }
+}
+
+bool deviceExist(String mac)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == mac)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
 
 void datasManage(char packet[256],int count)
 {
@@ -287,7 +455,9 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       inifile = GetMacAdrr(SA);
       char tmpStatus[4];
       sprintf(tmpStatus,"%02x",protocol.payload[0]);
-      ini_write(inifile,"INFO","Status",String(tmpStatus));    
+      //ini_write(inifile,"INFO","Status",String(tmpStatus));  
+      SetInfoStatus(inifile,String(tmpStatus));
+      
       log_e("8702 - Status : %02X - %02X%02X - %s",protocol.payload[0],protocol.payload[4],protocol.payload[5],inifile.c_str());
       char error[200];
       sprintf(error,"Error Packet : %02x - Device : %02X%02X",protocol.payload[0],protocol.payload[4],protocol.payload[5]);
@@ -392,10 +562,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         
         String path = GetMacAdrr(shortAddr);
         
-        WriteIni ini;
-        ini.i[0].section ="INFO";
-        ini.i[0].key = "device_id";
-        ini.i[0].value = (String)device_id;
+        //WriteIni ini;
+        //ini.i[0].section ="INFO";
+        //ini.i[0].key = "device_id";
+       // ini.i[0].value = (String)device_id;
+        SetInfoDeviceId(path,String(device_id));
+
 
         //ini_write(path,"INFO", "device_id", (String)device_id);
       
@@ -414,9 +586,9 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         
         }
         
-        ini.i[1].section =(String)endpoint;
-        ini.i[1].key = "IN";
-        ini.i[1].value = tmpIN;
+        //ini.i[1].section =(String)endpoint;
+        //ini.i[1].key = "IN";
+        //ini.i[1].value = tmpIN;
 
         //ini_write(path,(String)endpoint, "IN", tmpIN);
     
@@ -428,13 +600,13 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           tmpOUT+=(String)cluster;
         }
 
-        ini.i[2].section =(String)endpoint;
-        ini.i[2].key = "OUT";
-        ini.i[2].value = tmpOUT;
+        //ini.i[2].section =(String)endpoint;
+        //ini.i[2].key = "OUT";
+        //ini.i[2].value = tmpOUT;
 
-        ini.iniPacketSize = 3;
+        //ini.iniPacketSize = 3;
 
-        ini_writes(path, ini, true);
+        //ini_writes(path, ini, true);
           
           //ini_write(path,(String)endpoint, "OUT", tmpOUT);
 
@@ -557,8 +729,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         inifile = GetMacAdrr(SA);
         char tmpStatus[4];
         sprintf(tmpStatus,"%02x",protocol.payload[0]);
-        ini_write(inifile,"INFO","Status",String(tmpStatus));
-
+        //ini_write(inifile,"INFO","Status",String(tmpStatus));
+        SetInfoStatus(inifile,String(tmpStatus));
 
         if ((Command == 10) || (Command == 1))
         {
@@ -629,21 +801,24 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           char lqi[4];
           snprintf(lqi,3, "%02X",protocol.payload[ln+12]);
            
-          WriteIni ini;
-          ini.i[0].section ="INFO";
-          ini.i[0].key = "lastSeen";
-          ini.i[0].value = FormattedDate;
+          //WriteIni ini;
+          //ini.i[0].section ="INFO";
+          //ini.i[0].key = "lastSeen";
+          //ini.i[0].value = FormattedDate;
+          SetInfoLastseen(inifile,FormattedDate);
 
-          ini.i[1].section ="INFO";
-          ini.i[1].key = "LQI";
-          ini.i[1].value = String(lqi);
+          //ini.i[1].section ="INFO";
+          //ini.i[1].key = "LQI";
+          //ini.i[1].value = String(lqi);
+          SetInfoLQI(inifile,String(lqi));
 
-          ini.i[2].section ="INFO";
-          ini.i[2].key = "Status";
-          ini.i[2].value = "00";
+          //ini.i[2].section ="INFO";
+          //ini.i[2].key = "Status";
+          //ini.i[2].value = "00";
+          SetInfoStatus(inifile,String("00"));
 
-          ini.iniPacketSize = 3;
-          ini_writes(inifile, ini, false);
+          //ini.iniPacketSize = 3;
+          //ini_writes(inifile, ini, false);
 
           // ini_write(inifile,"INFO","LQI",String(lqi));
           // ini_write(inifile,"INFO","Status","00");
@@ -679,12 +854,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           log_d("SpecificTreatment");
          
           vTaskDelay(100);
-          alertList->push(Alert{"Bind waiting...", 2});
+          alertList->push(Alert{"Bind waiting...", 0});
           getBind(macInt,DeviceId,model);
           log_d("getBind");
           vTaskDelay(100);
           // Traitement config report
-          alertList->push(Alert{"Config Report waiting...", 2});
+          alertList->push(Alert{"Config Report waiting...", 0});
           getConfigReport(ShortAddr,DeviceId,model);
           log_d("getConfigReport");
           vTaskDelay(100);
@@ -692,7 +867,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           getPollingDevice(ShortAddr,DeviceId,model);
           log_d("getPollingDevice");
           vTaskDelay(100);
-          alertList->push(Alert{"Config OK", 2});
+          alertList->push(Alert{"Config OK", 0});
           //Afficher la find de la config
           
           // backup du fichier
@@ -753,7 +928,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         
         char tmp[6];
         snprintf(tmp,5, "%02X%02X",protocol.payload[0],protocol.payload[1]);
-        alertList->push(Alert{"Device Joined : "+String(tmp), 0});
+        //alertList->push(Alert{"Device Joined : "+String(tmp), 1});
+        
         log_d("Node Joined : %02X%02X ",protocol.payload[0],protocol.payload[1]);
 
         for (i=2;i<10;i++)
@@ -771,9 +947,10 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         //Add dans la base
         String adMac;
         adMac = getMacAddress(mac);
-     
-        String path = adMac+".json";
 
+        String alertMsg = "<div align='center'><strong>"+String(tmp)+"</strong><br>(<span id='newDevice'>"+adMac+"</span>)</div>";
+        alertList->push(Alert{alertMsg, 3});
+        String path = adMac+".json";
         
         WriteIni ini ;
         ini.i[0].section ="INFO";
@@ -788,6 +965,29 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
         ini_writes(path, ini, true);
 
+        if (deviceExist(adMac))
+        {
+          for (size_t i = 0; i < devices.size(); i++) 
+          {
+            DeviceData* device = devices[i];
+            if (device->getDeviceID() == adMac)
+            {
+               device->setInfoShortAddr(String(ShortAddr));
+               device->setInfoLQI(String(lqi));
+               break;
+            }
+          }
+        }else{
+          void* mem = ps_malloc(sizeof(DeviceData));
+          if (!mem) {
+            log_e("Erreur ps_malloc pour %s", path.c_str());
+          }
+          DeviceData* dev = new (mem) DeviceData("/db/" + path, adMac);
+          if (dev->loadFromFile()) {
+            devices.push_back(dev);
+          }
+        }  
+        
         //ini_write(path,"INFO","shortAddr",String(ShortAddr));
         //ini_write(path,"INFO","LQI",String(lqi));
     
@@ -1053,108 +1253,134 @@ void protocolDatas(uint8_t sp[4092], size_t len)
   }
 }
 
-
-
-bool ScanDeviceToPoll()
-{
-  File root = LittleFS.open("/db");
-  if (!root)
+bool ScanDeviceToPoll() {
+  for (size_t i = 0; i < devices.size(); i++) 
   {
-    log_e("Failed to open dir");
-    root.close();
-    return false;
-  }
+    DeviceData* device = devices[i];
 
-  if (!root.isDirectory())
-  {
-    log_e("not a dir");
-    root.close();
-    return false;
-  }
-  File filedevice = root.openNextFile();
-  while (filedevice) 
-  {
-      
-      if (!filedevice.isDirectory())
+    auto &pollList = device->getPollList();
+    int shortAddr;
+    int cluster;
+    int attribut;
+    int last;
+
+    for (size_t j = 0; j < pollList.size(); j++) 
+    {
+      auto &p = pollList[j];
+
+      shortAddr = device->getInfo().shortAddr.toInt();    
+      cluster = p.cluster.toInt();
+      attribut = p.attribut;
+      last = p.last;
+      p.last = last - 1;
+
+      if (last <= 0) 
       {
-        if (filedevice.size()>0)
-        {
-          const char* inifile =  filedevice.name();
-          const char* path ="/db/";
-          char name_with_extension[64];
-          strcpy(name_with_extension,path);
-          strcat(name_with_extension,inifile);
-          File file = LittleFS.open(name_with_extension, FILE_READ);
-          if (!file|| file.isDirectory()) {
-            log_e("Erreur lors de l'ouverture du fichier ini_read %s",inifile);
-            file.close();
-            break;
-          }
-          
-          // Analyser le contenu JSON du fichier
-          SpiRamJsonDocument temp(MAXHEAP);
-          DeserializationError error = deserializeJson(temp, file);
-          file.close();
-          if (error) 
-          {
-            log_e("ERROR : deserializeJson (ScanDeviceToPoll) %s : %s",inifile,error.c_str() );
-            break;
-          }else
-          {
-            int shortAddr;
-            int cluster;
-            int attribut;
-            //int poll;
-            int last;
-            int i=0;
-            if (temp.containsKey("poll"))
-            {
-              JsonArray PollArray = temp["poll"].as<JsonArray>();
-              for(JsonVariant v : PollArray) 
-              {      
-                  
-                  shortAddr = (int)temp["INFO"]["shortAddr"];    
-                  cluster = (int)temp["poll"][i]["cluster"];
-                  attribut = (int)temp["poll"][i]["attribut"];
-                  last = (int)temp["poll"][i]["last"];
-                  temp["poll"][i]["last"] = last - 1;
+        // Lancement de la requête
+        log_d("Lancement de la requête / sht: %d - cluster: %d - attr: %d", shortAddr, cluster, attribut);
+        // Envoi du paquet
+        SendAttributeRead(shortAddr, cluster, attribut);
+        p.last = p.poll;
+      }
+    }
+  }
+  return true;
+}
+
+bool ScanDevicesToRAZ() {
+  // Récupérer l’heure courante
+  time_t now = time(nullptr);
+  struct tm nowTm;
+  localtime_r(&now, &nowTm);
+
+  // Parcours de tous les devices
+  for (DeviceData* device : devices) {
+      String model = device->getInfo().model;
       
-                  if (temp["poll"][i]["last"]  <= 0)
-                  {
-                    //lancement de la requête
-                    log_d("Lancement de la requête / sht: %d - cluster: %d - attr: %d",shortAddr,cluster,attribut);
-                    //send packet
-                    SendAttributeRead(shortAddr, cluster, attribut);
-                    temp["poll"][i]["last"]=temp["poll"][i]["poll"];
-                  }
-                  i++;
-              }
-
-              file = safeOpenFile(name_with_extension, "w+");
-              if (!file|| file.isDirectory()) {
-                log_e("Erreur lors de l'ouverture du fichier ini_read %s",inifile);
-                safeCloseFile(file,name_with_extension);
-
-              }
-              if (!temp.isNull())
-              {
-                if (serializeJson(temp, file) == 0) {
-                  log_e("Erreur lors de l'écriture dans le fichier ini_read");
-                  safeCloseFile(file,name_with_extension);
-                  break;
-                }
-              }
-              safeCloseFile(file,name_with_extension);      
+      // On ne gère que ZLinky_TIC et ZiPulses
+      if (model != "ZLinky_TIC" && model != "ZiPulses") 
+          continue;
+      // RAZ périodiques
+      if (Minute == "00") {
+        for (const auto &graphEntry : device->energyHistory.hours.graph) {
+          const PsString &Key = graphEntry.first;
+          const ValueMap &valMap   = graphEntry.second;
+          if (strcmp(Hour.c_str(),Key.c_str())==0)
+          {
+            for (const auto &attrPair : valMap.attributes) {
+              int attrId   = attrPair.first;
+              device->energyHistory.hours.graph[PsString(Hour.c_str())].attributes[attrId] = 0;
             }
           }
         }
       }
-      filedevice.close();
-      vTaskDelay(1);
-      filedevice = root.openNextFile();    
+
+      if ((Hour == "00") && (Minute == "00")) {
+        for (const auto &graphEntry : device->energyHistory.days.graph) {
+          const PsString &Key = graphEntry.first;
+          const ValueMap &valMap   = graphEntry.second;
+          if (strcmp(Day.c_str(),Key.c_str())==0)
+          {
+            for (const auto &attrPair : valMap.attributes) {
+              int attrId   = attrPair.first;
+              device->energyHistory.days.graph[PsString(Day.c_str())].attributes[attrId] = 0;
+            }
+          }
+        }
+      }
+
+      if ((Day == "01") && (Hour == "00") && (Minute == "00")) {
+        for (const auto &graphEntry : device->energyHistory.months.graph) {
+          const PsString &Key = graphEntry.first;
+          const ValueMap &valMap   = graphEntry.second;
+          if (strcmp(Month.c_str(),Key.c_str())==0)
+          {
+            for (const auto &attrPair : valMap.attributes) {
+              int attrId   = attrPair.first;
+              device->energyHistory.months.graph[PsString(Month.c_str())].attributes[attrId] = 0;
+            }
+          }
+        }
+      }
+
+      // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
+      time_t lastSeen = device->getLastSeenEpoch();
+
+      if ((now - lastSeen) > 3600) {
+        
+        String textError = "device : "+device->getDeviceID()+" - Pas vu depuis plus de 1 heure";
+        addDebugLog(textError);
+
+        device->setValue(std::string("0B04"),std::string("1295"),std::string("0"));
+        device->setValue(std::string("0B04"),std::string("2319"),std::string("0"));
+        device->setValue(std::string("0B04"),std::string("2575"),std::string("0"));
+
+        addMeasurement(device->powerHistory,1295,0);
+        addMeasurement(device->powerHistory,2319,0);
+        addMeasurement(device->powerHistory,2575,0);
+       
+        if (!device->powerHistory.stats[1295].last) {
+          device->powerHistory.stats[1295].trend = 0;
+        } else {
+          device->powerHistory.stats[1295].trend = 0 - device->powerHistory.stats[1295].last;
+        }
+        device->powerHistory.stats[1295].last = 0;
+
+        if (!device->powerHistory.stats[2319].last) {
+          device->powerHistory.stats[2319].trend = 0;
+        } else {
+          device->powerHistory.stats[2319].trend = 0 - device->powerHistory.stats[2319].last;
+        }
+        device->powerHistory.stats[2319].last = 0;
+
+        if (!device->powerHistory.stats[2575].last) {
+          device->powerHistory.stats[2575].trend = 0;
+        } else {
+          device->powerHistory.stats[2575].trend = 0 - device->powerHistory.stats[2575].last;
+        }
+        device->powerHistory.stats[2575].last = 0;
+      }
   }
-  root.close();
+
   return true;
 }
-
-

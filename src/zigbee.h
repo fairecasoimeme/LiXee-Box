@@ -12,6 +12,9 @@ String getPowerGaugeTimeDay(String IEEE, String Attribute);
 String getPowerDatas( String IEEE, String type, String Attribute, String time);
 float getTarif(int attribute, String Type);
 float getTarifPower(String IEEE, int power);
+String getZigbeeValue(String IEEE, String cluster, String attribute);
+String getDeviceStatus(String IEEE);
+
 void SendBind(uint64_t mac, int cluster);
 void SendDeleteDevice(uint64_t mac);
 void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type, int rmin, int rmax, int rtimeout, uint8_t rchange);

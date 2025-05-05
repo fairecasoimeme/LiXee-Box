@@ -15,7 +15,7 @@ uint8_t getChecksum(int type, int len, uint8_t datas[512]);
 void transcode(uint8_t c);
 
 bool ScanDeviceToPoll();
-
+bool ScanDevicesToRAZ();
 
 String getMacAddress(uint8_t mac[9]);
 String GetMacAdrr(int shortAddr);
@@ -27,7 +27,15 @@ int GetDeviceId(String inifile);
 String GetNameStatus(int deviceId,String cluster, int attribut, String model);
 String GetLastSeen(String inifile);
 String GetLQI(String inifile);
-String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient);
+void SetInfoStatus( String inifile, String val);
+void SetLastSeen( String inifile, String val);
+void SetLQI( String inifile, String val);
+void SetInfoDeviceId( String inifile, String val);
+bool deviceExist(String mac);
+
+
+//String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient);
+String GetValueStatus(String IEEE, int key, int attribut, String type, float coefficient);
 String GetValueFromShortAddr(int shortAddr,int cluster, int attribute, String value);
 
 IPAddress parse_ip_address(const char *str);

@@ -11,7 +11,7 @@ extern String Year;
 extern String FormattedDate;
 extern ConfigSettingsStruct ConfigSettings;
 
-LogConsoleType logConsole;
+//LogConsoleType logConsole;
 
 
 
@@ -90,13 +90,13 @@ bool addDebugLog(String text)
 
 void logPush(char c)
 {
-  logConsole.push(c);
+  //logConsole.push(c);
 }
 
 String logPrint()
 {
   
-  String buff="";
+  /*String buff="";
 
   if (logConsole.isEmpty()) {
     return "";
@@ -105,12 +105,12 @@ String logPrint()
       buff+=logConsole[i];
     }
     return buff;
-  }
+  }*/
 }
 
 void logClear()
 {
-  if (!logConsole.isEmpty()) {
+  /*if (!logConsole.isEmpty()) {
     logConsole.clear();
-  }
+  }*/
 }

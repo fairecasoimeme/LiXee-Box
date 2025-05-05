@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "rules.h"
+#include "protocol.h"
 #include "config.h"
 #include "log.h"
 #include "AsyncJson.h"
@@ -7,6 +8,7 @@
 #define ARDUINOJSON_SLOT_ID_SIZE 2
 #include <ArduinoJson.h>
 #include "SPIFFS_ini.h"
+#include "zigbee.h"
 #include "onoff.h"
 
 
@@ -76,8 +78,9 @@ double getCurrentValue(const char* type,int cluster, int attribute, const char* 
         char tmpKey[5];
         sprintf(tmpKey,"%04X",cluster);
         String path = String(IEEE)+".json";
-        String tmp= ini_read(path, tmpKey, (String)attribute);  
-        if ((strcmp(tmp.c_str(),"Error")==0) || (tmp == NULL))
+       // String tmp= ini_read(path, tmpKey, (String)attribute);  
+        String tmp= getZigbeeValue(path,tmpKey,String(attribute));
+        if ((strcmp(tmp.c_str(),"Error")==0) || (tmp == NULL)|| (tmp == ""))
         {
             return -9999999;
         }else{
@@ -165,7 +168,8 @@ void applyRules(Rule* rules, int ruleCount) {
                     if (strcmp(action.type,"onoff")==0)
                     {
                         String inifile = String(action.IEEE)+".json";
-                        String shortAddr= ini_read(inifile,"INFO", "shortAddr");  
+                        //String shortAddr= ini_read(inifile,"INFO", "shortAddr");  
+                        String shortAddr = String(GetShortAddr(inifile));
                         SendOnOffAction(shortAddr.toInt(),action.endpoint,action.value);
                         log_w("Executing action: %s - endpoint : %d value : %s",action.type,action.endpoint,action.value);
                     }
