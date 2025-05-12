@@ -3,6 +3,8 @@ var powerGaugeAbo2;
 var powerGaugeAbo3;
 var powerChart;
 var energyChart;
+var donutChart;
+
 function getXhr(){
 	var xhr = null; 
 	if(window.XMLHttpRequest) // Firefox et autres
@@ -420,8 +422,10 @@ function refreshStatusEnergy(IEEE,attribute,time)
 {
 	//refreshGaugeAbo(IEEE,attribute,time);
 	loadPowerTrend(IEEE,attribute,time);
+	loadDatasTrend(IEEE,attribute,time);
 	loadLinkyDatas(IEEE);
 	loadEnergyChart(IEEE,time);
+	loadDistributionChart(IEEE,time);
 	if (time=='hour')
 	{
 		loadPowerChart(IEEE,attribute);
@@ -480,10 +484,24 @@ function loadPowerTrend(IEEE,attribute,time)
 			
 			leselect = xhr.responseText;
 			document.getElementById("power_trend").innerHTML=leselect;
-			//setTimeout(function(){ loadPowerTrend(IEEE,attribute); }, 60000);
 		}
 	}
 	xhr.open("GET","loadPowerTrend?IEEE="+escape(IEEE)+"&attribute="+escape(attribute)+"&time="+escape(time),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
+function loadDatasTrend(IEEE,attribute,time)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			
+			leselect = xhr.responseText;
+			document.getElementById("trend-datas").innerHTML=leselect;
+		}
+	}
+	xhr.open("GET","loadDatasTrend?IEEE="+escape(IEEE)+"&attribute="+escape(attribute)+"&time="+escape(time),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
@@ -579,6 +597,20 @@ function loadEnergyChart(IEEE,time)
 		}
 	}
 	xhr.open("GET","loadEnergyChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
+	xhr.setRequestHeader('Content-Type','application/html');
+	xhr.send();
+}
+
+function loadDistributionChart(IEEE,time)
+{
+	var xhr = getXhr();
+	xhr.onreadystatechange = function(){
+		if(xhr.readyState == 4 ){
+			var datas = JSON.parse(xhr.responseText);
+			 donutChart.setData(datas);
+		}
+	}
+	xhr.open("GET","loadDistributionChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
