@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.0b"
+#define VERSION "v2.0f"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -244,6 +244,29 @@ typedef struct{
   RuleCondition rc[10];
   RuleAction ra[10];
 } Rule;
+
+struct StatusRegisterBreakout {
+  String contact_sec;
+  String organe_coupure;
+  String cache_borne_dist;
+  uint8_t surtension_phase;
+  uint8_t depassement_ref_pow;
+  String producteur;
+  String sens_energie_active;
+  String tarif_four;
+  String tarif_dist;
+  String horloge;
+  String type_tic;
+  String comm_euridis;
+  String etat_cpl;
+  String sync_cpl;
+  String tempo_jour;
+  String tempo_demain;
+  String preavis_pointe_mobile;
+  String pointe_mobile;
+};
+
+StatusRegisterBreakout parseStatusRegister(const String& hexVal);
 
 //typedef CircularBuffer<char, 4096> LogConsoleType;
 
