@@ -1202,7 +1202,7 @@ void protocolDatas(uint8_t sp[4092], size_t len)
             xSemaphoreTake(QueuePrio_Mutex, portMAX_DELAY);
             PriorityQueuePacket->push(sp);
             xSemaphoreGive(QueuePrio_Mutex);
-            log_w("ProtocolDats - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
+            log_w("ProtocolDatas - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
           }
         }else if((type == 0x8011) || (type == 0x8012))
         {
@@ -1213,7 +1213,7 @@ void protocolDatas(uint8_t sp[4092], size_t len)
             xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
             QueuePacket->push(sp);
             xSemaphoreGive(Queue_Mutex);
-            log_w("ProtocolDats - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
+            log_w("ProtocolDatas - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
           }else{
             addDebugLog("QueuePacket FULL !");
             while (!QueuePacket->isEmpty())
