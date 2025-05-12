@@ -304,12 +304,12 @@ const char HTTP_MENU[] PROGMEM =
    "<li class='nav-item dropdown'>"
    "<a class='dropdown-item' href='/help'>"
     "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>"
-   "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
-   "  <circle cx='12' cy='12' r='3'></circle>"
-   "  <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>"
+   "  <path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+   "  <path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
    "</svg>"
    " About"
-   "<div id='aboutMaj' style='display: inline-block; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
+   "<div class='AboutMaj' style='display: inline-block; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</a>"
    "<div class='dropdown-menu'>"
    "<a class='dropdown-item' href='/help'>"
@@ -325,7 +325,7 @@ const char HTTP_MENU[] PROGMEM =
     "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
     "</svg>"
    " Update"
-   "<div id='aboutMaj' style='display: inline-block; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
+   "<div class='AboutMaj' style='display: inline-block; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</a>"
    "</div>"
    "</li>"
@@ -1653,9 +1653,9 @@ const char HTTP_FOOTER[] PROGMEM = R"(
           var version = release.tag_name;
           if (version == "{{version}}")
           {
-            $("#AboutMaj").hide();
+            $(".AboutMaj").hide();
           }else{
-            $("#AboutMaj").show();
+            $(".AboutMaj").show();
           }
         });
       }
