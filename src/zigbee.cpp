@@ -379,7 +379,7 @@ float getTarifPower(String IEEE, int power)
       for (const auto &attrPair : valMap.attributes) {
           int attrId = attrPair.first;
           long attrVal = attrPair.second;
-          sum += (attrVal*getTarif(String(section[attrId]).toInt(),"energy"))/1000 + ((attrVal/1000) * atof(ConfigGeneral.tarifCSPE));
+          sum += (attrVal*getTarif(attrId,"energy"))/1000 + ((attrVal/1000) * atof(ConfigGeneral.tarifCSPE));
       }
       break;
     }
@@ -421,6 +421,15 @@ String getLinkyDatas(String IEEE)
         result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
         result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Subscription)</i></span>";
       }
+      tmp = String(device->getValue(std::string("FF66"),std::string("16")));
+      if (tmp!="")
+      {      
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Tariff Period)</i></span>";
+      }
       tmp = String(device->getValue(std::string("FF66"),std::string("512")));
       if (tmp!="")
       {
@@ -447,12 +456,127 @@ String getLinkyDatas(String IEEE)
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
         result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
         result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
-        result+= "</svg><br><strong>"+tmp+" kVA</strong><br><i style='font-size:12px;'>(Subscribed Power)</i></span>";
+        int modeTmp = strtol(device->getValue(std::string("FF66"),std::string("768")).c_str(),0,16);
+        if ((modeTmp==0) || (modeTmp==2))
+        {
+          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Subscribed intensity)</i></span>";
+        }else{
+          result+= "</svg><br><strong>"+tmp+" kVA</strong><br><i style='font-size:12px;'>(Subscribed power)</i></span>";
+        }
+        
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("0")).c_str(),0,16));
+      tmp = String(device->getValue(std::string("FF66"),std::string("535")));
       if (tmp!="")
       {
-        if (tmp.toInt() > 0)
+        auto status = parseStatusRegister(tmp);
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.contact_sec+"</strong><br><i style='font-size:12px;'>(Contact sec)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.organe_coupure+"</strong><br><i style='font-size:12px;'>(Organe coupure)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.cache_borne_dist +"</strong><br><i style='font-size:12px;'>(Cache borne distributeur)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+String(status.surtension_phase) +"</strong><br><i style='font-size:12px;'>(Surtension sur phase)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+String(status.depassement_ref_pow)+"</strong><br><i style='font-size:12px;'>(Dépassement puissance)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+String(status.producteur) +"</strong><br><i style='font-size:12px;'>(Mode producteur)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.sens_energie_active +"</strong><br><i style='font-size:12px;'>(Sens énergie active)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.tarif_four +"</strong><br><i style='font-size:12px;'>(Tarif fournisseur)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.tarif_dist +"</strong><br><i style='font-size:12px;'>(Tarif distributeur)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.horloge +"</strong><br><i style='font-size:12px;'>(Mode horloge)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.type_tic +"</strong><br><i style='font-size:12px;'>(Type TIC)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.comm_euridis +"</strong><br><i style='font-size:12px;'>(Communicateur Euridis)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.sync_cpl  +"</strong><br><i style='font-size:12px;'>(Synchro CPL)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.tempo_jour  +"</strong><br><i style='font-size:12px;'>(Couleur jour)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.tempo_demain +"</strong><br><i style='font-size:12px;'>(Couleur lendemain)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.preavis_pointe_mobile  +"</strong><br><i style='font-size:12px;'>(Préavis pointe mobile)</i></span>";
+
+        result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+        result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+        result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+        result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+        result+= "</svg><br><strong>"+status.pointe_mobile  +"</strong><br><i style='font-size:12px;'>(pointe mobile)</i></span>";
+      }
+
+      tmp = String(strtol(device->getValue(std::string("0702"),std::string("1")).c_str(),0,16));
+      if (tmp!="")
+      {
+        if (tmp.toInt() != 0)
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
           result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-speedometer' viewBox='0 0 16 16'>");
@@ -542,6 +666,105 @@ String getLinkyDatas(String IEEE)
 
 }
 
+StatusRegisterBreakout parseStatusRegister(const String& hexVal) {
+  // Conversion de la chaîne hexadécimale en entier non signé 32 bits
+  unsigned long valhex = strtoul(hexVal.c_str(), nullptr, 16);
+
+  StatusRegisterBreakout s;
+
+  // bit 0 → contact sec
+  s.contact_sec = (valhex & 0x1) ? "Ouvert" : "Fermé";
+
+  // bits 1–3 → organe de coupure
+  switch ((valhex >> 1) & 0x7) {
+    case 0: s.organe_coupure = "Fermé"; break;
+    case 1: s.organe_coupure = "Surpuissance"; break;
+    case 2: s.organe_coupure = "Surtension"; break;
+    case 3: s.organe_coupure = "Delestage"; break;
+    case 4: s.organe_coupure = "Ordre_CPL_Euridis"; break;
+    case 5: s.organe_coupure = "Surchauffe_surcourant"; break;
+    case 6: s.organe_coupure = "Surchauffe_simple"; break;
+    default: s.organe_coupure = "Inconnu"; break;
+  }
+
+  // bit 4 → état cache borne distributeur (0 = fermé, 1 = ouvert)
+  s.cache_borne_dist = ((valhex >> 4) & 0x1) == 0 ? "Fermé" : "Ouvert";
+
+  // bit 6 → surtension sur une des phases
+  s.surtension_phase    = (valhex >> 6) & 0x1;
+  // bit 7 → dépassement puissance de référence
+  s.depassement_ref_pow = (valhex >> 7) & 0x1;
+  // bit 8 → consommateur/producteur
+  s.producteur          = ((valhex >> 8) & 0x1) == 0 ? "Consommateur" : "Producteur";
+
+  // bit 9 → sens de l'énergie active
+  s.sens_energie_active = ((valhex >> 9) & 0x1) == 0 ? "Positive" : "Negative";
+
+  // bits 10–13 → tarif en cours (fourniture)
+  s.tarif_four = "index_" + String( ((valhex >> 10) & 0xF) + 1 );
+
+  // bits 14–15 → tarif en cours (distributeur)
+  s.tarif_dist = "index_" + String( ((valhex >> 14) & 0x3) + 1 );
+
+  // bit 16 → mode dégradé de l'horloge
+  s.horloge = ((valhex >> 16) & 0x1) == 0 ? "Correcte" : "Dégradée";
+
+  // bit 17 → type TIC
+  s.type_tic = ((valhex >> 17) & 0x1) == 0 ? "Historique" : "Standard";
+
+  // bits 19–20 → état sortie communicateur Euridis
+  switch ((valhex >> 19) & 0x3) {
+    case 0: s.comm_euridis = "Désactivée"; break;
+    case 1: s.comm_euridis = "Activée sans sécurité"; break;
+    case 3: s.comm_euridis = "Activée avec sécurité"; break;
+    default: s.comm_euridis = "Inconnu"; break;
+  }
+
+  // bits 21–22 → état CPL
+  switch ((valhex >> 21) & 0x3) {
+    case 0: s.etat_cpl = "Nouveau déverrouillé"; break;
+    case 1: s.etat_cpl = "Nouveau vérrouillé";  break;
+    case 2: s.etat_cpl = "Enregistré";           break;
+    default: s.etat_cpl = "Inconnu";            break;
+  }
+
+  // bit 23 → synchronisation CPL
+  s.sync_cpl = ((valhex >> 23) & 0x1) == 0 ? "Non synchronisé" : "Synchronisé";
+
+  // bits 24–25 → couleur du jour (Tempo)
+  switch ((valhex >> 24) & 0x3) {
+    case 1: s.tempo_jour = "BLEU";  break;
+    case 2: s.tempo_jour = "BLANC"; break;
+    case 3: s.tempo_jour = "ROUGE"; break;
+    default: s.tempo_jour = "UNDEF"; break;
+  }
+
+  // bits 26–27 → couleur demain (Tempo)
+  switch ((valhex >> 26) & 0x3) {
+    case 1: s.tempo_demain = "BLEU";  break;
+    case 2: s.tempo_demain = "BLANC"; break;
+    case 3: s.tempo_demain = "ROUGE"; break;
+    default: s.tempo_demain = "UNDEF"; break;
+  }
+
+  // bits 28–29 → préavis pointe mobile
+  switch ((valhex >> 28) & 0x3) {
+    case 1: s.preavis_pointe_mobile = "PM1"; break;
+    case 2: s.preavis_pointe_mobile = "PM2"; break;
+    case 3: s.preavis_pointe_mobile = "PM3"; break;
+    default: s.preavis_pointe_mobile = "AUCUN"; break;
+  }
+
+  // bits 30–31 → pointe mobile
+  switch ((valhex >> 30) & 0x3) {
+    case 1: s.pointe_mobile = "PM1"; break;
+    case 2: s.pointe_mobile = "PM2"; break;
+    case 3: s.pointe_mobile = "PM3"; break;
+    default: s.pointe_mobile = "AUCUN"; break;
+  }
+
+  return s;
+}
 
 String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
 {
@@ -662,6 +885,187 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
   return result;
 }
 
+String getDatasPower(String IEEE,String Attribute, String Time)
+{
+  // Trouver le device
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d->getDeviceID() == IEEE) { dev = d; break; }
+  }
+  if (!dev) {
+    return "";
+  }
+
+  // Sélectionner la période
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+  if      (Time=="hour")  pd=&eh.hours;
+  else if (Time=="day")   pd=&eh.days;
+  else if (Time=="month") pd=&eh.months;
+  else if (Time=="year")  pd=&eh.years;
+  else                      return "";
+
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+
+  long TotalWh =0;
+  float TotalEuros = 0;
+  // Calcul de la somme par section
+  std::map<int, long> sums;
+  std::map<int, int> attrib;
+  for (auto &kv : pd->graph) {
+    ValueMap &vm = kv.second;   
+    for (size_t i = 2; i < arrayLength; ++i) {
+      int attrId = section[i].toInt();
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sums[(i-1)] += itv->second;
+        TotalWh += itv->second;
+        attrib[(i-1)] = attrId;
+      }
+    }
+  }
+
+  //Production
+  long sumProd=0;
+  if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
+  {
+    DeviceData* devProd = nullptr;
+    for (auto* d : devices) {
+      if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
+    }
+
+    DeviceEnergyHistory& ehProd = devProd->energyHistory;
+    PeriodData* pdProd = nullptr;
+    if      (Time=="hour")  pdProd=&ehProd.hours;
+    else if (Time=="day")   pdProd=&ehProd.days;
+    else if (Time=="month") pdProd=&ehProd.months;
+    else if (Time=="year")  pdProd=&ehProd.years;
+    else                      return "";
+
+    
+    for (auto &kv : pdProd->graph) {
+      ValueMap &vm = kv.second;   
+      int attrId = 1;
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sumProd += itv->second;
+      }
+    }
+
+  }
+
+  //GAZ
+  long sumGaz=0;
+  if ((strcmp(ConfigGeneral.Gaz,"")!=0))
+  {
+    DeviceData* devGaz = nullptr;
+    for (auto* d : devices) {
+      if (d->getDeviceID() == ConfigGeneral.Gaz) { devGaz = d; break; }
+    }
+
+    DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
+    PeriodData* pdGaz = nullptr;
+    if      (Time=="hour")  pdGaz=&ehGaz.hours;
+    else if (Time=="day")   pdGaz=&ehGaz.days;
+    else if (Time=="month") pdGaz=&ehGaz.months;
+    else if (Time=="year")  pdGaz=&ehGaz.years;
+    else                      return "";
+
+    
+    for (auto &kv : pdGaz->graph) {
+      ValueMap &vm = kv.second;   
+      int attrId = 0;
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sumGaz += itv->second;
+      }
+    }
+
+  }
+
+
+
+  String color[9] = { "#d35400","#2980b9","#154360","#7f8c8d","#000000","#e74c3c","#c0392b","#f5b041","#145a32"};
+  String result = "<h5>Legend</h5>";
+  for (auto &p : sums) {
+    result += "<div class='row'><div class='col-1'><div style=\"border:1px solid grey;width:10px;height:15px;background-color:";
+    if (p.first <= 10)
+    {
+      result += color[p.first];
+    }
+    result +="\"></div></div><div class='col-11'> ";
+    result += "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+    result += String(p.second);
+    result += " Wh ";
+    result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+    result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+    result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+    result+="<g id='SVGRepo_iconCarrier'>";
+    result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+    result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+    result+="</g>";
+    result+="</svg>  ";
+    TotalEuros += p.second * getTarif(attrib[p.first],"energy")/1000;
+    result += String(p.second * getTarif(attrib[p.first],"energy")/1000);
+
+    result += " € ";
+    result +="</div></div>";
+  }
+
+  if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
+  {
+    result += "<div class='row'>";
+    result +=       "<div class='col-1'>";
+    result +=            "<div style=\"border:1px solid grey;width:10px;height:15px;background-color:#27ae60\"></div>";
+    result +=       "</div>";
+    result +=       "<div class='col-11'> ";
+    result +=         "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='0 -64 640 640' xmlns='http://www.w3.org/2000/svg'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'></g><g id='SVGRepo_iconCarrier'><path d='M431.98 448.01l-47.97.05V416h-128v32.21l-47.98.05c-8.82.01-15.97 7.16-15.98 15.99l-.05 31.73c-.01 8.85 7.17 16.03 16.02 16.02l223.96-.26c8.82-.01 15.97-7.16 15.98-15.98l.04-31.73c.01-8.85-7.17-16.03-16.02-16.02zM585.2 26.74C582.58 11.31 568.99 0 553.06 0H86.93C71 0 57.41 11.31 54.79 26.74-3.32 369.16.04 348.08.03 352c-.03 17.32 14.29 32 32.6 32h574.74c18.23 0 32.51-14.56 32.59-31.79.02-4.08 3.35 16.95-54.76-325.47zM259.83 64h120.33l9.77 96H250.06l9.77-96zm-75.17 256H71.09L90.1 208h105.97l-11.41 112zm16.29-160H98.24l16.29-96h96.19l-9.77 96zm32.82 160l11.4-112h149.65l11.4 112H233.77zm195.5-256h96.19l16.29 96H439.04l-9.77-96zm26.06 256l-11.4-112H549.9l19.01 112H455.33z'></path></g></svg> ";
+    result +=           String(sumProd);
+    result +=           " Wh";
+    /*TotalEuros += p.second * getTarif(attrib[p.first],"energy")/1000;
+    result += String(p.second * getTarif(attrib[p.first],"energy")/1000);
+    result += " € ";*/
+    result +=       "</div>";
+    result += "</div>";
+  }
+
+  if ((strcmp(ConfigGeneral.Gaz,"")!=0))
+  {
+    result += "<div class='row'>";
+    result +=       "<div class='col-1'>";
+    result +=            "<div style=\"border:1px solid grey;width:10px;height:15px;background-color:#e67e22\"></div>";
+    result +=       "</div>";
+    result +=       "<div class='col-11'> ";
+    result +=         "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='0 0 32 32' version='1.1' xmlns='http://www.w3.org/2000/svg'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'></g><g id='SVGRepo_iconCarrier'> <title>flame-symbol</title> <path d='M10.375 7.562c0 5.625 5.625 6.563 5.625 11.25 0 1.875-1.875 4.687-4.687 4.687s-4.687-2.813-2.813-7.5c-2.813 1.875-3.75 3.75-3.75 5.625 0 4.688 4.687 9.375 11.25 9.375s11.25-2.812 11.25-8.438c0.042-8.32-9.587-11.1-12.188-15-1.875-2.813-0.937-4.688 0.937-6.563-3.75 0.938-5.625 3.563-5.625 6.563v0z'></path> </g></svg> ";
+    result +=           String(sumGaz);
+    result +=           " Wh";
+    /*TotalEuros += p.second * getTarif(attrib[p.first],"energy")/1000;
+    result += String(p.second * getTarif(attrib[p.first],"energy")/1000);
+    result += " € ";*/
+    result +=       "</div>";
+    result += "</div>";
+  }
+
+  result += "<br><div class='position-absolute bottom-0 start-0'><h5>Total</h5>";
+  result += "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+  result += String((TotalWh+sumProd+sumGaz));
+  result += " Wh ";
+  result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+  result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+  result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+  result+="<g id='SVGRepo_iconCarrier'>";
+  result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+  result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+  result+="</g>";
+  result+="</svg>  ";
+
+  result += TotalEuros;
+  result += " € ";
+  result += "</div>";
+
+  return result;
+
+}
 
 String getTrendPower(String IEEE,String Attribute, String Time)
 {
@@ -699,7 +1103,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
           long attrVal = attrPair.second;
           if (attrId>0)
           {
-            tarifEuros+=attrVal * getTarif(String(section[attrId]).toInt(),"energy")/1000;
+            tarifEuros+=attrVal * getTarif(attrId,"energy")/1000;
             tarifEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
           }  
         }
@@ -738,7 +1142,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
           result+=max;
           result+=" VA <br> <strong>";
         result+="</span></div>";   
-        result+="<br><div style='display:inline-block;width:64px;float:left;'>";
+        /*result+="<br><div style='display:inline-block;width:64px;float:left;'>";
 
           result+=" <svg width='64px' height='64px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
            result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
@@ -751,7 +1155,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         result+="</div>";
         result+="<div style='display:inline-block;line-height:72px;'><span style='font-size:24px;'>";
           result +=String(tarifEuros) +" €";
-        result+="</span></div>";
+        result+="</span></div>";*/
       result += "</div>";
     }
   }else
@@ -789,7 +1193,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
           sum +=attrVal;
           if (attrId>0)
           {          
-            tmpEuros+=attrVal * getTarif(String(section[attrId]).toInt(),"energy")/1000;
+            tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
             tmpEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
           }
         }
@@ -824,7 +1228,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
           sum +=attrVal;
           if (attrId>0)
           {
-            tmpEuros+=attrVal * getTarif(String(section[attrId]).toInt(),"energy")/1000;
+            tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
             tmpEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
           }
         }
@@ -860,7 +1264,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
           sum +=attrVal;
           if (attrId>0)
           {
-            tmpEuros+=attrVal * getTarif(String(section[attrId]).toInt(),"energy")/1000;
+            tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
             tmpEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
           }
         }
@@ -911,13 +1315,13 @@ String getTrendPower(String IEEE,String Attribute, String Time)
     result += "</svg>";
     result +="</div>";
     result+="<div style='display:inline-box;height:100px;padding-top:15px;'><span style='font-size:24px;'>";
-      result +=op+trend+ " VA ";
+      result +=op+trend+ " Wh ";
     result+="</span>";
     result+="<br><span style='font-size:12px;'><strong>Min:</strong> ";
       result+=minVal;
-      result+=" VA <br> <strong>Max :</strong> ";
+      result+=" Wh <br> <strong>Max :</strong> ";
       result+=maxVal;
-      result+=" VA";
+      result+=" Wh";
     result+="</span></div>";   
     result+="<br><div style='display:inline-block;width:64px;float:left;'>";
 

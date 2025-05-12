@@ -7,6 +7,7 @@ String getLinkyMode(int mode);
 String getPowerGaugeAbo(String IEEE, String Attribute, String Time);
 String getLastValuePower(String IEEE,String Attribute, String Time);
 String getTrendPower(String IEEE,String Attribute, String Time);
+String getDatasPower(String IEEE,String Attribute, String Time);
 String getTrendEnergyEuros(String IEEE);
 String getPowerGaugeTimeDay(String IEEE, String Attribute);
 String getPowerDatas( String IEEE, String type, String Attribute, String time);
@@ -14,6 +15,8 @@ float getTarif(int attribute, String Type);
 float getTarifPower(String IEEE, int power);
 String getZigbeeValue(String IEEE, String cluster, String attribute);
 String getDeviceStatus(String IEEE);
+
+
 
 void SendBind(uint64_t mac, int cluster);
 void SendDeleteDevice(uint64_t mac);
