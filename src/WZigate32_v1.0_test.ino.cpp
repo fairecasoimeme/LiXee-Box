@@ -71,14 +71,6 @@ CircularBuffer<SerialPacket, 30> *PriorityQueuePacket = nullptr;
 CircularBuffer<Alert, 10> *alertList = nullptr;
 CircularBuffer<Device, 10> *deviceList = nullptr;
 CircularBuffer<SerialPacket, 300> *QueuePacket = nullptr;
-/*CircularBuffer<Packet, 100> commandList;
-CircularBuffer<Packet, 10> PrioritycommandList;
-CircularBuffer<SerialPacket, 30> PriorityQueuePacket;
-CircularBuffer<Alert, 10> alertList;
-CircularBuffer<SerialPacket, 100> QueuePacket;*/
-
-//new(QueuePacket) CircularBuffer<SerialPacket,100>();
-//QueuePacket = new CircularBuffer<SerialPacket,100>();
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -701,6 +693,7 @@ void loadAllDevices(const char* dirPath) {
         }
         log_w("avant  Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
+        
         DeviceData *dev = new (mem) DeviceData("/db/"+filename, deviceID);
         
         // On charge
@@ -1191,7 +1184,7 @@ void setup(void)
   digitalWrite(FLASH_ZIGATE, 1);
   digitalWrite(RESET_ZIGATE, 0);
   digitalWrite(RESET_ZIGATE, 1);
-  DEBUG_PRINTLN(F("add networkState"));
+
   commandList->push(Packet{0x0011, 0x0000,0});
   vTaskDelay(20);
   commandList->push(Packet{0x0009, 0x0000,0});
@@ -1243,7 +1236,7 @@ void setup(void)
   addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(0)));
   addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(1)));
   
-  if ((ConfigSettings.enableMarstek) && (ConfigGeneral.ZLinky!=""))
+  if ((ConfigSettings.enableMarstek) && (strcmp(ConfigGeneral.ZLinky,"")!=0))
   {
     udpProcess();
     tcpProcess();
