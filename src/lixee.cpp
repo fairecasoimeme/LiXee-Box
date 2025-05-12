@@ -227,9 +227,9 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
         {
           if (datatype == 66)
           {
-            mqttPublish(inifile.substring(0,16),"65382",String(attribute),"numeric",String(tmp));
-          }else{
             mqttPublish(inifile.substring(0,16),"65382",String(attribute),"string",String(tmp));
+          }else{
+            mqttPublish(inifile.substring(0,16),"65382",String(attribute),"numeric",String(tmp));
           }
         }
         //WebPush
