@@ -290,13 +290,7 @@ const char HTTP_MENU[] PROGMEM =
    "</svg>"
    " Rules"
    "</a>"
-   "<a class='dropdown-item' href='/update'>"
-   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-download' viewBox='0 0 16 16'>"
-    "  <path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5'/>"
-    "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
-    "</svg>"
-   " Update"
-   "</a>"
+   
    "</div>"
    "</li>"
    "<li class='nav-item'>"
@@ -307,14 +301,33 @@ const char HTTP_MENU[] PROGMEM =
    " Tools"
    "</a>"
    "</li>"
-   "<li class='nav-item'>"
-   "<a class='nav-link' href='/help'>"
+   "<li class='nav-item dropdown'>"
+   "<a class='dropdown-item' href='/help'>"
+    "<a class='nav-link dropdown-toggle' href='#' id='navbarDropdown' role='button' data-bs-toggle='dropdown'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
+   "  <circle cx='12' cy='12' r='3'></circle>"
+   "  <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
+   "</svg>"
+   " About"
+   "<div id='aboutMaj' style='display: inline-block; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
+   "</a>"
+   "<div class='dropdown-menu'>"
+   "<a class='dropdown-item' href='/help'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>"
    "  <path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
    "  <path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
    "</svg>"
-   " About"
+   " Info"
    "</a>"
+   "<a class='dropdown-item' href='/update'>"
+   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-download' viewBox='0 0 16 16'>"
+    "  <path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5'/>"
+    "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
+    "</svg>"
+   " Update"
+   "<div id='aboutMaj' style='display: inline-block; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
+   "</a>"
+   "</div>"
    "</li>"
    "</ul></div></div>"
    "</nav>"
@@ -1410,18 +1423,22 @@ const char HTTP_ENERGY[] PROGMEM =
     "<div class='row g-4'>"
         "<div class='col-md-12'>"
             "<div class='nav justify-content-end'>"
-              "<a class='link' href='?time=hour'>H</a>&nbsp;"
-              "<a class='link' href='?time=day'>D</a>&nbsp;"
-              "<a class='link' href='?time=month'>M</a>&nbsp;"
-              "<a class='link' href='?time=year'>Y</a>&nbsp;"
+              "<div id='h'><a class='link' href='?time=hour' onClick=\"wait('h');\">H</a></div>&nbsp;"
+              "<div id='d'><a class='link' href='?time=day' onClick=\"wait('d');\">D</a></div>&nbsp;"
+              "<div id='m'><a class='link' href='?time=month' onClick=\"wait('m');\">M</a></div>&nbsp;"
+              "<div id='y'><a class='link' href='?time=year' onClick=\"wait('y');\">Y</a></div>&nbsp;"
             "</div>"
          "</div>"
       "</div>"
-    "</div>";
+    "</div>"
+    "<script>"
+      "function wait(div){ document.getElementById(div).innerHTML = \"<img src='web/img/wait.gif' />\";}"
+    "</script>"
+    ;
 
 const char HTTP_ENERGY_LINKY[] PROGMEM =
     
-    "<div class='row'>"
+    //"<div class='row'>"
       "<div class='col-sm-12'>"
         "{{LinkyStatus}}"
       "</div>"
@@ -1429,9 +1446,27 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
     "<div class='container py-4'>"
     "<div class='row g-4' style=''>"
       "{{power_gauge}}"
-      "<div class='col-md-4'>"
+      "<div class='col-md-8'>"
         "<div class='card p-4'>"
           "<h5 class='card-title' style=''>Energy trend</h5>"
+          
+          "<div class='row'>"
+            "<div class='col-md-12 col-lg-4'>"
+              "<div class='card-body' style='min-height:270px;min-width:200px;'>"
+                "<div id='power_trend'></div>"
+              "</div>"
+            "</div>"
+            "<div class='col-md-12 col-lg-4'>"
+              "<div class='card-body' style='height:270px;'>"
+                "<div id='donut-chart' style='width:100%;margin-top:-70px;'></div>"
+              "</div>"
+            "</div>"
+            "<div class='col-md-12 col-lg-4'>"
+              "<div class='card-body position-relative p-1' style='height:270px;width:280px;'>"
+                "<div id='trend-datas'></div>"
+              "</div>"
+            "</div>"
+          "</div>"
           "<a href='/configLinky' class='position-absolute bottom-0 end-0 p-4 text-muted'" 
             "title='Paramétrer la tarification'>"
             "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
@@ -1439,9 +1474,6 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
               "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
             "</svg>"
           "</a>"
-          "<div class='card-body' style='min-height:270px;min-width:200px;'>"
-            "<div id='power_trend'></div>"
-          "</div>"
         "</div>"
       "</div>"
       "<div class='col-md-12'>"
@@ -1452,7 +1484,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"   
-      "<div class='col-md-12' style='display:{{stylePowerChart}}'>"
+      "<div class='col-md-6' style='display:{{stylePowerChart}}'>"
         "<div class='card p-4'>"
           "<h5 class='card-title'>Real Time Power chart</h5>"
           "<div class='card-body'>"
@@ -1460,7 +1492,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"
-      "<div class='col-md-12'>"
+      "<div class='col-md-6'>"
         "<div class='card p-4'>"
           "<h5 class='card-title'>Energy Usage</h5>"
           "<div class='card-body'>"
@@ -1468,20 +1500,20 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"
-      "<div class='col-md-12' style='display:{{styleProdChart}}'>"
+      "<div class='col-md-6' style='display:{{styleProdChart}}'>"
         "<div class='card p-4'>"
           "<h5 class='card-title'>Production injection</h5>"
           "<div class='card-body'>"
               "<div id='production-chart'></div>"
           "</div>"
         "</div>"
-      "</div>"
-    "</div>";
+      "</div>";
+    //"</div>";
 
 const char HTTP_ENERGY_GAZ[] PROGMEM =
 
-    "<br><div class='row g-4'>"
-    "<div class='col-md-12'>"
+    //"<br><div class='row g-4'>"
+    "<div class='col-md-6'>"
         "<div class='card p-4'>"
           "<h5 class='card-title'>Gaz Usage</h5>"
           "<div class='card-body'>"
@@ -1489,20 +1521,20 @@ const char HTTP_ENERGY_GAZ[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"
-    "</div>"
+    //"</div>"
 ;
 
 const char HTTP_ENERGY_WATER[] PROGMEM =
-    "<br><div class='row g-4'>"
-    "<div class='col-md-12'>"
+    //"<br><div class='row g-4'>"
+    "<div class='col-md-6'>"
         "<div class='card p-4'>"
           "<h5 class='card-title'>Water Usage</h5>"
           "<div class='card-body'>"
               "<div id='water-chart'></div>"
           "</div>"
         "</div>"
-      "</div>"
-    "</div>";
+      "</div>";
+    //"</div>";
   
 const char HTTP_ENERGY_JAVASCRIPT[] PROGMEM =
     "{{javascript}}";
@@ -1616,6 +1648,18 @@ const char HTTP_DEVICE[] PROGMEM =
 const char HTTP_FOOTER[] PROGMEM = R"(
     <script type='text/javascript' src='web/js/bootstrap.min.js'></script>
     <script language='javascript'>
+      function getReleaseInfo() {
+        $.getJSON("https://api.github.com/repos/fairecasoimeme/LiXee-Gateway/releases/latest").done(function(release) {          
+          var version = release.tag_name;
+          if (version == "{{version}}")
+          {
+            $("#AboutMaj").hide();
+          }else{
+            $("#AboutMaj").show();
+          }
+        });
+      }
+    getReleaseInfo();
     getFormattedDate();
     getAlert();
     </script>
@@ -2390,6 +2434,36 @@ String CreateTimeGauge(String div)
   result += F("xhr.setRequestHeader('Content-Type','application/html');");
   result += F("xhr.send();");
   result += F("};");
+
+  return result;
+}
+
+String createDistributionGraph(String IEEE)
+{
+  String result = "";
+  result += F("donutChart = Morris.Donut({");
+  result += F(" element: 'donut-chart',");
+  result += F("data: [],");
+  result += F("formatter: function (value,data){return value + 'Wh';},"); //#e67e22
+  if (strcmp(ConfigGeneral.Production,"")==0)
+  {
+    if (strcmp(ConfigGeneral.Gaz,"")==0)
+    {
+      result += F(" colors: ['#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+    }else{
+      result += F(" colors: ['#e67e22','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+    }  
+  }else{
+    if (strcmp(ConfigGeneral.Gaz,"")==0)
+    {
+      result += F(" colors: ['#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+    }else{
+      result += F(" colors: ['#e67e22','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+    }
+    
+  }
+  result += F(" resize: true");
+  result += F(" });");
 
   return result;
 }
@@ -3193,6 +3267,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ENERGY);
+  result +=F("<div class='row'>");
   if (strcmp(ConfigGeneral.ZLinky,"")!=0)
   {
     result += FPSTR(HTTP_ENERGY_LINKY);
@@ -3205,7 +3280,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   {
      result += FPSTR(HTTP_ENERGY_WATER);
   }
-
+  result +=F("</div>");
   result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
   result +=  R"(<script>
             document.addEventListener('DOMContentLoaded', () => {
@@ -3274,13 +3349,13 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
             powerGauge +=F("<h5 class='card-title' style=''>Energy gauge</h5>");
             powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
               powerGauge += F("<div class='row'>");
-                powerGauge += F("<div class='col-12 col-sm-6 col-lg-4 mb-3'>");
+                powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3'>");
                   powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
                 powerGauge +=F("</div>");
-                powerGauge += F("<div class='col-12 col-sm-6 col-lg-4 mb-3'>");
+                powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3'>");
                   powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
                 powerGauge +=F("</div>");
-                powerGauge += F("<div class='col-12 col-sm-6 col-lg-4 mb-3'>");
+                powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3'>");
                   powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
                 powerGauge +=F("</div>");
               powerGauge +=F("</div>");
@@ -3288,7 +3363,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
           powerGauge +=F("</div>");
         powerGauge +=F("</div>");
   }else{
-    powerGauge =F("<div class='col-md-8'>");
+    powerGauge =F("<div class='col-md-4'>");
           powerGauge +=F("<div class='card p-4'>");
             powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
             powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
@@ -3307,6 +3382,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   {
     if (time == "hour")
     {
+      
       javascript += createPowerGraph(ConfigGeneral.ZLinky);
       if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
       {
@@ -3324,8 +3400,8 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
         javascript += F("');");
       }
     }
-    
-    javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d7dbdd','#85929e','#273746','#17202a','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += createDistributionGraph(ConfigGeneral.ZLinky);
+    javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
     javascript += F("loadPowerGaugeAbo(1");
     javascript += F(",'");
     javascript += String(ConfigGeneral.ZLinky);
@@ -3386,7 +3462,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   }
   if (strcmp(ConfigGeneral.Production,"")!=0)
   {
-    javascript += createEnergyGraph(ConfigGeneral.Production, "production","['#2e86c1','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += createEnergyGraph(ConfigGeneral.Production, "production","['#27ae60','#d35400','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
     javascript += F("refreshStatusProduction('");
     javascript += String(ConfigGeneral.Production);
     javascript += F("','");
@@ -7517,6 +7593,153 @@ void handleLoadPowerTrend(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+void handleLoadDatasTrend(AsyncWebServerRequest *request)
+{
+
+  String IEEE, Attribute, Time, result;
+  int i = 0;
+  IEEE = request->arg(i);
+  Attribute = request->arg(1);
+  Time = request->arg(2);
+
+  result = getDatasPower(IEEE, Attribute, Time);
+
+  request->send(200, F("text/html"), result);
+}
+
+void handleLoadDistribChart(AsyncWebServerRequest *request)
+{
+  String IEEE  = request->arg(static_cast<size_t>(0));
+  String time = request->arg(static_cast<size_t>(1));
+
+  // Trouver le device
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d->getDeviceID() == IEEE) { dev = d; break; }
+  }
+  if (!dev) {
+    return request->send(404, "application/json", "[]");
+  }
+
+  // Sélectionner la période
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+  if      (time=="hour")  pd=&eh.hours;
+  else if (time=="day")   pd=&eh.days;
+  else if (time=="month") pd=&eh.months;
+  else if (time=="year")  pd=&eh.years;
+  else                      return request->send(400,"application/json","[]");
+
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+
+  // Calcul de la somme par section
+  std::map<String, long> sums;
+  for (auto &kv : pd->graph) {
+    ValueMap &vm = kv.second;
+    
+    for (size_t i = 2; i < arrayLength; ++i) {
+      int attrId = section[i].toInt();
+      auto itv = vm.attributes.find(attrId);
+      
+      if (itv != vm.attributes.end()) {
+        String l="Index "+String(i-1);
+        sums[l] += itv->second;
+      }
+    }
+  }
+
+  //Production
+  long sumProd=0;
+  if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
+  {
+    DeviceData* devProd = nullptr;
+    for (auto* d : devices) {
+      if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
+    }
+
+    DeviceEnergyHistory& ehProd = devProd->energyHistory;
+    PeriodData* pdProd = nullptr;
+    if      (time=="hour")  pdProd=&ehProd.hours;
+    else if (time=="day")   pdProd=&ehProd.days;
+    else if (time=="month") pdProd=&ehProd.months;
+    else if (time=="year")  pdProd=&ehProd.years;
+    
+    for (auto &kv : pdProd->graph) {
+      ValueMap &vm = kv.second;   
+      int attrId = 1;
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sumProd += itv->second;
+      }
+    }
+
+  }
+
+  //GAZ
+  long sumGaz=0;
+  if ((strcmp(ConfigGeneral.Gaz,"")!=0))
+  {
+    DeviceData* devGaz = nullptr;
+    for (auto* d : devices) {
+      if (d->getDeviceID() == ConfigGeneral.Gaz) { devGaz = d; break; }
+    }
+
+    DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
+    PeriodData* pdGaz = nullptr;
+    if      (time=="hour")  pdGaz=&ehGaz.hours;
+    else if (time=="day")   pdGaz=&ehGaz.days;
+    else if (time=="month") pdGaz=&ehGaz.months;
+    else if (time=="year")  pdGaz=&ehGaz.years;
+    
+    for (auto &kv : pdGaz->graph) {
+      ValueMap &vm = kv.second;   
+      int attrId = 0;
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sumGaz += itv->second;
+      }
+    }
+
+  }
+
+  // Construction du JSON : [ { label: "...", value: ... }, ... ]
+  String json = "[";
+  bool first = true;
+  if (strcmp(ConfigGeneral.Gaz,"")!=0)
+  {
+    if (!first) json += ",";
+    first = false;
+    json += "{\"label\":\"";
+    json += F("Gaz");
+    json += "\",\"value\":";
+    json += String(sumGaz);
+    json += "}";
+  }
+  if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
+  {
+    if (!first) json += ",";
+    first = false;
+    json += "{\"label\":\"";
+    json += F("Production");
+    json += "\",\"value\":";
+    json += String(-sumProd);
+    json += "}";
+  }
+  for (auto &p : sums) {
+    if (!first) json += ",";
+    first = false;
+    json += "{\"label\":\"";
+    json += p.first;
+    json += "\",\"value\":";
+    json += String(p.second);
+    json += "}";
+  }
+  json += "]";
+
+  request->send(200, "application/json", json);
+
+}
+
 void handleLoadPowerChart(AsyncWebServerRequest *request)
 {
 
@@ -7539,261 +7762,240 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
 
 }
 
-void handleLoadEnergyChart(AsyncWebServerRequest *request)
-{
+void handleLoadEnergyChart(AsyncWebServerRequest* request) {
+  // 1) Récupération des arguments
+  String IEEE  = request->arg(static_cast<size_t>(0));
+  String time = request->arg(static_cast<size_t>(1));
 
-  String IEEE, result, type, time;
-  String sep = "";
-  int i = 0;
-  IEEE = request->arg(i);
-  time = request->arg(1);
-  
-  String path = "/hst/nrg_" + IEEE + ".json";
-
-  File DeviceFile = LittleFS.open(path, FILE_READ);
-  if (!DeviceFile || DeviceFile.isDirectory())
-  {
-    DEBUG_PRINTLN(F("failed open"));
+  // 2) On cherche le DeviceData correspondant
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d->getDeviceID() == IEEE) {
+      dev = d;
+      break;
+    }
   }
-  else
-  {
-    JsonObject root;
-    DeserializationError error;
-    if (time == "hour")
-    {
-      StaticJsonDocument<32> filter;
-      filter["hours"]["graph"] = true;
-      SpiRamJsonDocument temp(MAXHEAP /2);
-      error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
-      root = temp["hours"]["graph"];    
+  if (!dev) {
+    request->send(404, "application/json", "[]");
+    return;
+  }
 
-    }else if (time == "day")
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+
+  if (time == "hour") {
+    pd         = &eh.hours;
+  }
+  else if (time == "day") {
+    pd         = &eh.days;
+  }
+  else if (time == "month") {
+    pd         = &eh.months;
+  }
+  else if (time == "year") {
+    pd         = &eh.years;
+  }
+  else {
+    request->send(400, "application/json", "[]");
+    return;
+  }
+
+  String result,sep;
+  int cntsection;
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+  result = F("[");
+
+  if (time == "hour")
+  {
+    int now = Hour.toInt();
+    int i = 0;
+    while (i < 24)
     {
-      
-      StaticJsonDocument<32> filter;
-      filter["days"]["graph"] = true;
-      SpiRamJsonDocument temp(MAXHEAP /2);
-      error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
-      root = temp["days"]["graph"]; 
-    }else if (time == "month")
+      if (i > 0)
+      {
+        sep = ",";
+      }
+      now++;
+      if (now > 23)
+      {
+        now = 0;
+      }
+      String tmpi = now < 10 ? "0" + String(now) : String(now);
+      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
+      result += sep + F("{\"y\":\"") + tmpi + F("H\"");
+      String sep2 = "";
+
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            result += ",";
+            result += "\""; result += section[cntsection]; result += "\":";
+            result += String(itv->second); 
+          }
+        }
+      }
+      result += F("}");
+      i++;
+    }
+  }else if (time == "day")
+  {
+    int now = Day.toInt();
+    int reste = 30 - now;
+    int lastNbDayMonth;
+    String  m;
+    if (Month.toInt()-2>0)
     {
-      StaticJsonDocument<32> filter;
-      filter["months"]["graph"] = true;
-      SpiRamJsonDocument temp(MAXHEAP /2);
-      error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
-      root = temp["months"]["graph"]; 
-      
-    }else if (time == "year")
+      lastNbDayMonth=maxDayOfTheMonth[(Month.toInt()-2)];
+    }else{
+      lastNbDayMonth=31;
+    }
+    if (reste>0)
     {
-      StaticJsonDocument<32> filter;
-      filter["years"]["graph"] = true;
-      SpiRamJsonDocument temp(MAXHEAP /2);
-      error = deserializeJson(temp, DeviceFile, DeserializationOption::Filter(filter));
-      root = temp["years"]["graph"]; 
+      now = (lastNbDayMonth - reste)+1;   
+    }else if (reste<0){
+      now=2;
+    }else if (reste==0){
+      now=reste+1;
     }
 
-    DeviceFile.close();
-    int cntsection;
-    int arrayLength = sizeof(section) / sizeof(section[0]);
-    result = F("[");
+    int i = 0;
+    while (i < 30)
+    {
+      if (i > 0)
+      {
+        sep = ",";
+      }
 
-    if (time == "hour")
-    {
-      int now = Hour.toInt();
-      int i = 0;
-      while (i < 24)
-      {
-        if (i > 0)
-        {
-          sep = ",";
-        }
-        now++;
-        if (now > 23)
-        {
-          now = 0;
-        }
-        String tmpi = now < 10 ? "0" + String(now) : String(now);
-        result += sep + F("{\"y\":\"") + tmpi + F("H\"");
-        int j = 0;
-        String sep2 = "";
-        
-        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
-        {
-          if (root[tmpi][section[cntsection]].as<int>() !=0)
-          { 
-            if (j > 0)
-            {
-              sep2 = ",";
-            }else{
-              result += ",";
-            }
-            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[tmpi][section[cntsection]].as<String>();
-            j++;
-          }
-        }
-        result += F("}");
-        i++;
-      }
-    }else if (time == "day")
-    {
-      int now = Day.toInt();
-      int reste = 30 - now;
-      int lastNbDayMonth;
-      String  m;
-      if (Month.toInt()-2>0)
-      {
-        lastNbDayMonth=maxDayOfTheMonth[(Month.toInt()-2)];
-      }else{
-        lastNbDayMonth=31;
-      }
       if (reste>0)
       {
-        now = (lastNbDayMonth - reste)+1;   
-      }else if (reste<0){
-        now=2;
-      }else if (reste==0){
-        now=reste+1;
-      }
-
-      int i = 0;
-      while (i < 30)
-      {
-        if (i > 0)
-        {
-          sep = ",";
-        }
-
-        if (reste>0)
-        {
-          if (now > lastNbDayMonth)
-          {
-            now = 1;
-          }
-        }
-        String tmpi = now < 10 ? "0" + String(now) : String(now);
-        String tmpm;
-        if (i>now)
-        {
-          tmpm = Month;
-        }else{
-          if (reste<=0)
-          {
-            tmpm = Month;
-          }else{
-            if ((Month.toInt()-1)>0)
-            {
-              tmpm = (Month.toInt()-1) < 10 ? "0" + String((Month.toInt()-1)) : String((Month.toInt()-1));
-            }else{
-              tmpm = "12";
-            }
-          }
-        }
-        //String tmpm = m.toInt() < 10 ? "0" + String(m) : String(m);
-        
-        result += sep + F("{\"y\":\"") + tmpi + F("/")+ tmpm +F("\"");
-        int j = 0;
-        String sep2 = "";
-        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
-        {
-          if (root[tmpi][section[cntsection]].as<int>() !=0)
-          {
-            if (j > 0)
-            {
-              sep2 = ",";
-            }else{
-              result += ",";
-            }
-            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[tmpi][section[cntsection]].as<String>();
-            j++;
-          }
-        }
-        result += F("}");
-        now++;
-        i++;
-      }
-    }else if (time == "month")
-    {
-      int now = Month.toInt();
-      String  y;
-      int i = 0;
-      while (i < 12)
-      {
-        if (i > 0)
-        {
-          sep = ",";
-        }
-        
-        now++;
-        if (now > 12)
+        if (now > lastNbDayMonth)
         {
           now = 1;
         }
-        String tmpi = now < 10 ? "0" + String(now) : String(now);
-        if (i<now)
-        {
-          y = String((Year.toInt()-1));
-        }else{
-          y = Year;
-        }
-        result += sep + F("{\"y\":\"") + tmpi + F("/")+ y +F("\"");
-        int j = 0;
-        String sep2 = "";
-        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
-        {
-          if (root[tmpi][section[cntsection]].as<int>() !=0)
-          {
-            if (j > 0)
-            {
-              sep2 = ",";
-            }else{
-              result += ",";
-            }
-            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[tmpi][section[cntsection]].as<String>();
-            j++;
-          }
-        }
-        result += F("}");
-        i++;
       }
-    }else if (time == "year")
-    {
-      int now = Year.toInt() - 10;
-      int i = 0;
-      while (i < 11)
+      String tmpi = now < 10 ? "0" + String(now) : String(now);
+      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
+      String tmpm;
+      if (i>now)
       {
-        if (i > 0)
+        tmpm = Month;
+      }else{
+        if (reste<=0)
         {
-          sep = ",";
-        }
-
-        result += sep + F("{\"y\":\"") + String(now) + F("\"");
-        int j = 0;
-        String sep2 = "";
-        for (cntsection=0 ; cntsection <arrayLength; cntsection++)
-        {
-          if (root[String(now)][section[cntsection]].as<int>() !=0)
+          tmpm = Month;
+        }else{
+          if ((Month.toInt()-1)>0)
           {
-            if (j > 0)
-            {
-              sep2 = ",";
-            }else{
-              result += ",";
-            }
-            result += sep2 + "\"" + String(section[cntsection]) + "\":" + root[String(now)][section[cntsection]].as<String>();
-            j++;
+            tmpm = (Month.toInt()-1) < 10 ? "0" + String((Month.toInt()-1)) : String((Month.toInt()-1));
+          }else{
+            tmpm = "12";
           }
         }
-        result += F("}");
-        now++;
-        i++;
       }
+      //String tmpm = m.toInt() < 10 ? "0" + String(m) : String(m);
+      
+      result += sep + F("{\"y\":\"") + tmpi + F("/")+ tmpm +F("\"");
+      String sep2 = "";
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            result += ",";
+            result += "\""; result += section[cntsection]; result += "\":";
+            result += String(itv->second); 
+          }
+        }
+      }
+      result += F("}");
+      now++;
+      i++;
     }
-    result += F("]");
+  }else if (time == "month")
+  {
+    int now = Month.toInt();
+    String  y;
+    int i = 0;
+    while (i < 12)
+    {
+      if (i > 0)
+      {
+        sep = ",";
+      }
+      
+      now++;
+      if (now > 12)
+      {
+        now = 1;
+      }
+      String tmpi = now < 10 ? "0" + String(now) : String(now);
+      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
+      if (i<now)
+      {
+        y = String((Year.toInt()-1));
+      }else{
+        y = Year;
+      }
+      result += sep + F("{\"y\":\"") + tmpi + F("/")+ y +F("\"");
+      String sep2 = "";
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            result += ",";
+            result += "\""; result += section[cntsection]; result += "\":";
+            result += String(itv->second); 
+          }
+        }
+      }
+      result += F("}");
+      i++;
+    }
+  }else if (time == "year")
+  {
+    int now = Year.toInt() - 10;
+    int i = 0;
+    while (i < 11)
+    {
+      if (i > 0)
+      {
+        sep = ",";
+      }
+
+      result += sep + F("{\"y\":\"") + String(now) + F("\"");
+      PsString keyPS(String(now).c_str(), PsramAllocator<char>());
+      String sep2 = "";
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (cntsection=0 ; cntsection <arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            result += ",";
+            result += "\""; result += section[cntsection]; result += "\":";
+            result += String(itv->second); 
+          }
+        }
+      }
+      result += F("}");
+      now++;
+      i++;
+    }
   }
-
-  request->send(200, F("application/json"), result);
+  result += F("]");
+  // 7) Envoi
+  request->send(200, "application/json", result);
 }
-
 
 void handleLoadLabelEnergy(AsyncWebServerRequest *request)
 {
@@ -8416,7 +8618,6 @@ void launchUpdateTask() {
     events.send("Download error", "updateStatusAuto");
   }
 }
-
 
 void initWebServer()
 {
@@ -9230,6 +9431,16 @@ void initWebServer()
     }
     handleLoadPowerTrend(request); 
   });
+
+  serverWeb.on("/loadDatasTrend", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadDatasTrend(request); 
+  });
   serverWeb.on("/loadPowerChart", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -9247,6 +9458,16 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleLoadEnergyChart(request); 
+  });
+
+  serverWeb.on("/loadDistributionChart", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadDistribChart(request); 
   });
  
   serverWeb.on("/loadLabelEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
