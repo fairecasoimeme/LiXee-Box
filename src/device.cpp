@@ -5,12 +5,16 @@
 #include "SPIFFS_ini.h"
 
 //-------------------------------------
-// Constructeur
+// Constructeur / Destructeur
 //-------------------------------------
 DeviceData::DeviceData(const String &filename, const String &deviceID)
     : _filename(filename), _deviceID(deviceID)
 {
-    // On peut laisser le struct _info à vide au départ
+    // _info, _pollList, _values, _indexMem auto-init
+}
+
+DeviceData::~DeviceData() {
+    // Rien à libérer (PSRAM free via delete)
 }
 
 time_t DeviceData::getLastSeenEpoch() const {
@@ -68,19 +72,20 @@ bool DeviceData::saveToFile() {
 // getValue / setValue pour les clusters
 //-------------------------------------
 String DeviceData::getValue(const std::string &cluster, const std::string &attrib) {
-    auto itCluster = _values.find(cluster);
-    if (itCluster == _values.end()) {
-        return String("");
-    }
-    auto itAttrib = itCluster->second.find(attrib);
-    if (itAttrib == itCluster->second.end()) {
-        return String("");
-    }
-    return String(itAttrib->second.c_str());
+    PsString c(cluster.c_str(), PsramAllocator<char>());
+    auto itC = _values.find(c);
+    if (itC == _values.end()) return String();
+    PsString a(attrib.c_str(), PsramAllocator<char>());
+    auto itA = itC->second.find(a);
+    if (itA == itC->second.end()) return String();
+    return String(itA->second.c_str());
 }
 
 void DeviceData::setValue(const std::string &cluster, const std::string &attrib, const std::string &val) {
-    _values[cluster][attrib] = val;
+    PsString c(cluster.c_str(), PsramAllocator<char>());
+    PsString a(attrib.c_str(), PsramAllocator<char>());
+    PsString v(val.c_str(), PsramAllocator<char>());
+    _values[c][a] = v;
 }
 
 float DeviceData::updateIndex(size_t logicalPos, float currentWh) {
@@ -124,13 +129,10 @@ float DeviceData::updateIndex(size_t logicalPos, float currentWh) {
 
 String DeviceData::getPowerW()
 {
-    if (_indexPos>=0)
-    {
-        if (_indexMem[_indexPos].init) {
-            return String(static_cast<int>(round(_indexMem[_indexPos].lastPowerW)));
-        }
+    if (_indexPos >= 0 && _indexMem[_indexPos].init) {
+        return String((int)round(_indexMem[_indexPos].lastPowerW));
     }
-    return "---";
+    return String("---");
 }
 
 float DeviceData::getAveragePower() const {
@@ -151,67 +153,51 @@ float DeviceData::getAveragePower() const {
 //-------------------------------------
 bool DeviceData::parseJsonToDevice(const String &jsonString) {
     SpiRamJsonDocument doc(MAXHEAP);
-
-    DeserializationError err = deserializeJson(doc, jsonString);
+    auto err = deserializeJson(doc, jsonString);
     if (err) {
-        log_e("Erreur de parsing JSON : %s",err.c_str());
-       return false;
+        log_e("Parse JSON: %s", err.c_str());
+        return false;
     }
-
-    // Vider la map avant de la re-remplir
     _values.clear();
     _pollList.clear();
-
-    // Lire la section INFO, si elle existe
-    JsonObject infoObj = doc["INFO"].as<JsonObject>();
-    if (!infoObj.isNull()) {
-        _info.shortAddr        = infoObj["shortAddr"]        | "";
-        _info.LQI              = infoObj["LQI"]              | "";
-        _info.device_id        = infoObj["device_id"]        | "";
-        _info.lastSeen         = infoObj["lastSeen"]         | "";
-        _info.Status           = infoObj["Status"]           | "";
-        _info.manufacturer     = infoObj["manufacturer"]     | "";
-        _info.model            = infoObj["model"]            | "";
-        _info.software_version = infoObj["software_version"] | "";
-        _info.alias            = infoObj["alias"]            | "";
-        _info.linkyMode        = infoObj["linkyMode"]        | "0";
+    // INFO
+    JsonObject iobj = doc["INFO"].as<JsonObject>();
+    if (!iobj.isNull()) {
+        _info.shortAddr        = String(iobj["shortAddr"]        | "");
+        _info.LQI              = String(iobj["LQI"]              | "");
+        _info.device_id        = String(iobj["device_id"]        | "");
+        _info.lastSeen         = String(iobj["lastSeen"]         | "");
+        _info.Status           = String(iobj["Status"]           | "");
+        _info.manufacturer     = String(iobj["manufacturer"]     | "");
+        _info.model            = String(iobj["model"]            | "");
+        _info.software_version = String(iobj["software_version"] | "");
+        _info.alias            = String(iobj["alias"]            | "");
+        _info.linkyMode        = String(iobj["linkyMode"]        | "0");
     }
-
-    // --- Lire la liste "poll"
-    // doc["poll"] doit être un tableau
-    JsonArray pollArray = doc["poll"].as<JsonArray>();
-    if (!pollArray.isNull()) {
-        for (auto item : pollArray) {
-            // item est un objet => { "cluster":"65382", "attribut":768, ...}
-            PollItem p;
-            p.cluster   = item["cluster"]   | "";
-            p.attribut  = item["attribut"]  | 0;
-            p.poll      = item["poll"]      | 0;
-            p.last      = item["last"]      | 0;
-            _pollList.push_back(p);
-        }
+    // poll
+    JsonArray parr = doc["poll"].as<JsonArray>();
+    for (auto it : parr) {
+        PollItem p;
+        p.cluster  = String(it["cluster"]  | "");
+        p.attribut = it["attribut"] | 0;
+        p.poll     = it["poll"]      | 0;
+        p.last     = it["last"]      | 0;
+        _pollList.push_back(p);
     }
-
-    // Parcourir les autres clés (clusters)
+    // clusters valeurs
     for (auto kv : doc.as<JsonObject>()) {
-        const char* clusterName = kv.key().c_str();
-        // Sauter INFO et poll (qu'on a déjà traité)
-        if (strcmp(clusterName, "INFO") == 0) continue;
-        if (strcmp(clusterName, "poll") == 0) continue;
-
-        // clusterName = "1", "242", "FF66", etc. => c'est un objet
-        JsonObject clusterObj = kv.value().as<JsonObject>();
-        if (!clusterObj.isNull()) {
-            for (auto kv2 : clusterObj) {
-                const char* attribName = kv2.key().c_str();
-                const char* valStr     = kv2.value().as<const char*>();
-                if (!valStr) valStr = "";
-                _values[clusterName][attribName] = valStr;
-            }
+        const char* key = kv.key().c_str();
+        if (!strcmp(key, "INFO") || !strcmp(key, "poll")) continue;
+        PsString ckey(key, PsramAllocator<char>());
+        JsonObject obj = kv.value().as<JsonObject>();
+        for (auto kv2 : obj) {
+            PsString akey(kv2.key().c_str(), PsramAllocator<char>());
+            const char* vs = kv2.value().as<const char*>();
+            PsString vstr(vs ? vs : "", PsramAllocator<char>());
+            _values[ckey][akey] = vstr;
         }
     }
-
-    log_d("Fichier %s chargé. (DeviceID = %s)",_filename.c_str(),_deviceID.c_str());
+    log_d("%s charge (ID=%s)", _filename.c_str(), _deviceID.c_str());
     return true;
 }
 
@@ -221,46 +207,37 @@ bool DeviceData::parseJsonToDevice(const String &jsonString) {
 //-------------------------------------
 String DeviceData::buildJsonFromDevice() {
     SpiRamJsonDocument doc(MAXHEAP);
-
-    // Section INFO
-    JsonObject infoObj = doc.createNestedObject("INFO");
-    infoObj["shortAddr"]        = _info.shortAddr;
-    infoObj["LQI"]              = _info.LQI;
-    infoObj["device_id"]        = _info.device_id;
-    infoObj["lastSeen"]         = _info.lastSeen;
-    infoObj["Status"]           = _info.Status;
-    infoObj["manufacturer"]     = _info.manufacturer;
-    infoObj["model"]            = _info.model;
-    infoObj["software_version"] = _info.software_version;
-    infoObj["alias"]            = _info.alias;
-    infoObj["linkyMode"]        = _info.linkyMode;
-
-    // --- Partie poll (tableau)
-    JsonArray pollArray = doc.createNestedArray("poll");
+    // INFO
+    JsonObject iobj = doc.createNestedObject("INFO");
+    iobj["shortAddr"]        = _info.shortAddr.c_str();
+    iobj["LQI"]              = _info.LQI.c_str();
+    iobj["device_id"]        = _info.device_id.c_str();
+    iobj["lastSeen"]         = _info.lastSeen.c_str();
+    iobj["Status"]           = _info.Status.c_str();
+    iobj["manufacturer"]     = _info.manufacturer.c_str();
+    iobj["model"]            = _info.model.c_str();
+    iobj["software_version"] = _info.software_version.c_str();
+    iobj["alias"]            = _info.alias.c_str();
+    iobj["linkyMode"]        = _info.linkyMode.c_str();
+    // poll
+    JsonArray parr = doc.createNestedArray("poll");
     for (auto &p : _pollList) {
-        JsonObject item = pollArray.createNestedObject();
-        item["cluster"]   = p.cluster;
+        JsonObject item = parr.createNestedObject();
+        item["cluster"]   = p.cluster.c_str();
         item["attribut"]  = p.attribut;
         item["poll"]      = p.poll;
         item["last"]      = p.last;
     }
-
-    // Autres clusters
-    for (auto &pairCluster : _values) {
-        const std::string &cluster = pairCluster.first;
-        JsonObject cObj = doc.createNestedObject(cluster.c_str());
-
-        for (auto &pairAttrib : pairCluster.second) {
-            const std::string &attrib = pairAttrib.first;
-            const std::string &val    = pairAttrib.second;
-            cObj[attrib.c_str()] = val.c_str();
+    // clusters
+    for (auto &pc : _values) {
+        JsonObject cobj = doc.createNestedObject(pc.first.c_str());
+        for (auto &pa : pc.second) {
+            cobj[pa.first.c_str()] = pa.second.c_str();
         }
     }
-
-    // Conversion en String
-    String output;
-    serializeJson(doc, output);
-    return output;
+    String out;
+    serializeJson(doc, out);
+    return out;
 }
 
 
