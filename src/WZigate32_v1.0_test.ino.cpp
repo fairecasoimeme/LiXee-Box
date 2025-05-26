@@ -62,14 +62,18 @@ bool updatePending = false;
 unsigned long timeLog;
 ConfigSettingsStruct ConfigSettings;
 ConfigGeneralStruct ConfigGeneral;
+ConfigNotification ConfigNotif;
 ZigbeeConfig ZConfig;
 ZiGateInfosStruct ZiGateInfos;
+
+RulesManager rulesManager;
 
 CircularBuffer<Packet, 100> *commandList = nullptr;
 CircularBuffer<Packet, 10> *PrioritycommandList = nullptr;
 CircularBuffer<SerialPacket, 30> *PriorityQueuePacket = nullptr;
 CircularBuffer<Alert, 10> *alertList = nullptr;
-CircularBuffer<Device, 10> *deviceList = nullptr;
+CircularBuffer<Device, 50> *deviceList = nullptr;
+CircularBuffer<Notification, 10> *notifList = nullptr;
 CircularBuffer<SerialPacket, 300> *QueuePacket = nullptr;
 
 WiFiUDP ntpUDP;
@@ -145,10 +149,11 @@ void initCircularBuffer()
   PrioritycommandList = (CircularBuffer<Packet, 10>*) ps_malloc(sizeof(CircularBuffer<Packet, 10>));
   PriorityQueuePacket= (CircularBuffer<SerialPacket, 30>*) ps_malloc(sizeof(CircularBuffer<SerialPacket, 30>));
   alertList = (CircularBuffer<Alert, 10>*) ps_malloc(sizeof(CircularBuffer<Alert, 10>));
-  deviceList = (CircularBuffer<Device, 10>*) ps_malloc(sizeof(CircularBuffer<Device, 10>));
+  notifList = (CircularBuffer<Notification, 10>*) ps_malloc(sizeof(CircularBuffer<Notification, 10>));
+  deviceList = (CircularBuffer<Device, 50>*) ps_malloc(sizeof(CircularBuffer<Device, 50>));
   QueuePacket = (CircularBuffer<SerialPacket,300>*) ps_malloc(sizeof(CircularBuffer<SerialPacket,300>));
 
-  if (!QueuePacket || !commandList || !PrioritycommandList || !PriorityQueuePacket || !alertList || !deviceList) {
+  if (!QueuePacket || !commandList || !PrioritycommandList || !PriorityQueuePacket || !alertList || !notifList|| !deviceList) {
       DEBUG_PRINTLN("Erreur lors de l'allocation de CircularBuffer en PSRAM!");
       return;
   }
@@ -157,7 +162,8 @@ void initCircularBuffer()
   new (PrioritycommandList) CircularBuffer<Packet, 10>();
   new (PriorityQueuePacket) CircularBuffer<SerialPacket, 30>();
   new (alertList) CircularBuffer<Alert, 10>();
-  new (deviceList) CircularBuffer<Device, 10>();
+  new (notifList) CircularBuffer<Notification, 10>();
+  new (deviceList) CircularBuffer<Device, 50>();
   new (QueuePacket) CircularBuffer<SerialPacket,300>();
 }
 
@@ -189,10 +195,15 @@ DEBUG_PRINTLN(F("config_write OK"));
 
   //rules
  DEBUG_PRINTLN(F("Rules -->")); 
-  Rule rules[10];
+  /*Rule rules[10];
   int ruleCount = 0;
   jsonToRules(rules, ruleCount);
-  applyRules(rules, ruleCount);
+  applyRules(rules, ruleCount);*/
+  
+  if (rulesManager.loadFromFile("/config/rules.json"))
+  {
+    rulesManager.applyRules();
+  }
 
   log_e("Sauvegarde de tous les devices");
   for (auto d : devices) {
@@ -824,7 +835,8 @@ bool loadConfigGeneral() {
   strlcpy(ConfigGeneral.tarifIdx9, doc["tarifIdx9"] | "0", sizeof(ConfigGeneral.tarifIdx9));
   strlcpy(ConfigGeneral.tarifIdx10, doc["tarifIdx10"] | "0", sizeof(ConfigGeneral.tarifIdx10));
 
-  strlcpy(ConfigGeneral.tarifProd, doc["tarifProd"] | "0", sizeof(ConfigGeneral.tarifProd));
+  strlcpy(ConfigGeneral.tarifAboProd, doc["tarifAboProd"] | "0", sizeof(ConfigGeneral.tarifAboProd));
+  strlcpy(ConfigGeneral.tarifIdxProd, doc["tarifIdxProd"] | "0", sizeof(ConfigGeneral.tarifIdxProd));
 
   ConfigSettings.enableMqtt = (int)doc["enableMqtt"];
   strlcpy(ConfigGeneral.servMQTT, doc["servMQTT"] | "", sizeof(ConfigGeneral.servMQTT));
@@ -862,7 +874,11 @@ bool loadConfigGeneral() {
   strlcpy(ConfigGeneral.passWebPush, doc["passWebPush"] | "", sizeof(ConfigGeneral.passWebPush));
 
   ConfigSettings.enableHistory = (int)doc["enableHistory"];
-  
+
+  ConfigNotif.PowerOutage = (int)doc["PowerOutage"];
+  ConfigNotif.PriceChange = (int)doc["PriceChange"];
+  ConfigNotif.SubscribedPower = (int)doc["SubscribedPower"];
+
   configFile.close();
   return true;
 }
@@ -1281,11 +1297,16 @@ esp_task_wdt_reset();
   //init tuya
   //initTuya();
 
-  Rule rules[10];
+  /*Rule rules[10];
   int ruleCount = 0;
   jsonToRules(rules, ruleCount);
-  applyRules(rules, ruleCount);
+  applyRules(rules, ruleCount);*/
 
+  if (rulesManager.loadFromFile("/config/rules.json"))
+  {
+    rulesManager.applyRules();
+  }
+  
 
   //BleInit();
   
