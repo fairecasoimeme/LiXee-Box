@@ -12,21 +12,24 @@ extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 10> *deviceList;
+extern ConfigNotification ConfigNotif;
+extern CircularBuffer<Device, 50> *deviceList;
+extern CircularBuffer<Notification, 10> *notifList;
+
+String oldPriceChange;
 
 
 void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
   //String inifile;
-  char value[256];
   String tmp="";
+  char value[256];
   //inifile = GetMacAdrr(shortaddr);
   
   switch (attribute)
   {   
     case 514:
     {
-      String tmp="";
       for(int i=0;i<(len-1);i++)
       {
         if(datas[i+1]>0)
@@ -68,13 +71,10 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
     }    
     break;
     case 519: 
+    {
 
-      for(int i=0;i<len;i++)
-      {
-        sprintf(value, "%02X",datas[i]);
-        tmp+=value;
-      }
-
+      sprintf(value, "%02X%02X",datas[1],datas[0]);
+      tmp = String(value);
       if (ini_exist(inifile))
       {
         //MQTT
@@ -105,11 +105,10 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
         if (device->getDeviceID() == inifile.substring(0, 16))
         {
           device->setValue(std::string("FF66"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-          //addMeasurement(device->powerHistory, attribute,strtol(tmp.c_str(), NULL, 16));
-          break;
+          addMeasurement(device->powerHistory, attribute,strtol(tmp.c_str(), NULL, 16));
         }
       }
-
+    }
       break;
     case 535:
     {
@@ -158,6 +157,7 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
     case 768:
     {
       char value[4];
+      String tmp="";
       for(int i=0;i<len;i++)
       {
           sprintf(value, "%02X",datas[i]);
@@ -200,6 +200,7 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
     default:
       
       log_d(" - datatype: %d",datatype);
+      String tmp="";
       if (datatype == 66)
       {
         int size = datas[0];
@@ -210,8 +211,14 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
             tmp+= datas[i+1];
           }
         }
+      }else if ((datatype == 0x21) || (datatype == 0x29))
+      {
+        char value[5];
+        sprintf(value, "%02X%02X",datas[1],datas[0]);
+        tmp = String(value);
+      
       }else{
-        char value[4];
+        char value[5];
         for(int i=0;i<len;i++)
         {
           sprintf(value, "%02X",datas[i]);
@@ -253,6 +260,27 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
         if (device->getDeviceID() == inifile.substring(0, 16))
         {
           device->setValue(std::string("FF66"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+
+          //Notification PriceChange
+          if (attribute == 16)
+          {
+            if (ConfigNotif.PriceChange && (strcmp(ConfigGeneral.ZLinky,inifile.substring(0,16).c_str()) == 0 ))
+            {
+              if ((oldPriceChange != tmp.c_str()) && (oldPriceChange!=""))
+              {
+                if (!notifList->isFull())
+                {
+                  notifList->push(Notification{"Changement de tarif","Nouveau tarif : "+tmp,FormattedDate,3});
+                }else{
+                  notifList->shift();
+                  notifList->push(Notification{"Changement de tarif","Nouveau tarif : "+tmp,FormattedDate,3});
+                }    
+              }
+              oldPriceChange = tmp.c_str();
+            }
+          }
+          
+
           break;
         }
       }
