@@ -279,9 +279,6 @@ String GetLQI(String inifile)
 
 int GetShortAddr(String inifile)
 {
-   //ini_open(inifile);
-   /*String tmp= ini_read(inifile,"INFO", "shortAddr");  
-   return tmp.toInt();*/
   for (size_t i = 0; i < devices.size(); i++) 
   {
     DeviceData* device = devices[i];
@@ -700,16 +697,14 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       {
         log_d("RAW response : ");
         int i=0;
-        /*for (i=0;i<(packetSize -6);i++)
-        {
-          
-        }*/
+        
         
         uint8_t Cluster[2];
         for (i=0;i<2;i++)
         {
           Cluster[i]=(uint8_t)protocol.payload[i+3];
         }
+
         //uint8_t endpoint = (uint8_t)protocol.payload[5];
         uint8_t addressMode = (uint8_t)protocol.payload[7];
         uint8_t ShortAddr[2]; 
