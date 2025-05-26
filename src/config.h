@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.0f"
+#define VERSION "v2.0h"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -76,6 +76,12 @@ struct ZiGateInfosStruct {
   char flash[8];  
 };
 
+struct ConfigNotification{
+  bool PriceChange;
+  bool SubscribedPower;
+  bool PowerOutage;
+};
+
 struct ConfigGeneralStruct {
   int firstStart;
   char ZLinky[20];
@@ -101,7 +107,8 @@ struct ConfigGeneralStruct {
   char tarifAbo[10];
   char tarifCSPE[10];
   char tarifCTA[10];
-  char tarifProd[10];
+  char tarifAboProd[10];
+  char tarifIdxProd[10];
   char servSMTP[50];
   char portSMTP[50];
   char userSMTP[50];
@@ -205,6 +212,15 @@ typedef struct {
   String value;
 } Device;
 
+typedef struct {
+  String title;
+  String message;
+  String timeStamp;
+  int type;
+} Notification;
+
+
+
 typedef struct{
   String manufacturer;
   String model;
@@ -214,36 +230,6 @@ typedef struct{
   String lastSeen;
   String LQI;
 } DeviceInfo;
-
-typedef struct
-{
-  char type[20];
-  char IEEE[20];
-  int cluster;
-  int attribute;
-  char op[5];
-  double value;
-  char logic[5];
-  int occurences;
-} RuleCondition;
-
-typedef struct
-{
-  char type[20];
-  char IEEE[20];
-  int endpoint;
-  char value[20];
-} RuleAction;
-
-
-typedef struct{
-  int num;
-  char name[50];
-  int conditionSize;
-  int actionSize;
-  RuleCondition rc[10];
-  RuleAction ra[10];
-} Rule;
 
 struct StatusRegisterBreakout {
   String contact_sec;
