@@ -16,7 +16,7 @@ extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 
-extern CircularBuffer<Device, 10> *deviceList;
+extern CircularBuffer<Device, 50> *deviceList;
 
 void SimpleMeterManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
@@ -140,7 +140,21 @@ void SimpleMeterManage(String inifile,int attribute,uint8_t datatype,int len, ch
               break;
             }
           }
-          break;
+         
+        }
+        if ((ConfigGeneral.ZLinky != ConfigGeneral.Production) && (strcmp(ConfigGeneral.Production,"")!=0))
+        {
+          if (device->getDeviceID() == ConfigGeneral.ZLinky)
+          {
+            device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            addEnergyMeasurement(device->energyHistory,String(attribute),strtol(tmp.c_str(), NULL, 16));   
+            for (uint8_t i = 0; i < 11; ++i) {
+              if (attribute == INDEX_ID_LIST[i]) {
+                device->updateIndex(i, strtol(tmp.c_str(), NULL, 16));
+                break;
+              }
+            }
+          }
         }
       }
       break; 

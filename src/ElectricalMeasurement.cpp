@@ -14,8 +14,12 @@
 extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
+extern ConfigNotification ConfigNotif;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 10> *deviceList;
+extern CircularBuffer<Device, 50> *deviceList;
+extern CircularBuffer<Notification, 10> *notifList;
+
+float oldPowerOutage;
 
 void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
@@ -74,6 +78,23 @@ void ElectricalMeasurementManage(String inifile,int attribute,uint8_t datatype,i
           {
             device->setValue(std::string("0B04"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
             addMeasurement(device->powerHistory, attribute,strtol(tmp.c_str(), NULL, 16));
+
+            //Notification
+            if (ConfigNotif.PowerOutage && (strcmp(ConfigGeneral.ZLinky,inifile.substring(0,16).c_str()) == 0 ))
+            {
+              if ((strtol(tmp.c_str(), NULL, 16)==0) && (oldPowerOutage != 0))
+              {
+                if (!notifList->isFull())
+                {
+                  notifList->push(Notification{"Coupure électrique ?","La puissance apparente de "+String(ConfigGeneral.ZLinky)+" est à 0 VA",FormattedDate,1});
+                }else{
+                  notifList->shift();
+                  notifList->push(Notification{"Coupure électrique ?","La puissance apparente de "+String(ConfigGeneral.ZLinky)+" est à 0 VA",FormattedDate,1});
+                }    
+              }
+              oldPowerOutage = strtol(tmp.c_str(), NULL, 16);
+            }
+            
             break;
           }
         }
