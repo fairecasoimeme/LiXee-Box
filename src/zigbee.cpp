@@ -350,7 +350,7 @@ float getTarif(int attribute, String Type)
     tarif=atof(ConfigGeneral.tarifWater);
   }else if (Type=="production")
   {
-    tarif=atof(ConfigGeneral.tarifProd);
+    tarif=atof(ConfigGeneral.tarifIdxProd);
   }
   return tarif;
 }
@@ -777,13 +777,18 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
       DeviceData* device = devices[i];
       if (device->getDeviceID() == IEEE)
       {
-        //String result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
-        result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
-        result += ";";
-        result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230);
-        result += ";";
-        result += device->getPowerW();
-        
+        if (Attribute != "519")
+        {
+          result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          result += ";";
+          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230);
+          result += ";";
+          result += device->getPowerW();
+        }else{
+          result = String(strtol(device->getValue(std::string("FF66"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          result += ";";
+          result += String(strtol(device->getValue(std::string("0B01"),std::string("14")).c_str(),0,16)*1000);
+        }
         return result;
       }
     }
@@ -791,18 +796,33 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
   }else
   {
     DeviceEnergyHistory hist;
+    String mode;
     for (size_t i = 0; i < devices.size(); i++) 
     {
       DeviceData* device = devices[i];
-      if (device->getDeviceID() == IEEE)
+      if (Attribute != "519")
       {
-        hist = device->energyHistory;
-        break;
+        mode="consumption";
+        if (device->getDeviceID() == IEEE)
+        {
+          hist = device->energyHistory;
+          break;
+        }
+      }else{
+        mode="production";
+        if (device->getDeviceID() == ConfigGeneral.Production)
+        {
+          hist = device->energyHistory;
+          break;
+        }
+
       }
+      
     }
 
     long int tmp=0;
     long int maxVal =0;
+    long int minVal = 0;
     if (Time=="day")
     {
       for (const auto &graphEntry : hist.days.graph) {
@@ -812,24 +832,32 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         long sum=0;
         for (const auto &attrPair : valMap.attributes) {
             long attrVal = attrPair.second;
-            sum +=attrVal;
+            if (mode == "production")
+            {
+              if (attrVal < 0) sum +=attrVal;
+            }else{
+              if (attrVal > 0) sum +=attrVal;
+              
+            }
+            
         }
         maxVal = max(sum,maxVal);
-
+        minVal = min(sum,minVal);
         if (memcmp(Day.c_str(),Key.c_str(),2)==0)
         {
           tmp=sum;
         }
       }  
 
-      if (tmp>0)
+      if (tmp > 0)
       {
         result= String(tmp)+";"+String(maxVal);
         return result;
-      }
-
-      return result;
-      
+      }else if (tmp < 0)
+      {
+        result= String(tmp)+";"+String(minVal);
+        return result;
+      }     
 
     }else if (Time=="month")
     {
@@ -840,10 +868,15 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         long sum=0;
         for (const auto &attrPair : valMap.attributes) {
             long attrVal = attrPair.second;
-            sum +=attrVal;
+            if (mode =="production")
+            {
+              if (attrVal < 0) sum +=attrVal;
+            }else{
+              if (attrVal > 0) sum +=attrVal;
+            }
         }
         maxVal = max(sum,maxVal);
-
+        minVal = min(sum,minVal);
         if (memcmp(Month.c_str(),Key.c_str(),2)==0)
         {
           tmp=sum;
@@ -851,9 +884,13 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
 
       }  
          
-      if (tmp>0)
+      if (tmp > 0)
       {
         result= String(tmp)+";"+String(maxVal);
+        return result;
+      }else if (tmp < 0)
+      {
+        result= String(tmp)+";"+String(minVal);
         return result;
       }
     }else if (Time=="year")
@@ -864,10 +901,15 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         long sum=0;
         for (const auto &attrPair : valMap.attributes) {
             long attrVal = attrPair.second;
-            sum +=attrVal;
+            if (mode =="production")
+            {
+              if (attrVal < 0) sum +=attrVal;
+            }else{
+              if (attrVal > 0) sum +=attrVal;
+            }
         }
         maxVal = max(sum,maxVal);
-
+        minVal = min(sum,minVal);
         if (memcmp(Year.c_str(),Key.c_str(),4)==0)
         {
           tmp=sum;
@@ -875,9 +917,13 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
 
       }  
          
-      if (tmp>0)
+      if (tmp > 0)
       {
         result= String(tmp)+";"+String(maxVal);
+        return result;
+      }else if (tmp < 0)
+      {
+        result= String(tmp)+";"+String(minVal);
         return result;
       }
     }
@@ -977,7 +1023,7 @@ String getDatasPower(String IEEE,String Attribute, String Time)
       int attrId = 0;
       auto itv = vm.attributes.find(attrId);
       if (itv != vm.attributes.end()) {       
-        sumGaz += itv->second;
+        sumGaz += itv->second * ConfigGeneral.coeffGaz;
       }
     }
 
@@ -1021,15 +1067,23 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     result +=       "<div class='col-11'> ";
     result +=         "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='0 -64 640 640' xmlns='http://www.w3.org/2000/svg'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'></g><g id='SVGRepo_iconCarrier'><path d='M431.98 448.01l-47.97.05V416h-128v32.21l-47.98.05c-8.82.01-15.97 7.16-15.98 15.99l-.05 31.73c-.01 8.85 7.17 16.03 16.02 16.02l223.96-.26c8.82-.01 15.97-7.16 15.98-15.98l.04-31.73c.01-8.85-7.17-16.03-16.02-16.02zM585.2 26.74C582.58 11.31 568.99 0 553.06 0H86.93C71 0 57.41 11.31 54.79 26.74-3.32 369.16.04 348.08.03 352c-.03 17.32 14.29 32 32.6 32h574.74c18.23 0 32.51-14.56 32.59-31.79.02-4.08 3.35 16.95-54.76-325.47zM259.83 64h120.33l9.77 96H250.06l9.77-96zm-75.17 256H71.09L90.1 208h105.97l-11.41 112zm16.29-160H98.24l16.29-96h96.19l-9.77 96zm32.82 160l11.4-112h149.65l11.4 112H233.77zm195.5-256h96.19l16.29 96H439.04l-9.77-96zm26.06 256l-11.4-112H549.9l19.01 112H455.33z'></path></g></svg> ";
     result +=           String(sumProd);
-    result +=           " Wh";
-    /*TotalEuros += p.second * getTarif(attrib[p.first],"energy")/1000;
-    result += String(p.second * getTarif(attrib[p.first],"energy")/1000);
-    result += " € ";*/
+    result +=           " Wh ";
+    result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+    result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+    result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+    result+="<g id='SVGRepo_iconCarrier'>";
+    result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+    result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+    result+="</g>";
+    result+="</svg>  ";
+    TotalEuros += sumProd* getTarif(0,"production")/1000;
+    result += String(sumProd * getTarif(0,"production")/1000);
+    result += " € ";
     result +=       "</div>";
     result += "</div>";
   }
 
-  if ((strcmp(ConfigGeneral.Gaz,"")!=0))
+  if ((strcmp(ConfigGeneral.Gaz,"")!=0) && (strcmp(ConfigGeneral.unitGaz,"Wh")==0))
   {
     result += "<div class='row'>";
     result +=       "<div class='col-1'>";
@@ -1039,9 +1093,17 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     result +=         "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='0 0 32 32' version='1.1' xmlns='http://www.w3.org/2000/svg'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'></g><g id='SVGRepo_iconCarrier'> <title>flame-symbol</title> <path d='M10.375 7.562c0 5.625 5.625 6.563 5.625 11.25 0 1.875-1.875 4.687-4.687 4.687s-4.687-2.813-2.813-7.5c-2.813 1.875-3.75 3.75-3.75 5.625 0 4.688 4.687 9.375 11.25 9.375s11.25-2.812 11.25-8.438c0.042-8.32-9.587-11.1-12.188-15-1.875-2.813-0.937-4.688 0.937-6.563-3.75 0.938-5.625 3.563-5.625 6.563v0z'></path> </g></svg> ";
     result +=           String(sumGaz);
     result +=           " Wh";
-    /*TotalEuros += p.second * getTarif(attrib[p.first],"energy")/1000;
-    result += String(p.second * getTarif(attrib[p.first],"energy")/1000);
-    result += " € ";*/
+    result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+    result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+    result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+    result+="<g id='SVGRepo_iconCarrier'>";
+    result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+    result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+    result+="</g>";
+    result+="</svg>  ";
+    TotalEuros += sumGaz * getTarif(0,"gaz")/1000;
+    result += String(sumGaz * getTarif(0,"gaz")/1000);
+    result += " € ";
     result +=       "</div>";
     result += "</div>";
   }
@@ -1142,20 +1204,6 @@ String getTrendPower(String IEEE,String Attribute, String Time)
           result+=max;
           result+=" VA <br> <strong>";
         result+="</span></div>";   
-        /*result+="<br><div style='display:inline-block;width:64px;float:left;'>";
-
-          result+=" <svg width='64px' height='64px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
-           result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
-           result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
-           result+="<g id='SVGRepo_iconCarrier'>";
-           result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
-           result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
-           result+="</g>";
-           result+="</svg>";   
-        result+="</div>";
-        result+="<div style='display:inline-block;line-height:72px;'><span style='font-size:24px;'>";
-          result +=String(tarifEuros) +" €";
-        result+="</span></div>";*/
       result += "</div>";
     }
   }else
@@ -1190,7 +1238,8 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         for (const auto &attrPair : valMap.attributes) {
           int attrId   = attrPair.first;
           long attrVal = attrPair.second;
-          sum +=attrVal;
+          if (attrVal > 0 ) sum +=attrVal;
+
           if (attrId>0)
           {          
             tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
@@ -1225,7 +1274,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         for (const auto &attrPair : valMap.attributes) {
           int attrId   = attrPair.first;
           long attrVal = attrPair.second;
-          sum +=attrVal;
+          if (attrVal > 0 ) sum +=attrVal;
           if (attrId>0)
           {
             tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
@@ -1261,7 +1310,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         for (const auto &attrPair : valMap.attributes) {
           int attrId   = attrPair.first;
           long attrVal = attrPair.second;
-          sum +=attrVal;
+          if (attrVal > 0 ) sum +=attrVal;
           if (attrId>0)
           {
             tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
@@ -1353,25 +1402,48 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
       DeviceData* device = devices[i];
       if (device->getDeviceID() == IEEE)
       {
-        String result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
-        result +=";";
-        result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230);
-        result +=";0;"; 
-        result += device->getPowerW()+" W";
+        String result="";
+        if (Attribute != "519")
+        {
+          result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          result +=";";
+          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230);
+          result +=";0;"; 
+          result += device->getPowerW()+" W";
+        }else{
+          result = String(strtol(device->getValue(std::string("FF66"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          result +=";";
+          result += String(strtol(device->getValue(std::string("0B01"),std::string("14")).c_str(),0,16)*1000);
+          result +=";0"; 
+        }
+
         return result;
       }
     }
   }else
   {
     DeviceEnergyHistory hist;
+     String mode;
     for (size_t i = 0; i < devices.size(); i++) 
     {
       DeviceData* device = devices[i];
-      if (device->getDeviceID() == IEEE)
+      if (Attribute != "519")
       {
-        hist = device->energyHistory;
-        break;
+        mode="consumption";
+        if (device->getDeviceID() == IEEE)
+        {
+          hist = device->energyHistory;
+          break;
+        }
+      }else{
+        mode="production";
+        if (device->getDeviceID() == ConfigGeneral.Production)
+        {
+          hist = device->energyHistory;
+          break;
+        }
       }
+      
     }
 
     long sum = 0;
@@ -1385,7 +1457,13 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         {
           for (const auto &attrPair : valMap.attributes) {
               long attrVal = attrPair.second;
-              sum +=attrVal;
+              if (mode == "production")
+              {
+                if (attrVal < 0) sum +=attrVal;
+              }else{
+                if (attrVal > 0) sum +=attrVal;
+                
+              }
           }
           break;
         }
@@ -1400,7 +1478,13 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         {
           for (const auto &attrPair : valMap.attributes) {
               long attrVal = attrPair.second;
-              sum +=attrVal;
+              if (mode == "production")
+              {
+                if (attrVal < 0) sum +=attrVal;
+              }else{
+                if (attrVal > 0) sum +=attrVal;
+                
+              }
           }
           break;
         }
@@ -1415,7 +1499,13 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         {
           for (const auto &attrPair : valMap.attributes) {
               long attrVal = attrPair.second;
-              sum +=attrVal;
+              if (mode == "production")
+              {
+                if (attrVal < 0) sum +=attrVal;
+              }else{
+                if (attrVal > 0) sum +=attrVal;
+                
+              }
           }
           break;
         }
