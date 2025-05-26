@@ -1,6 +1,7 @@
 var powerGaugeAbo1;
 var powerGaugeAbo2;
 var powerGaugeAbo3;
+var powerGaugeProd;
 var powerChart;
 var energyChart;
 var donutChart;
@@ -203,43 +204,25 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 			{
 				if (time=='hour')
 				{
+					unit=' VA';
 					labelTime= Math.floor(datas[2]) + ' W';
-					powerGaugeAbo1 = new JustGage({
-						id: 'power_gauge_global',
-						value: datas[0],
-						min: 0,
-						max: datas[1],
-						title: 'Target',
-						label: labelTime,
-						gaugeWidthScale: 0.6,
-						pointer: true,
-						textRenderer: function (val) {
-							return val+' VA';
-						},
-						pointerOptions: {
-						    toplength: -15,
-						    bottomlength: 10,
-						    bottomwidth: 12,
-						    color: '#8e8e93',
-						    stroke: '#ffffff',
-						    stroke_width: 3,
-						    stroke_linecap: 'round'
-						},
-						relativeGaugeSize: true,
-						refreshAnimationTime: 1000
-					});
 				}else{
+					unit=' Wh';
 					labelTime='Wh';
-					powerGaugeAbo1 = new JustGage({
-						id: 'power_gauge_global',
-						value: datas[0],
-						min: 0,
-						max: datas[1],
-						title: 'Target',
-						label: labelTime,
-						gaugeWidthScale: 0.6,
-						pointer: true,
-						pointerOptions: {
+				}
+				powerGaugeAbo1 = new JustGage({
+					id: 'power_gauge_global',
+					value: datas[0],
+					min: 0,
+					max: datas[1],
+					title: 'Target',
+					label: labelTime,
+					gaugeWidthScale: 0.6,
+					pointer: true,
+					textRenderer: function (val) {
+						return val+unit;
+					},
+					pointerOptions: {
 						toplength: -15,
 						bottomlength: 10,
 						bottomwidth: 12,
@@ -247,18 +230,20 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 						stroke: '#ffffff',
 						stroke_width: 3,
 						stroke_linecap: 'round'
-						},
-						relativeGaugeSize: true,
-						refreshAnimationTime: 1000
-					});
-				}
-				
+					},
+					relativeGaugeSize: true,
+					refreshAnimationTime: 1000
+				});
+								
 			}else if (phase==2)
 			{
 				if (time=='hour')
 				{
-					labelTime='VA (Ph2)';
+					unit=' VA';
+				}else{
+					unit=' Wh';
 				}
+				labelTime="";
 				powerGaugeAbo2 = new JustGage({
 					id: 'power_gauge_global2',
 					value: datas[0],
@@ -268,6 +253,9 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 					label: labelTime,
 					gaugeWidthScale: 0.6,
 					pointer: true,
+					textRenderer: function (val) {
+						return val+unit;
+					},
 					pointerOptions: {
 					toplength: -15,
 					bottomlength: 10,
@@ -284,8 +272,11 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 			{
 				if (time=='hour')
 				{
-					labelTime='VA (Ph3)';
+					unit=' VA';
+				}else{
+					unit=' Wh';
 				}
+				labelTime="";
 				powerGaugeAbo3 = new JustGage({
 					id: 'power_gauge_global3',
 					value: datas[0],
@@ -295,6 +286,9 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 					label: labelTime,
 					gaugeWidthScale: 0.6,
 					pointer: true,
+					textRenderer: function (val) {
+						return val+unit;
+					},
 					pointerOptions: {
 					toplength: -15,
 					bottomlength: 10,
@@ -307,6 +301,79 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 					relativeGaugeSize: true,
 					refreshAnimationTime: 1000
 				});
+			}else{
+				if (time=='hour')
+				{
+					unit=' VA';
+					labelTime="";
+					powerGaugeProd = new JustGage({
+						id: 'power_gauge_prod',
+						value: datas[0],
+						min: 0,
+						max: datas[1],
+						title: 'Target',
+						label: labelTime,
+						gaugeWidthScale: 0.6,
+						pointer: true,
+						textRenderer: function (val) {
+							return val+unit;
+						},
+						pointerOptions: {
+							toplength: -15,
+							bottomlength: 10,
+							bottomwidth: 12,
+							color: '#8e8e93',
+							stroke: '#ffffff',
+							stroke_width: 3,
+							stroke_linecap: 'round'
+						},
+						customSectors: {
+							percents: true,
+							ranges: [{
+								color : '#ff3b30',
+								lo : 0,
+								hi : 30
+							},{
+								color : '#f39c12',
+								lo : 31,
+								hi : 60
+							},{
+								color : '#43bf58',
+								lo : 61,
+								hi : 100
+							}]
+						},
+						relativeGaugeSize: true,
+						refreshAnimationTime: 1000
+					});
+				}else{
+					unit=' Wh';
+					powerGaugeProd = new JustGage({
+						id: 'power_gauge_prod',
+						value: datas[0],
+						min: datas[1],
+						max: 0,
+						title: 'Target',
+						label: "",
+						gaugeWidthScale: 0.6,
+						pointer: true,
+						textRenderer: function (val) {
+							return val+unit;
+						},
+						pointerOptions: {
+							toplength: -15,
+							bottomlength: 10,
+							bottomwidth: 12,
+							color: '#8e8e93',
+							stroke: '#ffffff',
+							stroke_width: 3,
+							stroke_linecap: 'round'
+						},
+						relativeGaugeSize: true,
+						refreshAnimationTime: 1000
+					});
+				}
+				
 			}
 
 		}
@@ -425,7 +492,7 @@ function refreshStatusEnergy(IEEE,attribute,time)
 	loadDatasTrend(IEEE,attribute,time);
 	loadLinkyDatas(IEEE);
 	loadEnergyChart(IEEE,time);
-	loadDistributionChart(IEEE,time);
+	loadDistributionChart(time,"");
 	if (time=='hour')
 	{
 		loadPowerChart(IEEE,attribute);
@@ -466,6 +533,9 @@ function refreshGaugeAbo(IEEE,attribute,time)
 			}else if (attribute == "2575")
 			{
 				powerGaugeAbo3.refresh(datas[0],datas[1],datas[2],datas[3]);
+			}else if (attribute == "519")
+			{
+				powerGaugeProd.refresh(datas[0],datas[1],datas[2],datas[3]);
 			}
 			setTimeout(function(){refreshGaugeAbo(IEEE,attribute,time); },15000);
 		}
@@ -578,8 +648,10 @@ function loadPowerChart(IEEE,attribute)
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
 			var datas = JSON.parse(xhr.responseText);
-			//powerChart.setData(datas);
-			powerChart.setData(datas["datas"]);
+			powerChart.setData(datas['datas']);
+			/*var j = '[{"y":"16:37","519":-200,"1295":970,"2319":0},{"y":"16:38","519":-1956,"1295":1180}]';
+			var datas = JSON.parse(j);
+			powerChart.setData(datas);*/		
 		}
 	}
 	xhr.open("GET","loadPowerChart?IEEE="+escape(IEEE)+"&attribute="+escape(attribute),true);
@@ -601,7 +673,7 @@ function loadEnergyChart(IEEE,time)
 	xhr.send();
 }
 
-function loadDistributionChart(IEEE,time)
+function loadDistributionChart(time,type)
 {
 	var xhr = getXhr();
 	xhr.onreadystatechange = function(){
@@ -610,7 +682,7 @@ function loadDistributionChart(IEEE,time)
 			 donutChart.setData(datas);
 		}
 	}
-	xhr.open("GET","loadDistributionChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
+	xhr.open("GET","loadDistributionChart?time="+escape(time)+"&type="+escape(type),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
