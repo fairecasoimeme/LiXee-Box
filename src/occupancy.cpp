@@ -12,7 +12,7 @@ extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 10> *deviceList;
+extern CircularBuffer<Device, 50> *deviceList;
 
 void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {
