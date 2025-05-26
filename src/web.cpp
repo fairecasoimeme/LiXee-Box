@@ -40,13 +40,17 @@ extern SemaphoreHandle_t file_Mutex;
 extern struct ZigbeeConfig ZConfig;
 extern struct ConfigSettingsStruct ConfigSettings;
 extern struct ConfigGeneralStruct ConfigGeneral;
+extern struct ConfigNotification ConfigNotif;
 extern AsyncMqttClient mqttClient;
 
 extern unsigned long timeLog;
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 10> *PrioritycommandList;
 extern CircularBuffer<Alert, 10> *alertList;
-extern CircularBuffer<Device, 10> *deviceList;
+extern CircularBuffer<Device, 50> *deviceList;
+extern CircularBuffer<Notification, 10> *notifList;
+
+extern RulesManager rulesManager;;
 
 extern bool executeReboot;
 extern bool updatePending ;
@@ -149,6 +153,7 @@ const char HTTP_MENU[] PROGMEM =
    "<div class='container-fluid' style=''>"
    "<button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNavDropdown' aria-controls='navbarNavDropdown' aria-expanded='false' aria-label='Toggle navigation'>"
    "<span class='navbar-toggler-icon'></span>"
+   "<div class='AboutMaj' style='display: inline-block; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</button>"
    "<a class='navbar-brand p-0 me-0 me-lg-2' href='/' style='margin-right:0px;'>"
    "  <div style='display:block-inline;float:left;'><img width='70px' src='web/img/logo.png'> </div>"
@@ -165,18 +170,19 @@ const char HTTP_MENU[] PROGMEM =
    " Status"
    "</a>"
    "<div class='dropdown-menu'>"
+   
+   "<a class='dropdown-item' href='statusEnergy'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-flower1' viewBox='0 0 16 16'>"
+    "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
+  "</svg>"
+   " Energy"
+   "</a>"
    "<a class='dropdown-item' href='dashboard'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-speedometer' viewBox='0 0 16 16'>"
    "  <path d='M8 2a.5.5 0 0 1 .5.5V4a.5.5 0 0 1-1 0V2.5A.5.5 0 0 1 8 2M3.732 3.732a.5.5 0 0 1 .707 0l.915.914a.5.5 0 1 1-.708.708l-.914-.915a.5.5 0 0 1 0-.707M2 8a.5.5 0 0 1 .5-.5h1.586a.5.5 0 0 1 0 1H2.5A.5.5 0 0 1 2 8m9.5 0a.5.5 0 0 1 .5-.5h1.5a.5.5 0 0 1 0 1H12a.5.5 0 0 1-.5-.5m.754-4.246a.39.39 0 0 0-.527-.02L7.547 7.31A.91.91 0 1 0 8.85 8.569l3.434-4.297a.39.39 0 0 0-.029-.518z'/>"
    "  <path fill-rule='evenodd' d='M6.664 15.889A8 8 0 1 1 9.336.11a8 8 0 0 1-2.672 15.78zm-4.665-4.283A11.95 11.95 0 0 1 8 10c2.186 0 4.236.585 6.001 1.606a7 7 0 1 0-12.002 0'/>"
    "</svg>"
    " Dashboard"
-   "</a>"
-   "<a class='dropdown-item' href='statusEnergy'>"
-   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-flower1' viewBox='0 0 16 16'>"
-    "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
-  "</svg>"
-   " Energy"
    "</a>"
    "<a class='dropdown-item' href='statusDevices'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
@@ -264,12 +270,19 @@ const char HTTP_MENU[] PROGMEM =
    " Config"
    "</a>"
    "<div class='dropdown-menu'>"
+   
    "<a class='dropdown-item' href='/configGeneral'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
    "  <circle cx='12' cy='12' r='3'></circle>"
    "  <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
    "</svg>"
    " General"
+   "</a>"
+   "<a class='dropdown-item' href='configEnergy'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-flower1' viewBox='0 0 16 16'>"
+    "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
+  "</svg>"
+   " Energy"
    "</a>"
    "<a class='dropdown-item' href='/configHorloge'>"
    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-clock' viewBox='0 0 16 16'>"
@@ -537,52 +550,253 @@ const char HTTP_BACKUP[] PROGMEM =
        "</script>"
 
     ;
-    
-   /*<div class="container py-5">
-    <h4 class="mb-4">Update firmware</h4>
-    <div align='center'>
-      <div id='update_info' class='card p-4'>
-        <h5>Latest version on GitHub</h5>
-          <div id='onlineupdate' style='text-align:left'>
-            <h6 id=releasehead></h6>
-            <br>
-            <pre id=releasebody>Getting update information from GitHub...</pre>
-          </div>
-          <button id="btnUpdate" class="btn btn-primary mb-3">
-            Update
-          </button>
-          <div id="statusDL" class="text-muted">Ready.</div>
-          <div class="progress" style="height:1.5rem">
-          <div id="barDL" class="progress-bar" role="progressbar"
-              style="width:0%" aria-valuemin="0" aria-valuemax="100">
-            0%
-          </div>
+
+
+const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
+
+  <div class="container py-5">
+    <h4 class="mb-4">Config Energy</h4>
+
+    <!-- Nav tabs -->
+    <ul class="nav nav-tabs" id="energyTab" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link active"
+          id="linky-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#linky"
+          type="button"
+          role="tab"
+          aria-controls="linky"
+          aria-selected="true">
+          Linky
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link"
+          id="production-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#production"
+          type="button"
+          role="tab"
+          aria-controls="production"
+          aria-selected="false">
+          Production
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link"
+          id="gaz-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#gaz"
+          type="button"
+          role="tab"
+          aria-controls="gaz"
+          aria-selected="false">
+          Gaz
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link"
+          id="water-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#water"
+          type="button"
+          role="tab"
+          aria-controls="water"
+          aria-selected="false">
+          Water
+        </button>
+      </li>
+    </ul>
+
+    <!-- Tab contents -->
+    <div class="tab-content" id="updateTabContent">
+      <!-- Onglet Linky -->
+      <div
+        class="tab-pane fade show active"
+        id="linky"
+        role="tabpanel"
+        aria-labelledby="linky-tab">
+
+        <div class='card mx-auto shadow-sm' >
+          <div class="card-body"> 
+            <form method='POST' action='saveConfigLinky'> 
+              <div class='form-check'> 
+                <h5>Device</h5> 
+                {{selectDevices}} 
+                <h5>Tarifs</h5> 
+                
+                <div class="mb-3">
+                  <label for='tarifAbo'>Tarif abonnement (€)</label> 
+                  <input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label> 
+                  <input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€)</label> 
+                  <input class='form-control' id='tarifCTA' type='text' name='tarifCTA' value='{{tarifCTA}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx2'>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (€)</label> 
+                  <input class='form-control' id='tarifIdx2' type='text' name='tarifIdx2' value='{{tarifIdx2}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€)</label> 
+                  <input class='form-control' id='tarifIdx3' type='text' name='tarifIdx3' value='{{tarifIdx3}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€)</label> 
+                  <input class='form-control' id='tarifIdx4' type='text' name='tarifIdx4' value='{{tarifIdx4}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€)</label> 
+                  <input class='form-control' id='tarifIdx5' type='text' name='tarifIdx5' value='{{tarifIdx5}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€)</label> 
+                  <input class='form-control' id='tarifIdx6' type='text' name='tarifIdx6' value='{{tarifIdx6}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€)</label> 
+                  <input class='form-control' id='tarifIdx7' type='text' name='tarifIdx7' value='{{tarifIdx7}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx8'>Tarif EASF07 (€)</label> 
+                  <input class='form-control' id='tarifIdx8' type='text' name='tarifIdx8' value='{{tarifIdx8}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx9'>Tarif EASF08 (€)</label> 
+                  <input class='form-control' id='tarifIdx9' type='text' name='tarifIdx9' value='{{tarifIdx9}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifIdx10'>Tarif EASF09 (€)</label> 
+                  <input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'> 
+                </div>
+              </div> 
+              <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+              </div>
+            </form>
+          </div> 
         </div>
+        
+      </div>
+
+      <!-- Onglet Production -->
+      <div
+        class="tab-pane fade"
+        id="production"
+        role="tabpanel"
+        aria-labelledby="production-tab">
+        
+        <div class='card mx-auto shadow-sm' >
+          <div class="card-body"> 
+            <form method='POST' action='saveConfigProduction'> 
+              <div class='form-check'> 
+                <h5>Device</h5> 
+                {{selectDevicesProd}} 
+                <h5>Tarifs</h5> 
+                
+                <div class="mb-3">
+                  <label for='tarifAboProd'>Tarif abonnement (€)</label> 
+                  <input class='form-control' id='tarifAboProd' type='text' name='tarifAboProd' value='{{tarifAboProd}}'> 
+                </div>
+                
+                <div class="mb-3">
+                  <label for='tarifIdxProd'>Tarif production (€)</label> 
+                  <input class='form-control' id='tarifIdxProd' type='text' name='tarifIdxProd' value='{{tarifIdxProd}}'> 
+                </div>
+              </div>
+              <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+              </div>
+            </form>
+          </div> 
+        </div>
+      </div>
+      <!-- Onglet Gaz -->
+      <div
+        class="tab-pane fade"
+        id="gaz"
+        role="tabpanel"
+        aria-labelledby="gaz-tab">
+        
+        <div class='card mx-auto shadow-sm' >
+          <div class="card-body"> 
+            <form method='POST' action='saveConfigGaz'> 
+              <div class='form-check'> 
+                <h5>Device</h5> 
+                {{selectDevicesGaz}} 
+                <h5>Parameters</h5> 
+                
+                <div class="mb-3">
+                  <label for='coeffGaz'>Impulsion coefficient </label> 
+                  <input class='form-control' id='coeffGaz' type='text' name='coeffGaz' value='{{coeffGaz}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='unitGaz'>Unit </label> 
+                  <input class='form-control' id='unitGaz' type='text' name='unitGaz' value='{{unitGaz}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifGaz'>Tarif (€)</label> 
+                  <input class='form-control' id='tarifGaz' type='text' name='tarifGaz' value='{{tarifGaz}}'> 
+                </div>
+              </div> 
+              <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+              </div>
+            </form>
+          </div> 
+        </div>
+      </div>
+      <!-- Onglet Water -->
+      <div
+        class="tab-pane fade"
+        id="water"
+        role="tabpanel"
+        aria-labelledby="water-tab">
+        
+        <div class='card mx-auto shadow-sm' >
+          <div class="card-body"> 
+            <form method='POST' action='saveConfigWater'> 
+              <div class='form-check'> 
+                <h5>Device</h5> 
+                {{selectDevicesWater}} 
+                <h5>Parameters</h5> 
+                
+                <div class="mb-3">
+                  <label for='coeffWater'>Impulsion coefficient </label> 
+                  <input class='form-control' id='coeffWater' type='text' name='coeffWater' value='{{coeffWater}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='unitWater'>Unit </label> 
+                  <input class='form-control' id='unitWater' type='text' name='unitWater' value='{{unitWater}}'> 
+                </div>
+                <div class="mb-3">
+                  <label for='tarifWater'>Tarif (€)</label> 
+                  <input class='form-control' id='tarifWater' type='text' name='tarifWater' value='{{tarifWater}}'> 
+                </div>
+              </div> 
+              <div class="d-flex justify-content-end">
+                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+              </div>
+            </form>
+          </div> 
         </div>
       </div>
     </div>
-    <button class="btn btn-primary mb-3" onClick="toggleDiv('updateManual');"> Manual </button>
   </div>
-  <div class='container py-5' id="updateManual" style="display:none;">
-     <form id='frm' class='mb-4'>
-       <div class='mb-3'>
-         <label for='f' class='form-label'>Select the file</label>
-         <input class='form-control' type='file' id='f' name='archive' accept='.tar'>
-       </div>
-       <button type='submit' class='btn btn-primary'>Start</button>
-     </form>
-     <div class='progress mb-2' style='height: 1.5rem;'>
-       <div
-         id='bar'
-         class='progress-bar progress-bar-striped progress-bar-animated'
-         role='progressbar'
-         aria-valuemin='0' aria-valuemax='100'
-         style='width: 0%;'>
-         0%
-       </div>
-     </div>
-     <div id='status' class='text-muted'>Prêt.</div>
-  </div>*/
+
+
+
+)";
+
 const char HTTP_UPDATE[] PROGMEM = R"(
     <div class="container py-5">
     <h4 class="mb-4">Update firmware</h4>
@@ -859,21 +1073,102 @@ const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
       "</div>"
 ;
 
+const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
+  
+<div class="container py-5">
+  <h4 class="mb-4">Config General</h4>
 
-const char HTTP_CONFIG_GENERAL[] PROGMEM =
-    
-    "<h4>General</h4>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'>"
-    
-    "<form method='POST' action='saveConfigGeneral'>" 
-    "<div class='form-check'>"
-    "<input class='form-check-input' id='debugSerial' type='checkbox' name='debugSerial' {{checkedDebug}}>"
-    "<label class='form-check-label' for='debugSerial'>Debug</label>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form></div>"
-    "</div>";
+  <!-- Nav tabs -->
+  <ul class="nav nav-tabs" id="generalTab" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button
+        class="nav-link active"
+        id="notification-tab"
+        data-bs-toggle="tab"
+        data-bs-target="#notification"
+        type="button"
+        role="tab"
+        aria-controls="notification"
+        aria-selected="true">
+        Notification
+      </button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button
+        class="nav-link"
+        id="debug-tab"
+        data-bs-toggle="tab"
+        data-bs-target="#debug"
+        type="button"
+        role="tab"
+        aria-controls="debug"
+        aria-selected="false">
+        Debug
+      </button>
+    </li>
+  </ul>
+
+  <!-- Tab contents -->
+  <div class="tab-content" id="updateTabContent">
+    <!-- Onglet Notification -->
+    <div
+      class="tab-pane fade show active"
+      id="notification"
+      role="tabpanel"
+      aria-labelledby="notification-tab">
+
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body"> 
+          <form method='POST' action='saveConfigNotification'> 
+            <h5>Alertes</h5>
+            <div class='form-check'>
+              <input class='form-check-input' id='NotifSubscribedPower' type='checkbox' name='NotifSubscribedPower' {{checkedNotifSubscribedPower}}>
+              <label class='form-check-label' for='NotifSubscribedPower'>Dépassement de puissance souscrite</label>
+            </div>
+            <div class='form-check'>
+              <input class='form-check-input' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
+              <label class='form-check-label' for='NotifPowerOutage'>Coupure de courant</label>
+            </div>
+            <h5>Infos</h5>
+            <div class='form-check'>
+              <input class='form-check-input' id='NotifPriceChange' type='checkbox' name='NotifPriceChange' {{checkedNotifPriceChange}}>
+              <label class='form-check-label' for='NotifPriceChange'>Changement de tarif</label>
+            </div>
+
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-warning btn-lg">Save</button>
+            </div>
+          </form>
+        </div> 
+      </div>
+      
+    </div>
+
+    <!-- Onglet General -->
+    <div
+      class="tab-pane fade"
+      id="debug"
+      role="tabpanel"
+      aria-labelledby="debug-tab">
+      
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body"> 
+          <form method='POST' action='saveConfigGeneral'> 
+            <div class='form-check'>
+              <input class='form-check-input' id='debugSerial' type='checkbox' name='debugSerial' {{checkedDebug}}>
+              <label class='form-check-label' for='debugSerial'>Debug</label>
+            </div>
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-warning btn-lg">Save</button>
+            </div>
+          </form>
+        </div> 
+      </div>
+    </div>
+  </div>
+</div>
+)";
+
 
 const char HTTP_CONFIG_ZIGBEE[] PROGMEM =  
     "<div class='row p-4 justify-content-md-center' >"
@@ -1295,7 +1590,7 @@ const char HTTP_CONFIG_UDPCLIENT[] PROGMEM =
 
     ;
 
-const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
+const char HTTP_CONFIG_NOTIFICATION_MAIL[] PROGMEM =
     "<h4>Config Notification</h4>"
     "<div class='row justify-content-md-center' >"
     "<div class='col-sm-2'>"
@@ -1303,7 +1598,7 @@ const char HTTP_CONFIG_NOTIFICATION[] PROGMEM =
     "{{menu_config}}"
     "</div>"
     "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigNotification'>"
+    "<div class='col-sm-10'><form method='POST' action='saveConfigNotificationMail'>"
     "<h5>General</h5>"
     "<div class='form-check'>"
     "<input class='form-check-input' id='enableNotif' type='checkbox' name='enableNotif' {{checkedNotif}}>"
@@ -1329,7 +1624,7 @@ const char HTTP_NETWORK[] PROGMEM =
         "<div class='col'>"
           "<div class='card'>"
             "<div class='card-header'>"
-              "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
+              "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='#000000' class='bi bi-wifi' viewBox='0 0 16 16'>"
                 "<path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
                 "<path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
               "</svg>"
@@ -1457,8 +1752,12 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
               "</div>"
             "</div>"
             "<div class='col-md-12 col-lg-4'>"
-              "<div class='card-body' style='height:270px;'>"
-                "<div id='donut-chart' style='width:100%;margin-top:-70px;'></div>"
+              "<div class='card-body' style='min-height:240px;'>"
+                "<div id='donut-chart' style='height:78%'></div>"
+              "</div>"
+              "<div align='center'>"
+                "<a href='#donut-chart' onclick='loadDistributionChart(\"{{time}}\",\"\");' ><svg fill='#000000' style='width:24px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg></a> "
+                "<a href='#donut-chart' onclick='loadDistributionChart(\"{{time}}\",\"euro\");' ><svg style='width:24px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='#000000'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='#000000'/></g></svg></a>"
               "</div>"
             "</div>"
             "<div class='col-md-12 col-lg-4'>"
@@ -1467,7 +1766,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
               "</div>"
             "</div>"
           "</div>"
-          "<a href='/configLinky' class='position-absolute bottom-0 end-0 p-4 text-muted'" 
+          "<a href='/configEnergy' class='position-absolute bottom-0 end-0 p-4 text-muted'" 
             "title='Paramétrer la tarification'>"
             "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
               "<circle cx='12' cy='12' r='3'></circle>"
@@ -1500,14 +1799,14 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"
-      "<div class='col-md-6' style='display:{{styleProdChart}}'>"
+      /*"<div class='col-md-6' style='display:{{styleProdChart}}'>"
         "<div class='card p-4'>"
           "<h5 class='card-title'>Production injection</h5>"
           "<div class='card-body'>"
               "<div id='production-chart'></div>"
           "</div>"
         "</div>"
-      "</div>";
+      "</div>"*/;
     //"</div>";
 
 const char HTTP_ENERGY_GAZ[] PROGMEM =
@@ -1819,6 +2118,33 @@ const char HTTP_HELP[] PROGMEM =  R"(
       </div>
     </div>
 )";
+
+
+const char HTTP_NOTIF_ALERT[] PROGMEM = R"(
+   {
+  "notifications": [
+    {
+      "title": "Consommation élevée",
+      "message": "Votre consommation électrique a dépassé 10kWh aujourd'hui.",
+      "timestamp": "2025-05-14T18:45:00Z",
+      "type": "warning"
+    },
+    {
+      "title": "Appareil connecté",
+      "message": "Le LIXEEGW-862C est maintenant en ligne.",
+      "timestamp": "2025-05-14T16:20:00Z",
+      "type": "info"
+    },
+    {
+      "title": "Mise à jour disponible",
+      "message": "Une mise à jour firmware est disponible pour ce périphérique.",
+      "timestamp": "2025-05-13T08:00:00Z",
+      "type": "update"
+    }
+  ]
+}
+)";
+
 /*const char HTTP_HELP[] PROGMEM =  
     "<h4>About</h4>"
     "<h5>Version : {{version}}</h5>"
@@ -1839,6 +2165,7 @@ String footer()
   result +=    "Copyright : LiXee 2025 - version : "+ String(VERSION);
   result +=  "</div>";
   result+=FPSTR(HTTP_FOOTER);
+  result.replace("{{version}}",String(VERSION));
 
   return result;
 }
@@ -2444,17 +2771,17 @@ String createDistributionGraph(String IEEE)
   result += F("donutChart = Morris.Donut({");
   result += F(" element: 'donut-chart',");
   result += F("data: [],");
-  result += F("formatter: function (value,data){return value + 'Wh';},"); //#e67e22
+  result += F("formatter: function (value,data){return value +' '+data.unit;},"); //#e67e22
   if (strcmp(ConfigGeneral.Production,"")==0)
   {
-    if (strcmp(ConfigGeneral.Gaz,"")==0)
+    if ((strcmp(ConfigGeneral.Gaz,"")==0) || (strcmp(ConfigGeneral.unitGaz,"Wh")!=0))
     {
       result += F(" colors: ['#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
     }else{
       result += F(" colors: ['#e67e22','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
     }  
   }else{
-    if (strcmp(ConfigGeneral.Gaz,"")==0)
+    if ((strcmp(ConfigGeneral.Gaz,"")==0) || (strcmp(ConfigGeneral.unitGaz,"Wh")!=0))
     {
       result += F(" colors: ['#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
     }else{
@@ -2462,7 +2789,9 @@ String createDistributionGraph(String IEEE)
     }
     
   }
-  result += F(" resize: true");
+  result += F(" resize: true,");
+  result += F(" animate: false,");
+  result += F(" showPercentage: true,");
   result += F(" });");
 
   return result;
@@ -2478,19 +2807,53 @@ String createPowerGraph(String IEEE)
 
   if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
   {
-    result += F(" ykeys: ['1295','2319','2575'],");
-    result += F(" labels: ['Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)'],");
+    if (strcmp(ConfigGeneral.Production,"")!=0)
+    {
+      result += F(" ykeys: [1295,2319,2575,519],");
+      result += F(" labels: ['Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)','Production(VA)'],");
+    }else{
+      result += F(" ykeys: [1295,2319,2575],");
+      result += F(" labels: ['Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)'],");
+    }
+      result += F(" barColors: ['#1e88e5','#5dade2','#85c1e9','#27ae60'],");
   }else{
-    result += F(" ykeys: ['1295'],");
-    result += F(" labels: ['Power (VA)'],");
+    if (strcmp(ConfigGeneral.Production,"")!=0)
+    {
+      //result += F(" ykeys: [1295,519],");
+      //result += F(" labels: ['Power (VA)','Production(VA)'],");
+      result += F(" ykeys: [1295],");
+      result += F(" labels: ['Power (VA)'],");
+
+    }else{
+      result += F(" ykeys: [1295],");
+      result += F(" labels: ['Power (VA)'],");
+    }
+    result += F(" barColors: ['#1e88e5','#27ae60'],");
   }
-  result += F(" barColors: ['#1e88e5','#5dade2','#85c1e9'],");
+
   result += F(" resize: true,");
+  result += F(" redraw: true,");
   result += F(" xLabelAngle: 70,");
   result += F(" stacked: true,");
-  result += F(" redraw: true,");
+  result += F(" goals : [");
+  int goal;
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == IEEE)
+    {
+      
+      goal = strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230;
+      result += String(goal);
+      break;
+    }
+  }  
+  result += F("],");
+  result += F(" ymax: ");
+    result += String(round(goal * 1.25));
+  result += F(",");
+  result += F(" postUnits: ' VA',");
   result += F(" dataLabels: false,");
-  result += F(" showZero: false,");
   result += F(" animate: false,");
   result += F(" });");
 
@@ -2500,6 +2863,7 @@ String createPowerGraph(String IEEE)
 String createEnergyGraph(String IEEE, String Type, String barColor)
 {
   String result = "";
+  String unit = "";
   String sep = "";
   result = Type;
   result += F("Chart = Morris.Bar({element: '");
@@ -2528,19 +2892,28 @@ String createEnergyGraph(String IEEE, String Type, String barColor)
       result += sep + String(section[cntsection]);
       i++;
     }
+    if (strcmp(ConfigGeneral.Production,"")!=0)
+    {
+      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":\"1\",\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
+    }  
+    unit = F(" postUnits: ' Wh',");
     
   }else if (Type=="gaz")
   {
       JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":\""+String(ConfigGeneral.coeffGaz)+"\",\"price\":" + getTarif(0,"gaz") + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
       result += "0"; 
+      unit = " postUnits: ' "+String(ConfigGeneral.unitGaz)+"',";
+
   }else if (Type=="water")
   {
     JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":\""+String(ConfigGeneral.coeffWater)+"\",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
     result += "0";
+    unit = " postUnits: ' "+String(ConfigGeneral.unitWater)+"',";
   }else if (Type=="production")
   {
     JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":\"1\",\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
     result += "1";
+    unit = F(" postUnits: ' Wh',");
   }
   JsonEuros += "}";
   result += F("],");
@@ -2550,6 +2923,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor)
   result += F("barColors: ");
   result += barColor;
   result += F(",");
+  result += unit;
   result += F("barWidth: '3px',");
   result += F("resize: true,");
   result += F("redraw: true,");
@@ -3332,45 +3706,119 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     result.replace("{{stylePowerChart}}", F("none"));
   }
 
-  if (strcmp(ConfigGeneral.Production,"")==0)
+  /*if (strcmp(ConfigGeneral.Production,"")==0)
   {
     result.replace("{{styleProdChart}}", F("none"));
   }else{
     result.replace("{{styleProdChart}}", F("block"));
-  }
+  }*/
+
+  result.replace("{{time}}",time);
 
   ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
   String powerGauge="";
 
-  if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+  if (time == "hour")
   {
-     powerGauge=F("<div class='col-md-8'>");
-          powerGauge +=F("<div class='card p-4'>");
-            powerGauge +=F("<h5 class='card-title' style=''>Energy gauge</h5>");
-            powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
-              powerGauge += F("<div class='row'>");
-                powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3'>");
-                  powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
-                powerGauge +=F("</div>");
-                powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3'>");
-                  powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
-                powerGauge +=F("</div>");
-                powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3'>");
-                  powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
+    if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+    {
+      powerGauge=F("<div class='col-md-8'>");
+            powerGauge +=F("<div class='card p-4'>");
+              powerGauge +=F("<h5 class='card-title' style=''>Energy gauge</h5>");
+              powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
+                powerGauge += F("<div class='row'>");
+                  
+                if (strcmp(ConfigGeneral.Production,"") != 0 )
+                {
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 2</h5>");
+                    powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 3</h5>");
+                    powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge +=F("<h5>Production</h5>");
+                    powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                }else{
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 2</h5>");
+                    powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 3</h5>");
+                    powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                }
                 powerGauge +=F("</div>");
               powerGauge +=F("</div>");
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
-        powerGauge +=F("</div>");
-  }else{
-    powerGauge =F("<div class='col-md-4'>");
-          powerGauge +=F("<div class='card p-4'>");
-            powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
-            powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
-              powerGauge +=F("<div id='power_gauge_global' style='height:230px;'></div>");
+    }else{
+      powerGauge =F("<div class='col-md-4'>");
+            powerGauge +=F("<div class='card p-4'>");
+              powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
+              powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
+                powerGauge += F("<div class='row'>");
+                if (strcmp(ConfigGeneral.Production,"") != 0 )
+                {
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Production</h5>");
+                    powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                }else{
+                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-12 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+                  powerGauge +=F("</div>");
+                }
+                powerGauge +=F("</div>");
+              powerGauge +=F("</div>");
+              
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
+    }
+  }else{
+    powerGauge =F("<div class='col-md-4'>");
+      powerGauge +=F("<div class='card p-4'>");
+        powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
+        powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
+          powerGauge += F("<div class='row'>");
+            if (strcmp(ConfigGeneral.Production,"") != 0 )
+            {
+              powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                powerGauge +=F("<h5>Phase 1</h5>");
+                powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+              powerGauge +=F("</div>");
+              powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                powerGauge +=F("<h5>Production</h5>");
+                powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
+              powerGauge +=F("</div>");
+            }else{
+              powerGauge += F("<div class='col-12 col-sm-12 col-lg-12 mb-3' style='text-align:center;'>");
+                powerGauge +=F("<h5>Phase 1</h5>");
+                powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+              powerGauge +=F("</div>");
+            }
+          powerGauge +=F("</div>");
         powerGauge +=F("</div>");
+        
+      powerGauge +=F("</div>");
+    powerGauge +=F("</div>");
   }
   result.replace("{{power_gauge}}",powerGauge);
 
@@ -3399,6 +3847,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
         javascript += time;
         javascript += F("');");
       }
+
     }
     javascript += createDistributionGraph(ConfigGeneral.ZLinky);
     javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
@@ -3408,6 +3857,16 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += F("','1295','");
     javascript += time;
     javascript += F("');");
+    
+    if (strcmp(ConfigGeneral.Production,"") != 0 )
+    {
+      javascript += F("loadPowerGaugeAbo(4");
+      javascript += F(",'");
+      javascript += String(ConfigGeneral.Production);
+      javascript += F("','519','");
+      javascript += time;
+      javascript += F("');");
+    }
     
     javascript += F("refreshStatusEnergy('");
     javascript += String(ConfigGeneral.ZLinky);
@@ -3434,6 +3893,14 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
       javascript += F("');");
 
     }else{
+      if (strcmp(ConfigGeneral.Production,"") != 0 )
+      {
+        javascript += F("refreshGaugeAbo('");
+        javascript += String(ConfigGeneral.Production);
+        javascript += F("','519','");
+        javascript += time;
+        javascript += F("');");
+      }
       javascript += F("refreshGaugeAbo('");
       javascript += String(ConfigGeneral.ZLinky);
       javascript += F("','1295','");
@@ -3460,7 +3927,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += time;
     javascript += F("');");
   }
-  if (strcmp(ConfigGeneral.Production,"")!=0)
+  /*if (strcmp(ConfigGeneral.Production,"")!=0)
   {
     javascript += createEnergyGraph(ConfigGeneral.Production, "production","['#27ae60','#d35400','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
     javascript += F("refreshStatusProduction('");
@@ -3468,7 +3935,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += F("','");
     javascript += time;
     javascript += F("');");
-  }
+  }*/
 
   javascript += F("});");
   javascript += F("</script>");
@@ -3871,6 +4338,32 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
     result.replace("{{checkedDebug}}", "");
   }
 
+  // NOTIFICATION
+  if (ConfigNotif.PowerOutage)
+  {
+    result.replace("{{checkedNotifPowerOutage}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifPowerOutage}}", "");
+  }
+  if (ConfigNotif.PriceChange)
+  {
+    result.replace("{{checkedNotifPriceChange}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifPriceChange}}", "");
+  }
+  if (ConfigNotif.SubscribedPower)
+  {
+    result.replace("{{checkedNotifSubscribedPower}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifSubscribedPower}}", "");
+  }
+
   request->send(200, "text/html", result);
 }
 
@@ -4067,64 +4560,63 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
 void handleConfigRules(AsyncWebServerRequest *request)
 {
   String result;
-  result = "<html>";
+  result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_RULES);
-  result += footer();
-  result += "</html>";
-
-  Rule rules[10];
-  int ruleCount = 0;
-  jsonToRules(rules, ruleCount);
-
-  String rulesList="<table class='table table-striped table-hover'>";
-  rulesList+="<thead>";
-    rulesList+="<tr>";
-      rulesList+="<th scope='col'>Name</th>";
-      rulesList+="<th scope='col' width='50px;'>Status</th>";
-      rulesList+="<th scope='col' width='150px;'>Last Date</th>";
-      rulesList+="<th scope='col' width='100px;'>Actions</th>";
-    rulesList+="</tr>";
-  rulesList+="</thead>";
+  
+  String rulesList=F("<table class='table table-striped table-hover'>");
+  rulesList+=F("<thead>");
+    rulesList+=F("<tr>");
+      rulesList+=F("<th scope='col'>Name</th>");
+      rulesList+=F("<th scope='col' width='50px;'>Status</th>");
+      rulesList+=F("<th scope='col' width='150px;'>Last Date</th>");
+      rulesList+=F("<th scope='col' width='100px;'>Actions</th>");
+    rulesList+=F("</tr>");
+  rulesList+=F("</thead>");
 
   int exist=0;
   String js="";
-  for (int i=0;i<ruleCount;i++)
+  
+  size_t rulesCount = rulesManager.size();
+  for (size_t i = 0; i < rulesCount; i++) 
   {
+    // Utiliser getRuleAt pour éviter les problèmes de type
+    const Rule* rule = rulesManager.getRuleByIndex(i);
+    if (!rule) continue;
     exist++;
-    rulesList+="<tr>";
-      rulesList+="<td scope='row'>";
-        rulesList+=rules[i].name;
-      rulesList+="</td>";
-      rulesList+="<td>";
-        int status = getStatusRule(rules[i].name);
-        js += "getRuleStatus('";
-        js +=rules[i].name;
-        js +="');";
-        rulesList+="<span id='status_";
-        rulesList+=rules[i].name;
-        rulesList+="'>";
+    rulesList+=F("<tr>");
+      rulesList+=F("<td scope='row'>");
+        rulesList+=rule->name.c_str();
+      rulesList+=F("</td>");
+      rulesList+=F("<td>");
+        int status = rulesManager.getStatusRule(rule->name.c_str());
+        js += F("getRuleStatus('");
+        js +=rule->name.c_str();
+        js +=F("');");
+        rulesList+=F("<span id='status_");
+        rulesList+=rule->name.c_str();
+        rulesList+=F("'>");
         if (status)
         {
-          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#1bc600' class='bi bi-bookmark-check-fill' viewBox='0 0 16 16'>";
-            rulesList+="<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5m8.854-9.646a.5.5 0 0 0-.708-.708L7.5 7.793 6.354 6.646a.5.5 0 1 0-.708.708l1.5 1.5a.5.5 0 0 0 .708 0z'/>";
-          rulesList+="</svg>";
+          rulesList+=F("<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#1bc600' class='bi bi-bookmark-check-fill' viewBox='0 0 16 16'>");
+            rulesList+=F("<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5m8.854-9.646a.5.5 0 0 0-.708-.708L7.5 7.793 6.354 6.646a.5.5 0 1 0-.708.708l1.5 1.5a.5.5 0 0 0 .708 0z'/>");
+          rulesList+=F("</svg>");
         }else{
-          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#c60000' class='bi bi-bookmark-x-fill' viewBox='0 0 16 16'>";
-            rulesList+="<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5M6.854 5.146a.5.5 0 1 0-.708.708L7.293 7 6.146 8.146a.5.5 0 1 0 .708.708L8 7.707l1.146 1.147a.5.5 0 1 0 .708-.708L8.707 7l1.147-1.146a.5.5 0 0 0-.708-.708L8 6.293z'/>";
-          rulesList+="</svg>";
+          rulesList+=F("<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' fill='#c60000' class='bi bi-bookmark-x-fill' viewBox='0 0 16 16'>");
+            rulesList+=F("<path fill-rule='evenodd' d='M2 15.5V2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v13.5a.5.5 0 0 1-.74.439L8 13.069l-5.26 2.87A.5.5 0 0 1 2 15.5M6.854 5.146a.5.5 0 1 0-.708.708L7.293 7 6.146 8.146a.5.5 0 1 0 .708.708L8 7.707l1.146 1.147a.5.5 0 1 0 .708-.708L8.707 7l1.147-1.146a.5.5 0 0 0-.708-.708L8 6.293z'/>");
+          rulesList+=F("</svg>");
         }
-      rulesList+="</span>";
-      rulesList+="</td>";
-      rulesList+="<td>";
-        rulesList+="<span id='dateStatus_";
-          rulesList+=rules[i].name;
-        rulesList+="'>";  
-        rulesList+=getLastDateRule(rules[i].name);
-      rulesList+="</span>";
-      rulesList+="</td>";
-      rulesList+="<td>";
+      rulesList+=F("</span>");
+      rulesList+=F("</td>");
+      rulesList+=F("<td>");
+        rulesList+=F("<span id='dateStatus_");
+          rulesList+=rule->name.c_str();
+        rulesList+=F("'>");  
+        rulesList+=rulesManager.getLastDateRule(rule->name.c_str()).c_str();
+      rulesList+=F("</span>");
+      rulesList+=F("</td>");
+      rulesList+=F("<td>");
         /*rulesList+="<button type='button' class='btn btn-warning'>";
           rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-pencil-square' viewBox='0 0 16 16'>";
             rulesList+="<path d='M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z'/>";
@@ -4137,72 +4629,130 @@ void handleConfigRules(AsyncWebServerRequest *request)
             rulesList+="<path d='M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708'/>";
           rulesList+="</svg>";
         rulesList+="</button>";*/
-      rulesList+="</td>";
-    rulesList+="</tr>";
+      rulesList+=F("</td>");
+    rulesList+=F("</tr>");
   }
-  rulesList+="</table>";
+  rulesList+=F("</table>");
   result.replace("{{rulesList}}",rulesList);
 
   if (exist>0)
   {
     result +="<script>"+js+"</script>";
   }else{
-    result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No rules yet</div> <br>";
+    result += F("<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No rules yet</div> <br>");
   }
+  result += footer();
+  result += F("</html>");
 
   request->send(200, "text/html", result);
 }
 
-void handleConfigLinky(AsyncWebServerRequest *request)
+void handleConfigEnergy(AsyncWebServerRequest *request)
 {
-  String result,list;
+  String result,listLinky,listProd,ListGaz,ListWater;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_CONFIG_LINKY);
+  //result += FPSTR(HTTP_CONFIG_LINKY);
+  result += FPSTR(HTTP_CONFIG_PARAM_ENERGY);
   result+=footer();
   result += F("</html>");
 
-  //result = getMenuGeneral(result, "linky");
-
   result.replace("{{FormattedDate}}", FormattedDate);
 
-  list="<Select name='linkyDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
-  String str = "";
-  File root = LittleFS.open("/db");
-  File file = root.openNextFile();
-  while (file)
+  listLinky="<Select name='linkyDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  for (size_t i = 0; i < devices.size(); i++) 
   {
-    String tmp = file.name();
-    String mac = tmp.substring(0, 16);
-    if (tmp.substring(16) == ".json")
+  
+    DeviceData* device = devices[i];
+    if (device->getInfo().model=="ZLinky_TIC")
     {
-      String model;
-      model = GetModel(file.name());
-      if (model == "ZLinky_TIC")
-      { 
-        list += F("<OPTION value='");
-        list += mac;
-        list += F("' ");
-        if (strcmp(mac.c_str(),ConfigGeneral.ZLinky)==0)
-        {
-          list +="Selected";
-        }
-        list += F(">");
-        list += F("ZLinky (");
-        list += mac;
-        list += F(")");
-        list += F("</OPTION>");
+      listLinky += F("<OPTION value='");
+      listLinky += device->getDeviceID();
+      listLinky += F("' ");
+      if (device->getDeviceID() == ConfigGeneral.ZLinky)
+      {
+        listLinky +="Selected";
       }
+      listLinky += F(">");
+      listLinky += F("ZLinky (");
+      listLinky += device->getDeviceID();
+      listLinky += F(")");
+      listLinky += F("</OPTION>");
     }
-    file.close();
-    vTaskDelay(1);
-    file = root.openNextFile();
   }
-  file.close();
-  list +="</select>";
+  listLinky +="</select>";
 
-  result.replace("{{selectDevices}}", list);
+  listProd="<Select name='prodDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+  
+    DeviceData* device = devices[i];
+    if (device->getInfo().model=="ZLinky_TIC")
+    {
+      listProd += F("<OPTION value='");
+      listProd += device->getDeviceID();
+      listProd += F("' ");
+      if (device->getDeviceID() == ConfigGeneral.Production)
+      {
+        listProd +="Selected";
+      }
+      listProd += F(">");
+      listProd += F("ZLinky (");
+      listProd += device->getDeviceID();
+      listProd += F(")");
+      listProd += F("</OPTION>");
+    }
+  }
+  listProd +="</select>";
+
+  ListGaz="<Select name='gazDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+  
+    DeviceData* device = devices[i];
+    if (device->getInfo().model=="ZiPulses")
+    {
+      ListGaz += F("<OPTION value='");
+      ListGaz += device->getDeviceID();
+      ListGaz += F("' ");
+      if (device->getDeviceID() == ConfigGeneral.Gaz)
+      {
+        ListGaz +="Selected";
+      }
+      ListGaz += F(">");
+      ListGaz += F("ZiPulses (");
+      ListGaz += device->getDeviceID();
+      ListGaz += F(")");
+      ListGaz += F("</OPTION>");
+    }
+  }
+  ListGaz +="</select>";
+
+  ListWater="<Select name='waterDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+  
+    DeviceData* device = devices[i];
+    if (device->getInfo().model=="ZiPulses")
+    {
+      ListWater += F("<OPTION value='");
+      ListWater += device->getDeviceID();
+      ListWater += F("' ");
+      if (device->getDeviceID() == ConfigGeneral.Water)
+      {
+        ListWater +="Selected";
+      }
+      ListWater += F(">");
+      ListWater += F("ZiPulses (");
+      ListWater += device->getDeviceID();
+      ListWater += F(")");
+      ListWater += F("</OPTION>");
+    }
+  }
+  ListWater +="</select>";
+
+  result.replace("{{selectDevices}}", listLinky);
   result.replace("{{tarifAbo}}", String(ConfigGeneral.tarifAbo));
   result.replace("{{tarifCSPE}}", String(ConfigGeneral.tarifCSPE));
   result.replace("{{tarifCTA}}", String(ConfigGeneral.tarifCTA));
@@ -4216,6 +4766,20 @@ void handleConfigLinky(AsyncWebServerRequest *request)
   result.replace("{{tarifIdx8}}", String(ConfigGeneral.tarifIdx8));
   result.replace("{{tarifIdx9}}", String(ConfigGeneral.tarifIdx9));
   result.replace("{{tarifIdx10}}", String(ConfigGeneral.tarifIdx10));
+
+  result.replace("{{selectDevicesProd}}", listProd);
+  result.replace("{{tarifAboProd}}", String(ConfigGeneral.tarifAboProd));
+  result.replace("{{tarifIdxProd}}", String(ConfigGeneral.tarifIdxProd));
+
+  result.replace("{{selectDevicesGaz}}", ListGaz);
+  result.replace("{{coeffGaz}}", String(ConfigGeneral.coeffGaz));
+  result.replace("{{unitGaz}}", String(ConfigGeneral.unitGaz));
+  result.replace("{{tarifGaz}}", String(ConfigGeneral.tarifGaz));
+
+  result.replace("{{selectDevicesWater}}", ListWater);
+  result.replace("{{coeffWater}}", String(ConfigGeneral.coeffWater));
+  result.replace("{{unitWater}}", String(ConfigGeneral.unitWater));
+  result.replace("{{tarifWater}}", String(ConfigGeneral.tarifWater));
 
   request->send(200, "text/html", result);
 }
@@ -4337,13 +4901,13 @@ void handleConfigWater(AsyncWebServerRequest *request)
   request->send(200, "text/html", result);
 }
 
-void handleConfigNotification(AsyncWebServerRequest *request)
+void handleConfigNotificationMail(AsyncWebServerRequest *request)
 {
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_CONFIG_NOTIFICATION);
+  result += FPSTR(HTTP_CONFIG_NOTIFICATION_MAIL);
   result+=footer();
   result += F("</html>");
 
@@ -4728,6 +5292,38 @@ void handleShelly(AsyncWebServerRequest * request) {
   request->send(200,"application/json", result);
   
 }
+
+void handlePoll(AsyncWebServerRequest * request)
+{
+  String result = "";
+  if (!notifList->isEmpty())
+  {
+    int i=0;
+    result="{ \"notifications\" : [";
+    while (!notifList->isEmpty())
+    {
+      Notification n = notifList->shift();
+      if (i>0){result+=",";}
+      result += F("{\"title\":\"");
+      result += n.title;
+      result += F("\",");
+      result += F("\"message\":\"");
+      result += n.message;
+      result += F("\",");
+      result += F("\"timeStamp\":\"");
+      result += n.timeStamp;
+      result += F("\",");
+      result += F("\"type\":");
+      result += n.type;
+      i++;
+      result += "}";
+    }
+    result +="]}";
+  }
+
+  request->send(200,"application/json", result);
+}
+
 
 void handleHelp(AsyncWebServerRequest * request) {
   String result;
@@ -6713,7 +7309,34 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
   }
 
   AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/configLinky"));
+  response->addHeader(F("Location"), F("/configEnergy"));
+  request->send(response);
+}
+
+void handleSaveConfigProduction(AsyncWebServerRequest *request)
+{
+  String path = "configGeneral.json";
+
+  if (request->arg("prodDevice") != "")
+  {
+    strlcpy(ConfigGeneral.Production, request->arg("prodDevice").c_str(), sizeof(ConfigGeneral.Production));
+    config_write(path, "Production", String(request->arg("prodDevice")));
+  }
+  if (request->arg("tarifAboProd").toFloat() >= 0)
+  {
+    // ConfigGeneral.tarifAbo = request->arg("tarifAbo");
+    strlcpy(ConfigGeneral.tarifAboProd, request->arg("tarifAboProd").c_str(), sizeof(ConfigGeneral.tarifAboProd));
+    config_write(path, "tarifAboProd", String(request->arg("tarifAboProd")));
+  }
+
+  if (request->arg("tarifIdxProd").toFloat() >= 0)
+  {
+    strlcpy(ConfigGeneral.tarifIdxProd, request->arg("tarifIdxProd").c_str(), sizeof(ConfigGeneral.tarifIdxProd));
+    config_write(path, "tarifIdxProd", String(request->arg("tarifIdxProd")));
+  }
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configEnergy"));
   request->send(response);
 }
 
@@ -6744,7 +7367,7 @@ void handleSaveConfigGaz(AsyncWebServerRequest *request)
   }
 
   AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/configGaz"));
+  response->addHeader(F("Location"), F("/configEnergy"));
   request->send(response);
 }
 
@@ -6775,7 +7398,7 @@ void handleSaveConfigWater(AsyncWebServerRequest *request)
   }
 
   AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/configWater"));
+  response->addHeader(F("Location"), F("/configEnergy"));
   request->send(response);
 }
 
@@ -7146,8 +7769,55 @@ void handleSaveConfigUDPClient(AsyncWebServerRequest *request)
   
 }
 
-
 void handleSaveConfigNotification(AsyncWebServerRequest *request)
+{
+  String path = "configGeneral.json";
+  String NotifSubscribedPower;
+  if (request->arg("NotifSubscribedPower") == "on")
+  {
+    NotifSubscribedPower = "1";
+    ConfigNotif.SubscribedPower = true;
+  }
+  else
+  {
+    NotifSubscribedPower = "0";
+    ConfigNotif.SubscribedPower = false;
+  }
+  config_write(path, "SubscribedPower", NotifSubscribedPower);
+
+  String NotifPowerOutage;
+  if (request->arg("NotifPowerOutage") == "on")
+  {
+    NotifPowerOutage = "1";
+    ConfigNotif.PowerOutage = true;
+  }
+  else
+  {
+    NotifPowerOutage = "0";
+    ConfigNotif.PowerOutage = false;
+  }
+  config_write(path, "PowerOutage", NotifPowerOutage);
+
+  String NotifPriceChange;
+  if (request->arg("NotifPriceChange") == "on")
+  {
+    NotifPriceChange = "1";
+    ConfigNotif.PriceChange = true;
+  }
+  else
+  {
+    NotifPriceChange = "0";
+    ConfigNotif.PriceChange = false;
+  }
+  config_write(path, "PriceChange", NotifPriceChange);
+  
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configGeneral"));
+  request->send(response);
+}
+
+void handleSaveConfigNotificationMail(AsyncWebServerRequest *request)
 {
 
   String path = "configGeneral.json";
@@ -7609,13 +8279,18 @@ void handleLoadDatasTrend(AsyncWebServerRequest *request)
 
 void handleLoadDistribChart(AsyncWebServerRequest *request)
 {
-  String IEEE  = request->arg(static_cast<size_t>(0));
-  String time = request->arg(static_cast<size_t>(1));
+  String type="";
+  String time = request->arg(static_cast<size_t>(0));
+  if (request->args()>1)
+  {
+    type = request->arg(static_cast<size_t>(1));
+  }
+  
 
   // Trouver le device
   DeviceData* dev = nullptr;
   for (auto* d : devices) {
-    if (d->getDeviceID() == IEEE) { dev = d; break; }
+    if (d->getDeviceID() == ConfigGeneral.ZLinky) { dev = d; break; }
   }
   if (!dev) {
     return request->send(404, "application/json", "[]");
@@ -7634,6 +8309,7 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
 
   // Calcul de la somme par section
   std::map<String, long> sums;
+  std::map<String, int> attrib;
   for (auto &kv : pd->graph) {
     ValueMap &vm = kv.second;
     
@@ -7644,6 +8320,7 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
       if (itv != vm.attributes.end()) {
         String l="Index "+String(i-1);
         sums[l] += itv->second;
+        attrib[l] = attrId;
       }
     }
   }
@@ -7675,45 +8352,59 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
 
   }
 
-  //GAZ
+  //GAZ      
   long sumGaz=0;
-  if ((strcmp(ConfigGeneral.Gaz,"")!=0))
+  if (strcmp(ConfigGeneral.unitGaz,"Wh")==0)
   {
-    DeviceData* devGaz = nullptr;
-    for (auto* d : devices) {
-      if (d->getDeviceID() == ConfigGeneral.Gaz) { devGaz = d; break; }
-    }
 
-    DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
-    PeriodData* pdGaz = nullptr;
-    if      (time=="hour")  pdGaz=&ehGaz.hours;
-    else if (time=="day")   pdGaz=&ehGaz.days;
-    else if (time=="month") pdGaz=&ehGaz.months;
-    else if (time=="year")  pdGaz=&ehGaz.years;
-    
-    for (auto &kv : pdGaz->graph) {
-      ValueMap &vm = kv.second;   
-      int attrId = 0;
-      auto itv = vm.attributes.find(attrId);
-      if (itv != vm.attributes.end()) {       
-        sumGaz += itv->second;
+    if ((strcmp(ConfigGeneral.Gaz,"")!=0))
+    {
+      DeviceData* devGaz = nullptr;
+      for (auto* d : devices) {
+        if (d->getDeviceID() == ConfigGeneral.Gaz) { devGaz = d; break; }
       }
-    }
 
+      DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
+      PeriodData* pdGaz = nullptr;
+      if      (time=="hour")  pdGaz=&ehGaz.hours;
+      else if (time=="day")   pdGaz=&ehGaz.days;
+      else if (time=="month") pdGaz=&ehGaz.months;
+      else if (time=="year")  pdGaz=&ehGaz.years;
+      
+      for (auto &kv : pdGaz->graph) {
+        ValueMap &vm = kv.second;   
+        int attrId = 0;
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end()) {       
+          sumGaz += itv->second * ConfigGeneral.coeffGaz;
+        }
+      }
+
+    }
   }
 
   // Construction du JSON : [ { label: "...", value: ... }, ... ]
   String json = "[";
   bool first = true;
-  if (strcmp(ConfigGeneral.Gaz,"")!=0)
+  if (strcmp(ConfigGeneral.unitGaz,"Wh")==0)
   {
-    if (!first) json += ",";
-    first = false;
-    json += "{\"label\":\"";
-    json += F("Gaz");
-    json += "\",\"value\":";
-    json += String(sumGaz);
-    json += "}";
+    if (strcmp(ConfigGeneral.Gaz,"")!=0)
+    {
+      if (!first) json += ",";
+      first = false;
+      json += "{\"label\":\"";
+      json += F("Gaz");
+      json += "\",\"value\":";
+      if (type=="euro")
+      {
+        json += String(sumGaz * getTarif(0,"gaz")/1000);
+        json += ",\"unit\":\"€\"";
+      }else{
+        json += String(sumGaz);
+        json += ",\"unit\":\"Wh\"";
+      }  
+      json += "}";
+    }
   }
   if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
   {
@@ -7722,7 +8413,15 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
     json += "{\"label\":\"";
     json += F("Production");
     json += "\",\"value\":";
-    json += String(-sumProd);
+    if (type=="euro")
+    {
+      json += String(-sumProd * getTarif(0,"production")/1000);
+      json += ",\"unit\":\"€\"";
+    }else{
+      json += String(-sumProd);
+      json += ",\"unit\":\"Wh\"";
+    }
+    
     json += "}";
   }
   for (auto &p : sums) {
@@ -7731,7 +8430,14 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
     json += "{\"label\":\"";
     json += p.first;
     json += "\",\"value\":";
-    json += String(p.second);
+    if (type=="euro")
+    {
+      json += String(p.second * getTarif(attrib[p.first],"energy")/1000);
+      json += ",\"unit\":\"€\"";
+    }else{
+      json += String(p.second);
+      json += ",\"unit\":\"Wh\"";
+    }
     json += "}";
   }
   json += "]";
@@ -8032,8 +8738,8 @@ void handleGetRuleStatus(AsyncWebServerRequest *request)
 
   int i = 0;
   String name = request->arg(i);
-  int value = getStatusRule(name.c_str());
-  String lastDate = getLastDateRule(name.c_str());
+  int value =rulesManager.getStatusRule(name.c_str());
+  String lastDate = rulesManager.getLastDateRule(name.c_str()).c_str();
   String result = String(value)+"|"+lastDate;
 
   request->send(200, F("text/html"), result);
@@ -8696,14 +9402,14 @@ void initWebServer()
     }
     handleConfigHorloge(request); 
   });
-  serverWeb.on("/configLinky", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on("/configEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
     }
-    handleConfigLinky(request); 
+    handleConfigEnergy(request); 
   });
   serverWeb.on("/configGaz", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -8787,14 +9493,14 @@ void initWebServer()
     }
     handleConfigUdpClient(request); 
   });
-  serverWeb.on("/configNotif", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on("/configNotifMail", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
     }
-    handleConfigNotification(request); 
+    handleConfigNotificationMail(request); 
   });
   serverWeb.on("/configWiFi", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -8964,6 +9670,15 @@ void initWebServer()
     }
     handleSaveConfigLinky(request); 
   });
+  serverWeb.on("/saveConfigProduction", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigProduction(request); 
+  });
   serverWeb.on("/saveConfigGaz", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -9029,6 +9744,16 @@ void initWebServer()
     handleSaveConfigUDPClient(request); 
   });
 
+  serverWeb.on("/saveConfigNotificationMail", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigNotificationMail(request); 
+  });
+
   serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -9038,6 +9763,7 @@ void initWebServer()
     }
     handleSaveConfigNotification(request); 
   });
+
   serverWeb.on("/saveWifi", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -9544,7 +10270,13 @@ void initWebServer()
   });
   serverWeb.on("/poll", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    request->send(200,"text/html", "ok");
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    
+    handlePoll(request);
   });
 
   serverWeb.on("/shelly", HTTP_GET, [](AsyncWebServerRequest *request)
