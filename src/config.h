@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.0h"
+#define VERSION "v2.0i"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -142,6 +142,7 @@ struct ConfigGeneralStruct {
   char tarifGaz[10];
   char tarifWater[10];
   int scanNumber;
+  bool developerMode;
 };
 
 
