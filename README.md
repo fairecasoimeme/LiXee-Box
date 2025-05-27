@@ -1,91 +1,123 @@
 # LiXee-Box
-A multi protocols gateway for zigbee devices 
 
-## Hardware compatibility
-This application can be used with :  
-* [LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)  (WiFi only)
-  The device is based on :
-  * ESP32-S3-WROOM-N16R8 (PSRAM: 8Mo Flash: 16Mo)
-  * JN5189 with [ZiGate v2 firmware](https://github.com/fairecasoimeme/ZiGatev2)
+## Description
+
+**LiXee-Box** is a multi-protocol gateway for Zigbee devices, designed to be a central hub for energy management and home automation. This application transforms your LiXee-ZiWifi32 into a complete gateway capable of managing your Zigbee devices, your Linky, production, gaz, water meter, and integrating everything into your home automation system.
+
+## Compatible Hardware
+
+This application works with:
+
+- **[LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)** (WiFi only)
+  - Based on ESP32-S3-WROOM-N16R8 (PSRAM: 8MB Flash: 16MB)
+  - Equipped with JN5189 module running [ZiGate v2 firmware](https://github.com/fairecasoimeme/ZiGatev2)
+
+> **Note**: You can also use this code with other ESP32S3 boards, depending on your board's pin connections.
+
 <table><tr><td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_face.png" width="480"></td>
 <td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_pile.png" width="480">  </td></tr></table>
       
-Obviously, you can use this code with **ESP32S3** chip but depend on your board pins connexions. 
-
 ## Operating diagram
 
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee-Box_Schema.png" width="1024">  
 
-## Uses cases example
+## Typical Use Cases
 
-Here is a list of some use cases which can be used with **LiXee-Box**.  
+- **Long-distance relay**: Linky (ZLinky) ↔ Zigbee ↔ LiXee-Box ↔ WiFi ↔ MQTT ↔ Home-Assistant/Jeedom/Domoticz
+- **Cloud gateway**: Relay Zigbee device data to web services via API
+- **Advanced energy management**: Monitoring, load shedding, energy routing
 
-### Use case n°1
-Your Linky counter is very far and Zigbee protocol is too light to transport datas to the coordinator.
-**Linky (ZLinky) <--> Zigbee <--> LiXee-Box <--> WiFi <--> MQTT <--> Home-Assistant / Jeedom / Domoticz / other**
-
-### Use case n°2
-You need to relay zigbee devices datas to the cloud (with Web API)
-
-## Features
+## ✨ Main Features
 The main feature is to relay Zigbee device datas to a website or a MQTT service
 
 The device can be configured with a local website
 
-You can :  
-* Monitor :
-  * Your zigbee devices with :
-  	* gauge and dashboard
-   	* all properties table	 
-  * Your network status and gateway features
-* Manage ZigBee devices
-  * Object creation
-  * Template creation
-  * Status and actions management
-* MQTT API management
-  * Server / Port / user / password /topic header customisable
-  * MQTT discover available (Home Assistant)
-* WebPush API management
-  * Url / user / password
-  * POST method with JSON format
-* Marstek CT001 Emulation
-  * Can communicate with Marstek battery to enhance energy management.
-* Rules management
-  * You can create rules to :
-  	* act when a zigbee device reach a threshold.
-  	* do load shedding
-  	* route energy
-* Update OTA
+### 🔧 Zigbee Device Management
+- Creation and management of Zigbee objects
+- Customizable templates for different device types
+- Status and action management
+- Historical data for power and energy devices
 
+### 📊 Monitoring and Dashboard
+- Energy dashboard with gauges and charts
+- Real-time consumption monitoring
+- Trend and historical graphs
+- Integrated Linky data
 
-## First start  
+### 🌐 Connectivity
+- **MQTT**: Customizable server/port/user/password
+- **MQTT Discovery** compatible with Home Assistant
+- **WebPush API**: URL/user/password
+- **Marstek CT001 Emulation** for battery management
 
-1. Plug the device on a USB power.
-2. Use a mobile/computer and scan the WiFi
-3. Connect to the SSID : **LIXEEGW-XXXX** (XXXX correspond to a part of unique @MAC)
-4. By default, the password is : **adminXXXX** (XXXX correspond to the ssid XXXX)
-5. Connected to the WiFi SSID, you can open a web navigator and type in URL label : `http://lixee-gw`
-6. Normally, you will redirect to the WiFi config page
-7. Scan your SSID WiFi box and fill the form to complete configuration
-8. Reboot the device
+### ⚡ Energy Management
+- Automated rules for load shedding and energy routing
+- Configurable thresholds with automatic actions
+- Production management and energy distribution
+- Tariff management for energy, production, gas, and water
 
-## Pair a device
+### 🔄 Updates and Maintenance
+- OTA (Over-The-Air) automatic and manual updates
+- Configuration backup/restore
+- Developer mode for debugging
 
-1. With your web navigator, you can go to `Network` menu then `Zigbee`  
-2. You can click on `Add Device` button. The ZiGate coordinator begin the `Permit Join` procedure for 30 seconds.   
-3. The blue LED of your device blink slowly.  
-4. Now, you can execute the pairing device procedure.
+## 📱 User Interface
+
+### Firmware Update
+![Firmware Update](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Update.png)
+
+The update interface allows you to keep your LiXee-Box up to date with the latest features.
+
+### Device Pairing
+![Device Pairing](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p1.png)
+![LiXee-Box Pairing](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p2.png)
+![Device Search](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p3.png)
+
+The pairing process is simplified with a step-by-step wizard to connect your Zigbee devices.
+
+### Device Management
+![Zigbee Device Configuration](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_config_zigbee.png)
+![Device Status](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_DeviceStatus.png)
+
+Complete interface to configure and monitor all your connected Zigbee devices.
+
+### Energy Dashboard
+![Energy Status](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_1.png)
+![Detailed Charts](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_2.png)
+![Mobile Interface](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Mobile_energy.png)
+
+Complete dashboard with real-time visualization of your energy consumption, historical charts, and responsive mobile interface.
+
+## 🚀 Installation and Configuration
+
+### First Setup
+
+With web navigator
+1. **Power**: Plug the device into a USB power supply
+2. **WiFi**: Scan available WiFi networks with your mobile/computer
+3. **Connection**: Connect to SSID `LIXEEGW-XXXX` (XXXX = part of MAC address)
+4. **Authentication**: Default password `adminXXXX` (XXXX = SSID suffix)
+5. **Configuration**: Open `http://lixee-gw` in your browser
+6. **Home WiFi**: Configure your main WiFi network
+7. **Reboot**: Device restarts and connects to your network
+
+with **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist
+
+### Zigbee Configuration
+
+1. Go to **Network** menu → **Zigbee**
+2. Click **Add Device** to start pairing (30 seconds)
+3. Blue LED blinks slowly during pairing
+4. Execute the pairing procedure on your Zigbee device
    
 ⚠️ **If a device is paired, a green alert appears. You can refresh to see devices properties.**  
   
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_devices.png" width="800">  
-
 ## How to template a new zigbee device
 
 A template file is a JSON structure which give status and actions to a device type. The name of the template file corresponds to the device identification (decimal).
 When a Zigbee device is joining, **LiXee-Box** create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
 
-### Structure
+### Template Structure
 Here is the structure :
 
     ├── Device model or 'default'    
@@ -159,35 +191,33 @@ Example of 24321.json device id (5F01 Hex) :
 }
 ```
 
-### Status
+### Status Parameters
 
-|Command|Mandatory|Type|Value|Comment|
-|-------|---------|----|-----|-------|			
-|name|x|String||string character|   
-|cluster|x|String||cluster id in hexadecimal|  
-|attribut|x|Decimal||attribute number in decimal|  
-|type| |String|"numeric","float"| only if you want manage numeric value| 
-|unit| |String|""| only for numeric type| 
-|coefficient| |float|| only for numeric type| 
-|jauge| |String|"Gauge" / "Battery" / "text" | only for numeric type| 
-|min| |Decimal|| only for jauge = "Gauge"| 
-|max| |Decimal|| only for jauge = "Gauge"| 
-|visible| |Decimal|1 or 0| only if you want to display on dashboard| 
-|poll| |Decimal|| number of seconds if you want to poll the device| 
-|mqtt_device_class| |String|| could be "energy", "power", "apparent_power" (see mqtt discover HA webpage)| 
-|mqtt_state_class| |String|| could be "total_increasing", "measurement" (see mqtt discover HA webpage)| 
-|mqtt_icon| |String|| could be "transmission-tower", "lightning-bolt" (see mqtt discover HA webpage)| 
-
+| Parameter | Mandatory | Type | Description |
+|-----------|-----------|------|-------------|
+| `name` | ✓ | String | Display name |
+| `cluster` | ✓ | String | Cluster ID (hex) |
+| `attribut` | ✓ | Decimal | Attribute number |
+| `type` | | String | "numeric", "float" |
+| `unit` | | String | Unit of measure |
+| `coefficient` | | Float | Multiplier coefficient |
+| `jauge` | | String | "Gauge", "Battery", "text" |
+| `visible` | | Decimal | 1 (visible) or 0 (hidden) |
+| `poll` | | Decimal | Polling interval (sec) |
+| `mqtt_device_class` | | String | MQTT device class for HA |
+| `mqtt_state_class` | | String | MQTT state class for HA |
+| `mqtt_icon` | | String | MQTT icon for HA |
 
 ### Action
+### Action Parameters
 
-|Command|Mandatory|Type|Value|Comment|
-|-------|---------|----|-----|-------|			
-|name|x|String||string character|   
-|command|x|Decimal|146|command id in decimal value|  
-|endpoint|x|Decimal||endpoint number in decimal|  
-|value|x|Decimal||value sent in decimal| 
-|visible| |Decimal|1 or 0| only if you want to display button on dashboard| 
+| Parameter | Mandatory | Type | Description |
+|-----------|-----------|------|-------------|
+| `name` | ✓ | String | Action name |
+| `command` | ✓ | Decimal | Command ID |
+| `endpoint` | ✓ | Decimal | Endpoint number |
+| `value` | ✓ | Decimal | Value to send |
+| `visible` | | Decimal | 1 (visible) or 0 (hidden) |
 
 ### Bind
 List of cluster(in numeric) which will be binded
@@ -197,13 +227,13 @@ example : `bind : "1026;1029;1794"`
 
 |Command|Mandatory|Type|Value|Comment|
 |-------|---------|----|-----|-------|			
-|cluster|x|String||cluster id in hexadecimal|  
-|attribut|x|Decimal||attribute number in decimal|  
-|type|x|Decimal|| Correspond to the numeric type of attribut| 
-|min|x|Decimal||min time (in second) to send report| 
-|max|x|Decimal||max time (in second) to send report| 
-|timeout| |Decimal|| in millisecond| 
-|change| |Decimal|| change value to send report| 
+|`cluster`|✓|String||cluster id in hexadecimal|  
+|`attribut`|✓|Decimal||attribute number in decimal|  
+|`type`|✓|Decimal|| Correspond to the numeric type of attribut| 
+|`min`|✓|Decimal||min time (in second) to send report| 
+|`max`|✓|Decimal||max time (in second) to send report| 
+|`timeout`| |Decimal|| in millisecond| 
+|`change`| |Decimal|| change value to send report| 
 
 
 ## How to create rules
@@ -232,26 +262,27 @@ Here is the structure :
     │   │   ├── endpoint  
     │   │   ├── value    
 
-### Conditions
 
-|Command|Mandatory|Type|Value|Comment|
-|-------|---------|----|-----|-------|			
-|type|x|String|"device"||   
-|IEEE|x|String||@mac without ':' or '-'|  
-|cluster|x|Decimal||cluster id in decimal|  
-|attribut|x|Decimal||attribute number in decimal|  
-|operator|x|String|"<",">","==","!=",">=","<="|| 
-|value|x|Decimal|| | 
-|logic| |String|"AND","OR"|only needed if there are more than one condition| 
+### Condition Parameters
 
-### Actions
+| Parameter | Mandatory | Type | Value | Comment |
+|-----------|-----------|------|-------|---------|
+| `type` | ✓ | String | "device" | |
+| `IEEE` | ✓ | String | MAC address without ':' or '-' | |
+| `cluster` | ✓ | Decimal | Cluster ID in decimal | |
+| `attribut` | ✓ | Decimal | Attribute number | |
+| `operator` | ✓ | String | "<", ">", "==", "!=", ">=", "<=" | |
+| `value` | ✓ | Decimal | Comparison value | |
+| `logic` | | String | "AND", "OR" | Only for multiple conditions |
 
-|Command|Mandatory|Type|Value|Comment|
-|-------|---------|----|-----|-------|			
-|type|x|String|"onoff"||   
-|IEEE|x|String||@mac without ':' or '-'|  
-|endpoint|x|Decimal||endpoint id in decimal|  
-|value|x|String|||  
+### Action Parameters
+
+| Parameter | Mandatory | Type | Value | Comment |
+|-----------|-----------|------|-------|---------|
+| `type` | ✓ | String | "onoff" | |
+| `IEEE` | ✓ | String | MAC address without ':' or '-' | |
+| `endpoint` | ✓ | Decimal | Endpoint ID | |
+| `value` | ✓ | String | Action value | |
 
 For example :  
 
@@ -305,8 +336,7 @@ For example :
 }
 ```
 
-## WEB API
-
+## 🔌WEB API
 To access to the API command, go to http://<HOST>/<command>
 
 ### Commands List
@@ -520,7 +550,7 @@ curl -X GET 'https://<HOST>/getTemplates'\
 }
 ```
 
-## How to flash release
+## 📦 Firmware Installation
 Just install esptools and run this command
 
 ### Windows
@@ -537,7 +567,7 @@ esptool.py.exe --chip esp32 --port "COMXX" \
 	 0x910000 littleFS.bin
 ```
 
-## Home assistant MQTT discover
+## 🏠 Home Assistant Integration
 
 **LiXee-Gateway** is compatible with the MQTT discover from HA.
 
@@ -563,38 +593,6 @@ Wait a moment and go to your HA MQTT devices:
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_Create_MQTT_device.png" width="1024">  
 
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_MQTT_device_entities.png" width="800">
-
-## Screenshots
-
-### Dashboard
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_dashboard.png" width="800">  
-
-### Devices status
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_status_devices.png" width="800">  
-
-### Config Wifi
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_wifi.png" width="800">  
-
-### Config Zigbee
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee.png" width="800">  
-
-### Config MQTT
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
-
-### Config WebPush
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_webpush.png" width="800">  
-
-### Rules
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_rules.png" width="800">  
-
-### Advanced tools
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_tools.png" width="800">  
-
-### OTA update
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_update.png" width="800">  
-
-### Mobile responsive web page
-<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_mobile_devices.png" width="400">  </div>
 
 ## Credits
 
