@@ -306,7 +306,7 @@ const char HTTP_MENU[] PROGMEM =
    
    "</div>"
    "</li>"
-   "<li class='nav-item'>"
+   "<li class='nav-item' id='Tools'>"
    "<a class='nav-link' href='/tools'>"
    "<svg viewBox='0 0 24 24' style='width:24px;' width='24' height='24' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round' class='css-i6dzq1'>"
    "  <path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'></path>"
@@ -393,6 +393,12 @@ const char HTTP_TOOLS[] PROGMEM =
       "<path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
     "</svg><br>"
     " Rules"
+    "</a>"
+    "<a href='/generateNotif' class='btn btn-primary mb-2'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
+      "<path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
+    "</svg><br>"
+    " Notif Gen"
     "</a>"
     //"<a href='/javascript' class='btn btn-primary mb-2'>Javascript</a>"
     "<a href='/update' class='btn btn-primary mb-2'>"
@@ -628,55 +634,106 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
               <div class='form-check'> 
                 <h5>Device</h5> 
                 {{selectDevices}} 
-                <h5>Tarifs</h5> 
                 
-                <div class="mb-3">
-                  <label for='tarifAbo'>Tarif abonnement (€)</label> 
-                  <input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'> 
+                <h5>Tarifs 
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#tarifLinky"
+                      aria-expanded="true"
+                      aria-controls="tarifLinky"
+                      onClick="toggleDiv('tarifLinky');"
+                    >
+                      <span id="IcotarifLinky" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="tarifLinky" style="display:none;">
+                  <div class="mb-3">
+                    <label for='tarifAbo'>Tarif abonnement (€)</label> 
+                    <input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label> 
+                    <input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€)</label> 
+                    <input class='form-control' id='tarifCTA' type='text' name='tarifCTA' value='{{tarifCTA}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx2'>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (€)</label> 
+                    <input class='form-control' id='tarifIdx2' type='text' name='tarifIdx2' value='{{tarifIdx2}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€)</label> 
+                    <input class='form-control' id='tarifIdx3' type='text' name='tarifIdx3' value='{{tarifIdx3}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€)</label> 
+                    <input class='form-control' id='tarifIdx4' type='text' name='tarifIdx4' value='{{tarifIdx4}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€)</label> 
+                    <input class='form-control' id='tarifIdx5' type='text' name='tarifIdx5' value='{{tarifIdx5}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€)</label> 
+                    <input class='form-control' id='tarifIdx6' type='text' name='tarifIdx6' value='{{tarifIdx6}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€)</label> 
+                    <input class='form-control' id='tarifIdx7' type='text' name='tarifIdx7' value='{{tarifIdx7}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx8'>Tarif EASF07 (€)</label> 
+                    <input class='form-control' id='tarifIdx8' type='text' name='tarifIdx8' value='{{tarifIdx8}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx9'>Tarif EASF08 (€)</label> 
+                    <input class='form-control' id='tarifIdx9' type='text' name='tarifIdx9' value='{{tarifIdx9}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifIdx10'>Tarif EASF09 (€)</label> 
+                    <input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'> 
+                  </div>
                 </div>
-                <div class="mb-3">
-                  <label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label> 
-                  <input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€)</label> 
-                  <input class='form-control' id='tarifCTA' type='text' name='tarifCTA' value='{{tarifCTA}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx2'>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (€)</label> 
-                  <input class='form-control' id='tarifIdx2' type='text' name='tarifIdx2' value='{{tarifIdx2}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€)</label> 
-                  <input class='form-control' id='tarifIdx3' type='text' name='tarifIdx3' value='{{tarifIdx3}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€)</label> 
-                  <input class='form-control' id='tarifIdx4' type='text' name='tarifIdx4' value='{{tarifIdx4}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€)</label> 
-                  <input class='form-control' id='tarifIdx5' type='text' name='tarifIdx5' value='{{tarifIdx5}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€)</label> 
-                  <input class='form-control' id='tarifIdx6' type='text' name='tarifIdx6' value='{{tarifIdx6}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€)</label> 
-                  <input class='form-control' id='tarifIdx7' type='text' name='tarifIdx7' value='{{tarifIdx7}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx8'>Tarif EASF07 (€)</label> 
-                  <input class='form-control' id='tarifIdx8' type='text' name='tarifIdx8' value='{{tarifIdx8}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx9'>Tarif EASF08 (€)</label> 
-                  <input class='form-control' id='tarifIdx9' type='text' name='tarifIdx9' value='{{tarifIdx9}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifIdx10'>Tarif EASF09 (€)</label> 
-                  <input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'> 
+                <h5>Notifications
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#notifLinky"
+                      aria-expanded="true"
+                      aria-controls="notifLinky"
+                      onClick="toggleDiv('notifLinky');"
+                    >
+                      <span id="IconotifLinky" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="notifLinky" style="display:none;">
+                  <h5>Alertes</h5>
+                  <div class='form-check'>
+                    <input class='form-check-input' id='NotifSubscribedPower' type='checkbox' name='NotifSubscribedPower' {{checkedNotifSubscribedPower}}>
+                    <label class='form-check-label' for='NotifSubscribedPower'>Dépassement de puissance souscrite</label>
+                  </div>
+                  <div class='form-check'>
+                    <input class='form-check-input' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
+                    <label class='form-check-label' for='NotifPowerOutage'>Coupure de courant</label>
+                  </div>
+                  <h5>Infos</h5>
+                  <div class='form-check'>
+                    <input class='form-check-input' id='NotifPriceChange' type='checkbox' name='NotifPriceChange' {{checkedNotifPriceChange}}>
+                    <label class='form-check-label' for='NotifPriceChange'>Changement de tarif</label>
+                  </div>
                 </div>
               </div> 
               <div class="d-flex justify-content-end">
@@ -701,16 +758,63 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
               <div class='form-check'> 
                 <h5>Device</h5> 
                 {{selectDevicesProd}} 
-                <h5>Tarifs</h5> 
+                <h5>Tarifs 
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#prodLinky"
+                      aria-expanded="true"
+                      aria-controls="prodLinky"
+                      onClick="toggleDiv('prodLinky');"
+                    >
+                      <span id="IcoprodLinky" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="prodLinky" style="display:none;"> 
                 
-                <div class="mb-3">
-                  <label for='tarifAboProd'>Tarif abonnement (€)</label> 
-                  <input class='form-control' id='tarifAboProd' type='text' name='tarifAboProd' value='{{tarifAboProd}}'> 
+                  <div class="mb-3">
+                    <label for='tarifAboProd'>Tarif abonnement (€)</label> 
+                    <input class='form-control' id='tarifAboProd' type='text' name='tarifAboProd' value='{{tarifAboProd}}'> 
+                  </div>
+                  
+                  <div class="mb-3">
+                    <label for='tarifIdxProd'>Tarif production (€)</label> 
+                    <input class='form-control' id='tarifIdxProd' type='text' name='tarifIdxProd' value='{{tarifIdxProd}}'> 
+                  </div>
                 </div>
-                
-                <div class="mb-3">
-                  <label for='tarifIdxProd'>Tarif production (€)</label> 
-                  <input class='form-control' id='tarifIdxProd' type='text' name='tarifIdxProd' value='{{tarifIdxProd}}'> 
+
+                <h5>Notifications
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#notifProd"
+                      aria-expanded="true"
+                      aria-controls="notifProd"
+                      onClick="toggleDiv('notifProd');"
+                    >
+                      <span id="IconotifProd" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="notifProd" style="display:none;">
+                  <h5>Alertes</h5>
+                  <div class='form-check'>
+                    
+                  </div>
+                  
+                  <h5>Infos</h5>
+                  <div class='form-check'>
+                    
+                  </div>
                 </div>
               </div>
               <div class="d-flex justify-content-end">
@@ -733,19 +837,65 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
               <div class='form-check'> 
                 <h5>Device</h5> 
                 {{selectDevicesGaz}} 
-                <h5>Parameters</h5> 
+                <h5>Parameters 
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#gazLinky"
+                      aria-expanded="true"
+                      aria-controls="gazLinky"
+                      onClick="toggleDiv('gazLinky');"
+                    >
+                      <span id="IcogazLinky" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="gazLinky" style="display:none;">
                 
-                <div class="mb-3">
-                  <label for='coeffGaz'>Impulsion coefficient </label> 
-                  <input class='form-control' id='coeffGaz' type='text' name='coeffGaz' value='{{coeffGaz}}'> 
+                  <div class="mb-3">
+                    <label for='coeffGaz'>Impulsion coefficient </label> 
+                    <input class='form-control' id='coeffGaz' type='text' name='coeffGaz' value='{{coeffGaz}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='unitGaz'>Unit </label> 
+                    <input class='form-control' id='unitGaz' type='text' name='unitGaz' value='{{unitGaz}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifGaz'>Tarif (€)</label> 
+                    <input class='form-control' id='tarifGaz' type='text' name='tarifGaz' value='{{tarifGaz}}'> 
+                  </div>
                 </div>
-                <div class="mb-3">
-                  <label for='unitGaz'>Unit </label> 
-                  <input class='form-control' id='unitGaz' type='text' name='unitGaz' value='{{unitGaz}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifGaz'>Tarif (€)</label> 
-                  <input class='form-control' id='tarifGaz' type='text' name='tarifGaz' value='{{tarifGaz}}'> 
+                <h5>Notifications
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#notifGaz"
+                      aria-expanded="true"
+                      aria-controls="notifGaz"
+                      onClick="toggleDiv('notifGaz');"
+                    >
+                      <span id="IconotifGaz" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="notifGaz" style="display:none;">
+                  <h5>Alertes</h5>
+                  <div class='form-check'>
+                    
+                  </div>
+                  
+                  <h5>Infos</h5>
+                  <div class='form-check'>
+                    
+                  </div>
                 </div>
               </div> 
               <div class="d-flex justify-content-end">
@@ -768,19 +918,65 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
               <div class='form-check'> 
                 <h5>Device</h5> 
                 {{selectDevicesWater}} 
-                <h5>Parameters</h5> 
+                <h5>Parameters 
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#waterLinky"
+                      aria-expanded="true"
+                      aria-controls="waterLinky"
+                      onClick="toggleDiv('waterLinky');"
+                    >
+                      <span id="IcowaterLinky" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="waterLinky" style="display:none;">
                 
-                <div class="mb-3">
-                  <label for='coeffWater'>Impulsion coefficient </label> 
-                  <input class='form-control' id='coeffWater' type='text' name='coeffWater' value='{{coeffWater}}'> 
+                  <div class="mb-3">
+                    <label for='coeffWater'>Impulsion coefficient </label> 
+                    <input class='form-control' id='coeffWater' type='text' name='coeffWater' value='{{coeffWater}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='unitWater'>Unit </label> 
+                    <input class='form-control' id='unitWater' type='text' name='unitWater' value='{{unitWater}}'> 
+                  </div>
+                  <div class="mb-3">
+                    <label for='tarifWater'>Tarif (€)</label> 
+                    <input class='form-control' id='tarifWater' type='text' name='tarifWater' value='{{tarifWater}}'> 
+                  </div>
                 </div>
-                <div class="mb-3">
-                  <label for='unitWater'>Unit </label> 
-                  <input class='form-control' id='unitWater' type='text' name='unitWater' value='{{unitWater}}'> 
-                </div>
-                <div class="mb-3">
-                  <label for='tarifWater'>Tarif (€)</label> 
-                  <input class='form-control' id='tarifWater' type='text' name='tarifWater' value='{{tarifWater}}'> 
+                <h5>Notifications
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#notifWater"
+                      aria-expanded="true"
+                      aria-controls="notifWater"
+                      onClick="toggleDiv('notifWater');"
+                    >
+                      <span id="IconotifWater" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="notifWater" style="display:none;">
+                  <h5>Alertes</h5>
+                  <div class='form-check'>
+                    
+                  </div>
+                  
+                  <h5>Infos</h5>
+                  <div class='form-check'>
+                    
+                  </div>
                 </div>
               </div> 
               <div class="d-flex justify-content-end">
@@ -1083,14 +1279,14 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
     <li class="nav-item" role="presentation">
       <button
         class="nav-link active"
-        id="notification-tab"
+        id="param-tab"
         data-bs-toggle="tab"
-        data-bs-target="#notification"
+        data-bs-target="#param"
         type="button"
         role="tab"
-        aria-controls="notification"
+        aria-controls="param"
         aria-selected="true">
-        Notification
+        Parameters
       </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -1113,26 +1309,17 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
     <!-- Onglet Notification -->
     <div
       class="tab-pane fade show active"
-      id="notification"
+      id="param"
       role="tabpanel"
-      aria-labelledby="notification-tab">
+      aria-labelledby="param-tab">
 
       <div class='card mx-auto shadow-sm' >
         <div class="card-body"> 
-          <form method='POST' action='saveConfigNotification'> 
-            <h5>Alertes</h5>
+          <form method='POST' action='saveConfigParameter'> 
+            <h5>Developer</h5>
             <div class='form-check'>
-              <input class='form-check-input' id='NotifSubscribedPower' type='checkbox' name='NotifSubscribedPower' {{checkedNotifSubscribedPower}}>
-              <label class='form-check-label' for='NotifSubscribedPower'>Dépassement de puissance souscrite</label>
-            </div>
-            <div class='form-check'>
-              <input class='form-check-input' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
-              <label class='form-check-label' for='NotifPowerOutage'>Coupure de courant</label>
-            </div>
-            <h5>Infos</h5>
-            <div class='form-check'>
-              <input class='form-check-input' id='NotifPriceChange' type='checkbox' name='NotifPriceChange' {{checkedNotifPriceChange}}>
-              <label class='form-check-label' for='NotifPriceChange'>Changement de tarif</label>
+              <input class='form-check-input' id='developerMode' type='checkbox' name='developerMode' {{checkeddeveloperMode}}>
+              <label class='form-check-label' for='developerMode'>Developer mode</label>
             </div>
 
             <div class="d-flex justify-content-end">
@@ -1958,6 +2145,15 @@ const char HTTP_FOOTER[] PROGMEM = R"(
           }
         });
       }
+
+      function showTools(val){
+        if (val) {
+          $('#Tools').show();
+        }else{
+          $('#Tools').hide();
+        }
+      }
+    showTools({{value}});
     getReleaseInfo();
     getFormattedDate();
     getAlert();
@@ -2166,7 +2362,7 @@ String footer()
   result +=  "</div>";
   result+=FPSTR(HTTP_FOOTER);
   result.replace("{{version}}",String(VERSION));
-
+  result.replace("{{value}}",String((int)ConfigGeneral.developerMode));
   return result;
 }
 
@@ -4338,30 +4534,14 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
     result.replace("{{checkedDebug}}", "");
   }
 
-  // NOTIFICATION
-  if (ConfigNotif.PowerOutage)
+  //PARAMETER
+  if (ConfigGeneral.developerMode)
   {
-    result.replace("{{checkedNotifPowerOutage}}", "Checked");
+    result.replace("{{checkeddeveloperMode}}", "Checked");
   }
   else
   {
-    result.replace("{{checkedNotifPowerOutage}}", "");
-  }
-  if (ConfigNotif.PriceChange)
-  {
-    result.replace("{{checkedNotifPriceChange}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifPriceChange}}", "");
-  }
-  if (ConfigNotif.SubscribedPower)
-  {
-    result.replace("{{checkedNotifSubscribedPower}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifSubscribedPower}}", "");
+    result.replace("{{checkeddeveloperMode}}", "");
   }
 
   request->send(200, "text/html", result);
@@ -4780,6 +4960,32 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   result.replace("{{coeffWater}}", String(ConfigGeneral.coeffWater));
   result.replace("{{unitWater}}", String(ConfigGeneral.unitWater));
   result.replace("{{tarifWater}}", String(ConfigGeneral.tarifWater));
+
+  // NOTIFICATION
+  if (ConfigNotif.PowerOutage)
+  {
+    result.replace("{{checkedNotifPowerOutage}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifPowerOutage}}", "");
+  }
+  if (ConfigNotif.PriceChange)
+  {
+    result.replace("{{checkedNotifPriceChange}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifPriceChange}}", "");
+  }
+  if (ConfigNotif.SubscribedPower)
+  {
+    result.replace("{{checkedNotifSubscribedPower}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifSubscribedPower}}", "");
+  }
 
   request->send(200, "text/html", result);
 }
@@ -6418,6 +6624,7 @@ void handleTemplates(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+
 void handleRules(AsyncWebServerRequest *request)
 {
   String result;
@@ -6481,6 +6688,18 @@ void handleRules(AsyncWebServerRequest *request)
   result += F("</html>");
   
   request->send(200, F("text/html"), result);
+}
+
+void handleGenerateNotif(AsyncWebServerRequest *request)
+{
+
+  if (!notifList->isFull())
+  {
+    notifList->push(Notification{"TEST","Test de "+String(ConfigGeneral.ZLinky),FormattedDate,1});
+  }  
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/tools"));
+  request->send(response);
 }
 
 void handleSaveDevice(AsyncWebServerRequest *request)
@@ -7308,6 +7527,46 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
     config_write(path, "tarifIdx10", String(request->arg("tarifIdx10")));
   }
 
+  String NotifSubscribedPower;
+  if (request->arg("NotifSubscribedPower") == "on")
+  {
+    NotifSubscribedPower = "1";
+    ConfigNotif.SubscribedPower = true;
+  }
+  else
+  {
+    NotifSubscribedPower = "0";
+    ConfigNotif.SubscribedPower = false;
+  }
+  config_write(path, "SubscribedPower", NotifSubscribedPower);
+
+  String NotifPowerOutage;
+  if (request->arg("NotifPowerOutage") == "on")
+  {
+    NotifPowerOutage = "1";
+    ConfigNotif.PowerOutage = true;
+  }
+  else
+  {
+    NotifPowerOutage = "0";
+    ConfigNotif.PowerOutage = false;
+  }
+  config_write(path, "PowerOutage", NotifPowerOutage);
+
+  String NotifPriceChange;
+  if (request->arg("NotifPriceChange") == "on")
+  {
+    NotifPriceChange = "1";
+    ConfigNotif.PriceChange = true;
+  }
+  else
+  {
+    NotifPriceChange = "0";
+    ConfigNotif.PriceChange = false;
+  }
+  config_write(path, "PriceChange", NotifPriceChange);
+  
+
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configEnergy"));
   request->send(response);
@@ -7811,6 +8070,28 @@ void handleSaveConfigNotification(AsyncWebServerRequest *request)
   }
   config_write(path, "PriceChange", NotifPriceChange);
   
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configGeneral"));
+  request->send(response);
+}
+
+void handleSaveConfigParameter(AsyncWebServerRequest *request)
+{
+  String path = "configGeneral.json";
+  String developerMode;
+  if (request->arg("developerMode") == "on")
+  {
+    developerMode = "1";
+    ConfigGeneral.developerMode = true;
+  }
+  else
+  {
+    developerMode = "0";
+    ConfigGeneral.developerMode = false;
+  }
+  config_write(path, "developerMode", developerMode);
+
 
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configGeneral"));
@@ -9754,6 +10035,16 @@ void initWebServer()
     handleSaveConfigNotificationMail(request); 
   });
 
+  serverWeb.on("/saveConfigParameter", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigParameter(request); 
+  });
+
   serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -10040,6 +10331,16 @@ void initWebServer()
     }
     handleRules(request); 
   });
+   serverWeb.on("/generateNotif", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGenerateNotif(request); 
+  });
+  
   serverWeb.on("/javascript", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)

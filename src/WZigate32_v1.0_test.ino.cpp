@@ -874,6 +874,8 @@ bool loadConfigGeneral() {
   strlcpy(ConfigGeneral.passWebPush, doc["passWebPush"] | "", sizeof(ConfigGeneral.passWebPush));
 
   ConfigSettings.enableHistory = (int)doc["enableHistory"];
+  ConfigGeneral.developerMode = (int)doc["developerMode"];
+
 
   ConfigNotif.PowerOutage = (int)doc["PowerOutage"];
   ConfigNotif.PriceChange = (int)doc["PriceChange"];
