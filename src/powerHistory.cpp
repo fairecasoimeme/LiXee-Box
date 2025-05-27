@@ -142,7 +142,7 @@ String toJson(const PowerHistory&  history,   const String&  nowHM = "")
     }
 
     /*----------- 3.  Construction du document JSON --------------------------*/
-    SpiRamJsonDocument doc(MAXHEAP);
+    SpiRamJsonDocument doc(100000);
     JsonObject root = doc.to<JsonObject>();
 
     /* 3‑a)  tableau “datas” */
