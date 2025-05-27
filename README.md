@@ -101,9 +101,16 @@ With web navigator
 6. **Home WiFi**: Configure your main WiFi network
 7. **Reboot**: Device restarts and connects to your network
 
-with **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist
+with **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
 
-### Zigbee Configuration
+<a href="https://play.google.com/store/apps/details?id=fr.lixee.assist">
+  <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
+       alt="Get it on Google Play" 
+       style="height: 50px;"/>
+</a>
+
+
+### Zigbee Configuration))
 
 1. Go to **Network** menu → **Zigbee**
 2. Click **Add Device** to start pairing (30 seconds)
