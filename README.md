@@ -563,7 +563,7 @@ Just install esptools and run this command
 ### Windows
 
 ```bash
-esptool.py.exe --chip esp32 --port "COMXX" \
+esptool.py.exe --chip esp32s3 --port "COMXX" \
 	 --baud 460800 \
 	 --before default_reset --after hard_reset write_flash -z \
 	 --flash_mode dio --flash_freq 40m --flash_size 16MB \
