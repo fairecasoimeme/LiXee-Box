@@ -79,6 +79,13 @@ CircularBuffer<SerialPacket, 300> *QueuePacket = nullptr;
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+
+unsigned long lastConnectionTest = 0;
+const unsigned long CONNECTION_TEST_INTERVAL = 20000; // 20 secondes
+bool connectionTestPending = false;
+uint16_t lastTestPacketId = 0;
+bool reallyConnected = false;
+
 #define FORMAT_LittleFS_IF_FAILED true
 //#define CONFIG_LITTLEFS_CACHE_SIZE 512
 
@@ -391,6 +398,9 @@ void udpProcess()
       {
         log_i("send ACK");
         packet.print("ack");
+      }else{
+        log_i("send ACK");
+        packet.print("ack");
       }
     });
   }
@@ -593,12 +603,11 @@ void onMqttConnect(bool sessionPresent) {
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   DEBUG_PRINT(F("Disconnected from MQTT."));
   DEBUG_PRINTLN((uint8_t)reason);
- // addDebugLog("Disconnected from mqtt : "+String((uint8_t)reason));
-
-  /*if ((uint8_t)reason==0)
-  {
-    esp_restart();
-  }*/
+  // IMPORTANT : Vider toutes les files d'attente
+  mqttClient.clearQueue(); // Si cette méthode existe
+  
+  // Sinon, forcer une réinitialisation complète
+  mqttClient.disconnect(true); // Force disconnect
 
   if (WiFi.isConnected()) {
     xTimerStart(mqttReconnectTimer, 0);
@@ -640,7 +649,12 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
 void onMqttPublish(uint16_t packetId) {
   DEBUG_PRINTLN(F("Publish acknowledged."));
   DEBUG_PRINT(F("  packetId: "));
-  DEBUG_PRINT(packetId);
+  DEBUG_PRINTLN(packetId);
+
+  if (packetId > 0) {
+      lastConnectionTest = millis();
+  }
+  
 }
 
 void initTempSensor(){
@@ -1308,7 +1322,7 @@ esp_task_wdt_reset();
   {
     rulesManager.applyRules();
   }
-  
+  esp_task_wdt_init(30, true);
 
   //BleInit();
   
