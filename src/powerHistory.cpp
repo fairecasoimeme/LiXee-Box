@@ -6,6 +6,17 @@
 #include "config.h"
 #include "powerHistory.h"
 
+#ifndef MIN
+#define MIN(a,b) (((a)<(b))?(a):(b))
+#endif
+#ifndef MAX  
+#define MAX(a,b) (((a)>(b))?(a):(b))
+#endif
+
+#define ARDUINOJSON_USE_LONG_LONG 1
+#define ARDUINOJSON_ENABLE_ARDUINO_STRING 1
+#define ARDUINOJSON_ENABLE_STD_STRING 1
+
 extern String Hour;
 extern String Minute;
 
@@ -102,79 +113,231 @@ static inline uint16_t tsToMinutes(const String &ts)
          +       ((ts[3] - '0') * 10 + (ts[4] - '0'));   // minutes
 }
 
-String toJson(const PowerHistory&  history,   const String&  nowHM = "")
+String toJson(const PowerHistory& history, const String& nowHM = "")
 {
-    /*----------- 1.  Collecte + tri chronologique ---------------------------*/
+    /*----------- 1. Estimation de la taille nécessaire ------------------*/
+    // Estimation approximative basée sur le nombre d'enregistrements
+    size_t estimatedSize = 1024; // Base
+    estimatedSize += history.datas.size() * 200; // ~200 bytes par enregistrement
+    estimatedSize += history.stats.size() * 150; // ~150 bytes par stat
+    
+    // Minimum 64KB, maximum 512KB pour éviter les allocations excessives
+    if (estimatedSize < 65536UL) estimatedSize = 65536UL;
+    if (estimatedSize > 524288UL) estimatedSize = 524288UL;
+
+    /*----------- 2. Collecte + tri chronologique (optimisé) -------------*/
     std::vector<const DataRecord*> sorted;
     sorted.reserve(history.datas.size());
+    
     for (const DataRecord& rec : history.datas)
     {
-        if (!String(rec.timeStamp.c_str()).isEmpty())          // ← ignore les enregistrements sans horodatage
+        // Éviter la conversion String inutile
+        if (!rec.timeStamp.empty())
             sorted.push_back(&rec);
     }
 
     std::sort(sorted.begin(), sorted.end(),
               [](const DataRecord* a, const DataRecord* b)
-              { return a->timeStamp < b->timeStamp; });   // "00:00" → "23:59"
+              { return a->timeStamp < b->timeStamp; });
 
-    /*----------- 2.  Rotation pour que ‘nowHM’ arrive en dernier -------------*/
+    /*----------- 3. Rotation pour que 'nowHM' arrive en dernier ----------*/
     std::vector<const DataRecord*> pivoted;
     pivoted.reserve(sorted.size());
 
     if (!nowHM.isEmpty() && !sorted.empty())
     {
-        // Cherche le premier enregistrement dont timeStamp == nowHM
         size_t idx = 0;
+        String nowHMStr = nowHM; // Conversion une seule fois
+        
         while (idx < sorted.size() &&
-               String(sorted[idx]->timeStamp.c_str()) != nowHM) ++idx;
+               String(sorted[idx]->timeStamp.c_str()) != nowHMStr) ++idx;
 
-        // Si trouvé → pivot = idx + 1   (on veut nowHM en **dernier**)
-        // Sinon aucun pivot : on gardera simplement le tri naturel
-        if (idx < sorted.size())  idx = (idx + 1) % sorted.size();
+        if (idx < sorted.size()) idx = (idx + 1) % sorted.size();
 
-        // Construit le vector pivoté
         for (size_t k = 0; k < sorted.size(); ++k)
             pivoted.push_back(sorted[(idx + k) % sorted.size()]);
     }
     else
     {
-        pivoted = std::move(sorted);             // pas de rotation
+        pivoted = std::move(sorted);
     }
 
-    /*----------- 3.  Construction du document JSON --------------------------*/
-    SpiRamJsonDocument doc(100000);
-    JsonObject root = doc.to<JsonObject>();
+    /*----------- 4. Construction du document JSON (avec retry) -----------*/
+    SpiRamJsonDocument* doc = nullptr;
+    
+    // Tentative avec plusieurs tailles si la première échoue
+    for (int attempt = 0; attempt < 3; attempt++)
+    {
+        try 
+        {
+            doc = new SpiRamJsonDocument(estimatedSize);
+            
+            // Vérification simple de l'allocation (v6 n'a pas capacity())
+            JsonObject testObj = doc->to<JsonObject>();
+            if (testObj.isNull())
+            {
+                log_i("Échec allocation JSON, taille: %zu\n", estimatedSize);
+                delete doc;
+                doc = nullptr;
+                estimatedSize *= 2;
+                continue;
+            }
+            
+            // Clear le document pour repartir proprement
+            doc->clear();
+            break; // Allocation réussie
+        }
+        catch (...)
+        {
+            log_i("Exception lors allocation JSON, taille: %zu\n", estimatedSize);
+            if (doc) {
+                delete doc;
+                doc = nullptr;
+            }
+            estimatedSize *= 2;
+            if (attempt == 2) return "{}"; // Échec définitif
+        }
+    }
 
-    /* 3‑a)  tableau “datas” */
+    if (!doc) return "{}";
+
+    JsonObject root = doc->to<JsonObject>();
+    if (root.isNull())
+    {
+        DEBUG_PRINTLN("Échec création objet racine JSON");
+        delete doc;
+        return "{}";
+    }
+
+    /*----------- 5. Construction du tableau "datas" avec vérifications ---*/
     JsonArray arr = root.createNestedArray("datas");
+    if (arr.isNull())
+    {
+        DEBUG_PRINTLN("Échec création array datas");
+        delete doc;
+        return "{}";
+    }
+
+    size_t addedRecords = 0;
+    size_t memoryThreshold = (estimatedSize * 9) / 10; // 90% de la taille estimée
+    
     for (const DataRecord* prec : pivoted)
     {
+        // Vérification de la mémoire disponible (v6 utilise memoryUsage())
+        if (doc->memoryUsage() > memoryThreshold)
+        {
+            log_i("Mémoire JSON presque pleine (%zu bytes), arrêt à %zu enregistrements\n", 
+                         doc->memoryUsage(), addedRecords);
+            break;
+        }
+
         const DataRecord& rec = *prec;
         JsonObject row = arr.createNestedObject();
+        
+        if (row.isNull())
+        {
+            log_i("Échec création objet ligne %zu\n", addedRecords);
+            break;
+        }
+
         row["y"] = rec.timeStamp;
 
-        for (auto& kv : rec.values)               // attributs dynamiques
-            row[String(kv.first)] = kv.second;
+        // Ajout des valeurs dynamiques avec vérification
+        for (const auto& kv : rec.values)
+        {
+            // ArduinoJSON v6 - conversion de la clé en String si nécessaire
+            String key = String(kv.first);
+            if (!row.containsKey(key))
+            {
+                row[key] = kv.second;
+            }
+        }
+        
+        addedRecords++;
+        
+        // Vérification périodique pour éviter la surcharge
+        if (addedRecords % 50 == 0)
+        {
+            if (doc->overflowed())
+            {
+                log_i("Document JSON débordé à %zu enregistrements\n", addedRecords);
+                break;
+            }
+        }
     }
 
-    /* 3‑b)  objet “stats” (inchangé) */
+    log_i("Ajouté %zu/%zu enregistrements\n", addedRecords, pivoted.size());
+
+    /*----------- 6. Construction de l'objet "stats" ----------------------*/
     JsonObject statsObj = root.createNestedObject("stats");
-    for (auto& kv : history.stats)
+    if (!statsObj.isNull() && !doc->overflowed())
     {
-        JsonObject attr = statsObj.createNestedObject(String(kv.first));
-        attr["min"]   = kv.second.min;
-        attr["max"]   = kv.second.max;
-        attr["trend"] = kv.second.trend;
-        attr["last"]  = kv.second.last;
+        size_t statsThreshold = (estimatedSize * 19) / 20; // 95% de la taille estimée
+        
+        for (const auto& kv : history.stats)
+        {
+            if (doc->memoryUsage() > statsThreshold || doc->overflowed())
+            {
+                DEBUG_PRINTLN("Mémoire JSON pleine, stats tronquées");
+                break;
+            }
+
+            String statKey = String(kv.first);
+            JsonObject attr = statsObj.createNestedObject(statKey);
+            if (!attr.isNull())
+            {
+                attr["min"]   = kv.second.min;
+                attr["max"]   = kv.second.max;
+                attr["trend"] = kv.second.trend;
+                attr["last"]  = kv.second.last;
+            }
+        }
     }
 
-    /*----------- 4.  Sérialisation ------------------------------------------*/
+    /*----------- 7. Vérification finale avant sérialisation -------------*/
+    if (doc->overflowed())
+    {
+        DEBUG_PRINTLN("Attention: Document JSON a débordé pendant la construction");
+        // On peut continuer, ArduinoJSON v6 gère les débordements proprement
+    }
+
+    /*----------- 8. Sérialisation avec gestion d'erreur -----------------*/
     String out;
-    if (serializeJson(doc, out) == 0)
+    
+    // Estimation de la taille de sortie
+    size_t jsonSize = measureJson(*doc);
+    if (jsonSize == 0)
+    {
+        DEBUG_PRINTLN("Échec mesure JSON");
+        delete doc;
         return "{}";
+    }
+    
+    // Pre-réservation de la chaîne de sortie
+    out.reserve(jsonSize + 100);
+    
+    size_t serializedSize = serializeJson(*doc, out);
+    
+    if (serializedSize == 0)
+    {
+        DEBUG_PRINTLN("Échec sérialisation JSON");
+        delete doc;
+        return "{}";
+    }
 
+    log_i("JSON généré: %zu bytes (mesuré: %zu), mémoire doc: %zu bytes\n", 
+                  serializedSize, jsonSize, doc->memoryUsage());
+
+    // Vérification de la validité du JSON généré
+    if (out.length() < 10 || !out.startsWith("{") || !out.endsWith("}"))
+    {
+        Serial.println("JSON généré semble corrompu");
+        delete doc; // Libération mémoire
+        return "{}";
+    }
+
+    delete doc; // Libération mémoire
     return out;
-
 }
 
 bool savePowerHistory(String IEEE, const PowerHistory &history) {
