@@ -101,7 +101,7 @@ void SimpleMeterManage(String inifile,int attribute,uint8_t datatype,int len, ch
         sprintf(value, "%02X",datas[i]);
         tmp+=value;
       }
-      tmp="-"+tmp;
+     
       if (ini_exist(inifile))
       {
         //ini_write(inifile,"0702", (String)attribute, (String)tmp);
@@ -110,6 +110,7 @@ void SimpleMeterManage(String inifile,int attribute,uint8_t datatype,int len, ch
         {
           mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
         }
+        tmp="-"+tmp;
         //WebPush
         if (ConfigSettings.enableWebPush)
         {
