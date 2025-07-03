@@ -78,7 +78,8 @@ public:
 
     PowerHistory powerHistory;
     DeviceEnergyHistory energyHistory;
-
+    int otaInProgress;
+    int otaPercentage;
     time_t getLastSeenEpoch() const;
 
     // Constructeur : on transmet le nom de fichier JSON + un "deviceID" si besoin

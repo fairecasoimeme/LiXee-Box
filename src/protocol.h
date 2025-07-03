@@ -33,6 +33,7 @@ void SetLQI( String inifile, String val);
 void SetInfoDeviceId( String inifile, String val);
 bool deviceExist(String mac);
 
+bool loadOTAFile(const char* filename);
 
 //String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient);
 String GetValueStatus(String IEEE, int key, int attribut, String type, float coefficient);

@@ -19,7 +19,7 @@ extern std::vector<DeviceData*> devices;
 
 extern struct ZigbeeConfig ZConfig;
 extern CircularBuffer<Packet, 100> *commandList;
-extern CircularBuffer<Packet, 10> *PrioritycommandList;
+extern CircularBuffer<Packet, 70> *PrioritycommandList;
 extern CircularBuffer<SerialPacket, 300> *QueuePacket;
 extern CircularBuffer<SerialPacket, 30> *PriorityQueuePacket;
 //extern CircularBuffer<Packet, 10> commandTimedList;
@@ -36,6 +36,56 @@ extern String Month;
 extern String epochTime;
 extern unsigned long timeLog;
 extern String section[12];
+
+//OTA 
+extern uint8_t* au8OTAFile;
+
+const size_t OTA_BUFFER_SIZE = 500000;
+uint32_t u32OtaFileIdentifier;
+uint16_t u16OtaFileHeaderVersion;
+uint16_t u16OtaFileHeaderLength;
+uint16_t u16OtaFileHeaderControlField;
+uint16_t u16OtaFileManufacturerCode;
+uint16_t u16OtaFileImageType;
+uint32_t u32OtaFileVersion;
+uint16_t u16OtaFileStackVersion;
+uint32_t u32OtaFileTotalImage;
+uint8_t u8OtaFileSecurityCredVersion;
+uint64_t u64OtaFileUpgradeFileDest;
+uint16_t u16OtaFileMinimumHwVersion;
+uint16_t u16OtaFileMaxHwVersion;
+uint8_t au8OtaFileHeaderString[32];
+
+// Structure pour stocker les informations OTA
+struct OTAFileInfo {
+    bool loaded;
+    String filename;
+    uint32_t fileSize;
+    String headerString;
+    uint32_t fileIdentifier;
+    uint16_t headerVersion;
+    uint16_t headerLength;
+    uint16_t headerControlField;
+    uint16_t manufacturerCode;
+    uint16_t imageType;
+    uint32_t fileVersion;
+    uint16_t stackVersion;
+    uint32_t totalImage;
+    uint8_t securityCredVersion;
+    uint64_t upgradeFileDest;
+    uint16_t minimumHwVersion;
+    uint16_t maxHwVersion;
+};
+
+OTAFileInfo currentOTAInfo = {false, "", 0, "", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+extern byte u8OTAWaitForDataParamsPending;
+extern uint16_t u16OTAWaitForDataParamsTargetAddr;
+extern byte u8OTAWaitForDataParamsSrcEndPoint;
+extern uint32_t u32OTAWaitForDataParamsCurrentTime;
+extern uint32_t u32OTAWaitForDataParamsRequestTime;
+extern uint16_t u16OTAWaitForDataParamsBlockDelay;
+extern uint32_t u32OtaFileTotalImage;
 
 int TimedFiFo;
 
@@ -184,6 +234,19 @@ void lastSeen(int shortAddr)
   }
   //ini_write(path,"INFO", "lastSeen", FormattedDate);
 
+}
+
+DeviceData *getDeviceShortAddr(int shortAddr)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getInfo().shortAddr.toInt() == shortAddr)
+    {
+      return device;
+    }
+  }
+  return NULL;
 }
 
 String GetMacAdrr(int shortAddr)
@@ -388,6 +451,12 @@ bool deviceExist(String mac)
 
 void datasManage(char packet[256],int count)
 {
+  // Vérification des bounds AVANT traitement
+  if (count > 256 || count < 6) {
+      log_e("Invalid packet size: %d", count);
+      return;
+  }
+
   uint8_t CRC=0;
   ZiGateProtocol protocol = {};
 
@@ -403,10 +472,19 @@ void datasManage(char packet[256],int count)
     CRC=CRC ^ uint8_t(packet[3]);
     protocol.chksum = uint8_t(packet[4]);    
 
-    for (int i=5; i< (5+protocol.ln); i++)
-    {
-      CRC=CRC ^ uint8_t(packet[i]);
-      protocol.payload[(i-5)]=packet[i];
+    if (protocol.ln > (256 - 5)) {
+        log_e("Payload too large: %d", protocol.ln);
+        return;
+    }
+    
+    // Protection supplémentaire
+    for (int i = 5; i < (5 + protocol.ln) && i < count; i++) {
+      if ((i-5) >= sizeof(protocol.payload)) {
+          log_e("Payload buffer overflow prevented");
+          break;
+      }
+      CRC = CRC ^ uint8_t(packet[i]);
+      protocol.payload[(i-5)] = packet[i];
     }
 
     if (protocol.chksum == CRC)
@@ -435,8 +513,153 @@ void datasManage(char packet[256],int count)
   size_t HeapSize = ESP.getHeapSize();
   size_t freeMemory = ESP.getFreeHeap();
   size_t freeMemoryPS = ESP.getFreePsram();
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),HeapSize,freeMemory,freeMemoryPS,uxTaskGetStackHighWaterMark(NULL));
+  Serial.printf("📊 - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld \r\n",xPortGetCoreID(),HeapSize,freeMemory,freeMemoryPS,uxTaskGetStackHighWaterMark(NULL));
+
 }
+
+bool loadOTAFile(const char* filename) {
+    
+    au8OTAFile = (uint8_t*)ps_malloc(OTA_BUFFER_SIZE);
+    if (!au8OTAFile) {
+        Serial.println("Erreur: Impossible d'allouer la mémoire PSRAM");
+        return false;
+    }
+  
+    // Ouvrir le fichier OTA
+    String path = "/ota/" + String(filename);
+    DEBUG_PRINTLN(path);
+    File otaFile = LittleFS.open(path, "r");
+    if (!otaFile) {
+        Serial.println("Erreur: Impossible d'ouvrir le fichier OTA");
+        return false;
+    }
+    
+    // Vérifier la taille du fichier
+    size_t fileSize = otaFile.size();
+    if (fileSize > OTA_BUFFER_SIZE) {
+        Serial.println("Erreur: Fichier trop volumineux");
+        otaFile.close();
+        return false;
+    }
+    
+    // Lire le fichier dans le buffer
+    size_t bytesRead = otaFile.read(au8OTAFile, fileSize);
+    otaFile.close();
+    
+    if (bytesRead != fileSize) {
+        Serial.println("Erreur: Lecture incomplète du fichier");
+        return false;
+    }
+    
+    // Extraire les informations du header (Little-endian pour ESP32)
+    u32OtaFileIdentifier = (uint32_t)au8OTAFile[0] | 
+                          ((uint32_t)au8OTAFile[1] << 8) | 
+                          ((uint32_t)au8OTAFile[2] << 16) | 
+                          ((uint32_t)au8OTAFile[3] << 24);
+    
+    u16OtaFileHeaderVersion = (uint16_t)au8OTAFile[4] | 
+                             ((uint16_t)au8OTAFile[5] << 8);
+    
+    u16OtaFileHeaderLength = (uint16_t)au8OTAFile[6] | 
+                            ((uint16_t)au8OTAFile[7] << 8);
+    
+    u16OtaFileHeaderControlField = (uint16_t)au8OTAFile[8] | 
+                                  ((uint16_t)au8OTAFile[9] << 8);
+    
+    u16OtaFileManufacturerCode = (uint16_t)au8OTAFile[10] | 
+                                ((uint16_t)au8OTAFile[11] << 8);
+    
+    u16OtaFileImageType = (uint16_t)au8OTAFile[12] | 
+                         ((uint16_t)au8OTAFile[13] << 8);
+    
+    u32OtaFileVersion = (uint32_t)au8OTAFile[14] | 
+                       ((uint32_t)au8OTAFile[15] << 8) | 
+                       ((uint32_t)au8OTAFile[16] << 16) | 
+                       ((uint32_t)au8OTAFile[17] << 24);
+    
+    u16OtaFileStackVersion = (uint16_t)au8OTAFile[18] | 
+                            ((uint16_t)au8OTAFile[19] << 8);
+    
+    // Extraire le header string (32 bytes à partir de l'offset 20)
+    for (uint8_t i = 0; i < 32; i++) {
+        au8OtaFileHeaderString[i] = au8OTAFile[20 + i];
+    }
+    
+    u32OtaFileTotalImage = (uint32_t)au8OTAFile[52] | 
+                          ((uint32_t)au8OTAFile[53] << 8) | 
+                          ((uint32_t)au8OTAFile[54] << 16) | 
+                          ((uint32_t)au8OTAFile[55] << 24);
+    
+    u8OtaFileSecurityCredVersion = au8OTAFile[56];
+    
+    u64OtaFileUpgradeFileDest = (uint64_t)au8OTAFile[57] | 
+                               ((uint64_t)au8OTAFile[58] << 8) | 
+                               ((uint64_t)au8OTAFile[59] << 16) | 
+                               ((uint64_t)au8OTAFile[60] << 24) | 
+                               ((uint64_t)au8OTAFile[61] << 32) | 
+                               ((uint64_t)au8OTAFile[62] << 40) | 
+                               ((uint64_t)au8OTAFile[63] << 48) | 
+                               ((uint64_t)au8OTAFile[64] << 56);
+    
+    u16OtaFileMinimumHwVersion = (uint16_t)au8OTAFile[65] | 
+                                ((uint16_t)au8OTAFile[66] << 8);
+    
+    u16OtaFileMaxHwVersion = (uint16_t)au8OTAFile[67] | 
+                            ((uint16_t)au8OTAFile[68] << 8);
+    
+    // Mettre à jour la structure d'informations
+    currentOTAInfo.loaded = true;
+    currentOTAInfo.filename = String(filename);
+    currentOTAInfo.fileSize = fileSize;
+    currentOTAInfo.fileIdentifier = u32OtaFileIdentifier;
+    currentOTAInfo.headerVersion = u16OtaFileHeaderVersion;
+    currentOTAInfo.headerLength = u16OtaFileHeaderLength;
+    currentOTAInfo.headerControlField = u16OtaFileHeaderControlField;
+    currentOTAInfo.manufacturerCode = u16OtaFileManufacturerCode;
+    currentOTAInfo.imageType = u16OtaFileImageType;
+    currentOTAInfo.fileVersion = u32OtaFileVersion;
+    currentOTAInfo.stackVersion = u16OtaFileStackVersion;
+    currentOTAInfo.totalImage = u32OtaFileTotalImage;
+    currentOTAInfo.securityCredVersion = u8OtaFileSecurityCredVersion;
+    currentOTAInfo.upgradeFileDest = u64OtaFileUpgradeFileDest;
+    currentOTAInfo.minimumHwVersion = u16OtaFileMinimumHwVersion;
+    currentOTAInfo.maxHwVersion = u16OtaFileMaxHwVersion;
+    
+    // Convertir le header string en String
+    currentOTAInfo.headerString = "";
+    for (int i = 0; i < 32; i++) {
+        if (au8OtaFileHeaderString[i] != 0) {
+            currentOTAInfo.headerString += (char)au8OtaFileHeaderString[i];
+        }
+    }
+
+    DeviceInfo di;
+    String tmpName = String(filename).substring(0,16) + ".json";
+    DEBUG_PRINTLN("---------------");
+    DEBUG_PRINTLN(tmpName);
+    di =getDeviceInfo(tmpName);
+
+    sendOtaLoadNewImage(di.shortAddr, // u16ShortAddr - modifiez selon vos besoins
+                            u32OtaFileIdentifier,
+                            u16OtaFileHeaderVersion,
+                            u16OtaFileHeaderLength,
+                            u16OtaFileHeaderControlField,
+                            u16OtaFileManufacturerCode,
+                            u16OtaFileImageType,
+                            u32OtaFileVersion,
+                            u16OtaFileStackVersion,
+                            au8OtaFileHeaderString,
+                            u32OtaFileTotalImage,
+                            u8OtaFileSecurityCredVersion,
+                            u64OtaFileUpgradeFileDest,
+                            u16OtaFileMinimumHwVersion,
+                            u16OtaFileMaxHwVersion);
+
+    sendOtaImageNotify(di.shortAddr,0,u32OtaFileVersion,u16OtaFileImageType,u16OtaFileManufacturerCode,0);
+
+    return true;
+}
+
 
 void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 {
@@ -459,6 +682,182 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       char error[200];
       sprintf(error,"Error Packet : %02x - Device : %02X%02X",protocol.payload[0],protocol.payload[4],protocol.payload[5]);
       alertList->push(Alert{String(error), 1});
+      
+    }
+    break;
+    //OTA
+    case 0x8501:
+    {
+        byte u8Offset = 0;
+        byte u8SQN;
+        byte u8SrcEndpoint;
+        uint16_t u16ClusterId;
+        uint16_t u16SrcAddr;
+        byte u8SrcAddrMode;
+        uint64_t u64RequestNodeAddress;
+        uint32_t u32FileOffset;
+        uint32_t u32FileVersion;
+        uint16_t u16ImageType;
+        uint16_t u16ManufactureCode;
+        uint16_t u16BlockRequestDelay;
+        byte u8MaxDataSize;
+        byte u8FieldControl;
+
+        u8SQN = protocol.payload[u8Offset++];
+
+        u8SrcEndpoint = protocol.payload[u8Offset++];
+
+        u16ClusterId = protocol.payload[u8Offset++];
+        u16ClusterId <<= 8;
+        u16ClusterId |= protocol.payload[u8Offset++];
+
+        u8SrcAddrMode = protocol.payload[u8Offset++];
+
+        u16SrcAddr = protocol.payload[u8Offset++];
+        u16SrcAddr <<= 8;
+        u16SrcAddr |= protocol.payload[u8Offset++];
+
+        u64RequestNodeAddress = protocol.payload[u8Offset++];
+        u64RequestNodeAddress <<= 8;
+        u64RequestNodeAddress |= protocol.payload[u8Offset++];
+        u64RequestNodeAddress <<= 8;
+        u64RequestNodeAddress |= protocol.payload[u8Offset++];
+        u64RequestNodeAddress <<= 8;
+        u64RequestNodeAddress |= protocol.payload[u8Offset++];
+        u64RequestNodeAddress <<= 8;
+        u64RequestNodeAddress |= protocol.payload[u8Offset++];
+        u64RequestNodeAddress <<= 8;
+        u64RequestNodeAddress |= protocol.payload[u8Offset++];
+        u64RequestNodeAddress <<= 8;
+        u64RequestNodeAddress |= protocol.payload[u8Offset++];
+        u64RequestNodeAddress <<= 8;
+        u64RequestNodeAddress |= protocol.payload[u8Offset++];
+
+        u32FileOffset = protocol.payload[u8Offset++];
+        u32FileOffset <<= 8;
+        u32FileOffset |= protocol.payload[u8Offset++];
+        u32FileOffset <<= 8;
+        u32FileOffset |= protocol.payload[u8Offset++];
+        u32FileOffset <<= 8;
+        u32FileOffset |= protocol.payload[u8Offset++];
+
+        u32FileVersion = protocol.payload[u8Offset++];
+        u32FileVersion <<= 8;
+        u32FileVersion |= protocol.payload[u8Offset++];
+        u32FileVersion <<= 8;
+        u32FileVersion |= protocol.payload[u8Offset++];
+        u32FileVersion <<= 8;
+        u32FileVersion |= protocol.payload[u8Offset++];
+
+        u16ImageType = protocol.payload[u8Offset++];
+        u16ImageType <<= 8;
+        u16ImageType |= protocol.payload[u8Offset++];
+
+        u16ManufactureCode = protocol.payload[u8Offset++];
+        u16ManufactureCode <<= 8;
+        u16ManufactureCode |= protocol.payload[u8Offset++];
+
+        u16BlockRequestDelay = protocol.payload[u8Offset++];
+        u16BlockRequestDelay <<= 8;
+        u16BlockRequestDelay |= protocol.payload[u8Offset++];
+
+        u8MaxDataSize = protocol.payload[u8Offset++];
+
+        u8FieldControl = protocol.payload[u8Offset++];
+
+        DeviceData *device = getDeviceShortAddr((int)u16SrcAddr);
+
+        // Send response 
+        if (u8OTAWaitForDataParamsPending == 0)
+        {
+            byte u8NbrBytes = 0;
+
+            if ((u32FileOffset + u8MaxDataSize) > u32OtaFileTotalImage)
+            {
+                u8NbrBytes = (byte)(u32OtaFileTotalImage - u32FileOffset);
+            }
+            else
+            {
+                u8NbrBytes = u8MaxDataSize;
+            }
+            if (au8OTAFile == NULL)
+            {
+              String path = device->getDeviceID()+".ota";
+              loadOTAFile(path.c_str());
+            }
+            Serial.printf("🌐 ----offset : %ld / u8NbrBytes : %ld\n",u32FileOffset,u8NbrBytes);
+            sendOtaBlock( u16SrcAddr, u8SQN, 0, u32FileOffset, u32FileVersion, u16ImageType, u16ManufactureCode, u8NbrBytes, au8OTAFile);
+        }
+        else
+        {
+            sendOtaSetWaitForDataParams( u16SrcAddr, u8SQN, 0x97, u32OTAWaitForDataParamsCurrentTime, u32OTAWaitForDataParamsRequestTime, u16OTAWaitForDataParamsBlockDelay);
+            u8OTAWaitForDataParamsPending = 0;
+        }
+
+        if (device->otaInProgress != 1)
+        {           
+            device->otaInProgress=1;
+            device->otaPercentage=0;
+
+        }
+        else
+        {
+            uint32_t u32PercentComplete = (u32FileOffset * 100) / u32OtaFileTotalImage;
+            device->otaPercentage=u32PercentComplete;
+
+        }
+    }
+    break;
+    case 0x8503:
+    {
+      byte u8Offset = 0;
+      byte u8SQN;
+      byte u8SrcEndpoint;
+      uint16_t u16ClusterId;
+      uint16_t u16SrcAddr;
+      byte u8SrcAddrMode;
+      uint32_t u32FileVersion;
+      uint16_t u16ImageType;
+      uint16_t u16ManufactureCode;
+      byte u8Status;
+
+      u8SQN = protocol.payload[u8Offset++];
+
+      u8SrcEndpoint = protocol.payload[u8Offset++];
+
+      u16ClusterId = protocol.payload[u8Offset++];
+      u16ClusterId <<= 8;
+      u16ClusterId |= protocol.payload[u8Offset++];
+
+      u8SrcAddrMode = protocol.payload[u8Offset++];
+
+      u16SrcAddr = protocol.payload[u8Offset++];
+      u16SrcAddr <<= 8;
+      u16SrcAddr |= protocol.payload[u8Offset++];
+
+      u32FileVersion = protocol.payload[u8Offset++];
+      u32FileVersion <<= 8;
+      u32FileVersion |= protocol.payload[u8Offset++];
+      u32FileVersion <<= 8;
+      u32FileVersion |= protocol.payload[u8Offset++];
+      u32FileVersion <<= 8;
+      u32FileVersion |= protocol.payload[u8Offset++];
+
+      u16ImageType = protocol.payload[u8Offset++];
+      u16ImageType <<= 8;
+      u16ImageType |= protocol.payload[u8Offset++];
+
+      u16ManufactureCode = protocol.payload[u8Offset++];
+      u16ManufactureCode <<= 8;
+      u16ManufactureCode |= protocol.payload[u8Offset++];
+
+      u8Status = protocol.payload[u8Offset++];
+
+      sendOtaEndResponse(u16SrcAddr, u8SQN, 5, 10, u32FileVersion, u16ImageType, u16ManufactureCode);
+      SendAttributeRead((int)u16SrcAddr,0,5);
+
+      DeviceData *device = getDeviceShortAddr((int)u16SrcAddr);
+      device->otaInProgress=0;
       
     }
     break;
@@ -559,14 +958,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         
         String path = GetMacAdrr(shortAddr);
         
-        //WriteIni ini;
-        //ini.i[0].section ="INFO";
-        //ini.i[0].key = "device_id";
-       // ini.i[0].value = (String)device_id;
         SetInfoDeviceId(path,String(device_id));
-
-
-        //ini_write(path,"INFO", "device_id", (String)device_id);
       
         nbIN= (uint8_t)protocol.payload[11];
         nbOUT=(uint8_t)protocol.payload[11+(nbIN*2)+1];
@@ -582,12 +974,6 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           tmpIN+=String(cluster);
         
         }
-        
-        //ini.i[1].section =(String)endpoint;
-        //ini.i[1].key = "IN";
-        //ini.i[1].value = tmpIN;
-
-        //ini_write(path,(String)endpoint, "IN", tmpIN);
     
         for (i=((12+(nbIN*2))+1);i<(((12+(nbIN*2))+1)+(nbOUT*2));i=i+2)
         {
@@ -596,16 +982,6 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           if (i>((12+(nbIN*2))+1)){tmpOUT+=",";}
           tmpOUT+=(String)cluster;
         }
-
-        //ini.i[2].section =(String)endpoint;
-        //ini.i[2].key = "OUT";
-        //ini.i[2].value = tmpOUT;
-
-        //ini.iniPacketSize = 3;
-
-        //ini_writes(path, ini, true);
-          
-          //ini_write(path,(String)endpoint, "OUT", tmpOUT);
 
         //get info basic (Appli version / Manuf / model)
         if (endpoint ==1)
@@ -652,14 +1028,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
             datas[2]= protocol.payload[5+i];
             memcpy(trame.datas,datas,3);
 
-            
-            //TimedFiFo=10000;
-            //TimedFiFo=1;
-            //commandTimedList.push(trame);
             PrioritycommandList->push(trame);
-            //commandList->push(trame);
-    //Save endpoint to device
-            //insertEndpoint(((protocol.payload[2]*256) + protocol.payload[3]),nbEndpoint);
+
           }
           log_d("Simple desc : %02x%02x",ShortAddr[0],ShortAddr[1]);
 
@@ -705,7 +1075,6 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           Cluster[i]=(uint8_t)protocol.payload[i+3];
         }
 
-        //uint8_t endpoint = (uint8_t)protocol.payload[5];
         uint8_t addressMode = (uint8_t)protocol.payload[7];
         uint8_t ShortAddr[2]; 
         if (addressMode == 2)
@@ -724,7 +1093,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         inifile = GetMacAdrr(SA);
         char tmpStatus[4];
         sprintf(tmpStatus,"%02x",protocol.payload[0]);
-        //ini_write(inifile,"INFO","Status",String(tmpStatus));
+
         SetInfoStatus(inifile,String(tmpStatus));
 
         if ((Command == 10) || (Command == 1))
@@ -796,27 +1165,11 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           char lqi[4];
           snprintf(lqi,3, "%02X",protocol.payload[ln+12]);
            
-          //WriteIni ini;
-          //ini.i[0].section ="INFO";
-          //ini.i[0].key = "lastSeen";
-          //ini.i[0].value = FormattedDate;
           SetInfoLastseen(inifile,FormattedDate);
 
-          //ini.i[1].section ="INFO";
-          //ini.i[1].key = "LQI";
-          //ini.i[1].value = String(lqi);
           SetInfoLQI(inifile,String(lqi));
 
-          //ini.i[2].section ="INFO";
-          //ini.i[2].key = "Status";
-          //ini.i[2].value = "00";
           SetInfoStatus(inifile,String("00"));
-
-          //ini.iniPacketSize = 3;
-          //ini_writes(inifile, ini, false);
-
-          // ini_write(inifile,"INFO","LQI",String(lqi));
-          // ini_write(inifile,"INFO","Status","00");
 
            //Traitement données
           readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[12]);
@@ -862,6 +1215,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           getPollingDevice(ShortAddr,DeviceId,model);
           log_d("getPollingDevice");
           vTaskDelay(100);
+          //get software version
+          SendAttributeRead(SA,0,16384);
           alertList->push(Alert{"Config OK", 0});
           //Afficher la find de la config
           
@@ -1169,6 +1524,13 @@ void protocolDatas(uint8_t sp[4092], size_t len)
   //for (count=0; count<sp.length(); count++)
   for (count=0; count<len; count++)
   {
+    // PROTECTION CRITIQUE
+    if (i >= (sizeof(packet) - 1)) {
+        log_e("Packet buffer overflow, resetting");
+        i = 0;
+        stx = false;
+        continue;
+    }
     j++;
     if (sp[count]==0x01)
     {
@@ -1189,8 +1551,11 @@ void protocolDatas(uint8_t sp[4092], size_t len)
         int type;
         type = int(packet[0])<<8 ;
         type |= int(packet[1]) ;
-
-        if ((type == 0x4d) || (type == 0x8043) || (type == 0x8045))
+        if (type == 0x8501)
+        {
+          datasManage((char *)sp.raw,sp.len);
+        }
+        else if ((type == 0x4d) || (type == 0x8043) || (type == 0x8045)|| (type == 0x8503))
         {
           if (!PriorityQueuePacket->isFull())
           {
@@ -1213,7 +1578,7 @@ void protocolDatas(uint8_t sp[4092], size_t len)
             addDebugLog("QueuePacket FULL !");
             while (!QueuePacket->isEmpty())
             {
-              DEBUG_PRINTLN("Packet shift : protocol datas");
+              //DEBUG_PRINTLN("Packet shift : protocol datas");
               SerialPacket packet;
               xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
               packet = (SerialPacket)QueuePacket->shift();
