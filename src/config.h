@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.0j"
+#define VERSION "v2.2a"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -145,15 +145,19 @@ struct ConfigGeneralStruct {
   bool developerMode;
 };
 
+struct SerialBuffer {
+    uint8_t data[512];
+    size_t length;
+};
 
-typedef struct {
-    unsigned int cmd;
-    unsigned int len;
+typedef struct __attribute__((packed)) {
+    uint16_t cmd;           // uint16_t au lieu de unsigned int (32 bits -> 16 bits)
+    uint16_t len;           // uint16_t au lieu de unsigned int
     uint8_t datas[512];
 } Packet;
 
-typedef struct {
-    unsigned int len;
+typedef struct __attribute__((packed)) {
+    uint16_t len;           // uint16_t au lieu de unsigned int
     uint8_t raw[256];
 } SerialPacket;
 
