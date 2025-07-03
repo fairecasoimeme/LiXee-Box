@@ -30,6 +30,7 @@ extern struct ConfigGeneralStruct ConfigGeneral;
 
 
 extern CircularBuffer<Packet, 100> *commandList;
+extern CircularBuffer<Packet, 70> *PrioritycommandList;
 //extern CircularBuffer<Packet, 10> commandTimedList;
 extern String Day;
 extern String Month;
@@ -118,7 +119,7 @@ void SendBind(uint64_t mac, int cluster)
   datas[20]=1;
 
   memcpy(trame.datas,datas,trame.len);
-  commandList->push(trame);
+  PrioritycommandList->push(trame);
 }
 
 void SendBasicDescription(uint8_t shortAddr[2], uint8_t endpoint)
@@ -205,7 +206,7 @@ void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type,
     }
     
     memcpy(trame.datas,datas,trame.len);
-    commandList->push(trame);
+    PrioritycommandList->push(trame);
 }
 
 void SendAttributeRead(int shortAddr, int cluster, int attribut)
@@ -233,6 +234,222 @@ void SendAttributeRead(int shortAddr, int cluster, int attribut)
     commandList->push(trame);
 }
 
+//OTA
+void sendOtaEndResponse( int u16ShortAddr, byte u8SeqNbr, uint32_t u32UpgradeTime, uint32_t u32CurrentTime, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode)
+{
+    uint8_t commandData[128];
+    byte u8Len = 0;
+
+    Packet trame;
+    trame.cmd=0x0504;
+    
+    // Build command payload   
+    commandData[u8Len++] = 0x02;
+    commandData[u8Len++] = (u16ShortAddr >> 8) & 0xFF;
+    commandData[u8Len++] = u16ShortAddr & 0xFF;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = u8SeqNbr;
+    commandData[u8Len++] = (byte)(u32UpgradeTime >> 24);
+    commandData[u8Len++] = (byte)(u32UpgradeTime >> 16);
+    commandData[u8Len++] = (byte)(u32UpgradeTime >> 8);
+    commandData[u8Len++] = (byte)u32UpgradeTime;
+    commandData[u8Len++] = (byte)(u32CurrentTime >> 24);
+    commandData[u8Len++] = (byte)(u32CurrentTime >> 16);
+    commandData[u8Len++] = (byte)(u32CurrentTime >> 8);
+    commandData[u8Len++] = (byte)u32CurrentTime;
+    commandData[u8Len++] = (byte)(u32FileVersion >> 24);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 16);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 8);
+    commandData[u8Len++] = (byte)u32FileVersion;
+    commandData[u8Len++] = (byte)(u16ImageType >> 8);
+    commandData[u8Len++] = (byte)u16ImageType;
+    commandData[u8Len++] = (byte)(u16ManuCode >> 8);
+    commandData[u8Len++] = (byte)u16ManuCode;
+    trame.len=u8Len;
+    // Transmit command
+    memcpy(trame.datas,commandData,trame.len);
+    PrioritycommandList->push(trame);
+
+}
+
+void sendOtaBlock( int u16ShortAddr, byte u8SeqNbr, byte u8Status, uint32_t u32FileOffset, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode, byte u8DataSize, uint8_t au8Data[])
+{
+    uint8_t commandData[256];
+    byte u8Len = 0;
+
+    Packet trame;
+    trame.cmd=0x0502;
+
+    // Build command payload   
+    commandData[u8Len++] = 0x02;
+    commandData[u8Len++] = (u16ShortAddr >> 8) & 0xFF;
+    commandData[u8Len++] = u16ShortAddr & 0xFF;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = u8SeqNbr;
+    commandData[u8Len++] = u8Status;
+    commandData[u8Len++] = (byte)(u32FileOffset >> 24);
+    commandData[u8Len++] = (byte)(u32FileOffset >> 16);
+    commandData[u8Len++] = (byte)(u32FileOffset >> 8);
+    commandData[u8Len++] = (byte)u32FileOffset;
+    commandData[u8Len++] = (byte)(u32FileVersion >> 24);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 16);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 8);
+    commandData[u8Len++] = (byte)u32FileVersion;
+    commandData[u8Len++] = (byte)(u16ImageType >> 8);
+    commandData[u8Len++] = (byte)u16ImageType;
+    commandData[u8Len++] = (byte)(u16ManuCode >> 8);
+    commandData[u8Len++] = (byte)u16ManuCode;
+    commandData[u8Len++] = u8DataSize;
+
+    /*if (u8DataSize > (512 - u8Len)) {
+        // Handle error - data too large for commandData buffer
+        return;
+    } */
+
+    byte i;
+    for (i = 0; i < u8DataSize; i++)
+    {
+        commandData[u8Len++] = au8Data[u32FileOffset + i];
+    }
+    trame.len=u8Len;
+    // Transmit command
+    memcpy(trame.datas,commandData,trame.len);
+    sendZigbeeCmd(trame);
+    //PrioritycommandList->push(trame);
+}
+
+void sendOtaSetWaitForDataParams( int u16TargetAddr, byte u8SeqNbr, byte u8Status, uint32_t u32CurrentTime, uint32_t u32RequestTime, uint16_t u16BlockDelay)
+{
+    uint8_t commandData[32];
+    byte u8Len = 0;
+
+    Packet trame;
+    trame.cmd=0x0506;
+
+    // Build command payload   
+    commandData[u8Len++] = 0x02;
+    commandData[u8Len++] = (byte)(u16TargetAddr >> 8);
+    commandData[u8Len++] = (byte)u16TargetAddr;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = u8SeqNbr;
+    commandData[u8Len++] = u8Status;
+    commandData[u8Len++] = (byte)(u32CurrentTime >> 24);
+    commandData[u8Len++] = (byte)(u32CurrentTime >> 16);
+    commandData[u8Len++] = (byte)(u32CurrentTime >> 8);
+    commandData[u8Len++] = (byte)u32CurrentTime;
+    commandData[u8Len++] = (byte)(u32RequestTime >> 24);
+    commandData[u8Len++] = (byte)(u32RequestTime >> 16);
+    commandData[u8Len++] = (byte)(u32RequestTime >> 8);
+    commandData[u8Len++] = (byte)u32RequestTime;
+    commandData[u8Len++] = (byte)(u16BlockDelay >> 8);
+    commandData[u8Len++] = (byte)u16BlockDelay;
+    trame.len=u8Len;
+
+    // Transmit command
+    memcpy(trame.datas,commandData,trame.len);
+    PrioritycommandList->push(trame);
+}
+
+void sendOtaImageNotify( int u16ShortAddr, byte u8NotifyType, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode, byte u8Jitter)
+{
+    uint8_t commandData[16];
+    byte u8Len = 0;
+
+    Packet trame;
+    trame.cmd=0x0505;
+
+    // Build command payload   
+    commandData[u8Len++] = 0x02;
+    commandData[u8Len++] = (byte)(u16ShortAddr >> 8);
+    commandData[u8Len++] = (byte)u16ShortAddr;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = 0x01;
+    commandData[u8Len++] = u8NotifyType;
+    commandData[u8Len++] = (byte)(u32FileVersion >> 24);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 16);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 8);
+    commandData[u8Len++] = (byte)u32FileVersion;
+    commandData[u8Len++] = (byte)(u16ImageType >> 8);
+    commandData[u8Len++] = (byte)u16ImageType;
+    commandData[u8Len++] = (byte)(u16ManuCode >> 8);
+    commandData[u8Len++] = (byte)u16ManuCode;
+    commandData[u8Len++] = u8Jitter;
+    trame.len=u8Len;
+
+    // Transmit command
+     memcpy(trame.datas,commandData,trame.len);
+    PrioritycommandList->push(trame);
+}
+
+void sendOtaLoadNewImage(int u16ShortAddr, uint32_t u32FileIdentifier, uint16_t u16HeaderVersion, uint16_t u16HeaderLength, uint16_t u16HeaderControlField, uint16_t u16ManufacturerCode, uint16_t u16ImageType, uint32_t u32FileVersion, uint16_t u16StackVersion, uint8_t au8HeaderString[], uint32_t u32TotalImage, byte u8SecurityCredVersion, uint64_t u64UpgradeFileDest, uint16_t u16MinimumHwVersion, uint16_t u16MaxHwVersion)
+{
+    uint8_t commandData[72];
+    byte u8Len = 0;
+
+    Packet trame;
+    trame.cmd=0x0500;
+
+    // Build command payload   
+    commandData[u8Len++] = 0x02;
+    commandData[u8Len++] = (byte)(u16ShortAddr >> 8);
+    commandData[u8Len++] = (byte)u16ShortAddr;
+    commandData[u8Len++] = (byte)(u32FileIdentifier >> 24);
+    commandData[u8Len++] = (byte)(u32FileIdentifier >> 16);
+    commandData[u8Len++] = (byte)(u32FileIdentifier >> 8);
+    commandData[u8Len++] = (byte)u32FileIdentifier;
+    commandData[u8Len++] = (byte)(u16HeaderVersion >> 8);
+    commandData[u8Len++] = (byte)u16HeaderVersion;
+    commandData[u8Len++] = (byte)(u16HeaderLength >> 8);
+    commandData[u8Len++] = (byte)u16HeaderLength;
+    commandData[u8Len++] = (byte)(u16HeaderControlField >> 8);
+    commandData[u8Len++] = (byte)u16HeaderControlField;
+    commandData[u8Len++] = (byte)(u16ManufacturerCode >> 8);
+    commandData[u8Len++] = (byte)u16ManufacturerCode;
+    commandData[u8Len++] = (byte)(u16ImageType >> 8);
+    commandData[u8Len++] = (byte)u16ImageType;
+    commandData[u8Len++] = (byte)(u32FileVersion >> 24);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 16);
+    commandData[u8Len++] = (byte)(u32FileVersion >> 8);
+    commandData[u8Len++] = (byte)u32FileVersion;
+    commandData[u8Len++] = (byte)(u16StackVersion >> 8);
+    commandData[u8Len++] = (byte)u16StackVersion;
+
+    if (au8HeaderString != NULL)
+    {
+        byte i;
+        for (i = 0; i < 32; i++)
+        {
+            commandData[u8Len++] = au8HeaderString[i];
+        }
+    }
+
+    commandData[u8Len++] = (byte)(u32TotalImage >> 24);
+    commandData[u8Len++] = (byte)(u32TotalImage >> 16);
+    commandData[u8Len++] = (byte)(u32TotalImage >> 8);
+    commandData[u8Len++] = (byte)u32TotalImage;
+    commandData[u8Len++] = u8SecurityCredVersion;
+    commandData[u8Len++] = (byte)(u64UpgradeFileDest >> 56);
+    commandData[u8Len++] = (byte)(u64UpgradeFileDest >> 48);
+    commandData[u8Len++] = (byte)(u64UpgradeFileDest >> 40);
+    commandData[u8Len++] = (byte)(u64UpgradeFileDest >> 32);
+    commandData[u8Len++] = (byte)(u64UpgradeFileDest >> 24);
+    commandData[u8Len++] = (byte)(u64UpgradeFileDest >> 16);
+    commandData[u8Len++] = (byte)(u64UpgradeFileDest >> 8);
+    commandData[u8Len++] = (byte)u64UpgradeFileDest;
+    commandData[u8Len++] = (byte)(u16MinimumHwVersion >> 8);
+    commandData[u8Len++] = (byte)u16MinimumHwVersion;
+    commandData[u8Len++] = (byte)(u16MaxHwVersion >> 8);
+    commandData[u8Len++] = (byte)u16MaxHwVersion;
+    trame.len=u8Len;
+
+    // Transmit command
+    memcpy(trame.datas,commandData,trame.len);
+    PrioritycommandList->push(trame);
+}
+      
 void SpecificTreatment(uint8_t shortAddr[2], String model)
 {
   if (model == "ZLinky_TIC")
@@ -1792,84 +2009,157 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
 
 void getConfigReport(uint8_t shortAddr[2], int device_id, String model)
 {
-  if (TemplateExist(device_id))
-  {
-    //String path = "/tp/"+(String)device_id+".json";
-    const char* path ="/tp/";
-    const char* extension =".json";
-    char name_with_extension[64];
-    strcpy(name_with_extension,path);
-    strcat(name_with_extension,String(device_id).c_str());
-    strcat(name_with_extension,extension);
-
-    File tpFile = LittleFS.open(name_with_extension, FILE_READ);
-    if (!tpFile|| tpFile.isDirectory()) {
-      tpFile.close();
-      DEBUG_PRINTLN(F("failed open"));
-      
-    }else
-    {
-      SpiRamJsonDocument temp(MAXHEAP);
-      deserializeJson(temp,tpFile);
-       
-      if (temp.containsKey(model))
-      {
-        JsonArray ReportArray = temp[model][0]["report"].as<JsonArray>();
-        if (!ReportArray.isNull()) 
-        {
-          int cluster, attribut;
-          uint8_t rType;
-          int rMin,rMax,rTimeout;
-          uint8_t rChange;
-          bool sendReport ;
-          int i=0;
-          for(JsonVariant v : ReportArray) 
-          {
-              sendReport=false;
-              cluster = (int)strtol(temp[model][0]["report"][i]["cluster"],0,16);
-              attribut = (int)temp[model][0]["report"][i]["attribut"];
-              rType = (uint8_t)temp[model][0]["report"][i]["type"];
-              rMin = (int)temp[model][0]["report"][i]["min"];
-              rMax = (int)temp[model][0]["report"][i]["max"];
-              rTimeout = (int)temp[model][0]["report"][i]["timeout"];
-              rChange = (uint8_t)temp[model][0]["report"][i]["change"];
-
-              if (model =="ZLinky_TIC")
-              {
-                const char *tmpMode; 
-                tmpMode = temp[model][0]["report"][i]["mode"];
-                if ((tmpMode != NULL) && (tmpMode[0] != '\0')) 
-                {
-                  char * pch;
-                  pch = strtok ((char*)tmpMode,";");
-                  while (pch != NULL)
-                  {
-                    if (atoi(pch) == ConfigGeneral.LinkyMode)
-                    {
-                      sendReport=true;
-                      break;
-                    }
-                    pch = strtok (NULL, " ;");
-                  }
-                }else{
-                  sendReport = true;
-                }
-              }else{
-                sendReport = true;
-              }
-
-              if (sendReport)
-              {
-                SendConfigReport(shortAddr,cluster,attribut,rType,rMin,rMax,rTimeout,rChange);
-              }
-              
-              i++; 
-          }
-        }
-      }
-      tpFile.close();
-    } 
+  if (!TemplateExist(device_id)) {
+    log_e("Template does not exist for device_id: %d", device_id);
+    return;
   }
+
+  // Construction sécurisée du chemin
+  const char* path = "/tp/";
+  const char* extension = ".json";
+  char name_with_extension[64];
+  
+  // Vérification de la taille du chemin
+  if (snprintf(name_with_extension, sizeof(name_with_extension), "%s%d%s", 
+               path, device_id, extension) >= sizeof(name_with_extension)) {
+    log_e("Path too long for device_id: %d", device_id);
+    return;
+  }
+
+  File tpFile = LittleFS.open(name_with_extension, FILE_READ);
+  if (!tpFile || tpFile.isDirectory()) {
+    log_e("Failed to open file: %s", name_with_extension);
+    return;
+  }
+
+  // Vérification de la taille du fichier
+  size_t fileSize = tpFile.size();
+  if (fileSize == 0) {
+    log_e("Empty file: %s", name_with_extension);
+    tpFile.close();
+    return;
+  }
+  
+  if (fileSize > 32768) { // Limite à 32KB
+    log_e("File too large (%d bytes): %s", fileSize, name_with_extension);
+    tpFile.close();
+    return;
+  }
+
+  SpiRamJsonDocument temp(MAXHEAP);
+  DeserializationError error = deserializeJson(temp, tpFile);
+  tpFile.close();
+  
+  if (error) {
+    log_e("JSON parsing failed: %s", error.c_str());
+    return;
+  }
+
+  // Vérification sécurisée de l'existence des clés
+  if (!temp.containsKey(model)) {
+    log_e("Model not found in template: %s", model.c_str());
+    if (!temp.containsKey("default")) {
+      log_e("Model not found in template: %s and default", model.c_str());
+      return;
+    }else{
+      model="default";
+    }
+
+  }
+
+  JsonVariant modelVariant = temp[model];
+  if (!modelVariant.is<JsonArray>() || modelVariant.size() == 0) {
+    log_e("Invalid model structure for: %s", model.c_str());
+    return;
+  }
+
+  JsonObject modelObj = modelVariant[0];
+  if (!modelObj.containsKey("report")) {
+    log_e("No report section found for model: %s", model.c_str());
+    return;
+  }
+
+  JsonArray ReportArray = modelObj["report"].as<JsonArray>();
+  if (ReportArray.isNull() || ReportArray.size() == 0) {
+    log_e("Empty or invalid report array for model: %s", model.c_str());
+    return;
+  }
+
+  log_d("Processing %d report items for model: %s", ReportArray.size(), model.c_str());
+
+  // Traitement sécurisé des éléments du rapport
+  for (size_t i = 0; i < ReportArray.size(); i++) {
+    JsonObject reportItem = ReportArray[i];
+    
+    // Vérification de la validité de l'élément
+    if (!reportItem) {
+      log_w("Invalid report item at index %d", i);
+      continue;
+    }
+
+    // Vérification des champs obligatoires
+    if (!reportItem.containsKey("cluster") || !reportItem.containsKey("attribut") ||
+        !reportItem.containsKey("type") || !reportItem.containsKey("min") ||
+        !reportItem.containsKey("max") || !reportItem.containsKey("timeout") ||
+        !reportItem.containsKey("change")) {
+      log_w("Missing required fields in report item at index %d", i);
+      continue;
+    }
+
+    try {
+      int cluster = (int)strtol(reportItem["cluster"], 0, 16);
+      int attribut = (int)reportItem["attribut"];
+      uint8_t rType = (uint8_t)reportItem["type"];
+      int rMin = (int)reportItem["min"];
+      int rMax = (int)reportItem["max"];
+      int rTimeout = (int)reportItem["timeout"];
+      uint8_t rChange = (uint8_t)reportItem["change"];
+      
+      bool sendReport = false;
+
+      if (model == "ZLinky_TIC") {
+        // Traitement sécurisé du mode pour ZLinky
+        if (reportItem.containsKey("mode")) {
+          const char* tmpMode = reportItem["mode"];
+          if (tmpMode != nullptr && strlen(tmpMode) > 0) {
+            // Copie sécurisée pour strtok (qui modifie la chaîne)
+            char modeBuffer[64];
+            strncpy(modeBuffer, tmpMode, sizeof(modeBuffer) - 1);
+            modeBuffer[sizeof(modeBuffer) - 1] = '\0';
+            
+            char* pch = strtok(modeBuffer, ";");
+            while (pch != nullptr) {
+              if (atoi(pch) == ConfigGeneral.LinkyMode) {
+                sendReport = true;
+                break;
+              }
+              pch = strtok(nullptr, ";");
+            }
+          } else {
+            sendReport = true; // Mode par défaut si pas de mode spécifié
+          }
+        } else {
+          sendReport = true; // Mode par défaut si pas de clé "mode"
+        }
+      } else {
+        sendReport = true;
+      }
+
+      if (sendReport) {
+        log_d("Sending config report: cluster=0x%04X, attr=0x%04X", cluster, attribut);
+        SendConfigReport(shortAddr, cluster, attribut, rType, rMin, rMax, rTimeout, rChange);
+        
+        // Petit délai pour éviter la saturation
+        vTaskDelay(pdMS_TO_TICKS(10));
+      }
+      
+    } catch (...) {
+      log_e("Exception occurred processing report item at index %d", i);
+      continue;
+    }
+  }
+
+  log_d("Finished processing config report for model: %s", model.c_str());
 }
 
 
@@ -1895,6 +2185,19 @@ void getBind(uint64_t mac, int device_id, String model)
       deserializeJson(temp,tpFile);
       const char *tmp; 
       
+      // Vérification sécurisée de l'existence des clés
+      if (!temp.containsKey(model)) {
+        log_e("Model not found in template: %s", model.c_str());
+        if (!temp.containsKey("default")) {
+          log_e("Model not found in template: %s and default", model.c_str());
+          return;
+        }else{
+          model="default";
+        }
+      }
+
+
+
       if (temp.containsKey(model))
       {
         tmp = temp[model][0]["bind"];

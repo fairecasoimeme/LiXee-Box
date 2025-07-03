@@ -26,5 +26,12 @@ void SendAction(int command, int ShortAddr, String tmpValue);
 void SendActiveRequest(uint8_t shortAddr[2]);
 void SendSimpleDescriptionRequest(uint8_t shortAddr[2], uint8_t endpoint);
 void SendBasicDescription(uint8_t shortAddr[2], uint8_t endpoint);
+void sendOtaLoadNewImage(int u16ShortAddr, uint32_t u32FileIdentifier, uint16_t u16HeaderVersion, uint16_t u16HeaderLength, uint16_t u16HeaderControlField, uint16_t u16ManufacturerCode, uint16_t u16ImageType, uint32_t u32FileVersion, uint16_t u16StackVersion, uint8_t au8HeaderString[], uint32_t u32TotalImage, byte u8SecurityCredVersion, uint64_t u64UpgradeFileDest, uint16_t u16MinimumHwVersion, uint16_t u16MaxHwVersion);
+void sendOtaBlock( int u16ShortAddr, byte u8SeqNbr, byte u8Status, uint32_t u32FileOffset, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode, byte u8DataSize, uint8_t au8Data[]);
+void sendOtaSetWaitForDataParams( int u16TargetAddr, byte u8SeqNbr, byte u8Status, uint32_t u32CurrentTime, uint32_t u32RequestTime, uint16_t u16BlockDelay);
+void sendOtaEndResponse( int u16ShortAddr, byte u8SeqNbr, uint32_t u32UpgradeTime, uint32_t u32CurrentTime, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode);
+void sendOtaImageNotify( int u16ShortAddr, byte u8NotifyType, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode, byte u8Jitter);
+
+
 //void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
 void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
