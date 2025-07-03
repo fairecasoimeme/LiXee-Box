@@ -45,7 +45,7 @@ extern AsyncMqttClient mqttClient;
 
 extern unsigned long timeLog;
 extern CircularBuffer<Packet, 100> *commandList;
-extern CircularBuffer<Packet, 10> *PrioritycommandList;
+extern CircularBuffer<Packet, 70> *PrioritycommandList;
 extern CircularBuffer<Alert, 10> *alertList;
 extern CircularBuffer<Device, 50> *deviceList;
 extern CircularBuffer<Notification, 10> *notifList;
@@ -72,8 +72,12 @@ AsyncEventSource events("/events");
 
 #define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/update.tar"
 
-const char HTTP_SHELLY_EMULE[] PROGMEM = 
+extern uint8_t* au8OTAFile;
 
+
+
+
+const char HTTP_SHELLY_EMULE[] PROGMEM = 
 "{"
     "\"name\":null,"
     "\"id\":\"shellypro3em-ac1518778a1c\","
@@ -253,7 +257,7 @@ const char HTTP_MENU[] PROGMEM =
    "</svg>"
    " WebPush"
    "</a>"
-   "<a class='dropdown-item' href='/configMarstek'>"
+   /*"<a class='dropdown-item' href='/configMarstek'>"
    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='24px' height='20px' viewBox='0 0 23 20' version='1.1'>"
    "  <g id='surface1'>"
    "    <path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 20.652344 1.757812 C 20.03125 2.171875 19.339844 2.757812 19.09375 3.046875 C 18.28125 4.035156 18.304688 3.878906 18.328125 11.867188 L 18.363281 19.035156 L 19.503906 18.292969 C 20.125 17.878906 20.851562 17.304688 21.109375 17 C 21.96875 15.988281 21.945312 16.183594 21.945312 8.144531 C 21.945312 4.207031 21.910156 0.976562 21.863281 0.976562 C 21.804688 0.988281 21.261719 1.328125 20.652344 1.757812 Z M 20.652344 1.757812 '/>"
@@ -263,7 +267,7 @@ const char HTTP_MENU[] PROGMEM =
    "  </g>"
    "  </svg>"
    " Marstek"
-   "</a>"
+   "</a>"*/
    "</div>"
    "</li>"
    "<li class='nav-item dropdown'>"
@@ -474,6 +478,72 @@ const char HTTP_HISTORY[] PROGMEM =
     "});"
     "});"
     "</script>";
+
+const char HTTP_OTA[] PROGMEM = R"(
+<form method='POST' action='/doUploadOTA' enctype='multipart/form-data' id='upload_form'>
+  <input type='file' name='update' id='file' onchange='sub(this)' style=display:none accept='*.*'>
+  <label id='file-input' for='file'>Choose OTA file...</label>
+  <input type='submit' class='btn btn-warning mb-2' value='Update'>
+  <br><br>
+  <div id='prg'></div>
+  <br><div id='prgbar'><div id='bar'></div></div><br>
+</form>
+
+<script>
+  // Fonction pour récupérer les paramètres de l'URL
+  function getUrlParameter(name) {
+    name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+    var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+    var results = regex.exec(location.search);
+    return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
+  };
+  
+  // Récupération de l'ID au chargement de la page
+  var deviceId = getUrlParameter('id');
+  
+  document.getElementById('upload_form').action = '/doUploadOTA?id=' + deviceId;
+
+  function sub(obj){
+    var fileName = obj.value.split('\\');
+    // Utilisation de l'ID dans le nom du fichier affiché
+    document.getElementById('file-input').innerHTML = '   '+ fileName[fileName.length-1];
+  };
+  
+  $('form').submit(function(e){
+    e.preventDefault();
+    var form = $('#upload_form')[0];
+    var data = new FormData(form);
+    // Ajout de l'ID aux données du formulaire
+    data.append('device_id', deviceId);
+    $.ajax({
+      url: '/doUploadOTA?id=' + deviceId,
+      type: 'POST',
+      data: data,
+      contentType: false,
+      processData:false,
+      xhr: function() {
+        var xhr = new window.XMLHttpRequest();
+        xhr.upload.addEventListener('progress', function(evt) {
+          if (evt.lengthComputable) {
+            var per = evt.loaded / evt.total;
+            $('#prg').html( Math.round(per*100) + '%');
+            $('#bar').css('width',Math.round(per*100) + '%');
+          }
+        }, false);
+        return xhr;
+      },
+      success:function(d, s) {
+        console.log('success!');
+        $('#prg').html('Upload completed for device ' + deviceId + '<br> Redirect to config ...');
+        setTimeout(function(){window.location.href='/configDevices';},5000);
+      },
+      error: function (a, b, c) {
+        console.log('Error updating device ' + deviceId);
+      }
+    });
+  });
+</script>
+)";
 
 const char HTTP_BACKUP[] PROGMEM =
     "<h4>Backup datas</h4>"
@@ -1268,10 +1338,28 @@ const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
         "</div><br>"
         "<h5>List of devices</h5>"
         "<div class='row g-4' style='font-size:12px;'>"
+          "<script>"
+              "function OTAUpdateBar(id){"
+                "$.ajax({"
+                  "url: '/OTAUpdateBar?id='+id,"
+                  "type: 'GET',"
+                  "success:function(data) {"
+                  "if (data>=0){"
+                    "$('#uploadOTA'+id).html('<div align=\"center\">Updating ...</div><progress value=\"'+data+'\" max=\"100\" style=\"width:100%\">'+data+'%</progress>');"
+                    "$('#uploadOTA'+id).show();"
+                  "}else{"
+                  "$('#uploadOTA'+id).hide();"
+                  "}"
+                  "setTimeout(function(){OTAUpdateBar(id); }, 5000);" 
+          
+                "}"
+            "});"
+          "}"
+          "</script>"
           "{{devicesList}}"
         "</div>"
       "</div>"
-      "</div>"
+      
 ;
 
 const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
@@ -1372,6 +1460,14 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
     "<div class='col-sm-10'>"
       "<h4>Config Zigbee</h4>"
       "<div align='right'>"
+      
+      "<button type='button' onclick='cmd(\"Network\");' class='btn btn-primary'>"
+        "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='#FFFFFF' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
+          "<path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
+          "<path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
+        "</svg>"
+        " Network"
+        "</button> "
         "<button type='button' onclick='cmd(\"Reset\");' class='btn btn-primary'>"
         "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='#FFFFFF' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
           "<path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
@@ -2058,8 +2154,11 @@ const char HTTP_CONFIG_WIFI[] PROGMEM = R"(
           <div id='static' style='display:{{static}}'>
             <div id="staticFields">
               <div class="mb-3">
+                <label for="ip" class="form-label">@IP</label>
                 <input type="text" class="form-control mb-2" id="ip" name='ipAddress' value='{{ip}}' style='{{ipborder}}'>
+                <label for="mask" class="form-label">@Mask</label>
                 <input type="text" class="form-control mb-2" id="mask" name='ipMask' value='{{mask}}' style='{{ipmask}}'>
+                <label for="gateway" class="form-label">@Gateway</label>
                 <input type="text" class="form-control" id="gateway"  name='ipGW' value='{{gw}}' style='{{ipgw}}'>
               </div>
             </div>
@@ -2332,7 +2431,7 @@ const char HTTP_NOTIF_ALERT[] PROGMEM = R"(
     },
     {
       "title": "Appareil connecté",
-      "message": "Le LIXEEGW-862C est maintenant en ligne.",
+      "message": "La LiXee-BOX est maintenant en ligne.",
       "timestamp": "2025-05-14T16:20:00Z",
       "type": "info"
     },
@@ -2565,11 +2664,21 @@ Template* GetTemplate(int deviceId, String model)
 
     // Déterminer le modèle à utiliser
     const char* modelKey = doc.containsKey(model) ? model.c_str() : "default";
-    JsonArray statusArray = doc[modelKey][0][F("status")].as<JsonArray>();
+    /*JsonArray statusArray = doc[modelKey][0][F("status")].as<JsonArray>();
     JsonArray actionArray = doc[modelKey][0][F("action")].as<JsonArray>();
 
     parseStatusArray(statusArray, t);
-    parseActionArray(actionArray, t);
+    parseActionArray(actionArray, t);*/
+    JsonObject modelObj = doc[modelKey][0];
+    if (modelObj) {
+        JsonArray statusArray = modelObj["status"].as<JsonArray>();
+        JsonArray actionArray = modelObj["action"].as<JsonArray>();
+        
+        parseStatusArray(statusArray, t);
+        parseActionArray(actionArray, t);
+    }
+
+    
 
     return t;
 }
@@ -5807,9 +5916,45 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size
   }
 }
 
-/*void printProgress(size_t prg, size_t sz) {
-  Serial.printf("%d%%\n", (prg*100)/content_len);
-}*/
+
+
+
+void handleDoUploadOTA(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+  String logmessage="";
+  static String deviceId = ""; // Variable statique pour conserver l'ID
+  if (!index){
+    // Récupérer l'ID depuis les paramètres GET de l'URL
+    if (request->hasParam("id")) {
+        deviceId = request->getParam("id")->value()+".ota";
+        DEBUG_PRINTLN("Device ID: " + deviceId);
+    }
+    request->_tempFile = LittleFS.open("/ota/" + deviceId, "w+");
+  }
+
+  if (len) {
+    // stream the incoming chunk to the opened file
+    request->_tempFile.write(data, len);
+    
+    logmessage = "Writing file: " + String(deviceId) + " index=" + String(index) + " len=" + String(len);
+    DEBUG_PRINTLN(logmessage);
+  }else{
+    // close the file handle as the upload is now done
+    logmessage = "Upload Complete: " + String(deviceId) + ",size: " + String(index + len);
+    DEBUG_PRINTLN(logmessage);
+    request->_tempFile.close();
+    request->redirect("/configDevices");
+  }
+
+  if (final) {
+    // close the file handle as the upload is now done
+    logmessage = "Upload Complete: " + String(deviceId) + ",size: " + String(index + len);
+    DEBUG_PRINTLN(logmessage);
+    request->_tempFile.close();
+    loadOTAFile(deviceId.c_str());
+    
+    request->redirect("/configDevices");
+  }
+}
 
 void handleDoUploadHistory(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
   String logmessage="";
@@ -6476,6 +6621,18 @@ void handleCreateDevice(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CREATE_DEVICE);
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  request->send(200, "text/html", result);
+}
+
+void handleOTA(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_OTA);
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
   request->send(200, "text/html", result);
@@ -7231,6 +7388,12 @@ void handleScanNetwork(AsyncWebServerRequest * request)
   request->send(200, F("text/html"), String(n)+"|"+result);
 }
 
+void handleSendReadAttribute(AsyncWebServerRequest *request)
+{
+  commandList->push(Packet{0x0010, 0x0000, 0});
+  request->send(200, F("text/html"), "");
+}
+
 void handleClearConsole(AsyncWebServerRequest *request)
 {
   logClear();
@@ -7315,6 +7478,13 @@ void handlePermitJoin(AsyncWebServerRequest *request)
   PrioritycommandList->push(trame);
   //commandList->push(trame);
   alertList->push(Alert{"Permit Join : 30 sec", 2});
+  request->send(200, F("text/html"), "");
+}
+
+
+void handleNetwork(AsyncWebServerRequest *request)
+{
+  commandList->push(Packet{0x0025, 0x0000, 0});
   request->send(200, F("text/html"), "");
 }
 
@@ -8353,6 +8523,14 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     zdevices += devId;
     zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
     zdevices += device->getInfo().software_version;
+    zdevices += F("<a onClick=\"ZigbeeSendRequest(");
+    zdevices += device->getInfo().shortAddr;
+    zdevices += ",";
+    zdevices += "0,16384)\">";
+    zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>");
+      zdevices += F("<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>");
+      zdevices += F("<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>");
+    zdevices += F("</svg><a>");
     zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
     zdevices += device->getInfo().lastSeen;
     zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
@@ -8361,6 +8539,13 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     
     // Paramétrages
     zdevices += F("<hr>");
+    zdevices += "<div id='uploadOTA"+device->getDeviceID()+"' style='display:none'><div align='center'>Updating ...</div>";
+    zdevices += "<progress value='"+String(device->otaPercentage)+"' max='100' style='width:100%'>"+String(device->otaPercentage)+"%</progress></div><br>";
+    zdevices += "<script>";
+    zdevices += "OTAUpdateBar('"+device->getDeviceID()+"');";
+    zdevices += "</script>";
+    
+    
       //modif
       zdevices +="<div class='d-flex justify-content-end'>";
       if (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT )
@@ -8374,6 +8559,14 @@ void handleConfigDevices(AsyncWebServerRequest *request)
         //devices += "MQTT Discover";
         zdevices += F("</button>&nbsp;");
       }
+      zdevices += F("<a href='/ota?id=");
+      zdevices += device->getDeviceID();
+      zdevices += F("' class='btn btn-warning mb-2'>");
+      zdevices += "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-cloud-arrow-down' viewBox='0 0 16 16'>";
+      zdevices +=  " <path fill-rule='evenodd' d='M7.646 10.854a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 9.293V5.5a.5.5 0 0 0-1 0v3.793L6.354 8.146a.5.5 0 1 0-.708.708z'/>";
+      zdevices +=  "<path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>";
+      zdevices +="</svg>";
+      zdevices += F("</a>&nbsp;");
 
       zdevices += F("<button onclick=\"ZigbeeSendRequest(");
       zdevices += device->getInfo().shortAddr;
@@ -8384,7 +8577,6 @@ void handleConfigDevices(AsyncWebServerRequest *request)
       zdevices +=  "<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>";
       zdevices +=  "<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>";
       zdevices +="</svg>";
-
       zdevices += F("</button>&nbsp;");
     
       zdevices += F("<button onclick=\"deleteDevice('");
@@ -10146,6 +10338,20 @@ void initWebServer()
         }
   );
 
+  serverWeb.on("/doUploadOTA", HTTP_POST,
+    [](AsyncWebServerRequest *request) {},
+    [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
+                  size_t len, bool final) 
+        {
+          if (ConfigSettings.enableSecureHttp)
+          {
+            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+              return request->requestAuthentication();
+          }
+          handleDoUploadOTA(request, filename, index, data, len, final);
+        }
+  );
+
   serverWeb.on("/readFile", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -10274,6 +10480,15 @@ void initWebServer()
     }
     handleReset(request); 
   });
+  serverWeb.on("/cmdNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleNetwork(request); 
+  });
   serverWeb.on("/configFiles", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -10373,6 +10588,15 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleCreateHistory(request); 
+  });
+  serverWeb.on("/ota", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleOTA(request); 
   });
   serverWeb.on("/createTemplate", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -10548,6 +10772,36 @@ void initWebServer()
     }
     handleGetAlert(request); 
   });
+
+  serverWeb.on("/OTAUpdateBar", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    String result="-2";
+    String IEEE = request->arg("id");
+    for (size_t i = 0; i < devices.size(); i++) 
+    {
+      DeviceData* device = devices[i];
+      if (device->getDeviceID() == IEEE)
+      {
+        if (device->otaInProgress == 1)
+        {
+          result = device->otaPercentage;
+        }else{
+          result = "-1";
+        }
+        break;
+      }
+    }  
+
+    request->send(200, F("text/html"), result);
+
+  });
+  
+
   serverWeb.on("/getFormattedDate", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
