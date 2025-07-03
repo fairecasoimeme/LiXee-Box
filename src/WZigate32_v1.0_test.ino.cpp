@@ -1,6 +1,3 @@
-/*
-  ESP32 mDNS serial wifi bridge by Daniel Parnell 2nd of May 2015
- */
 #define BONJOUR_SUPPORT
 #include <Arduino.h>
 //#include "soc/rtc_wdt.h"
@@ -10,7 +7,7 @@
 #include "WiFiProv.h"
 #include <WiFi.h>
 #ifdef BONJOUR_SUPPORT
-#include <ESPmDNS.h>
+  #include <ESPmDNS.h>
 #endif
 extern "C" {
 	#include "freertos/FreeRTOS.h"
@@ -49,6 +46,12 @@ extern "C" {
 #include "powerHistory.h"
 #include "energyHistory.h"
 
+#include "smart_wifi_manager.h"
+
+SmartWiFiManager smartWiFi;
+
+bool wifiServicesStarted = false;
+bool zigbeeInitialized = false;
 
 std::vector<DeviceData*> devices;
 
@@ -69,16 +72,25 @@ ZiGateInfosStruct ZiGateInfos;
 RulesManager rulesManager;
 
 CircularBuffer<Packet, 100> *commandList = nullptr;
-CircularBuffer<Packet, 10> *PrioritycommandList = nullptr;
+CircularBuffer<Packet, 70> *PrioritycommandList = nullptr;
 CircularBuffer<SerialPacket, 30> *PriorityQueuePacket = nullptr;
 CircularBuffer<Alert, 10> *alertList = nullptr;
 CircularBuffer<Device, 50> *deviceList = nullptr;
 CircularBuffer<Notification, 10> *notifList = nullptr;
 CircularBuffer<SerialPacket, 300> *QueuePacket = nullptr;
+CircularBuffer<SerialBuffer, 300> *QueueBuffer = nullptr;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
 
+//OTA
+uint8_t* au8OTAFile = nullptr;
+byte u8OTAWaitForDataParamsPending = 0;
+uint16_t u16OTAWaitForDataParamsTargetAddr;
+byte u8OTAWaitForDataParamsSrcEndPoint;
+uint32_t u32OTAWaitForDataParamsCurrentTime;
+uint32_t u32OTAWaitForDataParamsRequestTime;
+uint16_t u16OTAWaitForDataParamsBlockDelay;
 
 unsigned long lastConnectionTest = 0;
 const unsigned long CONNECTION_TEST_INTERVAL = 20000; // 20 secondes
@@ -102,7 +114,7 @@ extern int TimedFiFo;
 #define DEVICE_NAME ""
 
 // serial end ethernet buffer size
-#define BUFFER_SIZE 4092
+#define BUFFER_SIZE 512  // Buffer plus large pour flux importants
 
 #define WL_MAC_ADDR_LENGTH 6
 
@@ -135,10 +147,11 @@ String Yesterday;
 String epochTime;
 String firstStart;
 
-//#define CONFIG_ASYNC_TCP_RUNNING_CORE 0 //any available core
+//#define CONFIG_ASYNC_TCP_RUNNING_CORE 1 //any available core
 /*#define CONFIG_ASYNC_TCP_USE_WDT 1*/
 
-SET_LOOP_TASK_STACK_SIZE(24*1024); // 24KB
+SET_LOOP_TASK_STACK_SIZE(16*1024); // 24KB
+
 
 //callback timer
 void scanCallback();
@@ -152,7 +165,7 @@ Scheduler runner;
 
 void initCircularBuffer()
 {
-  commandList = (CircularBuffer<Packet, 100>*) ps_malloc(sizeof(CircularBuffer<Packet, 100>));
+  /*commandList = (CircularBuffer<Packet, 100>*) ps_malloc(sizeof(CircularBuffer<Packet, 100>));
   PrioritycommandList = (CircularBuffer<Packet, 10>*) ps_malloc(sizeof(CircularBuffer<Packet, 10>));
   PriorityQueuePacket= (CircularBuffer<SerialPacket, 30>*) ps_malloc(sizeof(CircularBuffer<SerialPacket, 30>));
   alertList = (CircularBuffer<Alert, 10>*) ps_malloc(sizeof(CircularBuffer<Alert, 10>));
@@ -171,7 +184,23 @@ void initCircularBuffer()
   new (alertList) CircularBuffer<Alert, 10>();
   new (notifList) CircularBuffer<Notification, 10>();
   new (deviceList) CircularBuffer<Device, 50>();
-  new (QueuePacket) CircularBuffer<SerialPacket,300>();
+  new (QueuePacket) CircularBuffer<SerialPacket,300>();*/
+  commandList = (CircularBuffer<Packet,100>*)heap_caps_malloc(sizeof(*commandList), MALLOC_CAP_SPIRAM);
+  new(commandList) CircularBuffer<Packet,100>();
+  PrioritycommandList = (CircularBuffer<Packet,70>*)heap_caps_malloc(sizeof(*PrioritycommandList), MALLOC_CAP_SPIRAM);
+  new(PrioritycommandList) CircularBuffer<Packet,70>();
+  PriorityQueuePacket = (CircularBuffer<SerialPacket,30>*)heap_caps_malloc(sizeof(*PriorityQueuePacket), MALLOC_CAP_SPIRAM);
+  new(PriorityQueuePacket) CircularBuffer<SerialPacket,30>();
+  alertList = (CircularBuffer<Alert,10>*)heap_caps_malloc(sizeof(*alertList), MALLOC_CAP_SPIRAM);
+  new(alertList) CircularBuffer<Alert,10>();
+  notifList = (CircularBuffer<Notification,10>*)heap_caps_malloc(sizeof(*notifList), MALLOC_CAP_SPIRAM);
+  new(notifList) CircularBuffer<Notification,10>();
+  deviceList = (CircularBuffer<Device,50>*)heap_caps_malloc(sizeof(*deviceList), MALLOC_CAP_SPIRAM);
+  new(deviceList) CircularBuffer<Device,50>();
+  QueuePacket = (CircularBuffer<SerialPacket,300>*)heap_caps_malloc(sizeof(*QueuePacket), MALLOC_CAP_SPIRAM);
+  new(QueuePacket) CircularBuffer<SerialPacket,300>();
+  QueueBuffer = (CircularBuffer<SerialBuffer,300>*)heap_caps_malloc(sizeof(*QueueBuffer), MALLOC_CAP_SPIRAM);
+  new(QueueBuffer) CircularBuffer<SerialBuffer,300>();
 }
 
 void delayRebootCallBack()
@@ -231,7 +260,6 @@ DEBUG_PRINTLN(F("config_write OK"));
 }
 
 
-String uart_buffer = "";
 // a pause of a half second in the UART transmission is considered the end of transmission.
 const uint32_t communicationTimeout_ms = 500;
 
@@ -264,34 +292,60 @@ void sendPacket()
 // UART_RX_IRQ will be executed as soon as data is received by the UART
 // This is a callback function executed from a high priority
 // task created when onReceive() is used
-uint8_t uartBuffer[BUFFER_SIZE];
-size_t uartBufferLength;
-void SERIAL_RX_CB() {
+/*uint8_t uartBuffer[BUFFER_SIZE];
+size_t uartBufferLength;*/
+static uint8_t* uartBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+size_t uartBufferLength = 0;
+/*void SERIAL_RX_CB() {
   // take the mutex, waits forever until loop() finishes its processing
 
-  if (xSemaphoreTake(uart_buffer_Mutex, portMAX_DELAY)) {
+  if (xSemaphoreTake(uart_buffer_Mutex, pdMS_TO_TICKS(50))) {
     //while(Serial1.available() && (uart_buffer.length() < (BUFFER_SIZE /2)))
 
-    if (Serial1.available())
+    while (Serial1.available())
     {
-      uartBufferLength = Serial1.readBytes(uartBuffer,BUFFER_SIZE);
-      /*for (size_t i = 0; i < bytesRead; i++) {
-        uart_buffer+=buffer[i];
-      }
-      bytesRead = 0;*/
-    }else if (Serial1.getWriteError()) {
-      log_e("Erreur de lecture série !");
-      Serial1.clearWriteError();
-   }
-   /*while(Serial1.available())
-    {
-      char tmp = (char)Serial1.read();
-      uart_buffer += tmp;
+        
+        uartBufferLength = Serial1.readBytesUntil(0x03,uartBuffer,BUFFER_SIZE);
+        uartBuffer[uartBufferLength++]=0x03;
+      
     }
-    Serial1.flush();*/
+    
     xSemaphoreGive(uart_buffer_Mutex);
    
   }
+}*/
+void IRAM_ATTR SERIAL_RX_CB() {
+    static SerialBuffer packet;
+    static size_t index = 0;
+
+    // Lire tout ce qui est dispo
+    while (Serial1.available()) {
+        char c = Serial1.read();
+
+        if (index < BUFFER_SIZE - 1) {
+            packet.data[index++] = c;
+
+            // Si on atteint le délimiteur (ex: 0x03), on considère le paquet complet
+            if ((uint8_t)c == 0x03) {
+                packet.length = index;
+
+                if (!QueueBuffer->isFull()) {
+                    QueueBuffer->push(packet);
+                } else {
+                    //log_w("⚠️ QueuePacket pleine - paquet ignoré");
+                }
+
+                // Reset pour prochain paquet
+                index = 0;
+                memset(&packet, 0, sizeof(SerialBuffer));
+            }
+        } else {
+            // Overflow : reset sécurité
+            //log_e("❌ Overflow de réception série — reset du buffer");
+            index = 0;
+            memset(&packet, 0, sizeof(SerialBuffer));
+        }
+    }
 }
 
 TaskHandle_t taskTCP;
@@ -413,6 +467,13 @@ void datasTreatment(void * pvParameters)
   while(true)
   {
     esp_task_wdt_reset();
+
+    // Vérifier la pile disponible
+    UBaseType_t stackRemaining = uxTaskGetStackHighWaterMark(NULL);
+    if (stackRemaining < 1000) { // Seuil d'alerte
+        log_e("Stack critique: %d bytes restants", stackRemaining);
+    }
+
     while (!PriorityQueuePacket->isEmpty())
     {
       DEBUG_PRINTLN("Priority Packet shift : protocol datas");
@@ -426,7 +487,7 @@ void datasTreatment(void * pvParameters)
     
     if (!QueuePacket->isEmpty())
     {   
-      DEBUG_PRINTLN("Packet shift : protocol datas");
+      //DEBUG_PRINTLN("Packet shift : protocol datas");
       SerialPacket packet;
       xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
       packet = (SerialPacket)QueuePacket->shift();
@@ -442,8 +503,127 @@ void datasTreatment(void * pvParameters)
 
 }
 
+static uint8_t* serialProcessBuffer = nullptr;
+static bool serialTaskInitialized = false;
 
-void SerialTask( void * pvParameters)
+void printHexData(const uint8_t* data, size_t length) {
+    // Buffer statique pour éviter les allocations répétées
+    static char hexBuffer[16]; // 2 chars + space + null pour chaque byte
+    
+    for (size_t i = 0; i < length; i++) {
+        snprintf(hexBuffer, sizeof(hexBuffer), "%02X ", data[i]);
+        DEBUG_PRINT(hexBuffer);
+        
+        if (data[i] == 0x03) {
+            DEBUG_PRINTLN();
+        }
+        
+        // Éviter de surcharger le port série
+        if (i % 32 == 31) { // Pause tous les 32 bytes
+            vTaskDelay(1);
+        }
+    }
+}
+
+void SerialTask(void *pvParameters) {
+    while (true) {
+        esp_task_wdt_reset();  // Watchdog
+
+        // Surveille la stack restante
+        UBaseType_t stackRemaining = uxTaskGetStackHighWaterMark(NULL);
+        if (stackRemaining < 1024) {
+            log_e("⚠️ Stack faible : %d bytes restants", stackRemaining);
+        }
+
+        if (!QueueBuffer->isEmpty()) {
+            SerialBuffer packet = QueueBuffer->shift();
+
+            // Appel à la fonction principale de décodage Zigbee
+            protocolDatas(packet.data, packet.length);
+
+            if (ConfigSettings.enableDebug) {
+                printHexData(packet.data, packet.length);
+            }
+
+
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(10));  // pas de donnée, on évite le spinlock
+        }
+    }
+}
+
+/*void SerialTask(void * pvParameters) {
+   esp_err_t wdt_err = esp_task_wdt_add(NULL);
+   if (wdt_err != ESP_OK) {
+        log_w("Échec ajout watchdog: %s", esp_err_to_name(wdt_err));
+    }
+    // Initialisation unique du buffer de traitement
+    if (!serialTaskInitialized) {
+        serialProcessBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_SPIRAM);
+        if (!serialProcessBuffer) {
+            log_e("Erreur allocation buffer SerialTask");
+            vTaskDelete(NULL);
+            return;
+        }
+        serialTaskInitialized = true;
+        log_i("SerialTask buffer allocated in PSRAM");
+    }
+    
+    size_t bytes_read = 0;
+    uint32_t lastProcessTime = 0;
+    const uint32_t MIN_PROCESS_INTERVAL = 5; // ms minimum entre traitements
+    
+    while(true) {
+        esp_task_wdt_reset();
+        
+        // Vérification avec délai minimum pour éviter le polling excessif
+        uint32_t currentTime = millis();
+        if (uartBufferLength > 0 && (currentTime - lastProcessTime) >= MIN_PROCESS_INTERVAL) {
+            
+            // === SECTION CRITIQUE OPTIMISÉE ===
+            if (xSemaphoreTake(uart_buffer_Mutex, pdMS_TO_TICKS(5))) {
+                if (uartBufferLength > 0) { // Double vérification
+                    // Copier seulement la taille réelle, pas tout le buffer
+                    memcpy(serialProcessBuffer, uartBuffer, uartBufferLength);
+                    bytes_read = uartBufferLength;
+                    uartBufferLength = 0;
+                    // Pas besoin de memset, on écrase au fur et à mesure
+                }
+                
+                xSemaphoreGive(uart_buffer_Mutex);
+                
+                if (bytes_read > 0) {
+                    // Traitement des données
+                    protocolDatas(serialProcessBuffer, bytes_read);
+                    
+                    // Debug optimisé (seulement si debug activé)
+                    if (ConfigSettings.enableDebug) {
+                        printHexData(serialProcessBuffer, bytes_read);
+                    }
+                    
+                    bytes_read = 0;
+                    lastProcessTime = currentTime;
+                }
+            }
+        }
+        
+        // Délai adaptatif basé sur l'activité
+        if (uartBufferLength > 0) {
+            vTaskDelay(pdMS_TO_TICKS(1)); // Traitement rapide si données en attente
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(10)); // Délai plus long si pas de données
+        }
+    }
+    
+    // Nettoyage (ne devrait jamais être atteint)
+    if (serialProcessBuffer) {
+        heap_caps_free(serialProcessBuffer);
+        serialProcessBuffer = nullptr;
+    }
+    vTaskDelete(NULL);
+}*/
+
+/*void SerialTask( void * pvParameters)
 {
   size_t bytes_read;
   uint8_t packetRead[BUFFER_SIZE];
@@ -478,7 +658,7 @@ void SerialTask( void * pvParameters)
   }
   
   vTaskDelete(NULL);
-}
+}*/
 
 void connectToMqtt() {
   
@@ -522,7 +702,7 @@ void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
       String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
                     String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
       macID.toUpperCase();
-      String AP_NameString = "LIXEEGW-" + macID;
+      String AP_NameString = "LIXEEBOX-" + macID;
 
       char AP_NameChar[AP_NameString.length() + 1];
       memset(AP_NameChar, 0, AP_NameString.length() + 1);
@@ -542,10 +722,10 @@ void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
     }
 }
 
-const char * pop = ""; // Proof of possession - otherwise called a PIN - string provided by the device, entered by the user in the phone app
+/*const char * pop = ""; // Proof of possession - otherwise called a PIN - string provided by the device, entered by the user in the phone app
 const char * service_name = "LIXEE_GW"; // Name of your device (the Espressif apps expects by default device name starting with "Prov_")
 const char * service_key = NULL; // Password used for SofAP method (NULL = no password needed)
-bool reset_provisioned = true; // When true the library will automatically delete previously provisioned data.
+bool reset_provisioned = true; // When true the library will automatically delete previously provisioned data.*/
 
 void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
@@ -901,39 +1081,13 @@ bool loadConfigGeneral() {
 
 String getIDWifi()
 {
-  uint8_t mac[WL_MAC_ADDR_LENGTH];
-  WiFi.softAPmacAddress(mac);
-  String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
-                 String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
-  macID.toUpperCase();
-
-  return macID;
+  uint8_t baseMac[6];
+  esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
+  char macSuffix[5];
+  sprintf(macSuffix, "%02X%02X", baseMac[4], baseMac[5]);
+  return String(macSuffix);
 }
 
-void setupWifiAP()
-{
-  WiFi.disconnect();
-  WiFi.mode(WIFI_AP);
-   
-  String macID = getIDWifi();
-
-  String AP_NameString = "LIXEEGW-" + macID;
-
-  char AP_NameChar[AP_NameString.length() + 1];
-  memset(AP_NameChar, 0, AP_NameString.length() + 1);
-
-  for (int i=0; i<AP_NameString.length(); i++)
-    AP_NameChar[i] = AP_NameString.charAt(i);
-
-  String WIFIPASSSTR = "admin"+macID;
-  char WIFIPASS[WIFIPASSSTR.length()+1];
-  memset(WIFIPASS,0,WIFIPASSSTR.length()+1);
-  for (int i=0; i<WIFIPASSSTR.length(); i++)
-    WIFIPASS[i] = WIFIPASSSTR.charAt(i);
-
-  WiFi.softAP(AP_NameChar,WIFIPASS ); 
-  
-}
 
 bool setupSTAWifi() {
   
@@ -946,6 +1100,8 @@ bool setupSTAWifi() {
     WiFi.disconnect();
     DEBUG_PRINTLN(F("disconnect"));
     WiFi.begin(ConfigSettings.ssid, ConfigSettings.password);
+    DEBUG_PRINTLN(ConfigSettings.ssid);
+    DEBUG_PRINTLN(ConfigSettings.password);
     //WiFi.setSleep(false);
     DEBUG_PRINTLN(F("WiFi.begin"));
 
@@ -1022,216 +1178,43 @@ void monitor_heap(void) {
     }
 }
 
-void setup(void)
-{  
-  ZiGateMode=PRODUCTION;
-  initTempSensor();
- 
-  Serial.begin(115200, SERIAL_8N1);
-  DEBUG_PRINTLN(F("Start"));
-  Serial1.setRxBufferSize(4092);
-  //Serial1.setRxFIFOFull(128);
-  //Serial1.setTimeout(0x03);
-  Serial1.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2);
-  //if (!Serial1.setPins(-1,-1,20,19))log_e("Failed setting RTS pin!");
-    // Activer le contrôle de flux matériel
- // if (!Serial1.setHwFlowCtrlMode(HW_FLOWCTRL_CTS_RTS,64))log_e("Failed changing Flow Control from Software to Hardware RTS!");
+void initWiFiServices() {
+  // Cette fonction contient tous vos services WiFi actuels
+  // MQTT, mDNS, serveur web, etc.
   
-  // creates a mutex object to control access to uart_buffer
-  uart_buffer_Mutex = xSemaphoreCreateMutex();
-  if (uart_buffer_Mutex == NULL) {
-    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
-    while (true) {
-      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
-      delay(1000);
-    }
-  }
-  Serial1.onReceive(SERIAL_RX_CB);  // sets the callback function
-  delay(2000);
-  DEBUG_PRINTLN(F("Send data to UART0 in order to activate the RX callback"));
-
-  initCircularBuffer();
-
-
-  // creates a mutex object to control access to files
-  Queue_Mutex = xSemaphoreCreateMutex();
-  if (Queue_Mutex == NULL) {
-    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
-    while (true) {
-      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
-      delay(1000);
-    }
-  }
-
-  // creates a mutex object to control access to files
-  QueuePrio_Mutex = xSemaphoreCreateMutex();
-  if (QueuePrio_Mutex == NULL) {
-    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
-    while (true) {
-      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
-      delay(1000);
-    }
-  }
-
-
-  //if (!LittleFS.begin(FORMAT_LittleFS_IF_FAILED, "/lfs2",20)) {
-  if (!LittleFS.begin(FORMAT_LittleFS_IF_FAILED)){
-    DEBUG_PRINTLN(F("Erreur LittleFS"));
-    return;
-  }
-  DEBUG_PRINTLN(F("LittleFS OK"));
-  if ( (!loadConfigWifi()) || (!loadConfigGeneral())) {
-      DEBUG_PRINTLN(F("Erreur Loadconfig LittleFS"));
-  } else {
-    configOK=true;    
-    DEBUG_PRINTLN(F("Conf ok LittleFS"));
-  }
-
-  //Création des répertoire LittleFS (si nécessaire)
-  if (!LittleFS.exists("/db"))
-  {
-    LittleFS.mkdir("/db");
-  }
-   if (!LittleFS.exists("/hst"))
-  {
-    LittleFS.mkdir("/hst");
-  }
-  if (!LittleFS.exists("/debug"))
-  {
-    LittleFS.mkdir("/debug");
-  }
-  if (!LittleFS.exists("/bk"))
-  {
-    LittleFS.mkdir("/bk");
-  }
-  if (!LittleFS.exists("/rt"))
-  {
-    LittleFS.mkdir("/rt");
-  }
-  
-  WifiReconnectTimer = xTimerCreate("WifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(reconnectWifi));
-
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
-
-  loadAllDevices("/db");
-
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
-
-  for (size_t i = 0; i < devices.size(); i++) {
-    DeviceData* device = devices[i];
-    String sa = device->getInfo().shortAddr;
-    String power = device->getValue("0B04","1295");
-
-    Serial.println("Device " + String(i) + " shortAddr = " + sa +" power = " + power);
-  }
-
-  if (configOK)
-  {
-    DEBUG_PRINTLN(F("configOK"));  
-    if (!setupSTAWifi())
-    {
-      DEBUG_PRINTLN(F("AP"));
-      setupWifiAP();
-      modeWiFi="AP";
-    }
-    DEBUG_PRINTLN(F("setupSTAWifi"));   
-  }else{
-    
-    setupWifiAP();
-    modeWiFi="AP";
-    DEBUG_PRINTLN(F("AP"));
-  }
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
   WiFi.onEvent(WiFiEvent);
-
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
   WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   
-   //Zeroconf
-  String localdns = "lixeegw-"+getIDWifi();
-
-  if(!MDNS.begin(localdns.c_str())) {
-     DEBUG_PRINTLN("Error starting mDNS");
-     
+  // mDNS
+  String localdns = "LIXEEBOX-" + getIDWifi();
+  if (!MDNS.begin(localdns.c_str())) {
+    Serial.println("Error starting mDNS");
   }
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
-
-  if (ConfigSettings.enableMqtt)
-  {
-    DEBUG_PRINTLN(F("enableMqtt"));
+  
+  // MQTT si activé
+  if (ConfigSettings.enableMqtt) {
     mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
-
+    
     mqttClient.onConnect(onMqttConnect);
     mqttClient.onDisconnect(onMqttDisconnect);
     mqttClient.onSubscribe(onMqttSubscribe);
     mqttClient.onUnsubscribe(onMqttUnsubscribe);
     mqttClient.onMessage(onMqttMessage);
     mqttClient.onPublish(onMqttPublish);
-
+    
     mqttClient.setServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT));
     mqttClient.setClientId(ConfigGeneral.clientIDMQTT);
-    if (String(ConfigGeneral.userMQTT) !="")
-    {
+    if (String(ConfigGeneral.userMQTT) != "") {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
-    } 
-
+    }
     mqttClient.connect();
   }
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
-  esp_task_wdt_reset();
   
+  // NTP
   timeClient.setPoolServerName((const char*)ConfigGeneral.ntpserver);
   timeClient.setTimeOffset((3600 * ConfigGeneral.timeoffset));
   timeClient.setTimeZone(ConfigGeneral.timezone);
   timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS);
-
-  vTaskDelay(200);
-
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
-  initWebServer();
-
-  DEBUG_PRINTLN("MDNS add http");
-  MDNS.addService("http", "tcp", 80);
-
-  //server.begin();
-  vTaskDelay(200);
-
-  //Verification empty files
-  scanFilesError();
-
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
-
-  pinMode(RESET_ZIGATE, OUTPUT);
-  pinMode(FLASH_ZIGATE, OUTPUT);
-  pinMode(LED1, OUTPUT);
-  digitalWrite(LED1, 1);
-  digitalWrite(FLASH_ZIGATE, 1);
-  digitalWrite(RESET_ZIGATE, 0);
-  digitalWrite(RESET_ZIGATE, 1);
-
-  commandList->push(Packet{0x0011, 0x0000,0});
-  vTaskDelay(20);
-  commandList->push(Packet{0x0009, 0x0000,0});
-  esp_task_wdt_reset();
-  vTaskDelay(200);
-  DEBUG_PRINTLN(F("start network"));
-  commandList->push(Packet{0x0024, 0x0000,0});
-  vTaskDelay(20);
-  DEBUG_PRINTLN(F("add getversion"));
-  commandList->push(Packet{0x0010, 0x0000,0});
-  vTaskDelay(20);
-  DEBUG_PRINTLN(F("add networkState"));
-  commandList->push(Packet{0x0025, 0x0000,0});
-  vTaskDelay(20);
- esp_task_wdt_reset();
   timeClient.begin();
   bool NTPOK = timeClient.forceUpdate();
   log_e("NTPOK : %d\r\n",NTPOK);
@@ -1264,156 +1247,328 @@ void setup(void)
       Yesterday =  timeClient.getYesterday();
   }
   
-
   addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(0)));
   addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(1)));
   
-  if ((ConfigSettings.enableMarstek) && (strcmp(ConfigGeneral.ZLinky,"")!=0))
-  {
+  // Serveur web
+  initWebServer();
+  MDNS.addService("http", "tcp", 80);
+  
+  // Autres services...
+  if (ConfigSettings.enableMarstek && strcmp(ConfigGeneral.ZLinky, "") != 0) {
     udpProcess();
     tcpProcess();
   }
+}
 
-  //esp_task_wdt_init(15, true);
- // esp_task_wdt_add(NULL);
+void setupZigbeeAndTasks() {
+  //Verification empty files
+  scanFilesError();
 
- // while (true)
- //   ;
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
-runner.init();
-runner.addTask(scan);
-scan.enableDelayed(60000);
-esp_task_wdt_reset();
 
- xTaskCreatePinnedToCore(
-                    SerialTask,   // Function to implement the task 
-                    "SerialTask", // Name of the task 
-                    8*1024,      // Stack size in words 
-                    NULL,       // Task input parameter 
-                    17,          // Priority of the task 
-                    NULL,       // Task handle. 
-                    1);  
+  pinMode(RESET_ZIGATE, OUTPUT);
+  pinMode(FLASH_ZIGATE, OUTPUT);
+  pinMode(LED1, OUTPUT);
+  digitalWrite(LED1, 1);
+  digitalWrite(FLASH_ZIGATE, 1);
+  digitalWrite(RESET_ZIGATE, 0);
+  digitalWrite(RESET_ZIGATE, 1);
+
+  commandList->push(Packet{0x0011, 0x0000,0});
+  
+  commandList->push(Packet{0x0009, 0x0000,0});
+  esp_task_wdt_reset();
+  vTaskDelay(200);
+  DEBUG_PRINTLN(F("start network"));
+  commandList->push(Packet{0x0024, 0x0000,0});
+  vTaskDelay(200);
+  DEBUG_PRINTLN(F("add getversion"));
+  commandList->push(Packet{0x0010, 0x0000,0});
+  vTaskDelay(200);
+  DEBUG_PRINTLN(F("add networkState"));
+  commandList->push(Packet{0x0025, 0x0000,0});
+  vTaskDelay(2000);
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
+  runner.init();
+  runner.addTask(scan);
+  scan.enableDelayed(60000);
+  esp_task_wdt_reset();
+
+  xTaskCreatePinnedToCore(
+                      SerialTask,   // Function to implement the task 
+                      "SerialTask", // Name of the task 
+                      12*1024,      // Stack size in words 
+                      NULL,       // Task input parameter 
+                      18,//17,          // Priority of the task 
+                      NULL,       // Task handle. 
+                      1);  
 
   xTaskCreatePinnedToCore(
                     datasTreatment,   // Function to implement the task 
                     "datasTreatment", // Name of the task 
-                    28*1024,      // Stack size in words 
+                    16*1024,      // Stack size in words 
                     NULL,       // Task input parameter 
                     18,          // Priority of the task 
                     NULL,       // Task handle. 
                     0);
 
 
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+  log_w("📊 - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
-
-  //initMailClient();
   disableCore0WDT();
-
-  //init tuya
-  //initTuya();
-
-  /*Rule rules[10];
-  int ruleCount = 0;
-  jsonToRules(rules, ruleCount);
-  applyRules(rules, ruleCount);*/
 
   if (rulesManager.loadFromFile("/config/rules.json"))
   {
     rulesManager.applyRules();
   }
   esp_task_wdt_init(30, true);
-
-  //BleInit();
-  
 }
 
-WiFiClient client;
+void setup(void)
+{  
+  ZiGateMode=PRODUCTION;
+  initTempSensor();
+ 
+  Serial.begin(115200, SERIAL_8N1);
+  DEBUG_PRINTLN(F("Start"));
+  initCircularBuffer();
+
+
+ /*Serial1.setRxBufferSize(BUFFER_SIZE);
+  Serial1.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2);*/
+    
+  // Configuration série optimisée
+  Serial1.setRxBufferSize(4096);  // Buffer hardware plus grand
+  Serial1.setTimeout(5);
+  Serial1.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2);
+  
+   //if (!Serial1.setPins(-1,-1,20,19))log_e("Failed setting RTS pin!");
+    // Activer le contrôle de flux matériel
+ // if (!Serial1.setHwFlowCtrlMode(HW_FLOWCTRL_CTS_RTS,64))log_e("Failed changing Flow Control from Software to Hardware RTS!");
+  
+  // creates a mutex object to control access to uart_buffer
+  uart_buffer_Mutex = xSemaphoreCreateMutex();
+  if (uart_buffer_Mutex == NULL) {
+    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
+    while (true) {
+      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
+      delay(1000);
+    }
+  }
+  Serial1.onReceive(SERIAL_RX_CB,true);  // sets the callback function
+  delay(2000);
+  DEBUG_PRINTLN(F("Send data to UART0 in order to activate the RX callback"));
+
+
+  
+
+
+  // creates a mutex object to control access to files
+  Queue_Mutex = xSemaphoreCreateMutex();
+  if (Queue_Mutex == NULL) {
+    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
+    while (true) {
+      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
+      delay(1000);
+    }
+  }
+
+  // creates a mutex object to control access to files
+  QueuePrio_Mutex = xSemaphoreCreateMutex();
+  if (QueuePrio_Mutex == NULL) {
+    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
+    while (true) {
+      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
+      delay(1000);
+    }
+  }
+
+
+  //if (!LittleFS.begin(FORMAT_LittleFS_IF_FAILED, "/lfs2",20)) {
+  if (!LittleFS.begin(FORMAT_LittleFS_IF_FAILED)){
+    DEBUG_PRINTLN(F("Erreur LittleFS"));
+    return;
+  }
+  DEBUG_PRINTLN(F("LittleFS OK"));
+  //if ( (!loadConfigWifi()) || (!loadConfigGeneral())) {
+  if (!loadConfigGeneral()) {
+      DEBUG_PRINTLN(F("Erreur Loadconfig LittleFS"));
+  } else {
+    configOK=true;    
+    DEBUG_PRINTLN(F("Conf ok LittleFS"));
+  }
+
+  //Création des répertoire LittleFS (si nécessaire)
+  if (!LittleFS.exists("/db"))
+  {
+    LittleFS.mkdir("/db");
+  }
+   if (!LittleFS.exists("/hst"))
+  {
+    LittleFS.mkdir("/hst");
+  }
+  if (!LittleFS.exists("/debug"))
+  {
+    LittleFS.mkdir("/debug");
+  }
+  if (!LittleFS.exists("/bk"))
+  {
+    LittleFS.mkdir("/bk");
+  }
+  if (!LittleFS.exists("/rt"))
+  {
+    LittleFS.mkdir("/rt");
+  }
+   if (!LittleFS.exists("/ota"))
+  {
+    LittleFS.mkdir("/ota");
+  }
+  
+  //WifiReconnectTimer = xTimerCreate("WifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(reconnectWifi));
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
+
+  loadAllDevices("/db");
+
+  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
+
+
+  for (size_t i = 0; i < devices.size(); i++) {
+    DeviceData* device = devices[i];
+    String sa = device->getInfo().shortAddr;
+    String power = device->getValue("0B04","1295");
+
+    Serial.println("Device " + String(i) + " shortAddr = " + sa +" power = " + power);
+  }
+
+  
+  // === NOUVEAU : VÉRIFICATION MÉMOIRE INITIALE ===
+    Serial.println("📊 Initial Memory State:");
+    Serial.printf("   Free Heap: %u bytes\n", ESP.getFreeHeap());
+    Serial.printf("   Free PSRAM: %u bytes\n", ESP.getFreePsram());
+    Serial.printf("   Largest free block: %u bytes\n", ESP.getMaxAllocHeap());
+    
+    // === NOUVEAU : CONFIGURATION SMARTWIFI ===
+    
+    // Configurer les callbacks pour surveiller les changements d'état
+    smartWiFi.onStateChange([](WiFiState state) {
+        switch (state) {
+            case WIFI_STATE_CONNECTED:
+                Serial.println("🌐 ✅ WiFi connected - Services will start");
+                wifiServicesStarted = false; // Trigger init in loop
+                break;
+                
+            case WIFI_STATE_BLE_PROVISIONING:
+                Serial.println("📱 🔵 BLE Provisioning active");
+                Serial.println("📱 Use mobile app to configure WiFi");
+                break;
+                
+            case WIFI_STATE_DISCONNECTED:
+                Serial.println("🌐 ❌ WiFi disconnected");
+                wifiServicesStarted = false;
+                break;
+                
+            case WIFI_STATE_FAILED:
+                Serial.println("🌐 ⚠️ WiFi connection failed");
+                break;
+                
+            case WIFI_STATE_CONNECTING:
+                Serial.println("🌐 🔄 Connecting to WiFi...");
+                break;
+        }
+    });
+    
+    smartWiFi.onEvent([](const String& event) {
+        Serial.println("📡 Event: " + event);
+    });
+
+    // === DÉMARRAGE INTELLIGENT ===
+    Serial.println("🔍 Starting Smart WiFi Manager...");
+    Serial.println("    → Will check WiFi config automatically");
+    Serial.println("    → Will load BLE only if needed");
+    
+    if (smartWiFi.begin()) {
+        Serial.println("✅ Smart WiFi Manager started");
+        
+        // Afficher l'état après démarrage
+        Serial.println("📊 Current state: " + smartWiFi.getStatusString());
+        
+        if (smartWiFi.isProvisioning()) {
+            Serial.println("📱 Device in BLE provisioning mode");
+            Serial.println("📱 Device name: " + smartWiFi.generateDeviceName("LIXEEBOX"));
+            Serial.println("📱 Use Nordic UART app to connect");
+            Serial.println("📱 Send: SSID|PASSWORD");
+        } else if (smartWiFi.isConnected()) {
+            Serial.println("🌐 WiFi already connected!");
+            Serial.println("🌐 IP: " + smartWiFi.getLocalIP());
+            Serial.println("🌐 SSID: " + smartWiFi.getSSID());
+        }
+        
+    } else {
+        Serial.println("❌ Smart WiFi Manager failed to start");
+        return;
+    }
+
+    
+
+    
+    Serial.println("📊 Memory after WiFi Manager init:");
+    Serial.printf("   Free Heap: %u bytes\n", ESP.getFreeHeap());
+    Serial.printf("   Free PSRAM: %u bytes\n", ESP.getFreePsram());
+    
+    Serial.println("✅ Setup complete - entering main loop");
+  
+}
 
 
 void loop(void)
 {
   esp_task_wdt_reset();
 
-  runner.execute();
+  smartWiFi.handleEvents();
 
-  if (executeReboot)
-  {
-    executeReboot=false;
-    runner.addTask(delayReboot);
-    delayReboot.enableDelayed(1000);
+  if (smartWiFi.isConnected() && !wifiServicesStarted) {
+      initWiFiServices();
+      wifiServicesStarted = true;
   }
 
-  if (updatePending) {
-    updatePending = false;       // on n'exécute qu'une fois
-    launchUpdateTask();
+  // === INITIALISATION ZIGBEE (après services WiFi) ===
+  if (wifiServicesStarted && !zigbeeInitialized) {
+      setupZigbeeAndTasks();
+      zigbeeInitialized = true;
   }
-  
 
-  //unsigned long currentTime = millis();
-  //char output_sprintf[5];
-  //String packetRead;
-  //uint8_t packetRead[BUFFER_SIZE];
-  
-  #define min(a,b) ((a)<(b)?(a):(b))
-  
-  /*if (uartBufferLength>0)
-  {
-    bytes_read=0;
-    if (xSemaphoreTake(uart_buffer_Mutex, portMAX_DELAY)) {
-      memcpy(packetRead,uartBuffer,BUFFER_SIZE);
-      bytes_read = uartBufferLength; 
-      memset(uartBuffer,0,0);
-      uartBufferLength=0;
-      xSemaphoreGive(uart_buffer_Mutex);
-    }  
-    protocolDatas(packetRead,bytes_read);
+  // === VOTRE CODE PRINCIPAL (seulement si système initialisé) ===
+  if (zigbeeInitialized) {
+      #define min(a,b) ((a)<(b)?(a):(b))
+
+      runner.execute();
+
+      if (executeReboot)
+      {
+        executeReboot=false;
+        runner.addTask(delayReboot);
+        delayReboot.enableDelayed(1000);
+      }
+
+      if (updatePending) {
+        updatePending = false;       // on n'exécute qu'une fois
+        launchUpdateTask();
+      }
+
+
+
+
+
+      monitor_heap();
+  }
+
     
-    for (int i=0;i<bytes_read;i++)
-    {
-      char tmpP[4];
-      snprintf(tmpP,3, "%02X",packetRead[i]);
-      DEBUG_PRINT(tmpP);
-      DEBUG_PRINT(F(" "));  
-      if (packetRead[i] == 0x03){DEBUG_PRINTLN();}
-    }                                                  
-  }*/
-
-  /*while (!PriorityQueuePacket->isEmpty())
-  {
-    DEBUG_PRINTLN("Priority Packet shift : protocol datas");
-    SerialPacket packet;
-    packet = (SerialPacket)PriorityQueuePacket->shift();
-    datasManage((char *)packet.raw,packet.len);
-    vTaskDelay(30);
-  }
-  
-  if (!QueuePacket->isEmpty())
-  {   
-    DEBUG_PRINTLN("Packet shift : protocol datas");
-    SerialPacket packet;
-    packet = (SerialPacket)QueuePacket->shift();
-    datasManage((char *)packet.raw,packet.len);
-    vTaskDelay(100);
-  }
-  
-  sendPacket();*/
-  monitor_heap();
-
-  /*if (currentTime - previousTime >= interval) 
-  {
-    previousTime = currentTime; // Mettre à jour le temps précédent
-  
-    xTaskCreatePinnedToCore(
-                    scanCallback,   // Function to implement the task 
-                    "scanCallback", // Name of the task 
-                    8*1024,      // Stack size in words 
-                    NULL,       // Task input parameter 
-                    5,          // Priority of the task 
-                    NULL,       // Task handle. 
-                    0);  
-    
-  }*/
 
   vTaskDelay(10);
 
