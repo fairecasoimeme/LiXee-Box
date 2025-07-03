@@ -62,6 +62,7 @@ bool addDebugLog(String text)
       if (debugLog.size() > 20000)
       {
         safeCloseFile(debugLog,name_with_extension);
+        LittleFS.remove(name_with_extension);
         debugLog = safeOpenFile(path,"w+");
       }
 
