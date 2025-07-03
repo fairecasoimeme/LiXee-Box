@@ -37,6 +37,7 @@ The device can be configured with a local website
 - Customizable templates for different device types
 - Status and action management
 - Historical data for power and energy devices
+- OTA (Over-The-Air) automatic and manual updates
 
 ### 📊 Monitoring and Dashboard
 - Energy dashboard with gauges and charts
@@ -57,7 +58,7 @@ The device can be configured with a local website
 - Tariff management for energy, production, gas, and water
 
 ### 🔄 Updates and Maintenance
-- OTA (Over-The-Air) automatic and manual updates
+
 - Configuration backup/restore
 - Developer mode for debugging
 
