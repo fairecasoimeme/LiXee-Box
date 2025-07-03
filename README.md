@@ -626,6 +626,19 @@ Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
 
 ## Changelog
 
+### V2.2a
+* Change provision (only BLE with LiXee-Assit)
+* Add OTA for zigbee devices
+* Best network management
+* Fix bugs
+
+### V2.0j
+* Fix Signed value for MQTT HA
+* Fix MQTT deconnection
+* Fix reboot issues
+* Fix real time power graph
+* Fix bugs
+
 ### V1.2
 * Add mDNS service for lixee-assist
 * Add api to set WiFi
