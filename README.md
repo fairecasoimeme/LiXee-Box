@@ -93,6 +93,22 @@ Complete dashboard with real-time visualization of your energy consumption, hist
 
 ### First Setup
 
+#### From v2.2a
+
+with **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
+Please download the app to process 
+<table><tr><td><a target="_blank" href="https://play.google.com/store/apps/details?id=com.lixee.assist" style="display: inline-block;">
+  <img width="150px" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
+       alt="Get it on Google Play" 
+      />
+</a></td><td>
+    <a target="_blank" href="https://apps.apple.com/us/app/lixee-assist/id6747671219?itscg=30200&itsct=apps_box_badge&mttnsubad=6747671219" style="display: inline-block;">
+    <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/fr-fr?releaseDate=1751500800" alt="Download on the App Store" style="width: 150px; vertical-align: middle; object-fit: contain;" />
+    </a></td></tr></table>
+
+Just BLE scan the device and complete with your local WiFi login/pass
+
+#### Before v2.2a
 With web navigator
 1. **Power**: Plug the device into a USB power supply
 2. **WiFi**: Scan available WiFi networks with your mobile/computer
@@ -101,15 +117,6 @@ With web navigator
 5. **Configuration**: Open `http://lixee-gw` in your browser
 6. **Home WiFi**: Configure your main WiFi network
 7. **Reboot**: Device restarts and connects to your network
-
-with **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
-
-<a href="https://play.google.com/store/apps/details?id=fr.lixee.assist">
-  <img src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
-       alt="Get it on Google Play" 
-       style="height: 50px;"/>
-</a>
-
 
 ### Zigbee Configuration))
 
