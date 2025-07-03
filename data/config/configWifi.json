@@ -1,1 +1,1 @@
-{"enableWiFi":1,"ssid":"","pass":"","ip":"","mask":"","gw":"","tcpListenPort":""}
+{"enableWiFi":1,"enableDHCP":1,"ssid":"","pass":"","ip":"","mask":"","gw":"","tcpListenPort":""}
