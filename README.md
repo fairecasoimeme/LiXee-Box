@@ -106,7 +106,7 @@ Please download the app to process
     <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/fr-fr?releaseDate=1751500800" alt="Download on the App Store" style="width: 150px; vertical-align: middle; object-fit: contain;" />
     </a></td></tr></table>
 
-Just BLE scan the device and complete with your local WiFi login/pass
+Just scan the device (with BLE) and complete the pairing with your local WiFi login/pass
 
 #### Before v2.2a
 With web navigator
@@ -118,7 +118,7 @@ With web navigator
 6. **Home WiFi**: Configure your main WiFi network
 7. **Reboot**: Device restarts and connects to your network
 
-### Zigbee Configuration))
+### Zigbee Configuration
 
 1. Go to **Network** menu → **Zigbee**
 2. Click **Add Device** to start pairing (30 seconds)
