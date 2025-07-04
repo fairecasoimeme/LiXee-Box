@@ -2,7 +2,7 @@
 
 ## Description
 
-**LiXee-Box** is a multi-protocol gateway for Zigbee devices, designed to be a central hub for energy management and home automation. This application transforms your LiXee-ZiWifi32 into a complete gateway capable of managing your Zigbee devices, your Linky, production, gaz, water meter, and integrating everything into your home automation system.
+**LiXee-Box** is a multi-protocol gateway for Zigbee devices, designed to be a central hub for **energy management** and home automation. This application transforms your LiXee-ZiWifi32 into a complete gateway capable of managing your Zigbee devices, your Linky, production, gaz, water meter, and integrating everything into your home automation system.
 
 ## Compatible Hardware
 
