@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "lixee.h"
+#include "onoff.h"
 #include "config.h"
 #include "protocol.h"
 #include "SPIFFS_ini.h"
@@ -28,6 +29,76 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
   
   switch (attribute)
   {   
+    case 5:
+        
+      for(int i=0;i<len;i++)
+      {
+        sprintf(value, "%02X",datas[i]);
+        tmp+=value;
+      }
+      if (ini_exist(inifile))
+      {      
+        //MQTT
+        if (ConfigSettings.enableMqtt)
+        {
+          mqttPublish(inifile.substring(0,16),"65382",String(attribute),"numeric",String(tmp));
+        }
+        //WebPush
+        if (ConfigSettings.enableWebPush)
+        {
+          String tmpvalue;
+          tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
+          WebPush(inifile.substring(0,16),"65382",(String)attribute,tmpvalue.c_str());
+        }
+
+        // Device update value;
+        if (!deviceList->isFull())
+        {
+          int shortaddr = GetShortAddr(inifile);
+          deviceList->push(Device{shortaddr,65382,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+        }
+
+        //Délestage 
+          //récupérer les prises pilotables si existante
+        config_write("delestage.json","state","1");
+        config_write("delestage.json","dateOn",FormattedDate);
+        //récupérer les prises pilotables si existante
+        String delestage = config_read("configGeneral.json","delestage");
+        if (delestage.length()>0)
+        {
+            char * pch;
+            pch = strtok ((char*)delestage.c_str(),",");
+            while (pch != NULL)
+            {
+              for (size_t i = 0; i < devices.size(); i++) 
+              {
+                DeviceData* device = devices[i];
+                if (device->getDeviceID() == pch)
+                {
+                  String oldState = device->getValue(std::string("0006"),std::string(String("0").c_str()));
+                  if (oldState !="")
+                  {
+                    config_write("delestage.json",device->getDeviceID(),oldState);
+                  }  
+                  SendOnOffAction(device->getInfo().shortAddr.toInt(),device->getInfo().endpoint.toInt(),"0");
+                  break;
+                }
+              }      
+              pch = strtok (NULL, ",");
+            }
+        }
+      }
+
+      for (size_t i = 0; i < devices.size(); i++) 
+      {
+        DeviceData* device = devices[i];
+        if (device->getDeviceID() == inifile.substring(0, 16))
+        {
+          device->setValue(std::string("FF66"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+          break;
+        }
+      }
+    break;   
     case 514:
     {
       for(int i=0;i<(len-1);i++)
@@ -109,7 +180,7 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
         }
       }
     }
-      break;
+    break;
     case 535:
     {
       
@@ -141,6 +212,40 @@ void lixeeClusterManage(String inifile,int attribute,uint8_t datatype,int len, c
         {
           int shortaddr = GetShortAddr(inifile);
           deviceList->push(Device{shortaddr,65382,attribute,STGE});
+        }
+     
+        auto status = parseStatusRegister(String(STGE));
+
+        //Délestage 
+        if (status.depassement_ref_pow)
+        {
+          config_write("delestage.json","state","1");
+          config_write("delestage.json","dateOn",FormattedDate);
+          //récupérer les prises pilotables si existante
+          String delestage = config_read("configGeneral.json","delestage");
+          if (delestage.length()>0)
+          {
+              char * pch;
+              pch = strtok ((char*)delestage.c_str(),",");
+              while (pch != NULL)
+              {
+                for (size_t i = 0; i < devices.size(); i++) 
+                {
+                  DeviceData* device = devices[i];
+                  if (device->getDeviceID() == pch)
+                  {
+                    String oldState = device->getValue(std::string("0006"),std::string(String("0").c_str()));
+                    if (oldState !="")
+                    {
+                      config_write("delestage.json",device->getDeviceID(),oldState);
+                    }  
+                    SendOnOffAction(device->getInfo().shortAddr.toInt(),device->getInfo().endpoint.toInt(),"0");
+                    break;
+                  }
+                }      
+                pch = strtok (NULL, ",");
+              }
+          }
         }
       }
       for (size_t i = 0; i < devices.size(); i++) 
