@@ -27,10 +27,13 @@ int GetDeviceId(String inifile);
 String GetNameStatus(int deviceId,String cluster, int attribut, String model);
 String GetLastSeen(String inifile);
 String GetLQI(String inifile);
+String GetEndpoint(String inifile);
 void SetInfoStatus( String inifile, String val);
 void SetLastSeen( String inifile, String val);
 void SetLQI( String inifile, String val);
 void SetInfoDeviceId( String inifile, String val);
+void SetInfoPowerSocket( String inifile, String val);
+
 bool deviceExist(String mac);
 
 bool loadOTAFile(const char* filename);

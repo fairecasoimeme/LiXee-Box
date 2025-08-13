@@ -18,6 +18,10 @@
 extern std::vector<DeviceData*> devices;
 
 extern struct ZigbeeConfig ZConfig;
+
+// Variables globales pour monitoring CRC
+uint32_t lastCrcError = 0;
+uint32_t crcErrorCount = 0;
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
 extern CircularBuffer<SerialPacket, 300> *QueuePacket;
@@ -339,6 +343,18 @@ String GetLQI(String inifile)
   return String("");
 }
 
+String GetEndpoint(String inifile)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      return device->getInfo().endpoint;
+    }
+  }
+  return String("1");
+}
 
 int GetShortAddr(String inifile)
 {
@@ -409,6 +425,32 @@ void SetInfoDeviceId( String inifile, String val)
   }
 }
 
+void SetInfoPowerSocket( String inifile, String val)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      device->setInfoPowerSocket(val);
+      break;
+    }
+  }
+}
+
+void SetInfoEndpoint( String inifile, String val)
+{
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == inifile.substring(0, 16))
+    {
+      device->setInfoEndpoint(val);
+      break;
+    }
+  }
+}
+
 void SetInfoLastseen( String inifile, String val)
 {
   for (size_t i = 0; i < devices.size(); i++) 
@@ -456,7 +498,6 @@ void datasManage(char packet[256],int count)
       log_e("Invalid packet size: %d", count);
       return;
   }
-
   uint8_t CRC=0;
   ZiGateProtocol protocol = {};
 
@@ -492,6 +533,28 @@ void datasManage(char packet[256],int count)
       DecodePayload(protocol,count); 
       memset(packet,0,0);
     }else{   
+      crcErrorCount++;
+      uint32_t now = millis();
+      uint32_t interval = now - lastCrcError;
+      lastCrcError = now;
+      
+      log_e("🔴 CRC ERROR #%d - Intervalle: %dms", crcErrorCount, interval);
+      log_e("   Type: 0x%04X, Len: %d, CRC calc: 0x%02X, CRC reçu: 0x%02X", 
+            protocol.type, protocol.ln, CRC, protocol.chksum);
+      log_e("   Core: %d, Task: %s, Free heap: %d", 
+            xPortGetCoreID(), pcTaskGetName(NULL), ESP.getFreeHeap());      
+      // Afficher les premiers bytes pour pattern analysis
+      log_e("   Packet: %02X %02X %02X %02X %02X [%d bytes total]",
+            packet[0], packet[1], packet[2], packet[3], packet[4], count);
+      
+      // Auto-recovery si trop d'erreurs consécutives
+      if (crcErrorCount > 10 && interval < 5000) {
+        log_e("🔥 TROP D'ERREURS CRC - TENTATIVE DE RECOVERY");
+        Serial1.flush(); // Vider le buffer série
+        vTaskDelay(100);  // Pause pour resync
+        crcErrorCount = 0; // Reset compteur
+      }
+      
       for (int i=0; i< count; i++)
       {
         char tmpP[4];
@@ -854,7 +917,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       u8Status = protocol.payload[u8Offset++];
 
       sendOtaEndResponse(u16SrcAddr, u8SQN, 5, 10, u32FileVersion, u16ImageType, u16ManufactureCode);
-      SendAttributeRead((int)u16SrcAddr,0,5);
+      SendAttributeRead((int)u16SrcAddr,1,0,5);
 
       DeviceData *device = getDeviceShortAddr((int)u16SrcAddr);
       device->otaInProgress=0;
@@ -970,6 +1033,10 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         {
           int cluster;
           cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
+          if (cluster == 6)
+          {
+            SetInfoPowerSocket(path,"1");
+          }
           if (i>12){tmpIN+=",";}
           tmpIN+=String(cluster);
         
@@ -982,10 +1049,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           if (i>((12+(nbIN*2))+1)){tmpOUT+=",";}
           tmpOUT+=(String)cluster;
         }
-
+        
+        
         //get info basic (Appli version / Manuf / model)
-        if (endpoint ==1)
+        if (endpoint != 0xf2)
         {
+          SetInfoEndpoint(path,String(endpoint));
           uint8_t shrtAddr[2];
           shrtAddr[0]=protocol.payload[2];
           shrtAddr[1]=protocol.payload[3];
@@ -1182,7 +1251,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         if ((tmpcluster == 0) && (tmpattribute == 5))
         {  
           String tmpMac;
-          String model;
+          String model, endpoint;
           tmpMac = inifile.substring(0,16);
           uint8_t mac[9];
           sscanf(tmpMac.c_str(), "%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5], &mac[6], &mac[7]);
@@ -1195,10 +1264,11 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
                             (uint64_t)mac[6] << 8 |
                             (uint64_t)mac[7];
           int DeviceId = GetDeviceId(inifile);
-          model = GetModel(inifile);    
+          model = GetModel(inifile);  
+          endpoint = GetEndpoint(inifile);  
 
           //Traitement spécifique seloin modèle
-          SpecificTreatment(ShortAddr,model);
+          SpecificTreatment(ShortAddr,endpoint.toInt(), model);
           log_d("SpecificTreatment");
          
           vTaskDelay(100);
@@ -1216,7 +1286,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           log_d("getPollingDevice");
           vTaskDelay(100);
           //get software version
-          SendAttributeRead(SA,0,16384);
+          SendAttributeRead(SA,endpoint.toInt(),0,16384);
           alertList->push(Alert{"Config OK", 0});
           //Afficher la find de la config
           
@@ -1360,6 +1430,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
       break;
   }
+
+  
   
 }
 
@@ -1433,7 +1505,7 @@ void sendPacket(Packet p){
   logPush('3');
   logPush('\n');
 
-  Serial1.flush();
+  //Serial1.flush();
 }
 
 void sendZigbeeCmd(Packet p){
@@ -1496,7 +1568,7 @@ void sendZigbeePacket(int cmd, int len, uint8_t datas[512])
     Serial1.write(getChecksum(cmd, len, datas));
   }
   Serial1.write(0x03);
-  Serial1.flush();
+  //Serial1.flush();
 }
 
 uint8_t getChecksum(int type, int len, uint8_t datas[512])
@@ -1510,8 +1582,9 @@ uint8_t getChecksum(int type, int len, uint8_t datas[512])
   return CRC;
 }
 
+
 //void protocolDatas(String sp)
-void protocolDatas(uint8_t sp[4092], size_t len)
+/*void protocolDatas(uint8_t sp[4092], size_t len)
 { 
   int count;
   int i=0;
@@ -1611,7 +1684,7 @@ void protocolDatas(uint8_t sp[4092], size_t len)
       i++;
     }
   }
-}
+}*/
 
 bool ScanDeviceToPoll() {
   for (size_t i = 0; i < devices.size(); i++) 
@@ -1639,7 +1712,7 @@ bool ScanDeviceToPoll() {
         // Lancement de la requête
         log_d("Lancement de la requête / sht: %d - cluster: %d - attr: %d", shortAddr, cluster, attribut);
         // Envoi du paquet
-        SendAttributeRead(shortAddr, cluster, attribut);
+        SendAttributeRead(shortAddr,device->getInfo().endpoint.toInt(), cluster, attribut);
         p.last = p.poll;
       }
     }
@@ -1670,6 +1743,8 @@ bool ScanDevicesToRAZ() {
             for (const auto &attrPair : valMap.attributes) {
               int attrId   = attrPair.first;
               device->energyHistory.hours.graph[PsString(Hour.c_str())].attributes[attrId] = 0;
+              device->energyHistory.hours.trend.attributes[attrId] = 0;
+              device->energyHistory.hours.data[PsString(Hour.c_str())].attributes[attrId] = device->energyHistory.hours.last.attributes[attrId];
             }
           }
         }
