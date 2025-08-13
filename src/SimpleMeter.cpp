@@ -50,14 +50,14 @@ void SimpleMeterManage(String inifile,int attribute,uint8_t datatype,int len, ch
         //MQTT
         if (ConfigSettings.enableMqtt)
         {
-          mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
+          mqttPublish(inifile.substring(0,16),"0702",String(attribute),"numeric",String(tmp));
         }
         //WebPush
         if (ConfigSettings.enableWebPush)
         {
           String tmpvalue;
           tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-          WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
+          WebPush(inifile.substring(0,16),"0702",(String)attribute,tmpvalue.c_str());
         }
 
         // Device update value;
