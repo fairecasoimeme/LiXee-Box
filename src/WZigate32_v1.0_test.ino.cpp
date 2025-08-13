@@ -78,7 +78,6 @@ CircularBuffer<Alert, 10> *alertList = nullptr;
 CircularBuffer<Device, 50> *deviceList = nullptr;
 CircularBuffer<Notification, 10> *notifList = nullptr;
 CircularBuffer<SerialPacket, 300> *QueuePacket = nullptr;
-CircularBuffer<SerialBuffer, 300> *QueueBuffer = nullptr;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -199,8 +198,7 @@ void initCircularBuffer()
   new(deviceList) CircularBuffer<Device,50>();
   QueuePacket = (CircularBuffer<SerialPacket,300>*)heap_caps_malloc(sizeof(*QueuePacket), MALLOC_CAP_SPIRAM);
   new(QueuePacket) CircularBuffer<SerialPacket,300>();
-  QueueBuffer = (CircularBuffer<SerialBuffer,300>*)heap_caps_malloc(sizeof(*QueueBuffer), MALLOC_CAP_SPIRAM);
-  new(QueueBuffer) CircularBuffer<SerialBuffer,300>();
+
 }
 
 void delayRebootCallBack()
@@ -271,32 +269,16 @@ SemaphoreHandle_t inifile_Mutex = NULL;
 SemaphoreHandle_t Queue_Mutex = NULL;
 SemaphoreHandle_t QueuePrio_Mutex = NULL;
 
-void sendPacket()
-{
-  //DEBUG_PRINTLN("sendPacket: ");
-  if (!PrioritycommandList->isEmpty())
-  {
-    log_d("Priority send");
-    sendZigbeeCmd(PrioritycommandList->shift());
-    vTaskDelay(30);
-  }else{
-    if (!commandList->isEmpty())
-    {
-      sendZigbeeCmd(commandList->shift());
-      vTaskDelay(100);
-    }
-  }
-  
-}
 
 // UART_RX_IRQ will be executed as soon as data is received by the UART
 // This is a callback function executed from a high priority
 // task created when onReceive() is used
 /*uint8_t uartBuffer[BUFFER_SIZE];
 size_t uartBufferLength;*/
-static uint8_t* uartBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
+/*static uint8_t* uartBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
 size_t uartBufferLength = 0;
-/*void SERIAL_RX_CB() {
+
+void SERIAL_RX_CB() {
   // take the mutex, waits forever until loop() finishes its processing
 
   if (xSemaphoreTake(uart_buffer_Mutex, pdMS_TO_TICKS(50))) {
@@ -314,10 +296,51 @@ size_t uartBufferLength = 0;
    
   }
 }*/
+
+/*// Variables globales pour l'ISR (ajoutez près de g_uart_has_data)
+TaskHandle_t serialTaskHandle = NULL;
+static volatile bool g_uart_has_data = false;
+static volatile bool g_packet_ready = false;
+static volatile size_t g_packet_length = 0;
+
+// ISR simplifiée qui utilise votre logique existante
+void IRAM_ATTR SERIAL_RX_CB() {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    
+    if (Serial1.available()) {
+        g_uart_has_data = true;
+        
+        // Si une tâche attend, la réveiller
+        if (serialTaskHandle != NULL) {
+            xTaskNotifyFromISR(serialTaskHandle, 0x01, eSetBits, 
+                              &xHigherPriorityTaskWoken);
+        }
+    }
+    
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}*/
+
+
+
+// Variables globales simples pour l'ISR
+/*static volatile bool g_uart_has_data = false;
+
+// ISR ULTRA-MINIMALISTE - SEULEMENT SIGNALER
+void IRAM_ATTR SERIAL_RX_CB() {
+    // JUSTE signaler qu'il y a des données - RIEN D'AUTRE
+    if (Serial1.available()) {
+        g_uart_has_data = true;
+    }
+}*/
+
+/*portMUX_TYPE rxMux = portMUX_INITIALIZER_UNLOCKED;
+static volatile uint32_t isr_packets_received = 0;
+static volatile uint32_t isr_buffer_overflows = 0;
 void IRAM_ATTR SERIAL_RX_CB() {
     static SerialBuffer packet;
     static size_t index = 0;
 
+    portENTER_CRITICAL_ISR(&rxMux);
     // Lire tout ce qui est dispo
     while (Serial1.available()) {
         char c = Serial1.read();
@@ -331,8 +354,9 @@ void IRAM_ATTR SERIAL_RX_CB() {
 
                 if (!QueueBuffer->isFull()) {
                     QueueBuffer->push(packet);
+                    isr_packets_received++; 
                 } else {
-                    //log_w("⚠️ QueuePacket pleine - paquet ignoré");
+                    isr_buffer_overflows++; // ✅ COMPTEUR OVERFLOW
                 }
 
                 // Reset pour prochain paquet
@@ -341,12 +365,13 @@ void IRAM_ATTR SERIAL_RX_CB() {
             }
         } else {
             // Overflow : reset sécurité
-            //log_e("❌ Overflow de réception série — reset du buffer");
+            isr_buffer_overflows++;
             index = 0;
             memset(&packet, 0, sizeof(SerialBuffer));
         }
     }
-}
+    portEXIT_CRITICAL_ISR(&rxMux);
+}*/
 
 TaskHandle_t taskTCP;
 
@@ -474,7 +499,7 @@ void datasTreatment(void * pvParameters)
         log_e("Stack critique: %d bytes restants", stackRemaining);
     }
 
-    while (!PriorityQueuePacket->isEmpty())
+    /*while (!PriorityQueuePacket->isEmpty())
     {
       DEBUG_PRINTLN("Priority Packet shift : protocol datas");
       SerialPacket packet;
@@ -494,7 +519,7 @@ void datasTreatment(void * pvParameters)
       xSemaphoreGive(Queue_Mutex);
       datasManage((char *)packet.raw,packet.len);
       vTaskDelay(100);
-    }
+    }*/
     
     sendPacket();
     vTaskDelay(10 / portTICK_PERIOD_MS);
@@ -503,8 +528,37 @@ void datasTreatment(void * pvParameters)
 
 }
 
-static uint8_t* serialProcessBuffer = nullptr;
-static bool serialTaskInitialized = false;
+extern uint32_t crcErrorCount;
+extern uint32_t lastCrcError;
+
+void printCrcStats() {
+    static uint32_t last_check = 0;
+    static uint32_t lastCrcCount = 0;
+    uint32_t now = millis();
+    
+    if (now - last_check > 30000) { // Toutes les 30 secondes
+        uint32_t crcErrorsThisPeriod = crcErrorCount - lastCrcCount;
+        
+        log_e("📊 Serial Stats:");
+        log_e("   QueuePacket size: %d/%d", QueuePacket->size(), 300);
+        log_e("   PriorityQueue size: %d/%d", PriorityQueuePacket->size(), 30);
+        log_e("   🔴 CRC Errors: %d total (%d dernières 30s)", crcErrorCount, crcErrorsThisPeriod);
+        
+        // Alert si taux d'erreur élevé
+        if (crcErrorsThisPeriod > 5) {
+            log_e("   ⚠️  TAUX D'ERREUR CRC ÉLEVÉ - Vérifier connexions");
+        }
+        
+        // Stats mémoire
+        log_e("   Free Heap: %d bytes", ESP.getFreeHeap());
+        log_e("   Free PSRAM: %d bytes", ESP.getFreePsram());
+        
+        lastCrcCount = crcErrorCount;
+        last_check = now;
+    }
+}
+
+
 
 void printHexData(const uint8_t* data, size_t length) {
     // Buffer statique pour éviter les allocations répétées
@@ -513,11 +567,7 @@ void printHexData(const uint8_t* data, size_t length) {
     for (size_t i = 0; i < length; i++) {
         snprintf(hexBuffer, sizeof(hexBuffer), "%02X ", data[i]);
         DEBUG_PRINT(hexBuffer);
-        
-        if (data[i] == 0x03) {
-            DEBUG_PRINTLN();
-        }
-        
+
         // Éviter de surcharger le port série
         if (i % 32 == 31) { // Pause tous les 32 bytes
             vTaskDelay(1);
@@ -525,7 +575,354 @@ void printHexData(const uint8_t* data, size_t length) {
     }
 }
 
+void processCompleteFrame(uint8_t frame_buffer[], size_t frame_len) {
+    if (frame_len < 5) {
+        log_w("Trame trop courte: %d bytes", frame_len);
+        //addDebugLog(F("Trame trop courte"));
+        return;
+    }
+    
+    // Parser l'en-tête
+    uint16_t type = (frame_buffer[0] << 8) | frame_buffer[1];
+    uint16_t declared_len = (frame_buffer[2] << 8) | frame_buffer[3];
+    uint8_t received_crc = frame_buffer[4];
+    
+    // DOUBLE vérification de cohérence (sécurité)
+    if (declared_len != (frame_len - 5)) {
+        log_e("🔴 Longueur incohérente: déclarée=%d, frame=%d", declared_len, frame_len - 5);
+        //addDebugLog(F("Longueur incohérente"));
+        return;
+    }
+    
+    // Calculer CRC sur la longueur DÉCLARÉE uniquement
+    uint8_t calculated_crc = 0;
+    for (size_t i = 0; i < (5 + declared_len); i++) {
+        if (i != 4) {  // Skip checksum position
+            calculated_crc ^= frame_buffer[i];
+        }
+    }
+    
+    if (calculated_crc == received_crc) {
+        // ✅ CRC OK - construire le protocole
+        ZiGateProtocol protocol = {};
+        protocol.type = type;
+        protocol.ln = declared_len;
+        protocol.chksum = received_crc;
+        
+        // Copier SEULEMENT la longueur déclarée
+        memcpy(protocol.payload, &frame_buffer[5], declared_len);
+        
+        // Traitement direct
+        log_v("✅ Trame OK: type=0x%04X, len=%d", type, declared_len);
+        DecodePayload(protocol, 5 + declared_len);
+        
+    } else {
+        // ❌ CRC ERROR avec plus de détails
+        log_e("🔴 CRC ERROR: type=0x%04X, calc=0x%02X, reçu=0x%02X", 
+              type, calculated_crc, received_crc);
+        log_e("    Frame: len=%d, declared=%d", frame_len, declared_len);
+        
+        // Dump complet pour debug
+        log_e("    Hex: ");
+        for (size_t i = 0; i < frame_len && i < 30; i++) {
+            Serial.printf("%02X ", frame_buffer[i]);
+        }
+        Serial.println();
+        
+        addDebugLog(F("CRC error"));
+        // Statistiques d'erreur
+        extern uint32_t crcErrorCount;
+        crcErrorCount++;
+    }
+}
+
+// Variables globales pour maintenir l'état entre les appels
+static uint8_t g_frame_buffer[2048];
+static size_t g_frame_pos = 0;
+static bool g_in_frame = false;
+static bool g_escape_next = false;
+
+void parseRawDataPersistent(uint8_t raw_data[], size_t data_len) {
+    for (size_t i = 0; i < data_len; i++) {
+        uint8_t byte = raw_data[i];
+        
+        if (byte == 0x01) {
+            // STX - Nouveau début de trame
+            if (g_in_frame && g_frame_pos > 0) {
+                log_w("⚠️ STX inattendu, abandon trame (%d bytes)", g_frame_pos);
+               // addDebugLog(F("STX inattendu"));
+            }
+            g_frame_pos = 0;
+            g_in_frame = true;
+            g_escape_next = false;
+            log_v("🟢 STX détecté");
+            
+        } else if (byte == 0x03 && g_in_frame) {
+            // ETX - Fin de trame
+            if (g_frame_pos >= 5) {
+                // Vérification de cohérence
+                uint16_t declared_len = (g_frame_buffer[2] << 8) | g_frame_buffer[3];
+                uint16_t actual_payload = g_frame_pos - 5;
+                
+                if (declared_len == actual_payload) {
+                    // ✅ Trame parfaite
+                    log_v("✅ Trame complète: %d bytes", g_frame_pos);
+                    processCompleteFrame(g_frame_buffer, g_frame_pos);
+                    
+                    if (ConfigSettings.enableDebug) {
+                        printHexData(g_frame_buffer, g_frame_pos);
+                        DEBUG_PRINTLN();
+                    }
+                } else {
+                    // ❌ Trame corrompue
+                    log_e("🔴 CORRUPTION - Déclaré:%d, Réel:%d", declared_len, actual_payload);
+                    //addDebugLog(F("CORRUPTION"));
+                    log_e("    Type: 0x%02X%02X, Checksum: 0x%02X", 
+                          g_frame_buffer[0], g_frame_buffer[1], g_frame_buffer[4]);
+                    
+                    // Dump détaillé
+                    Serial.print("    Frame: ");
+                    for (int j = 0; j < g_frame_pos && j < 30; j++) {
+                        Serial.printf("%02X ", g_frame_buffer[j]);
+                    }
+                    Serial.println();
+                    
+                    // DIAGNOSTIC des escape manqués
+                    log_e("    État escape_next: %s", g_escape_next ? "TRUE" : "FALSE");
+                    
+                    // Chercher des patterns suspects dans la trame
+                    bool has_delimiters = false;
+                    for (size_t k = 0; k < g_frame_pos; k++) {
+                        if (g_frame_buffer[k] == 0x01 || g_frame_buffer[k] == 0x02 || g_frame_buffer[k] == 0x03) {
+                            has_delimiters = true;
+                            log_e("    ⚠️ Délimiteur 0x%02X trouvé à position %d", g_frame_buffer[k], k);
+                            //addDebugLog(F("Délimiteur"));
+                        }
+                    }
+                    
+                    if (!has_delimiters) {
+                        log_e("    💡 Corruption probable: escape sequence coupée");
+                       // addDebugLog(F("Corruption probable"));
+                    }
+                }
+            }
+            
+            // Reset OBLIGATOIRE
+            g_frame_pos = 0;
+            g_in_frame = false;
+            g_escape_next = false;
+            
+        } else if (byte == 0x02 && g_in_frame) {
+            // Escape byte - CRITICAL: garder l'état pour le prochain appel
+            g_escape_next = true;
+            log_v("🔄 Escape détecté, attente du byte suivant...");
+            
+        } else if (g_in_frame) {
+            // Données dans la trame
+            if (g_escape_next) {
+                // Appliquer le décodage
+                uint8_t decoded = byte ^ 0x10;
+                g_frame_buffer[g_frame_pos++] = decoded;
+                g_escape_next = false;
+                log_v("🔓 Décodé: 0x%02X -> 0x%02X", byte, decoded);
+            } else {
+                // Byte normal
+                g_frame_buffer[g_frame_pos++] = byte;
+            }
+            
+            // Protection overflow
+            if (g_frame_pos >= sizeof(g_frame_buffer) - 1) {
+                log_e("🔴 OVERFLOW! Reset forcé");
+                addDebugLog(F("OVERFLOW"));
+                g_frame_pos = 0;
+                g_in_frame = false;
+                g_escape_next = false;
+            }
+        }
+        // Ignorer bytes hors trame
+    }
+}
+
 void SerialTask(void *pvParameters) {
+    // Buffer en DRAM pour performance
+    static uint8_t* rxBuffer = (uint8_t*)heap_caps_malloc(2048, MALLOC_CAP_INTERNAL);
+    if (!rxBuffer) {
+        log_e("❌ Erreur allocation rxBuffer");
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    log_i("✅ SerialTask démarrée avec buffer DRAM");
+    
+    while (true) {
+        esp_task_wdt_reset();
+        
+        // LECTURE PLUS AGRESSIVE
+        size_t available = Serial1.available();
+        if (available > 0) {
+            // Limiter pour éviter monopole CPU mais être plus réactif
+            size_t toRead = (available > 1024) ? 1024 : available;
+            size_t bytesRead = Serial1.readBytes(rxBuffer, toRead);
+            
+            if (bytesRead > 0) {
+                // Parser avec la nouvelle fonction
+                parseRawDataPersistent(rxBuffer, bytesRead);
+                
+                if (ConfigSettings.enableDebug && bytesRead < 50) {
+                    log_v("📥 Lu %d bytes", bytesRead);
+                }
+            }
+        }
+        
+        // DÉLAI RÉDUIT pour plus de réactivité
+        vTaskDelay(pdMS_TO_TICKS(2)); // AU LIEU DE 10ms
+        
+        // NOUVEAU : Monitoring périodique
+        static uint32_t lastMonitor = 0;
+        if (millis() - lastMonitor > 30000) {
+            UBaseType_t stackFree = uxTaskGetStackHighWaterMark(NULL);
+            log_i("📊 SerialTask - Stack libre: %d, Available: %d", stackFree, Serial1.available());
+            
+            if (stackFree < 2048) {
+                log_e("⚠️ Stack SerialTask critique!");
+            }
+            
+            lastMonitor = millis();
+        }
+    }
+}
+
+
+
+/*void SerialTask(void *pvParameters) {
+    // Buffer en DRAM pour traitement rapide
+    static uint8_t* rxBuffer = nullptr;
+    static bool bufferInitialized = false;
+    static uint32_t packetTimeout = 0;
+    static uint32_t lastByteTime = 0;
+    
+    // Augmenter la priorité de cette tâche
+    vTaskPrioritySet(NULL, 22);
+    
+    if (!bufferInitialized) {
+        // CRITIQUE : utiliser DRAM au lieu de PSRAM pour la réactivité
+        rxBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE * 2, MALLOC_CAP_INTERNAL);
+        if (!rxBuffer) {
+            log_e("❌ Erreur allocation rxBuffer en DRAM");
+            // Fallback vers PSRAM si pas assez de DRAM
+            rxBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE * 2, MALLOC_CAP_SPIRAM);
+            if (!rxBuffer) {
+                vTaskDelete(NULL);
+                return;
+            }
+            log_w("⚠️ Utilisation PSRAM pour rxBuffer");
+        } else {
+            log_i("✅ rxBuffer alloué en DRAM (%d bytes)", BUFFER_SIZE * 2);
+        }
+        bufferInitialized = true;
+    }
+
+    uint32_t notification_value;
+    
+    while (true) {
+        esp_task_wdt_reset();
+        
+        // Attendre notification de l'ISR avec timeout court
+        if (xTaskNotifyWait(0x00, 0xFFFFFFFF, &notification_value, 
+                           pdMS_TO_TICKS(10)) == pdTRUE) {
+            
+            // Traitement rapide si données disponibles
+            if (g_uart_has_data) {
+                g_uart_has_data = false;
+                
+                size_t bytesRead = 0;
+                while (Serial1.available() && bytesRead < (BUFFER_SIZE * 2) - 1) {
+                    rxBuffer[bytesRead++] = Serial1.read();
+                }
+                
+                if (bytesRead > 0) {
+                    protocolDatas(rxBuffer, bytesRead);
+                    
+                    if (ConfigSettings.enableDebug) {
+                        printHexData(rxBuffer, bytesRead);
+                    }
+                }
+            }
+        } else {
+            // Timeout - vérifier quand même s'il y a des données
+            if (g_uart_has_data) {
+                g_uart_has_data = false;
+                
+                size_t bytesRead = 0;
+                while (Serial1.available() && bytesRead < (BUFFER_SIZE * 2) - 1) {
+                    rxBuffer[bytesRead++] = Serial1.read();
+                }
+                
+                if (bytesRead > 0) {
+                    protocolDatas(rxBuffer, bytesRead);
+                }
+            }
+        }
+        
+        // Délai minimal pour éviter la saturation CPU
+        vTaskDelay(pdMS_TO_TICKS(1));
+    }
+    
+    if (rxBuffer) {
+        heap_caps_free(rxBuffer);
+    }
+}*/
+
+/*void SerialTask(void *pvParameters) {
+    // Allouer le buffer en PSRAM au démarrage de la tâche
+    static uint8_t* rxBuffer = nullptr;
+    static bool bufferInitialized = false;
+    
+    // Initialisation unique du buffer PSRAM
+    if (!bufferInitialized) {
+        rxBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE * 2, MALLOC_CAP_SPIRAM);
+        if (!rxBuffer) {
+            log_e("❌ Erreur allocation rxBuffer en PSRAM");
+            vTaskDelete(NULL);
+            return;
+        }
+        log_i("✅ rxBuffer alloué en PSRAM (%d bytes)", BUFFER_SIZE * 2);
+        bufferInitialized = true;
+    }
+
+    while (true) {
+        esp_task_wdt_reset();
+        
+        if (g_uart_has_data) {
+            g_uart_has_data = false;
+            
+            // Lire toutes les données dans le buffer PSRAM
+            size_t bytesRead = 0;
+            while (Serial1.available() && bytesRead < (BUFFER_SIZE * 2) - 1) {
+                rxBuffer[bytesRead++] = Serial1.read();
+            }
+            
+            if (bytesRead > 0) {
+                // ✅ APPEL DIRECT avec buffer PSRAM
+                protocolDatas(rxBuffer, bytesRead);
+                
+                if (ConfigSettings.enableDebug) {
+                    printHexData(rxBuffer, bytesRead);
+                }
+            }
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    
+    // Nettoyage (ne devrait jamais être atteint)
+    if (rxBuffer) {
+        heap_caps_free(rxBuffer);
+    }
+}*/
+
+
+/*void SerialTask(void *pvParameters) {
     while (true) {
         esp_task_wdt_reset();  // Watchdog
 
@@ -536,11 +933,13 @@ void SerialTask(void *pvParameters) {
         }
 
         if (!QueueBuffer->isEmpty()) {
+            portENTER_CRITICAL(&rxMux);
             SerialBuffer packet = QueueBuffer->shift();
-
+            portEXIT_CRITICAL(&rxMux);
             // Appel à la fonction principale de décodage Zigbee
+            
             protocolDatas(packet.data, packet.length);
-
+            
             if (ConfigSettings.enableDebug) {
                 printHexData(packet.data, packet.length);
             }
@@ -550,7 +949,7 @@ void SerialTask(void *pvParameters) {
             vTaskDelay(pdMS_TO_TICKS(10));  // pas de donnée, on évite le spinlock
         }
     }
-}
+}*/
 
 /*void SerialTask(void * pvParameters) {
    esp_err_t wdt_err = esp_task_wdt_add(NULL);
@@ -961,6 +1360,8 @@ bool loadConfigGeneral() {
   SpiRamJsonDocument doc(10192);
   deserializeJson(doc,configFile);
 
+  ConfigSettings.enableHWFlow = (int)doc["enableHWFlow"];
+
   ConfigGeneral.firstStart = (int)doc["firstStart"];
   ConfigSettings.enableDebug = (int)doc["enableDebug"];
   if (ConfigSettings.enableDebug)
@@ -1298,24 +1699,25 @@ void setupZigbeeAndTasks() {
   scan.enableDelayed(60000);
   esp_task_wdt_reset();
 
+
+
   xTaskCreatePinnedToCore(
                       SerialTask,   // Function to implement the task 
                       "SerialTask", // Name of the task 
                       12*1024,      // Stack size in words 
                       NULL,       // Task input parameter 
-                      18,//17,          // Priority of the task 
+                      22,//17,          // Priority of the task 
                       NULL,       // Task handle. 
                       1);  
 
-  xTaskCreatePinnedToCore(
+  /*xTaskCreatePinnedToCore(
                     datasTreatment,   // Function to implement the task 
                     "datasTreatment", // Name of the task 
-                    16*1024,      // Stack size in words 
+                    2*1024,      // Stack size in words 
                     NULL,       // Task input parameter 
-                    18,          // Priority of the task 
+                    17,          // Priority of the task 
                     NULL,       // Task handle. 
-                    0);
-
+                    0);*/
 
   log_w("📊 - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
@@ -1341,10 +1743,17 @@ void setup(void)
  /*Serial1.setRxBufferSize(BUFFER_SIZE);
   Serial1.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2);*/
     
-  // Configuration série optimisée
+  // Configuration série optimisée pour réduire les erreurs CRC
   Serial1.setRxBufferSize(4096);  // Buffer hardware plus grand
-  Serial1.setTimeout(5);
-  Serial1.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2);
+  Serial1.setTimeout(1);  
+  //Serial1.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2);
+  // Timeout plus court pour réactivité
+  if (!Serial1.setPins(RXD2, TXD2, 5, 4)) {
+    log_e("Failed setting UART pins!");
+  }
+  Serial1.begin(BAUD_RATE, SERIAL_8N1); 
+  delay(100);
+  
   
    //if (!Serial1.setPins(-1,-1,20,19))log_e("Failed setting RTS pin!");
     // Activer le contrôle de flux matériel
@@ -1359,7 +1768,7 @@ void setup(void)
       delay(1000);
     }
   }
-  Serial1.onReceive(SERIAL_RX_CB,true);  // sets the callback function
+  //Serial1.onReceive(SERIAL_RX_CB,true);  // sets the callback function
   delay(2000);
   DEBUG_PRINTLN(F("Send data to UART0 in order to activate the RX callback"));
 
@@ -1401,6 +1810,21 @@ void setup(void)
     configOK=true;    
     DEBUG_PRINTLN(F("Conf ok LittleFS"));
   }
+
+  if (ConfigSettings.enableHWFlow)
+  {
+    log_e("Hardware Serial Flow control ON");
+    if (!Serial1.setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS, 64)) {
+        log_e("Failed enabling hardware flow control!");
+    }
+    // Test du contrôle de flux
+    if (Serial1.availableForWrite() < 10) {
+        log_e("UART buffer nearly full - flow control should activate");
+    }
+  }else{
+    log_e("No Hardware Serial Flow control");
+  }
+
 
   //Création des répertoire LittleFS (si nécessaire)
   if (!LittleFS.exists("/db"))
@@ -1525,6 +1949,54 @@ void setup(void)
   
 }
 
+void sendTreatment()
+{
+  if (!PrioritycommandList->isEmpty())
+  {
+    log_d("Priority send");
+    sendZigbeeCmd(PrioritycommandList->shift());
+    vTaskDelay(100);
+  }
+  if (!commandList->isEmpty())
+  {
+    sendZigbeeCmd(commandList->shift());
+    vTaskDelay(100);
+  }
+  
+  vTaskDelay(10 / portTICK_PERIOD_MS);
+
+}
+
+void monitorSerialSimple() {
+    static uint32_t lastCheck = 0;
+    uint32_t now = millis();
+    
+    if (now - lastCheck > 60000) { // Toutes les minutes
+        size_t available = Serial1.available();
+        
+        log_i("📊 État série:");
+        log_i("   Bytes en attente: %d", available);
+        log_i("   Flow control: %s", ConfigSettings.enableHWFlow ? "ON" : "OFF");
+        
+        // Alerte si buffer série plein
+        if (available > 3000) {
+            log_e("🔴 Buffer série presque plein: %d bytes!", available);
+            addDebugLog(F("Buffer série plein"));
+            
+            // ACTION D'URGENCE : forcer lecture
+            uint8_t tempBuffer[100];
+            while (available > 0 && available < 4000) {
+                size_t read = Serial1.readBytes(tempBuffer, 100);
+                if (read > 0) {
+                    parseRawDataPersistent(tempBuffer, read);
+                }
+                available = Serial1.available();
+            }
+        }
+        
+        lastCheck = now;
+    }
+}
 
 void loop(void)
 {
@@ -1561,9 +2033,10 @@ void loop(void)
         launchUpdateTask();
       }
 
+      sendTreatment();
 
-
-
+      printCrcStats();
+       monitorSerialSimple();
 
       monitor_heap();
   }
