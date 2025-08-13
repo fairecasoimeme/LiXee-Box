@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.2a"
+#define VERSION "v2.5"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -58,6 +58,7 @@ struct ConfigSettingsStruct {
   bool enableUDP;
   bool enableMarstek;
   bool enableHistory;
+  bool enableHWFlow;
   
 };
 
@@ -194,6 +195,7 @@ typedef struct {
 typedef struct {
     char name[50];
     unsigned int command;
+    unsigned int endpoint;
     unsigned int value;
     bool visible;
 } Action;
@@ -234,6 +236,7 @@ typedef struct{
   String sotfwareVersion;
   String lastSeen;
   String LQI;
+
 } DeviceInfo;
 
 struct StatusRegisterBreakout {
