@@ -52,12 +52,12 @@ void SendActiveRequest(uint8_t shortAddr[2])
   commandList->push(trame);
 }
 
-void  SendAction(int command, int ShortAddr, String tmpValue)
+void  SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
 {
   switch (command)
     {
       case 146 :
-        SendOnOffAction(ShortAddr,1,tmpValue);
+        SendOnOffAction(ShortAddr,endpoint,tmpValue);
       break;
       default:
       break;
@@ -209,7 +209,7 @@ void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type,
     PrioritycommandList->push(trame);
 }
 
-void SendAttributeRead(int shortAddr, int cluster, int attribut)
+void SendAttributeRead(int shortAddr,int endpoint, int cluster, int attribut)
 {
    Packet trame;
     trame.cmd=0x0100;
@@ -219,7 +219,7 @@ void SendAttributeRead(int shortAddr, int cluster, int attribut)
     datas[1]= (shortAddr >>8) & 0xFF;
     datas[2]= shortAddr & 0xFF ;
     datas[3]= 0x01;
-    datas[4]= 0x01;
+    datas[4]= endpoint;
     datas[5]= (cluster >>8) & 0xFF;
     datas[6]= cluster & 0xFF ;
     datas[7]= 0x00;
@@ -450,7 +450,7 @@ void sendOtaLoadNewImage(int u16ShortAddr, uint32_t u32FileIdentifier, uint16_t 
     PrioritycommandList->push(trame);
 }
       
-void SpecificTreatment(uint8_t shortAddr[2], String model)
+void SpecificTreatment(uint8_t shortAddr[2],int endpoint, String model)
 {
   if (model == "ZLinky_TIC")
   {
@@ -462,16 +462,16 @@ void SpecificTreatment(uint8_t shortAddr[2], String model)
     //save configGeneral
 
     //Linky mode
-    SendAttributeRead(SA, 65382, 768);
+    SendAttributeRead(SA, endpoint, 65382, 768);
     //Serial number
-    SendAttributeRead(SA, 1794, 776);
+    SendAttributeRead(SA, endpoint, 1794, 776);
     //Current tarif
-    SendAttributeRead(SA, 65382, 512);
-    SendAttributeRead(SA, 1794, 32);
+    SendAttributeRead(SA, endpoint, 65382, 512);
+    SendAttributeRead(SA, endpoint, 1794, 32);
     //OPTARIF / NGTF
-    SendAttributeRead(SA, 65382, 0);
+    SendAttributeRead(SA, endpoint, 65382, 0);
     //Puissance souscrite
-    SendAttributeRead(SA, 2817, 13);
+    SendAttributeRead(SA, endpoint, 2817, 13);
     
   }
 }
@@ -604,6 +604,21 @@ float getTarifPower(String IEEE, int power)
   return sum;
 }
 
+String getValuekWh(long energy)
+{
+  String result;
+  if ((energy > 1000) || (energy < -1000))
+  {
+    float wh = energy;
+    float kwh = wh / 1000.0;
+    result = String(kwh,2)+" kWh";
+  }else{
+    result = String(energy)+" Wh";
+  }
+
+  return result;
+}
+
 String getLinkyDatas(String IEEE)
 {
   String result,tmp; 
@@ -612,6 +627,7 @@ String getLinkyDatas(String IEEE)
     DeviceData* device = devices[i];
     if (device->getDeviceID() == IEEE)
     {
+      int modeTmp = strtol(device->getValue(std::string("FF66"),std::string("768")).c_str(),0,16);
       result+="<div id='datasLinky' style='display:inline-block;float:left;'>";
       tmp = String(strtol(device->getValue(std::string("0702"),std::string("776")).c_str(),0,16));
       if (tmp != "")
@@ -667,13 +683,13 @@ String getLinkyDatas(String IEEE)
         result+= F("<path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5'/>");      
         result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Current price)</i></span>";
       }
+
       tmp = String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16));
       if (tmp!="")
       {
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
         result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
         result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
-        int modeTmp = strtol(device->getValue(std::string("FF66"),std::string("768")).c_str(),0,16);
         if ((modeTmp==0) || (modeTmp==2))
         {
           result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Subscribed intensity)</i></span>";
@@ -682,6 +698,135 @@ String getLinkyDatas(String IEEE)
         }
         
       }
+
+      if ((modeTmp==2) || (modeTmp==0) )
+      {
+        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("1290")).c_str(),0,16));
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
+          result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
+          
+          if (modeTmp==0)
+          {
+            result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity)</i></span>";
+          }else if (modeTmp==2){
+            result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity Ph.1)</i></span>";
+          }
+          
+        }
+      }
+
+      if (modeTmp==2)
+      {
+        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("2314")).c_str(),0,16));
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
+          result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>"); 
+          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity Ph.2)</i></span>";
+        }
+        
+      }
+
+      if (modeTmp==2)
+      {
+        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("2570")).c_str(),0,16));
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
+          result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
+          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity Ph.3)</i></span>";
+          
+          
+        }
+      }
+
+      if (modeTmp==2)
+      {
+        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("1293")).c_str(),0,16));
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
+          result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
+          result+= "</svg><br><strong>"+tmp+" W</strong><br><i style='font-size:12px;'>(Max Triphased Power)</i></span>";
+        }
+        
+      }
+
+      if ((modeTmp==2) || (modeTmp==0) )
+      {
+        tmp = String(device->getValue(std::string("FF66"),std::string("1")).c_str());
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+          result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+          result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+          result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(DEMAIN)</i></span>";
+        }
+          
+      }
+
+      if ((modeTmp==2) || (modeTmp==0) )
+      {
+        tmp = String(device->getValue(std::string("FF66"),std::string("4")).c_str());
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+          result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+          result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+          result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(PEJP)</i></span>";
+        }
+          
+      }
+
+      if ((modeTmp==2))
+      {
+        tmp = String(device->getValue(std::string("FF66"),std::string("3")).c_str());
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+          result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+          result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+          result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(PPOT)</i></span>";
+        }
+          
+      }
+      if ((modeTmp==2) || (modeTmp==0) )
+      {
+        tmp = String(device->getValue(std::string("FF66"),std::string("2")).c_str());
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+          result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+          result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+          result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(HHPHC)</i></span>";
+        }
+          
+      }
+
+      if ((modeTmp==2) || (modeTmp==0) )
+      {
+        tmp = String(device->getValue(std::string("FF66"),std::string("9")).c_str());
+        if (tmp!="")
+        {
+          result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
+          result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
+          result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
+          result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
+          result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(MOTDETAT)</i></span>";
+        }
+          
+      }
+
       tmp = String(device->getValue(std::string("FF66"),std::string("535")));
       if (tmp!="")
       {
@@ -1153,7 +1298,19 @@ String getDatasPower(String IEEE,String Attribute, String Time)
   // Trouver le device
   DeviceData* dev = nullptr;
   for (auto* d : devices) {
-    if (d->getDeviceID() == IEEE) { dev = d; break; }
+    if (d == nullptr) {
+      log_e("Warning: NULL pointer found in devices vector\n");
+      continue;
+    }
+    try {
+      if (d->getDeviceID() == IEEE) { 
+        dev = d; 
+        break; 
+      }
+    } catch (...) {
+      log_e("Exception caught while accessing device ID");
+      continue;
+    }
   }
   if (!dev) {
     return "";
@@ -1194,6 +1351,10 @@ String getDatasPower(String IEEE,String Attribute, String Time)
   {
     DeviceData* devProd = nullptr;
     for (auto* d : devices) {
+      if (d == nullptr) {
+        log_e("Warning: NULL pointer found in devices vector\n");
+        continue;
+      }
       if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
     }
 
@@ -1223,25 +1384,41 @@ String getDatasPower(String IEEE,String Attribute, String Time)
   {
     DeviceData* devGaz = nullptr;
     for (auto* d : devices) {
-      if (d->getDeviceID() == ConfigGeneral.Gaz) { devGaz = d; break; }
-    }
-
-    DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
-    PeriodData* pdGaz = nullptr;
-    if      (Time=="hour")  pdGaz=&ehGaz.hours;
-    else if (Time=="day")   pdGaz=&ehGaz.days;
-    else if (Time=="month") pdGaz=&ehGaz.months;
-    else if (Time=="year")  pdGaz=&ehGaz.years;
-    else                      return "";
-
-    
-    for (auto &kv : pdGaz->graph) {
-      ValueMap &vm = kv.second;   
-      int attrId = 0;
-      auto itv = vm.attributes.find(attrId);
-      if (itv != vm.attributes.end()) {       
-        sumGaz += itv->second * ConfigGeneral.coeffGaz;
+      if (d == nullptr) {
+        log_e("Warning: NULL pointer found in devices vector\n");
+        continue;
       }
+      try{
+        if (d->getDeviceID() == ConfigGeneral.Gaz) {
+          devGaz = d;
+          break; 
+        }
+      }catch (...){
+        log_e("Exception caught while accessing device ID\n");
+        continue;
+      }
+    }
+    try {
+      DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
+      PeriodData* pdGaz = nullptr;
+      if      (Time=="hour")  pdGaz=&ehGaz.hours;
+      else if (Time=="day")   pdGaz=&ehGaz.days;
+      else if (Time=="month") pdGaz=&ehGaz.months;
+      else if (Time=="year")  pdGaz=&ehGaz.years;
+      else                      return "";
+
+      
+      for (auto &kv : pdGaz->graph) {
+        ValueMap &vm = kv.second;   
+        int attrId = 0;
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end()) {       
+          sumGaz += itv->second * ConfigGeneral.coeffGaz;
+        }
+      }
+    }catch (...) {
+      log_e("Exception in getDatasPower\n");
+      return "";
     }
 
   }
@@ -1258,8 +1435,9 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     }
     result +="\"></div></div><div class='col-11'> ";
     result += "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-    result += String(p.second);
-    result += " Wh ";
+    
+    result += getValuekWh(p.second);
+    result += " ";
     result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
     result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
     result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
@@ -1283,8 +1461,8 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     result +=       "</div>";
     result +=       "<div class='col-11'> ";
     result +=         "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='0 -64 640 640' xmlns='http://www.w3.org/2000/svg'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'></g><g id='SVGRepo_iconCarrier'><path d='M431.98 448.01l-47.97.05V416h-128v32.21l-47.98.05c-8.82.01-15.97 7.16-15.98 15.99l-.05 31.73c-.01 8.85 7.17 16.03 16.02 16.02l223.96-.26c8.82-.01 15.97-7.16 15.98-15.98l.04-31.73c.01-8.85-7.17-16.03-16.02-16.02zM585.2 26.74C582.58 11.31 568.99 0 553.06 0H86.93C71 0 57.41 11.31 54.79 26.74-3.32 369.16.04 348.08.03 352c-.03 17.32 14.29 32 32.6 32h574.74c18.23 0 32.51-14.56 32.59-31.79.02-4.08 3.35 16.95-54.76-325.47zM259.83 64h120.33l9.77 96H250.06l9.77-96zm-75.17 256H71.09L90.1 208h105.97l-11.41 112zm16.29-160H98.24l16.29-96h96.19l-9.77 96zm32.82 160l11.4-112h149.65l11.4 112H233.77zm195.5-256h96.19l16.29 96H439.04l-9.77-96zm26.06 256l-11.4-112H549.9l19.01 112H455.33z'></path></g></svg> ";
-    result +=           String(sumProd);
-    result +=           " Wh ";
+    result += getValuekWh(sumProd);
+    result += " ";
     result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
     result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
     result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
@@ -1308,8 +1486,8 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     result +=       "</div>";
     result +=       "<div class='col-11'> ";
     result +=         "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='0 0 32 32' version='1.1' xmlns='http://www.w3.org/2000/svg'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'></g><g id='SVGRepo_iconCarrier'> <title>flame-symbol</title> <path d='M10.375 7.562c0 5.625 5.625 6.563 5.625 11.25 0 1.875-1.875 4.687-4.687 4.687s-4.687-2.813-2.813-7.5c-2.813 1.875-3.75 3.75-3.75 5.625 0 4.688 4.687 9.375 11.25 9.375s11.25-2.812 11.25-8.438c0.042-8.32-9.587-11.1-12.188-15-1.875-2.813-0.937-4.688 0.937-6.563-3.75 0.938-5.625 3.563-5.625 6.563v0z'></path> </g></svg> ";
-    result +=           String(sumGaz);
-    result +=           " Wh";
+    result += getValuekWh(sumGaz);
+    result += " ";
     result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
     result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
     result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
@@ -1327,8 +1505,8 @@ String getDatasPower(String IEEE,String Attribute, String Time)
 
   result += "<br><div class='position-absolute bottom-0 start-0'><h5>Total</h5>";
   result += "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-  result += String((TotalWh+sumProd+sumGaz));
-  result += " Wh ";
+  result += getValuekWh((TotalWh+sumProd+sumGaz));
+  result += " ";
   result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
   result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
   result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
@@ -1405,7 +1583,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         trendColor="grey";
         op="";
       }
-      result +="<div style='text-align:center;'>";
+      result +="<h5>Power</h5><div style='text-align:center;'>";
         result +="<div style='float:left;display:inline-block;width:64px;'>";
         result += "<svg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>";
           result += "<rect width='100' height='100' rx='20' ry='20' fill='"+trendColor+"'/>";
@@ -1419,8 +1597,140 @@ String getTrendPower(String IEEE,String Attribute, String Time)
           result+=min;
           result+=" VA <br> <strong>Max :</strong> ";
           result+=max;
-          result+=" VA <br> <strong>";
+          result+=" VA <br>";
         result+="</span></div>";   
+      result += "</div>";
+
+      result += "<br><h5>History</h5>";
+      result += "<div class='row'>";
+        result += "<div class='col-12'>";
+          result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>  <text x='8' y='10' font-size='10' fill='currentColor' text-anchor='middle' dominant-baseline='middle'>-1</text></svg>";
+         //result += "</div>";
+        // result += "<div class='col-10'>"; 
+          result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+      for (const auto &graphEntry : hist.days.graph) {
+        const PsString &Key = graphEntry.first;
+        const ValueMap &valMap   = graphEntry.second;
+        if (memcmp(Yesterday.c_str(),Key.c_str(),2)==0)
+        {
+          long int sum=0;
+          float tmpEuros=0;
+
+          for (const auto &attrPair : valMap.attributes) {
+            int attrId   = attrPair.first;
+            long attrVal = attrPair.second;
+            if (attrVal > 0 ) sum +=attrVal;
+
+            if (attrId>0)
+            {          
+              tmpEuros+=sum * getTarif(attrId,"energy")/1000;
+              tmpEuros+=(sum/1000) * atof(ConfigGeneral.tarifCSPE);
+            }
+
+          }
+          result += getValuekWh(sum);
+          result += " "; 
+          result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+            result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+            result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+            result+="<g id='SVGRepo_iconCarrier'>";
+            result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+            result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+            result+="</g>";
+          result+="</svg>  ";
+          result += tmpEuros;
+          result += " €";
+
+        }
+      }
+        result += "</div>";
+      result += "</div>";
+      result += "<div class='row'>";
+        result += "<div class='col-12'>";
+        result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'></path><path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'></path></svg> ";
+        //result += "</div>";
+        //result += "<div class='col-10'>";
+          result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+        for (const auto &graphEntry : hist.months.graph) {
+        const PsString &Key = graphEntry.first;
+        const ValueMap &valMap   = graphEntry.second;
+        if (memcmp(Month.c_str(),Key.c_str(),2)==0)
+        {
+          long int sum=0;
+          float tmpEuros=0;
+
+          for (const auto &attrPair : valMap.attributes) {
+            int attrId   = attrPair.first;
+            long attrVal = attrPair.second;
+            if (attrVal > 0 ) sum +=attrVal;
+
+            if (attrId>0)
+            {          
+              tmpEuros+=sum * getTarif(attrId,"energy")/1000;
+              tmpEuros+=(sum/1000) * atof(ConfigGeneral.tarifCSPE);
+            }
+
+          }
+          result += getValuekWh(sum);
+          result += " "; 
+          result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+            result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+            result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+            result+="<g id='SVGRepo_iconCarrier'>";
+            result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+            result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+            result+="</g>";
+          result+="</svg>  ";
+          result += tmpEuros;
+          result += " €";
+
+        }
+      }
+        result += "</div>";
+      result += "</div>";
+      result += "<div class='row'>";
+        result += "<div class='col-12'>";
+        result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'><path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text></svg> ";
+        //result += "</div>";
+        //result += "<div class='col-10'>";
+          result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+        
+        for (const auto &graphEntry : hist.years.graph) {
+        const PsString &Key = graphEntry.first;
+        const ValueMap &valMap   = graphEntry.second;
+        if (memcmp(Year.c_str(),Key.c_str(),2)==0)
+        {
+          long int sum=0;
+          float tmpEuros=0;
+
+          for (const auto &attrPair : valMap.attributes) {
+            int attrId   = attrPair.first;
+            long attrVal = attrPair.second;
+            if (attrVal > 0 ) sum +=attrVal;
+
+            if (attrId>0)
+            {          
+              tmpEuros+=sum * getTarif(attrId,"energy")/1000;
+              tmpEuros+=(sum/1000) * atof(ConfigGeneral.tarifCSPE);
+            }
+
+          }
+          result += getValuekWh(sum);
+          result += " "; 
+          result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+            result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+            result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+            result+="<g id='SVGRepo_iconCarrier'>";
+            result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+            result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+            result+="</g>";
+          result+="</svg>  ";
+          result += tmpEuros;
+          result += " €";
+
+        }
+      }
+        result += "</div>";
       result += "</div>";
     }
   }else
