@@ -170,9 +170,11 @@ bool DeviceData::parseJsonToDevice(const String &jsonString) {
         _info.Status           = String(iobj["Status"]           | "");
         _info.manufacturer     = String(iobj["manufacturer"]     | "");
         _info.model            = String(iobj["model"]            | "");
+        _info.endpoint         = String(iobj["endpoint"]         | "1");
         _info.software_version = String(iobj["software_version"] | "");
         _info.alias            = String(iobj["alias"]            | "");
         _info.linkyMode        = String(iobj["linkyMode"]        | "0");
+        _info.powerSocket      = String(iobj["powerSocket"]      | "0");
     }
     // poll
     JsonArray parr = doc["poll"].as<JsonArray>();
@@ -216,9 +218,11 @@ String DeviceData::buildJsonFromDevice() {
     iobj["Status"]           = _info.Status.c_str();
     iobj["manufacturer"]     = _info.manufacturer.c_str();
     iobj["model"]            = _info.model.c_str();
+    iobj["endpoint"]         = _info.endpoint.c_str();
     iobj["software_version"] = _info.software_version.c_str();
     iobj["alias"]            = _info.alias.c_str();
     iobj["linkyMode"]        = _info.linkyMode.c_str();
+    iobj["powerSocket"]      = _info.powerSocket.c_str();
     // poll
     JsonArray parr = doc.createNestedArray("poll");
     for (auto &p : _pollList) {
@@ -270,6 +274,10 @@ void DeviceData::setInfoModel(const String &val) {
     _info.model = val;
 }
 
+void DeviceData::setInfoEndpoint(const String &val) {
+    _info.endpoint = val;
+}
+
 void DeviceData::setInfoSoftVersion(const String &val) {
     _info.software_version = val;
 }
@@ -284,4 +292,8 @@ void DeviceData::setInfoAlias(const String &val) {
 
 void DeviceData::setInfoLinkyMode(const String &val) {
     _info.linkyMode = val;
+}
+
+void DeviceData::setInfoPowerSocket(const String &val) {
+    _info.powerSocket = val;
 }

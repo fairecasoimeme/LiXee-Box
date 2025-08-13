@@ -47,9 +47,11 @@ public:
         String Status;
         String manufacturer;
         String model;
+        String endpoint;
         String software_version;
         String alias;
         String linkyMode;
+        String powerSocket;
     };
 
     // --- Structure pour un élément de "poll"
@@ -95,11 +97,13 @@ public:
     void setInfoDeviceID(const String &val);
     void setInfoManufacturer(const String &val);
     void setInfoModel(const String &val);
+    void setInfoEndpoint(const String &val);
     void setInfoStatus(const String &val);
     void setInfoSoftVersion(const String &val);
     void setInfoLastseen(const String &val);
     void setInfoAlias(const String &val);
     void setInfoLinkyMode(const String &val);
+    void setInfoPowerSocket(const String &val);
   
     // Getter/Setter sur l'INFO
     Info &getInfo() { return _info; }
