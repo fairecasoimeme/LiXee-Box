@@ -74,7 +74,83 @@ AsyncEventSource events("/events");
 
 extern uint8_t* au8OTAFile;
 
-
+// ===== CLASSE STRING PSRAM SIMPLE =====
+class PSRAMString {
+private:
+    char* buffer;
+    size_t capacity;
+    size_t len;
+    
+public:
+    PSRAMString(size_t size = 100000) {
+        capacity = size;
+        buffer = (char*)ps_malloc(capacity);
+        if (!buffer) {
+            Serial.println("Erreur allocation PSRAM, utilisation heap");
+            buffer = (char*)malloc(capacity);
+        }
+        clear();
+    }
+    
+    ~PSRAMString() {
+        if (buffer) free(buffer);
+    }
+    
+    // Opérateur += comme String normale
+    PSRAMString& operator+=(const String& str) {
+        append(str.c_str());
+        return *this;
+    }
+    
+    PSRAMString& operator+=(const char* str) {
+        append(str);
+        return *this;
+    }
+    
+    PSRAMString& operator+=(const __FlashStringHelper* str) {
+        append(reinterpret_cast<const char*>(str));
+        return *this;
+    }
+    
+    // Opérateur = pour affecter
+    PSRAMString& operator=(const String& str) {
+        clear();
+        append(str.c_str());
+        return *this;
+    }
+    
+    PSRAMString& operator=(const __FlashStringHelper* str) {
+        clear();
+        append(reinterpret_cast<const char*>(str));
+        return *this;
+    }
+    
+    // Fonction replace comme String normale
+    void replace(const String& find, const String& replace) {
+        String temp(buffer);
+        temp.replace(find, replace);
+        clear();
+        append(temp.c_str());
+    }
+    
+    // Fonctions utiles
+    const char* c_str() const { return buffer; }
+    size_t length() const { return len; }
+    void clear() { buffer[0] = '\0'; len = 0; }
+    
+private:
+    void append(const char* str) {
+        if (!str) return;
+        size_t strLen = strlen(str);
+        if (len + strLen >= capacity) {
+            // Agrandir si nécessaire
+            capacity = (len + strLen + 1) * 2;
+            buffer = (char*)realloc(buffer, capacity);
+        }
+        strcpy(buffer + len, str);
+        len += strLen;
+    }
+};
 
 
 const char HTTP_SHELLY_EMULE[] PROGMEM = 
@@ -144,9 +220,12 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
         "color : rgba(0,0,0);"
         "text-decoration: none !important;"
         "font-size: 24px;"
+        "display:inline-flex;"
+        "align-items:center;"
+        "padding-bottom: 2px;"
       "}"
       ".link.active {"
-        "text-decoration: underline !important;"
+        "border-bottom: 2px solid currentColor;"
       "}"
       "#power_gauge_global svg,#power_gauge_global2 svg,#power_gauge_global3 svg,#power_gauge_prod svg {"
         "height: auto !important;"
@@ -186,13 +265,13 @@ const char HTTP_MENU[] PROGMEM =
   "</svg>"
    " Energy"
    "</a>"
-   "<a class='dropdown-item' href='dashboard'>"
+   /*"<a class='dropdown-item' href='dashboard'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-speedometer' viewBox='0 0 16 16'>"
    "  <path d='M8 2a.5.5 0 0 1 .5.5V4a.5.5 0 0 1-1 0V2.5A.5.5 0 0 1 8 2M3.732 3.732a.5.5 0 0 1 .707 0l.915.914a.5.5 0 1 1-.708.708l-.914-.915a.5.5 0 0 1 0-.707M2 8a.5.5 0 0 1 .5-.5h1.586a.5.5 0 0 1 0 1H2.5A.5.5 0 0 1 2 8m9.5 0a.5.5 0 0 1 .5-.5h1.5a.5.5 0 0 1 0 1H12a.5.5 0 0 1-.5-.5m.754-4.246a.39.39 0 0 0-.527-.02L7.547 7.31A.91.91 0 1 0 8.85 8.569l3.434-4.297a.39.39 0 0 0-.029-.518z'/>"
    "  <path fill-rule='evenodd' d='M6.664 15.889A8 8 0 1 1 9.336.11a8 8 0 0 1-2.672 15.78zm-4.665-4.283A11.95 11.95 0 0 1 8 10c2.186 0 4.236.585 6.001 1.606a7 7 0 1 0-12.002 0'/>"
    "</svg>"
    " Dashboard"
-   "</a>"
+   "</a>"*/
    "<a class='dropdown-item' href='statusDevices'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
    "  <path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
@@ -279,7 +358,6 @@ const char HTTP_MENU[] PROGMEM =
    " Config"
    "</a>"
    "<div class='dropdown-menu'>"
-   
    "<a class='dropdown-item' href='/configGeneral'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
    "  <circle cx='12' cy='12' r='3'></circle>"
@@ -306,13 +384,14 @@ const char HTTP_MENU[] PROGMEM =
    "</svg>"
    " Security"
    "</a>"
+   /*
    "<a class='dropdown-item' href='/configRules'>"
    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
    "  <path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
    "</svg>"
    " Rules"
    "</a>"
-   
+   */
    "</div>"
    "</li>"
    "<li class='nav-item' id='Tools'>"
@@ -802,7 +881,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                   </div>
                   <div class='form-check'>
                     <input class='form-check-input' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
-                    <label class='form-check-label' for='NotifPowerOutage'>Coupure de courant</label>
+                    <label class='form-check-label' for='NotifPowerOutage'>Puissance nulle</label>
                   </div>
                   <h5>Infos</h5>
                   <div class='form-check'>
@@ -810,7 +889,27 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                     <label class='form-check-label' for='NotifPriceChange'>Changement de tarif</label>
                   </div>
                 </div>
-              </div> 
+                <h5>Délestage automatique
+                  <button
+                      id="toggleButton"
+                      class="btn btn-link p-0 ms-auto"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#delestage"
+                      aria-expanded="true"
+                      aria-controls="delestage"
+                      onClick="toggleDiv('delestage');"
+                    >
+                      <span id="Icodelestage" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
+                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
+                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
+                      </svg></span>
+                    </button>
+                </h5>
+                <div class="collapse" id="delestage" style="display:none;">
+                  <h5>Select device(s) :</h5>
+                  {{selectDevicesAction}} 
+                </div>
               <div class="d-flex justify-content-end">
                 <button type="submit" class="btn btn-warning btn-lg">Save</button>
               </div>
@@ -1409,6 +1508,11 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
       <div class='card mx-auto shadow-sm' >
         <div class="card-body"> 
           <form method='POST' action='saveConfigParameter'> 
+            <h5>Serial option</h5>
+            <div class='form-check'>
+              <input class='form-check-input' id='enableHWFlow' type='checkbox' name='enableHWFlow' {{checkedHWFlowControl}}>
+              <label class='form-check-label' for='enableHWFlow'>Hardware Flow control</label>
+            </div>
             <h5>Developer</h5>
             <div class='form-check'>
               <input class='form-check-input' id='developerMode' type='checkbox' name='developerMode' {{checkeddeveloperMode}}>
@@ -1490,6 +1594,9 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
             "<span> @MAC coordinator : </span>{{macCoordinator}}<br>"
             "<span> Version coordinator : </span>{{versionCoordinator}}<br>"
             "<span> Network : </span>{{networkCoordinator}}<br>"
+            "<label for='SetLed'>Set Led : </label><br>"
+            "<button type='button' onclick='cmd(\"SetLed\",1);' class='btn btn-primary'>LED ON</button>&nbsp;"
+            "<button type='button' onclick='cmd(\"SetLed\",0);' class='btn btn-primary'>LED OFF</button><br>"
             "<label for='SetMaskChannel'>Set channel mask</label>"
             "<input class='form-control' id='SetMaskChannel' type='text' name='SetMaskChannel' value='{{SetMaskChannel}}'><br>"
             "<button type='button' onclick='cmd(\"SetChannelMask\",document.getElementById(\"SetMaskChannel\").value);' class='btn btn-primary'>Set Channel</button><br> "
@@ -2006,10 +2113,30 @@ const char HTTP_ENERGY[] PROGMEM =
     "<div class='row g-4'>"
         "<div class='col-md-12'>"
             "<div class='nav justify-content-end'>"
-              "<div id='h'><a class='link' href='?time=hour' onClick=\"wait('h');\">H</a></div>&nbsp;"
-              "<div id='d'><a class='link' href='?time=day' onClick=\"wait('d');\">D</a></div>&nbsp;"
-              "<div id='m'><a class='link' href='?time=month' onClick=\"wait('m');\">M</a></div>&nbsp;"
-              "<div id='y'><a class='link' href='?time=year' onClick=\"wait('y');\">Y</a></div>&nbsp;"
+              "<div id='h'><a class='link' href='?time=hour' onClick=\"wait('h');\">"
+               "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-clock-history' viewBox='0 0 16 16'>"
+                  "<path d='M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z'/>"
+                  "<path d='M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z'/>"
+                  "<path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5'/>"
+                "</svg>"
+              "</a></div>&nbsp;"
+              "<div id='d'><a class='link' href='?time=day' onClick=\"wait('d');\">"
+                "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'>"
+                  "<path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>"
+                  "<path d='M12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2'/>"
+                "</svg>"             
+              "</a></div>&nbsp;"
+              "<div id='m'><a class='link' href='?time=month' onClick=\"wait('m');\">"
+                "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'>"
+                  "<path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>"
+                  "<path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'/>"
+                "</svg>"
+              "</a></div>&nbsp;"
+              "<div id='y'><a class='link' href='?time=year' onClick=\"wait('y');\">"
+                "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'>"
+                  "<path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text>"
+                "</svg>"
+              "</a></div>&nbsp;"
             "</div>"
          "</div>"
       "</div>"
@@ -2026,35 +2153,40 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
         "{{LinkyStatus}}"
       "</div>"
     "</div>"
-    "<div class='container py-4'>"
-    "<div class='row g-4' style=''>"
+    "<div class='container py-4' id='cadre_energy'>"
+     "<div class='row g-2'  style='{{styleEnergyAlert}}'>"
+      "<div class='col-12'>"
+        "<span style='color:red;' id='energyAlert'>⚠️ {{energyAlertMessage}}</span>"
+      "</div>"
+    "</div>"
+    "<div class='row g-2' style=''>"
       "{{power_gauge}}"
-      "<div class='col-md-8'>"
-        "<div class='card p-4'>"
+      "<div class='col-lg-8 col-md-12 col-12'>"
+        "<div class='card p-4' id='energyTrend' style='height:100%;'>"
           "<h5 class='card-title' style=''>Energy trend</h5>"
           
           "<div class='row'>"
             "<div class='col-md-12 col-lg-4'>"
-              "<div class='card-body' style='min-height:270px;min-width:200px;'>"
+              "<div class='card-body position-relative p-1' style='min-height:270px;min-width:240px;margin-left:-10px;'>"
                 "<div id='power_trend'></div>"
               "</div>"
             "</div>"
             "<div class='col-md-12 col-lg-4'>"
-              "<div class='card-body' style='min-height:240px;'>"
-                "<div id='donut-chart' style='height:78%'></div>"
+              "<div class='card-body position-relative p-1' style='min-height:240px;'>"
+                "<div id='donut-chart' style='padding-top:40px;'></div>"
               "</div>"
               "<div align='center'>"
-                "<a href='#donut-chart' onclick='loadDistributionChart(\"{{time}}\",\"\");' ><svg fill='#000000' style='width:24px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg></a> "
-                "<a href='#donut-chart' onclick='loadDistributionChart(\"{{time}}\",\"euro\");' ><svg style='width:24px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='#000000'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='#000000'/></g></svg></a>"
+                "<a onclick='loadDistributionChart(\"{{time}}\",\"\");' ><svg fill='#000000' style='width:24px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg></a> "
+                "<a onclick='loadDistributionChart(\"{{time}}\",\"euro\");' ><svg style='width:24px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='#000000'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='#000000'/></g></svg></a>"
               "</div>"
             "</div>"
             "<div class='col-md-12 col-lg-4'>"
-              "<div class='card-body position-relative p-1' style='height:270px;width:280px;'>"
+              "<div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>"
                 "<div id='trend-datas'></div>"
               "</div>"
             "</div>"
           "</div>"
-          "<a href='/configEnergy' class='position-absolute bottom-0 end-0 p-4 text-muted'" 
+          "<a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'" 
             "title='Paramétrer la tarification'>"
             "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
               "<circle cx='12' cy='12' r='3'></circle>"
@@ -2330,6 +2462,7 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
       ];
 
       let current = 0;
+      let timeout =0;
       const progress   = document.getElementById('progressBar');
       const iconEl     = document.getElementById('icon');
       const titleEl    = document.getElementById('stepTitle');
@@ -2337,6 +2470,40 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
       const dynamic    = document.getElementById('dynamicZone');
       const prevBtn    = document.getElementById('prevBtn');
       const nextBtn    = document.getElementById('nextBtn');
+
+      function waitDevice()
+      {
+        if (current >= 1 )
+        {
+          if (deviceFound)
+          {
+            deviceFound = false;  
+            if (current != 2)
+            {
+              current = 2;
+              timeout = 0;
+              render();
+              return;
+            }      
+          }else{
+            
+            if (timeout>=30)
+            {
+              //not found
+              timeout = 0;
+              current = 2;
+              render();
+              dynamic.innerHTML = `<div id="deviceFound" class="d-flex flex-column align-items-center gap-2">
+                  <span>Not found !</span>
+                </div>`;
+                return; 
+            }else{
+              timeout++;
+              setTimeout(function(){waitDevice();}, 1000);
+            }
+          }
+        }
+      }
 
       function render(){
         const step = steps[current];
@@ -2355,6 +2522,9 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
           dynamic.innerHTML = `<div class="d-flex flex-column align-items-center gap-2">
            <img src="web/img/ziwifi32.gif" width="120px">
           </div>`;
+          cmd("PermitJoinAssist");
+          getAlert();
+          setTimeout(function(){waitDevice();}, 1000);
           nextBtn.style.display='block';
         }else if(current === 2){
           dynamic.innerHTML = `<div id="deviceFound" class="d-flex flex-column align-items-center gap-2">
@@ -2384,7 +2554,7 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
       nextBtn.addEventListener('click', () => {
         if(current < steps.length - 1){
           if (current === 0) {
-            cmd("PermitJoinAssist");
+            
           }else if (current === 1) {
             getAlert();
           }else if (current === 2) {
@@ -2397,7 +2567,6 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
           setAlias(IEEE,alias);
         }
       });
-
       render();
     </script>
 
@@ -2628,6 +2797,7 @@ void parseActionArray(JsonArray actionArray, Template* t)
     {
         strlcpy(t->a[i].name, v[F("name")], sizeof(t->a[i].name));
         t->a[i].command = v[F("command")];
+        t->a[i].endpoint = v[F("endpoint")];
         t->a[i].value = v[F("value")];
         t->a[i].visible = v[F("visible")].as<int>() == 1;
         i++;
@@ -3146,7 +3316,7 @@ String createPowerGraph(String IEEE)
   result += F(" xLabelAngle: 70,");
   result += F(" stacked: true,");
   result += F(" goals : [");
-  int goal;
+  int goal=0;
   for (size_t i = 0; i < devices.size(); i++) 
   {
     DeviceData* device = devices[i];
@@ -3623,6 +3793,8 @@ void handleDashboard(AsyncWebServerRequest *request)
             dashboard += ",";
             dashboard += t->a[i].command;
             dashboard += ",";
+            dashboard += t->a[i].endpoint;
+            dashboard += ",";
             dashboard += t->a[i].value;
             dashboard += ");\" class='btn btn-primary mb-2'>";
             dashboard += t->a[i].name;
@@ -3946,7 +4118,7 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
 
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
-  String result;
+  PSRAMString result(150000);
   result += F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
@@ -3996,6 +4168,8 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   }
   result.replace("{{LinkyStatus}}",LinkyStatus);
 
+
+
   int i = 0;
   String time;
 
@@ -4027,46 +4201,80 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   result.replace("{{time}}",time);
 
   ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
+    // Status STGE
+  bool foundDevice = false;
+  DeviceData* device;
+  for (size_t ident = 0; ident < devices.size(); ident++) 
+  {   
+    if (devices[ident]->getDeviceID() == String(ConfigGeneral.ZLinky))
+    {
+      device = devices[ident];
+      foundDevice=true;
+      break;
+    }   
+  }
+
+  if (foundDevice)
+  {
+    if ((ConfigGeneral.LinkyMode == 0 ) || (ConfigGeneral.LinkyMode == 2 ))
+    {
+      String tmp = device->getValue(std::string("FF66"),std::string(String("5").c_str()));
+    }else{
+      String tmp = device->getValue(std::string("FF66"),std::string(String("535").c_str()));
+      auto status = parseStatusRegister(tmp);
+
+      if (status.depassement_ref_pow)
+      {
+        result.replace("{{styleEnergyAlert}}", F("display:block;"));
+        result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
+      }else{
+        result.replace("{{styleEnergyAlert}}", F("display:none;"));
+      }
+    }   
+  }
+  
+  //
+  
   String powerGauge="";
 
   if (time == "hour")
   {
     if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
     {
-      powerGauge=F("<div class='col-md-4'>");
-            powerGauge +=F("<div class='card p-4'>");
-              powerGauge +=F("<h5 class='card-title' style=''>Energy gauge</h5>");
-              powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
+      powerGauge=F("<div class='col-lg-4 col-md-12 col-12'>");
+            powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
+              powerGauge +=F("<h5 class='card-title' >Energy gauge</h5>");
+              powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
                 powerGauge += F("<div class='row'>");
                   
                 if (strcmp(ConfigGeneral.Production,"") != 0 )
                 {
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 1</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
                   powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 2</h5>");
                     powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
                   powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 3</h5>");
                     powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
                   powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                   powerGauge +=F("<h5>Production</h5>");
                     powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
                   powerGauge +=F("</div>");
                 }else{
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 1</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
                   powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 2</h5>");
                     powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
                   powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 3</h5>");
                     powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
                   powerGauge +=F("</div>");
@@ -4076,23 +4284,23 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
     }else{
-      powerGauge =F("<div class='col-md-4'>");
-            powerGauge +=F("<div class='card p-4'>");
+      powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
+            powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
               powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
-              powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
+              powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
                 powerGauge += F("<div class='row'>");
                 if (strcmp(ConfigGeneral.Production,"") != 0 )
                 {
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 1</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
                   powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Production</h5>");
                     powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
                   powerGauge +=F("</div>");
                 }else{
-                  powerGauge += F("<div class='col-12 col-sm-12 col-lg-12 mb-3' style='text-align:center;'>");
+                  powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
                     powerGauge +=F("<h5>Phase 1</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
                   powerGauge +=F("</div>");
@@ -4104,23 +4312,23 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
           powerGauge +=F("</div>");
     }
   }else{
-    powerGauge =F("<div class='col-md-4'>");
-      powerGauge +=F("<div class='card p-4'>");
+    powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
+      powerGauge +=F("<div id='energyGauge'  class='card p-4' style='height:100%;min-height:270px;'>");
         powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
-        powerGauge +=F("<div class='card-body' style='min-height:270px;'>");
+        powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
           powerGauge += F("<div class='row'>");
             if (strcmp(ConfigGeneral.Production,"") != 0 )
             {
-              powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+              powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                 powerGauge +=F("<h5>Consumption</h5>");
                 powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
               powerGauge +=F("</div>");
-              powerGauge += F("<div class='col-12 col-sm-12 col-lg-6 mb-3' style='text-align:center;'>");
+              powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
                 powerGauge +=F("<h5>Production</h5>");
                 powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
               powerGauge +=F("</div>");
             }else{
-              powerGauge += F("<div class='col-12 col-sm-12 col-lg-12 mb-3' style='text-align:center;'>");
+              powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
                 powerGauge +=F("<h5>Consumption</h5>");
                 powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
               powerGauge +=F("</div>");
@@ -4249,11 +4457,20 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   }*/
 
   javascript += F("});");
+  javascript += F("var ET = document.getElementById('energyTrend').offsetHeight;");
+  javascript += F("var EG = document.getElementById('energyGauge').offsetHeight;");
+  javascript += F("var cadre = document.getElementById('cadre_energy').clientWidth;");
+  javascript += F("if (cadre>720){");
+  javascript += F("if (EG<ET){");
+    javascript += F("document.getElementById('energyGauge').style.minHeight=`${ET}px`;");
+  javascript +=F("}else{");
+    javascript += F("document.getElementById('energyTrend').style.minHeight=`${EG}px`;");
+  javascript +=F("} }");  
   javascript += F("</script>");
 
   result.replace("{{javascript}}", javascript);
 
-  request->send(200, "text/html", result);
+  request->send(200, "text/html", result.c_str());
 }
 
 void handleStatusDevices(AsyncWebServerRequest *request)
@@ -4262,8 +4479,8 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   {
     deviceList->clear();
   }
-  String result;
-
+  //String result;
+  PSRAMString result(150000);
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
@@ -4279,6 +4496,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   int exist = 0;
   for (size_t ident = 0; ident < devices.size(); ident++) 
   {
+    esp_task_wdt_reset();
     DeviceData* device = devices[ident];
     
     exist++;
@@ -4391,13 +4609,15 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       // toutes les actions
       for (int i = 0; i < t->ActionSize; i++)
       {
-
+        esp_task_wdt_reset();
         result += F("<button onclick=\"ZigbeeAction(");
         result += device->getInfo().shortAddr;
         result += ",";
-        result += t->a[i].command;
+        result += String(t->a[i].command);
         result += ",";
-        result += t->a[i].value;
+         result += String(t->a[i].endpoint);
+        result += ",";
+        result += String(t->a[i].value);
         result += ");\" class='btn btn-primary mb-2'>";
         result += t->a[i].name;
         result += F("</button>");
@@ -4411,9 +4631,6 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   }
   result += F("</div>");
   result += F("</div>");
-  
-  
-
 
   if (exist>0)
   {
@@ -4438,193 +4655,13 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   }else{
     result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>";
   }
-  result+=footer();
+  result +=footer();
   result += F("</html>");
 
 
-  request->send(200, F("text/html"), result);
+  request->send(200, F("text/html"), result.c_str());
 
 }
-
-
-/*void handleStatusDevices(AsyncWebServerRequest *request)
-{
-  if(!deviceList->isEmpty())
-  {
-    deviceList->clear();
-  }
-  String result;
-
-  result = F("<html>");
-  result += FPSTR(HTTP_HEADER);
-  result += FPSTR(HTTP_MENU);
-  result.replace("{{FormattedDate}}", FormattedDate);
-  
-  //result += F("<h5>List of devices</h5>");
-  result += F("<div class='row justify-content-sm-center' style='--bs-gutter-x: 0.3rem;'>");
-  result += F("<h4>Status Devices</h4>");
-  String str = "";
-  File root = LittleFS.open("/db");
-  File file = root.openNextFile();
-  int exist = 0;
-  int i=0;
-  while (file)
-  {
-    String tmp = file.name();
-    // tmp = tmp.substring(10);
-    if (tmp.substring(16) == ".json")
-    {
-      exist++;
-      DeviceInfo di;
-      di = getDeviceInfo(file.name());
-      result += F("<div class='col-md-auto col-sm-auto'><div class='card' style='min-width:380px;'><div class='card-header' style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>@Mac : ");
-      result += tmp.substring(0, 16);
-      result += F("</div>");
-      result += F("<div class='card-body'>");
-      result += F("<a data-toggle='collapse' data-target='#infoDevice");
-      result += String(i);
-      result +=F("' role='button' aria-expanded='true' aria-controls='infoDevice");
-      result += String(i);
-      result += F("' onclick=\"toggleDiv('infoDevice");
-      result += String(i);
-      result += F("')\">+ Info</a>");
-      result += F("<div id='infoDevice");
-      result += String(i);
-      result += F("' style='display:none;'>");
-      result += "<table width='100%' style='font-size:12px;'><tr>";
-      result += F("<td style='font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String manufacturer;
-      manufacturer = di.manufacturer;
-      result += manufacturer;
-      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String model;
-      model = di.model;
-      result += model;
-      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      char SAddr[5];
-      int ShortAddr =di.shortAddr;
-      snprintf(SAddr,5,"%04X", ShortAddr);
-      result += SAddr;
-      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      char devId[5];
-      int DeviceId = di.deviceId;
-      snprintf(devId,5, "%04X", DeviceId);
-      result += devId;
-      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String SoftVer = di.sotfwareVersion;
-      result += SoftVer;
-      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      String lastseen = di.lastSeen;
-      result += lastseen;
-      result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-      result += di.LQI;
-      result += "</td></tr></table></div><hr>";
-
-      // Get status and action from json    
-      if (TemplateExist(DeviceId))
-      {
-        Template *t;
-        t = GetTemplate(DeviceId, model);
-        // toutes les propiétés
-        result += F("<div id='status_");
-        result += (String)ShortAddr;
-        result += F("'>");
-        result += F("<table width='100%' style='font-size:12px;'>");
-        for (int i = 0; i < t->StateSize; i++)
-        {
-          if (t->e[i].visible)
-          {
-            if (model == "ZLinky_TIC")
-            {
-              const char *tmp;
-              bool afficheOK = false;
-              tmp = t->e[i].mode;
-              if ((tmp != NULL) && (tmp[0] != '\0')) 
-              {
-                char * pch;
-                pch = strtok ((char*)tmp,";");
-                while (pch != NULL)
-                {
-                  if (atoi(pch) == ConfigGeneral.LinkyMode)
-                  {
-                    afficheOK=true;
-                    break;
-                  }
-                  pch = strtok (NULL, " ;");
-                }
-              }else{
-                afficheOK=true;
-              }
-
-              if (afficheOK){
-                result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
-                result += t->e[i].name;
-                result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-                result += "<span id='";
-                result += String(ShortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
-                result +="'>";
-                result += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
-                result += "</span></td>";
-                result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
-                result += F("</td>");
-                result +="</td></tr>";
-              }
-            }else{
-              result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
-              result += t->e[i].name;
-              result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-              result += "<span id='";
-              result += String(ShortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
-              result +="'>";
-              result += GetValueStatus(file.name(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
-              result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
-              result += F("</td>");
-              result +="</td></tr>";
-            }
-          }
-        }
-        result += F("</table></div><br>");
-        result += F("<div id='action_");
-        result += (String)ShortAddr;
-        result += F("'>");
-        // toutes les actions
-        for (int i = 0; i < t->ActionSize; i++)
-        {
-
-          result += F("<button onclick=\"ZigbeeAction(");
-          result += ShortAddr;
-          result += ",";
-          result += t->a[i].command;
-          result += ",";
-          result += t->a[i].value;
-          result += ");\" class='btn btn-primary mb-2'>";
-          result += t->a[i].name;
-          result += F("</button>");
-        }
-        result += F("</div>");
-        free(t);
-      }
-      result += F("</div></div></div>");
-    }
-    i++;
-    file.close();
-    vTaskDelay(1);
-    file = root.openNextFile();
-  }
-  
-
-  if (exist>0)
-  {
-    result +="<script>getDeviceValue();</script>";
-  }else{
-    result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>";
-  }
-  result+=footer();
-  result += F("</html>");
-  file.close();
-  root.close();
-  request->send(200, F("text/html"), result);
-}*/
 
 void handleConfigGeneral(AsyncWebServerRequest *request)
 {
@@ -4650,6 +4687,15 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
   }
 
   //PARAMETER
+  if (ConfigSettings.enableHWFlow)
+  {
+    result.replace("{{checkedHWFlowControl}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedHWFlowControl}}", "");
+  }
+
   if (ConfigGeneral.developerMode)
   {
     result.replace("{{checkeddeveloperMode}}", "Checked");
@@ -4944,7 +4990,7 @@ void handleConfigRules(AsyncWebServerRequest *request)
 
 void handleConfigEnergy(AsyncWebServerRequest *request)
 {
-  String result,listLinky,listProd,ListGaz,ListWater;
+  String result,listLinky,listProd,ListGaz,ListWater,listDevicesAction;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
@@ -4977,6 +5023,32 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
     }
   }
   listLinky +="</select>";
+
+  //Trouver les appareils qui ont des actions
+  listDevicesAction ="";
+  int nbActionDevices = 0;
+  String checked;
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getInfo().powerSocket.toInt())
+    {
+      //on affiche les appareils qui ont le cluster ONOFF
+      String confDelestage = config_read("configGeneral.json","delestage");
+      if (confDelestage.indexOf(device->getDeviceID())!=-1)
+      {
+        checked="Checked";
+      }else{
+        checked="";
+      }
+      listDevicesAction += "<input type='checkbox' name='delestage_"+device->getDeviceID()+"' "+checked+"> "+device->getInfo().model+" ("+device->getDeviceID()+")<br>";
+      nbActionDevices++;
+    }
+  }
+  if (!nbActionDevices)
+  {
+    listDevicesAction =" No device available. Power Socket needed.";
+  }
 
   listProd="<Select name='prodDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
   for (size_t i = 0; i < devices.size(); i++) 
@@ -5047,6 +5119,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   }
   ListWater +="</select>";
 
+  result.replace("{{selectDevicesAction}}", listDevicesAction);
   result.replace("{{selectDevices}}", listLinky);
   result.replace("{{tarifAbo}}", String(ConfigGeneral.tarifAbo));
   result.replace("{{tarifCSPE}}", String(ConfigGeneral.tarifCSPE));
@@ -7419,6 +7492,17 @@ void handleStartNwk(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), "");
 }
 
+void handleSetLed(AsyncWebServerRequest *request)
+{
+  if (request->arg("param") != "")
+  {
+    uint8_t cmd;
+    cmd = (uint8_t)request->arg("param").toInt() & 0xFF;
+    commandList->push(Packet{0x0018, 0x0001, cmd});
+  }
+  request->send(200, F("text/html"), "");
+}
+
 void handleSetChannelMask(AsyncWebServerRequest *request)
 {
 
@@ -7742,6 +7826,30 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
   }
   config_write(path, "PriceChange", NotifPriceChange);
   
+
+  //Enregistrement device délestage.
+  String delestageIDs="";
+  int j=0;
+  int params = request->params();
+  for(int i = 0; i < params; i++) {
+      const AsyncWebParameter* p = request->getParam(i);
+      const String prefixe="delestage_";
+      if(p->name().startsWith(prefixe)) {
+          // Traiter le paramètre
+          if (j>0){delestageIDs +=",";}
+          int indexDebut = p->name().indexOf(prefixe);
+          if(indexDebut != -1) {
+            delestageIDs += p->name().substring(indexDebut + prefixe.length());
+          }
+          j++;
+      }
+  }
+
+  if (j>0)
+  {
+    config_write(path,"delestage", delestageIDs);
+  }
+
 
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configEnergy"));
@@ -8268,6 +8376,18 @@ void handleSaveConfigParameter(AsyncWebServerRequest *request)
   }
   config_write(path, "developerMode", developerMode);
 
+  String enableHWFlow;
+  if (request->arg("enableHWFlow") == "on")
+  {
+    enableHWFlow = "1";
+    ConfigSettings.enableHWFlow = true;
+  }
+  else
+  {
+    enableHWFlow = "0";
+    ConfigSettings.enableHWFlow = false;
+  }
+  config_write(path, "enableHWFlow", enableHWFlow);
 
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configGeneral"));
@@ -8332,6 +8452,7 @@ void APISetResetDevice(AsyncWebServerRequest *request)
     String path="configWifi.json";
     config_write(path,"ssid","");
     config_write(path,"pass","");
+    config_write(path,"enableDHCP","1");
     result="{\"result\": true}";
     executeReboot = true;
 
@@ -8526,6 +8647,8 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     zdevices += F("<a onClick=\"ZigbeeSendRequest(");
     zdevices += device->getInfo().shortAddr;
     zdevices += ",";
+    zdevices += device->getInfo().endpoint;
+    zdevices += ",";
     zdevices += "0,16384)\">";
     zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>");
       zdevices += F("<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>");
@@ -8570,6 +8693,8 @@ void handleConfigDevices(AsyncWebServerRequest *request)
 
       zdevices += F("<button onclick=\"ZigbeeSendRequest(");
       zdevices += device->getInfo().shortAddr;
+      zdevices += ",";
+      zdevices += device->getInfo().endpoint;
       zdevices += ",";
       zdevices += "0,5";
       zdevices += ");\" class='btn btn-warning mb-2'>";
@@ -8621,13 +8746,14 @@ void handleAssistDevice(AsyncWebServerRequest *request)
 void handleZigbeeAction(AsyncWebServerRequest *request)
 {
 
-  int ShortAddr, command;
+  int ShortAddr, command, endpoint;
   String tmpValue;
   int i = 0;
   ShortAddr = request->arg(i).toInt();
   command = request->arg(1).toInt();
-  tmpValue = request->arg(2);
-  SendAction(command, ShortAddr, tmpValue);
+  endpoint = request->arg(2).toInt();
+  tmpValue = request->arg(3);
+  SendAction(command, ShortAddr, endpoint, tmpValue);
 
   request->send(200, F("text/html"), "");
 }
@@ -8635,12 +8761,13 @@ void handleZigbeeAction(AsyncWebServerRequest *request)
 void handleZigbeeSendRequest(AsyncWebServerRequest *request)
 {
 
-  int ShortAddr, cluster, attribute;
+  int ShortAddr,endpoint, cluster, attribute;
   int i = 0;
   ShortAddr = request->arg(i).toInt();
-  cluster = request->arg(1).toInt();
-  attribute = request->arg(2).toInt();
-  SendAttributeRead(ShortAddr, cluster, attribute);
+  endpoint = request->arg(1).toInt();
+  cluster = request->arg(2).toInt();
+  attribute = request->arg(3).toInt();
+  SendAttributeRead(ShortAddr,endpoint, cluster, attribute);
 
   request->send(200, F("text/html"), "");
 }
@@ -8769,7 +8896,20 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
   // Trouver le device
   DeviceData* dev = nullptr;
   for (auto* d : devices) {
-    if (d->getDeviceID() == ConfigGeneral.ZLinky) { dev = d; break; }
+    if (d == nullptr) {
+      log_e("Warning: NULL pointer found in devices vector\n");
+      continue;
+    }
+    try {
+      if (d->getDeviceID() == ConfigGeneral.ZLinky) 
+      { 
+        dev = d; 
+        break; 
+      }
+    } catch (...) {
+      log_e("Exception caught while accessing device ID");
+      continue;
+    }  
   }
   if (!dev) {
     return request->send(404, "application/json", "[]");
@@ -8810,6 +8950,10 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
   {
     DeviceData* devProd = nullptr;
     for (auto* d : devices) {
+      if (d == nullptr) {
+        log_e("Warning: NULL pointer found in devices vector\n");
+        continue;
+      }
       if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
     }
 
@@ -8840,7 +8984,19 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
     {
       DeviceData* devGaz = nullptr;
       for (auto* d : devices) {
-        if (d->getDeviceID() == ConfigGeneral.Gaz) { devGaz = d; break; }
+        if (d == nullptr) {
+          log_e("Warning: NULL pointer found in devices vector\n");
+          continue;
+        }
+        try{
+          if (d->getDeviceID() == ConfigGeneral.Gaz) { 
+            devGaz = d; 
+            break; 
+          }
+        }catch(...){
+          log_e("Exception caught while accessing device ID\n");
+          continue;
+        }
       }
 
       DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
@@ -10415,6 +10571,16 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleStartNwk(request); 
+  });
+
+  serverWeb.on("/cmdSetLed", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSetLed(request); 
   });
   serverWeb.on("/cmdSetChannelMask", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
