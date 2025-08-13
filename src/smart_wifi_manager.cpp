@@ -264,7 +264,12 @@ bool SmartWiFiManager::loadConfig(const String& configPath) {
     // affectation des valeurs , si existe pas on place une valeur par defaut
     //ConfigSettings.enableWiFi = (int)doc["enableWiFi"];
     ConfigSettings.enableWiFi = 1;
-    ConfigSettings.enableDHCP = (int)doc["enableDHCP"];
+    if (doc["enableDHCP"].as<String>()!="null")
+    {
+        ConfigSettings.enableDHCP = (int)doc["enableDHCP"];
+    }else{
+        ConfigSettings.enableDHCP = 1;
+    }
     strlcpy(ConfigSettings.ssid, doc["ssid"] | "", sizeof(ConfigSettings.ssid));
     strlcpy(ConfigSettings.password, doc["pass"] | "", sizeof(ConfigSettings.password));
     strlcpy(ConfigSettings.ipAddressWiFi, doc["ip"] | "", sizeof(ConfigSettings.ipAddressWiFi));
