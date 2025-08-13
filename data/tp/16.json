@@ -1,0 +1,75 @@
+{
+        "default" : [
+	    {
+			"status" : [
+			{
+				"name" : "Power",
+				"cluster" : "0006",
+				"attribut" : 0,
+				"visible":1
+			},
+                        {
+				"name" : "Energy",
+				"cluster" : "0B04",
+				"attribut" : 1295,
+				"mqtt_device_class" : "apparent_power",
+				"mqtt_icon" :  "lightning-bolt",
+				"mqtt_state_class" : "measurement",
+				"type": "numeric",
+				"visible":1,
+                                "jauge":"gauge",
+				"min":0,
+				"max":8000,
+				"unit": "VA"
+			},
+                        {
+				"name" : "Consumption",
+				"cluster" : "0702",
+				"attribut" : 0,
+				"mqtt_device_class" : "energy",
+				"mqtt_icon" :  "transmission-tower",
+				"mqtt_state_class" : "total_increasing",
+				"type": "numeric",
+				"visible":1,
+                                "jauge":"text",
+				"unit": "Wh"
+			}
+			],
+                "bind" : "6;1794;2820;65382",
+		        "report" : [
+			{
+				"cluster" : "0702",
+				"attribut": 0,
+				"type":37,
+				"min":60,
+				"max":300,
+				"timeout":0,
+				"change":1
+			}
+                        ],
+			"action" : [
+			{
+				"name" : "ON",
+				"command" : 146,
+				"endpoint" : 3,
+				"value" : 1,
+				"visible":1
+			},
+			{
+				"name" : "OFF",
+				"command" : 146,
+				"endpoint" : 3,
+				"value" : 0,
+				"visible":1
+			},
+			{
+				"name" : "TOGGLE",
+				"command" : 146,
+				"endpoint" : 3,
+				"value" : 2,
+				"visible":1
+			}
+			]
+	   }
+   ]
+}
