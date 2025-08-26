@@ -21,6 +21,10 @@ This application works with:
 
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee-Box_Schema.png" width="1024">  
 
+## Installation
+
+[![Tutoriel Installation LiXee-Box](https://img.youtube.com/vi/1w0yDo08sk0/0.jpg)](https://youtu.be/1w0yDo08sk0)
+
 ## Typical Use Cases
 
 - **Long-distance relay**: Linky (ZLinky) ↔ Zigbee ↔ LiXee-Box ↔ WiFi ↔ MQTT ↔ Home-Assistant/Jeedom/Domoticz
