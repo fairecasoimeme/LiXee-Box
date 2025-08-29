@@ -255,7 +255,7 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'></path>"
    "  <polyline points='9 22 9 12 15 12 15 22'></polyline>"
    "</svg>"
-   " Status"
+   " Mesures"
    "</a>"
    "<div class='dropdown-menu'>"
    
@@ -263,7 +263,7 @@ const char HTTP_MENU[] PROGMEM =
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-flower1' viewBox='0 0 16 16'>"
     "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
   "</svg>"
-   " Energy"
+   " Energie"
    "</a>"
    /*"<a class='dropdown-item' href='dashboard'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-speedometer' viewBox='0 0 16 16'>"
@@ -277,14 +277,14 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
    "  <path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
    "</svg>"
-   " Devices"
+   " Appareils"
    "</a>"
    "<a class='dropdown-item' href='statusNetwork'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
    "  <path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
    "  <path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
    "</svg>"
-   " Network"
+   " Réseau"
    "</a>"
    "</div>"
    "</li>"
@@ -297,7 +297,7 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M2.974 2.342a.5.5 0 1 0-.948.316L3.806 8H1.5A1.5 1.5 0 0 0 0 9.5v2A1.5 1.5 0 0 0 1.5 13H2a.5.5 0 0 0 .5.5h2A.5.5 0 0 0 5 13h6a.5.5 0 0 0 .5.5h2a.5.5 0 0 0 .5-.5h.5a1.5 1.5 0 0 0 1.5-1.5v-2A1.5 1.5 0 0 0 14.5 8h-2.306l1.78-5.342a.5.5 0 1 0-.948-.316L11.14 8H4.86zM14.5 9a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 .5-.5z'/>"
    "  <path d='M8.5 5.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0'/>"
    "</svg>"
-   " Network"
+   " Réseau"
    "</a>"
    "<div class='dropdown-menu'>"
    "<a class='dropdown-item' href='configWiFi'>"
@@ -321,7 +321,7 @@ const char HTTP_MENU[] PROGMEM =
    "<svg style='width:24px;' width='24' height='24' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg' fill='currentColor'>"
    "  <path fill='#000000' fill-rule='evenodd' d='M13.75.5a2.25 2.25 0 00-1.847 3.536l-.933.934a.752.752 0 00-.11.14c-.19-.071-.396-.11-.61-.11h-2.5A1.75 1.75 0 006 6.75v.5H4.372a2.25 2.25 0 100 1.5H6v.5c0 .966.784 1.75 1.75 1.75h2.5c.214 0 .42-.039.61-.11.03.05.067.097.11.14l.933.934a2.25 2.25 0 101.24-.881L12.03 9.97a.75.75 0 00-.14-.11c.071-.19.11-.396.11-.61v-2.5c0-.214-.039-.42-.11-.61a.75.75 0 00.14-.11l1.113-1.113A2.252 2.252 0 0016 2.75 2.25 2.25 0 0013.75.5zM13 2.75a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM7.75 6.5a.25.25 0 00-.25.25v2.5c0 .138.112.25.25.25h2.5a.25.25 0 00.25-.25v-2.5a.25.25 0 00-.25-.25h-2.5zm6 6a.75.75 0 100 1.5.75.75 0 000-1.5zM1.5 8A.75.75 0 113 8a.75.75 0 01-1.5 0z' clip-rule='evenodd'/>"
    "</svg>"
-   " Gateway"
+   " Passerelle"
    "</a>"
    "<div class='dropdown-menu'>"
    "<a class='dropdown-item' href='/configMQTT'>"
@@ -369,7 +369,7 @@ const char HTTP_MENU[] PROGMEM =
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-flower1' viewBox='0 0 16 16'>"
     "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
   "</svg>"
-   " Energy"
+   " Energie"
    "</a>"
    "<a class='dropdown-item' href='/configHorloge'>"
    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-clock' viewBox='0 0 16 16'>"
@@ -382,14 +382,14 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M2 16C2 13.1716 2 11.7574 2.87868 10.8787C3.75736 10 5.17157 10 8 10H16C18.8284 10 20.2426 10 21.1213 10.8787C22 11.7574 22 13.1716 22 16C22 18.8284 22 20.2426 21.1213 21.1213C20.2426 22 18.8284 22 16 22H8C5.17157 22 3.75736 22 2.87868 21.1213C2 20.2426 2 18.8284 2 16Z' stroke='currentColor' stroke-width='1.5'/>"
    "  <path d='M6 10V8C6 4.68629 8.68629 2 12 2C15.3137 2 18 4.68629 18 8V10' stroke='currentColor' stroke-width='1.5' stroke-linecap='round'/>"
    "</svg>"
-   " Security"
+   " Securité"
    "</a>"
    /*
    "<a class='dropdown-item' href='/configRules'>"
    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
    "  <path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
    "</svg>"
-   " Rules"
+   " Règles"
    "</a>"
    */
    "</div>"
@@ -399,7 +399,7 @@ const char HTTP_MENU[] PROGMEM =
    "<svg viewBox='0 0 24 24' style='width:24px;' width='24' height='24' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round' class='css-i6dzq1'>"
    "  <path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'></path>"
    "</svg>"
-   " Tools"
+   " Outils"
    "</a>"
    "</li>"
    "<li class='nav-item dropdown'>"
@@ -409,7 +409,7 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
    "  <path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
    "</svg>"
-   " About"
+   " A propos"
    "<div class='AboutMaj' style='display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</a>"
    "<div class='dropdown-menu'>"
@@ -425,7 +425,7 @@ const char HTTP_MENU[] PROGMEM =
     "  <path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5'/>"
     "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
     "</svg>"
-   " Update"
+   " Mise à jour"
    "<div class='AboutMaj' style='display: none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</a>"
    "</div>"
@@ -446,7 +446,7 @@ const char HTTP_MENU[] PROGMEM =
 
 const char HTTP_TOOLS[] PROGMEM =
     "<h4>"
-    "Advanced Tools"
+    "Outils avancés"
     "</h4>"
     "<div class='btn-group-vertical'>"
     //"<a href='/logs' class='btn btn-primary mb-2'>Console</a>"
@@ -462,13 +462,13 @@ const char HTTP_TOOLS[] PROGMEM =
       "<path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
       "<path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
     "</svg><br>"
-    " Device Files"
+    " Fichiers appareils"
     "</a>"
     "<a href='/hst' class='btn btn-primary mb-2'>"
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-filetype-json' viewBox='0 0 16 16'>"
       "<path fill-rule='evenodd' d='M14 4.5V11h-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM4.151 15.29a1.2 1.2 0 0 1-.111-.449h.764a.58.58 0 0 0 .255.384q.105.073.25.114.142.041.319.041.245 0 .413-.07a.56.56 0 0 0 .255-.193.5.5 0 0 0 .084-.29.39.39 0 0 0-.152-.326q-.152-.12-.463-.193l-.618-.143a1.7 1.7 0 0 1-.539-.214 1 1 0 0 1-.352-.367 1.1 1.1 0 0 1-.123-.524q0-.366.19-.639.192-.272.528-.422.337-.15.777-.149.456 0 .779.152.326.153.5.41.18.255.2.566h-.75a.56.56 0 0 0-.12-.258.6.6 0 0 0-.246-.181.9.9 0 0 0-.37-.068q-.324 0-.512.152a.47.47 0 0 0-.185.384q0 .18.144.3a1 1 0 0 0 .404.175l.621.143q.326.075.566.211a1 1 0 0 1 .375.358q.135.222.135.56 0 .37-.188.656a1.2 1.2 0 0 1-.539.439q-.351.158-.858.158-.381 0-.665-.09a1.4 1.4 0 0 1-.478-.252 1.1 1.1 0 0 1-.29-.375m-3.104-.033a1.3 1.3 0 0 1-.082-.466h.764a.6.6 0 0 0 .074.27.5.5 0 0 0 .454.246q.285 0 .422-.164.137-.165.137-.466v-2.745h.791v2.725q0 .66-.357 1.005-.355.345-.985.345a1.6 1.6 0 0 1-.568-.094 1.15 1.15 0 0 1-.407-.266 1.1 1.1 0 0 1-.243-.39m9.091-1.585v.522q0 .384-.117.641a.86.86 0 0 1-.322.387.9.9 0 0 1-.47.126.9.9 0 0 1-.47-.126.87.87 0 0 1-.32-.387 1.55 1.55 0 0 1-.117-.641v-.522q0-.386.117-.641a.87.87 0 0 1 .32-.387.87.87 0 0 1 .47-.129q.265 0 .47.129a.86.86 0 0 1 .322.387q.117.255.117.641m.803.519v-.513q0-.565-.205-.973a1.46 1.46 0 0 0-.59-.63q-.38-.22-.916-.22-.534 0-.92.22a1.44 1.44 0 0 0-.589.628q-.205.407-.205.975v.513q0 .562.205.973.205.407.589.626.386.217.92.217.536 0 .917-.217.384-.22.589-.626.204-.41.205-.973m1.29-.935v2.675h-.746v-3.999h.662l1.752 2.66h.032v-2.66h.75v4h-.656l-1.761-2.676z'/>"
     "</svg><br>"
-    " History"
+    " Historique"
     "</a>"
     "<a href='/tp' class='btn btn-primary mb-2'>"
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-filetype-json' viewBox='0 0 16 16'>"
@@ -480,7 +480,7 @@ const char HTTP_TOOLS[] PROGMEM =
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
       "<path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
     "</svg><br>"
-    " Rules"
+    " Règles"
     "</a>"
     "<a href='/generateNotif' class='btn btn-primary mb-2'>"
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
@@ -494,21 +494,21 @@ const char HTTP_TOOLS[] PROGMEM =
     "  <path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5'/>"
     "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
     "</svg><br>"
-    " Update"
+    " Mise à jour"
     "</a>"
     "<a href='/backup' class='btn btn-primary mb-2'>"
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-cloud-arrow-up' viewBox='0 0 16 16'>"
     "  <path fill-rule='evenodd' d='M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708z'/>"
     "  <path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>"
     "</svg><br>"
-    " Backup"
+    " Sauvegarde"
     "</a>"
     "<a href='/reboot' class='btn btn-primary mb-2'>"
     "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
     "  <path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
     "  <path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
     "</svg><br>"
-    " Reboot"
+    " Redémarrer"
     "</a>"
     "</div>"; 
 
@@ -645,7 +645,7 @@ const char HTTP_BACKUP[] PROGMEM =
     "   <h1 class='mb-4'>Update</h1>"
     "   <form id='frm' class='mb-4'>"
     "     <div class='mb-3'>"
-    "       <label for='f' class='form-label'>Select the file</label>"
+    "       <label for='f' class='form-label'>Sélection le fichier tar</label>"
     "       <input class='form-control' type='file' id='f' name='archive' accept='.tar'>"
     "     </div>"
     "     <button type='submit' class='btn btn-primary'>Start</button>"
@@ -715,7 +715,7 @@ const char HTTP_BACKUP[] PROGMEM =
 const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
 
   <div class="container py-5">
-    <h4 class="mb-4">Config Energy</h4>
+    <h4 class="mb-4">Config Energie</h4>
 
     <!-- Nav tabs -->
     <ul class="nav nav-tabs" id="energyTab" role="tablist">
@@ -768,7 +768,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
           role="tab"
           aria-controls="water"
           aria-selected="false">
-          Water
+          Eau
         </button>
       </li>
     </ul>
@@ -786,12 +786,16 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
           <div class="card-body"> 
             <form method='POST' action='saveConfigLinky'> 
               <div class='form-check'> 
-                <h5>Device</h5> 
+                <h5>Appareil</h5> 
                 {{selectDevices}} 
-                
+                <h5>Général</h5>
+                <div class="mb-3">
+                  <label for='shon'>Surface habitable (en m²)</label> 
+                  <input class='form-control' id='shon' type='text' name='shon' value='{{shon}}'> 
+                </div>
                 <h5>Tarifs 
                   <button
-                      id="toggleButton"
+                      id="toggleButtonLinkyTarif"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -858,7 +862,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </div>
                 <h5>Notifications
                   <button
-                      id="toggleButton"
+                      id="toggleButtonLinkyNotif"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -891,7 +895,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </div>
                 <h5>Délestage automatique
                   <button
-                      id="toggleButton"
+                      id="toggleButtonLinkyDelestage"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -907,16 +911,16 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                     </button>
                 </h5>
                 <div class="collapse" id="delestage" style="display:none;">
-                  <h5>Select device(s) :</h5>
+                  <h5>Prise(s) connectée(s) :</h5>
                   {{selectDevicesAction}} 
                 </div>
+              </div>
               <div class="d-flex justify-content-end">
-                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+                <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
               </div>
             </form>
           </div> 
-        </div>
-        
+        </div>     
       </div>
 
       <!-- Onglet Production -->
@@ -930,11 +934,11 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
           <div class="card-body"> 
             <form method='POST' action='saveConfigProduction'> 
               <div class='form-check'> 
-                <h5>Device</h5> 
+                <h5>Appareil</h5> 
                 {{selectDevicesProd}} 
                 <h5>Tarifs 
                   <button
-                      id="toggleButton"
+                      id="toggleButtonProdTarif"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -964,7 +968,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
 
                 <h5>Notifications
                   <button
-                      id="toggleButton"
+                      id="toggleButtonProdNotif"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -992,7 +996,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </div>
               </div>
               <div class="d-flex justify-content-end">
-                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+                <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
               </div>
             </form>
           </div> 
@@ -1009,11 +1013,11 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
           <div class="card-body"> 
             <form method='POST' action='saveConfigGaz'> 
               <div class='form-check'> 
-                <h5>Device</h5> 
+                <h5>Appareil</h5> 
                 {{selectDevicesGaz}} 
                 <h5>Parameters 
                   <button
-                      id="toggleButton"
+                      id="toggleButtonGazParam"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -1045,7 +1049,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </div>
                 <h5>Notifications
                   <button
-                      id="toggleButton"
+                      id="toggleButtonGazNotif"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -1073,7 +1077,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </div>
               </div> 
               <div class="d-flex justify-content-end">
-                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+                <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
               </div>
             </form>
           </div> 
@@ -1090,11 +1094,11 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
           <div class="card-body"> 
             <form method='POST' action='saveConfigWater'> 
               <div class='form-check'> 
-                <h5>Device</h5> 
+                <h5>Appareil</h5> 
                 {{selectDevicesWater}} 
-                <h5>Parameters 
+                <h5>Paramètres
                   <button
-                      id="toggleButton"
+                      id="toggleButtonWaterParam"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -1126,7 +1130,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </div>
                 <h5>Notifications
                   <button
-                      id="toggleButton"
+                      id="toggleButtonWaterNotif"
                       class="btn btn-link p-0 ms-auto"
                       type="button"
                       data-bs-toggle="collapse"
@@ -1154,7 +1158,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </div>
               </div> 
               <div class="d-flex justify-content-end">
-                <button type="submit" class="btn btn-warning btn-lg">Save</button>
+                <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
               </div>
             </form>
           </div> 
@@ -1169,7 +1173,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
 
 const char HTTP_UPDATE[] PROGMEM = R"(
     <div class="container py-5">
-    <h4 class="mb-4">Update firmware</h4>
+    <h4 class="mb-4">Mise à jour firmware</h4>
 
     <!-- Nav tabs -->
     <ul class="nav nav-tabs" id="updateTab" role="tablist">
@@ -1196,7 +1200,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
           role="tab"
           aria-controls="manual"
           aria-selected="false">
-          Manuel
+          Manuelle
         </button>
       </li>
     </ul>
@@ -1212,15 +1216,15 @@ const char HTTP_UPDATE[] PROGMEM = R"(
 
         <div align="center">
           <div id="update_info" class="card p-4">
-            <h5>Latest version on GitHub</h5>
+            <h5>Dernière version disponible sur Github</h5>
             <div id="onlineupdate" style="text-align:left">
               <h6 id="releasehead"></h6>
               <br>
-              <pre id="releasebody">Getting update information from GitHub...</pre>
+              <pre id="releasebody">En attente d'informations de GitHub...</pre>
             </div>
             <div id="autoBtn">
               <button id="btnUpdate" style="width:100%" class="btn btn-primary mb-3">
-                Update
+                Mettre à jour
               </button>
               <div id="statusDL" class="text-muted">Ready.</div>
 
@@ -1251,7 +1255,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
         <div align='center'>
         <form id="frm">
           <div class="mb-3">
-            <label for="f" class="form-label">Select the file</label>
+            <label for="f" class="form-label">Sélectionner le Fichier Tar</label>
             <input
               class="form-control"
               type="file"
@@ -1259,7 +1263,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
               name="archive"
               accept=".tar">
           </div>
-          <button type="submit" style="width:100%" class="btn btn-primary mb-3">Update</button>
+          <button type="submit" style="width:100%" class="btn btn-primary mb-3">Mettre à jour</button>
         </form>
         
         <div id="status" class="text-muted">Ready.</div>
@@ -1304,7 +1308,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
           var version = release.tag_name;
           if (version == "{{version}}")
           {
-            $("#autoBtn").text("No update needed");
+            $("#autoBtn").text("Pas de mise à jour nécessaire");
           }else{
             $("#autoBtn").show();
             
@@ -1336,11 +1340,11 @@ const char HTTP_UPDATE[] PROGMEM = R"(
       });
       
       btn.addEventListener('click', () => {
-        stdl.textContent = 'Starting…';
+        stdl.textContent = 'Démarrage…';
         fetch('/downloadUpdate', { method: 'POST' })
           .then(resp => {
             if (resp.ok) {
-              stdl.textContent = 'Starting. please wait ...';
+              stdl.textContent = 'Démarrage. merci d\'attendre ...';
               btn.disabled = true;
             } else {
               stdl.textContent = 'Erreur: ' + resp.status;
@@ -1350,7 +1354,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
             stdl.textContent = text;  // par exemple "Mise à jour programmée"
           })
           .catch(err => {
-            stdl.textContent = 'Network error';
+            stdl.textContent = 'Erreur réseau';
           });
       });
 
@@ -1384,7 +1388,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
                 window.location.href='/';
             }, 2000);
           } else {
-              st.textContent = 'Error: ' + xhr.status;
+              st.textContent = 'Erreur: ' + xhr.status;
           }
         };
         const fd = new FormData();
@@ -1405,7 +1409,7 @@ const char HTTP_CONFIG_MENU_ZIGBEE[] PROGMEM =
       "<path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
       "<path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
     "</svg><br>"
-    " Devices"
+    " Appareils"
     "</a>&nbsp"
     "<a href='/configZigbee' style='width:100px;height:64px;' class='btn btn-primary mb-1 {{menu_config_zigbee}}' >"
     "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>"
@@ -1425,17 +1429,17 @@ const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
         "</div>"
       "</div>"
       "<div class='col-sm-10'>"
-        "<h4>Config Zigbee Devices</h4>"
+        "<h4>Config appareils Zigbee</h4>"
         "<div class='d-flex justify-content-end'>"
           "<a class='btn btn-primary mb-1' href='/assistDevice' style='width:120px;height:64px;'>"
           "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
             "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
             "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
           "</svg><br>"
-          " Add Device"
+          " Ajouter"
           "</a> "
         "</div><br>"
-        "<h5>List of devices</h5>"
+        "<h5>Liste des appareils</h5>"
         "<div class='row g-4' style='font-size:12px;'>"
           "<script>"
               "function OTAUpdateBar(id){"
@@ -1444,7 +1448,7 @@ const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
                   "type: 'GET',"
                   "success:function(data) {"
                   "if (data>=0){"
-                    "$('#uploadOTA'+id).html('<div align=\"center\">Updating ...</div><progress value=\"'+data+'\" max=\"100\" style=\"width:100%\">'+data+'%</progress>');"
+                    "$('#uploadOTA'+id).html('<div align=\"center\">En cours ...</div><progress value=\"'+data+'\" max=\"100\" style=\"width:100%\">'+data+'%</progress>');"
                     "$('#uploadOTA'+id).show();"
                   "}else{"
                   "$('#uploadOTA'+id).hide();"
@@ -1464,7 +1468,7 @@ const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
 const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
   
 <div class="container py-5">
-  <h4 class="mb-4">Config General</h4>
+  <h4 class="mb-4">Config Générale</h4>
 
   <!-- Nav tabs -->
   <ul class="nav nav-tabs" id="generalTab" role="tablist">
@@ -1478,7 +1482,7 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
         role="tab"
         aria-controls="param"
         aria-selected="true">
-        Parameters
+        Paramètres
       </button>
     </li>
     <li class="nav-item" role="presentation">
@@ -1508,19 +1512,19 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
       <div class='card mx-auto shadow-sm' >
         <div class="card-body"> 
           <form method='POST' action='saveConfigParameter'> 
-            <h5>Serial option</h5>
+            <h5>Option série</h5>
             <div class='form-check'>
               <input class='form-check-input' id='enableHWFlow' type='checkbox' name='enableHWFlow' {{checkedHWFlowControl}}>
               <label class='form-check-label' for='enableHWFlow'>Hardware Flow control</label>
             </div>
-            <h5>Developer</h5>
+            <h5>Développeur</h5>
             <div class='form-check'>
               <input class='form-check-input' id='developerMode' type='checkbox' name='developerMode' {{checkeddeveloperMode}}>
-              <label class='form-check-label' for='developerMode'>Developer mode</label>
+              <label class='form-check-label' for='developerMode'>Mode développeur</label>
             </div>
 
             <div class="d-flex justify-content-end">
-              <button type="submit" class="btn btn-warning btn-lg">Save</button>
+              <button type="submit" class="btn btn-warning btn-lg">Sauvegarder</button>
             </div>
           </form>
         </div> 
@@ -1543,7 +1547,7 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
               <label class='form-check-label' for='debugSerial'>Debug</label>
             </div>
             <div class="d-flex justify-content-end">
-              <button type="submit" class="btn btn-warning btn-lg">Save</button>
+              <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
             </div>
           </form>
         </div> 
@@ -1570,14 +1574,14 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
           "<path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
           "<path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
         "</svg>"
-        " Network"
+        " Réseau"
         "</button> "
         "<button type='button' onclick='cmd(\"Reset\");' class='btn btn-primary'>"
         "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='#FFFFFF' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
           "<path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
           "<path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
         "</svg>"
-        " Reset"
+        " Redémarrer"
         "</button> "
         "<button type='button' onClick=\"if (confirm('Are you sure ?')==true){cmd('ErasePDM');}else{return false;};\" class='btn btn-danger'>"
         "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>"
@@ -1587,13 +1591,13 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
         " RAZ"
         "</button> "
       "</div>"
-      "<h5 class='card-title mb-4'>Parameters</h5>"
+      "<h5 class='card-title mb-4'>Paramètres</h5>"
       "<div class='card mx-auto shadow-sm' >"
         "<div class='card-body'>"
           "<div class='mb-3'>"
             "<span> @MAC coordinator : </span>{{macCoordinator}}<br>"
             "<span> Version coordinator : </span>{{versionCoordinator}}<br>"
-            "<span> Network : </span>{{networkCoordinator}}<br>"
+            "<span> Réseau : </span>{{networkCoordinator}}<br>"
             "<label for='SetLed'>Set Led : </label><br>"
             "<button type='button' onclick='cmd(\"SetLed\",1);' class='btn btn-primary'>LED ON</button>&nbsp;"
             "<button type='button' onclick='cmd(\"SetLed\",0);' class='btn btn-primary'>LED OFF</button><br>"
@@ -1608,13 +1612,13 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
 
 const char HTTP_CONFIG_HORLOGE[] PROGMEM = R"(
   <div class='container p-4'>
-    <h4 class='card-title mb-4'>Config Time</h4>
+    <h4 class='card-title mb-4'>Config horloge</h4>
     <div class='card mx-auto shadow-sm' >
       <div class="card-body">
         <form method='POST' action='saveConfigHorloge'>
         <span> Datetime : </span><br><br>{{FormattedDate}}
         <div class="mb-3">
-          <label for='ntpserver'>NTP server URL</label>
+          <label for='ntpserver'>NTP serveur URL</label>
           <input class='form-control' id='ntpserver' type='text' name='ntpserver' value='{{ntpserver}}'>
         </div>
         <div class="mb-3">
@@ -1630,10 +1634,10 @@ const char HTTP_CONFIG_HORLOGE[] PROGMEM = R"(
           <input class='form-control' id='epochtime' type='text' name='epochtime' value='{{epochtime}}'>
         <br>
         <div class="d-flex justify-content-end">
-          <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Save</button>
+          <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Enregistrer</button>
         </div>
         </form>
-        <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>
+        <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Redémarrage ...</div>
       </div>
     </div>
   </div>
@@ -1641,7 +1645,7 @@ const char HTTP_CONFIG_HORLOGE[] PROGMEM = R"(
 
 const char HTTP_CONFIG_RULES[] PROGMEM = R"(
     <div class='container p-4'>
-      <h4 class='card-title mb-4'>Config Rules</h4>
+      <h4 class='card-title mb-4'>Config règles</h4>
       <div class='card mx-auto shadow-sm' >
         <div class="card-body">
           {{rulesList}}
@@ -1651,126 +1655,6 @@ const char HTTP_CONFIG_RULES[] PROGMEM = R"(
 
 )";
 
-const char HTTP_CONFIG_LINKY[] PROGMEM = R"(
-     <div class='container p-4'>
-      <h4 class='card-title mb-4'>Config Linky Tariff</h4>
-      <div class='card mx-auto shadow-sm' >
-        <div class="card-body"> 
-          <form method='POST' action='saveConfigLinky'> 
-            <div class='form-check'> 
-              <h5>Device</h5> 
-              {{selectDevices}} 
-              <h5>Tarifs</h5> 
-              
-              <div class="mb-3">
-                <label for='tarifAbo'>Tarif abonnement (€)</label> 
-                <input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label> 
-                <input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€)</label> 
-                <input class='form-control' id='tarifCTA' type='text' name='tarifCTA' value='{{tarifCTA}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx2'>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (€)</label> 
-                <input class='form-control' id='tarifIdx2' type='text' name='tarifIdx2' value='{{tarifIdx2}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€)</label> 
-                <input class='form-control' id='tarifIdx3' type='text' name='tarifIdx3' value='{{tarifIdx3}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€)</label> 
-                <input class='form-control' id='tarifIdx4' type='text' name='tarifIdx4' value='{{tarifIdx4}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€)</label> 
-                <input class='form-control' id='tarifIdx5' type='text' name='tarifIdx5' value='{{tarifIdx5}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€)</label> 
-                <input class='form-control' id='tarifIdx6' type='text' name='tarifIdx6' value='{{tarifIdx6}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€)</label> 
-                <input class='form-control' id='tarifIdx7' type='text' name='tarifIdx7' value='{{tarifIdx7}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx8'>Tarif EASF07 (€)</label> 
-                <input class='form-control' id='tarifIdx8' type='text' name='tarifIdx8' value='{{tarifIdx8}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx9'>Tarif EASF08 (€)</label> 
-                <input class='form-control' id='tarifIdx9' type='text' name='tarifIdx9' value='{{tarifIdx9}}'> 
-              </div>
-              <div class="mb-3">
-                <label for='tarifIdx10'>Tarif EASF09 (€)</label> 
-                <input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'> 
-              </div>
-            </div> 
-            <div class="d-flex justify-content-end">
-              <button type="submit" class="btn btn-warning btn-lg">Save</button>
-            </div>
-          </form>
-        </div> 
-      </div>
-     </div> )";
-
-const char HTTP_CONFIG_GAZ[] PROGMEM =
-    "<h4>Config Gaz</h4>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigGaz'>"
-    "<div class='form-check'>"
-    "<h5>Device</h5>"
-    "{{selectDevices}}"
-    "<h5>Parameters</h5>"
-    "<label for='coeffGaz'>Impulsion coefficient</label>"
-    "<input class='form-control' id='coeffGaz' type='text' name='coeffGaz' value='{{coeffGaz}}'>"
-    "<label for='unitGaz'>Unit</label>"
-    "<input class='form-control' id='unitGaz' type='text' name='unitGaz' value='{{unitGaz}}'>"
-    "<h5>Tarif</h5>"
-    "<label for='tarifGaz'>Tarif (€)</label>"
-    "<input class='form-control' id='tarifGaz' type='text' name='tarifGaz' value='{{tarifGaz}}'>"
-    "<br>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form></div>"
-    "</div>";
-
-const char HTTP_CONFIG_WATER[] PROGMEM =
-    "<h4>Config Water</h4>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col-sm-2'>"
-    "<div class='btn-group-horizontal'>"
-    "{{menu_config}}"
-    "</div>"
-    "</div>"
-    "<div class='col-sm-10'><form method='POST' action='saveConfigWater'>"
-    "<div class='form-check'>"
-    "<h5>Device</h5>"
-    "{{selectDevices}}"
-    "<h5>Parameters</h5>"
-    "<label for='coeffWater'>Impulsion coefficient</label>"
-    "<input class='form-control' id='coeffWater' type='text' name='coeffWater' value='{{coeffWater}}'>"
-    "<label for='unitWater'>Unit</label>"
-    "<input class='form-control' id='unitWater' type='text' name='unitWater' value='{{unitWater}}'>"
-    "<h5>Tarif</h5>"
-    "<label for='tarifWater'>Tarif (€)</label>"
-    "<input class='form-control' id='tarifWater' type='text' name='tarifWater' value='{{tarifWater}}'>"
-    "<br>"
-    "</div>"
-    "<button type='submit' class='btn btn-primary mb-2'name='save'>Save</button>"
-    "</form></div>"
-    "</div>";
-
  const char HTTP_CONFIG_MQTT[] PROGMEM = R"(
     <div class='container p-4'>
       <h4 class='card-title mb-4'>Config MQTT</h4>
@@ -1779,30 +1663,30 @@ const char HTTP_CONFIG_WATER[] PROGMEM =
         <form method='POST' action='saveConfigMQTT'>
           <div class="form-check form-switch mb-3">
             <input class="form-check-input" type="checkbox" id="enableMqtt" name='enableMqtt' {{checkedMqtt}}>
-            <label class="form-check-label" for="enableMqtt">Enable MQTT</label>
+            <label class="form-check-label" for="enableMqtt">Activer MQTT</label>
           </div>
           <div class="mb-3">
-            <label for='servMQTT' class="form-label">MQTT server</label>
+            <label for='servMQTT' class="form-label">Serveur MQTT</label>
             <input class='form-control' id='servMQTT' type='text' name='servMQTT' value='{{servMQTT}}'>
           </div>
           <div class="mb-3">
-            <label for='portMQTT' class="form-label">MQTT port</label>
+            <label for='portMQTT' class="form-label">Port MQTT</label>
             <input class='form-control' id='portMQTT' type='text' name='portMQTT' value='{{portMQTT}}'>
           </div>
           <div class="mb-3">
-            <label for='clientIDMQTT' class="form-label">MQTT Client ID</label>
+            <label for='clientIDMQTT' class="form-label">Client ID MQTT</label>
             <input class='form-control' id='clientIDMQTT' type='text' name='clientIDMQTT' value='{{clientIDMQTT}}'>
           </div>
           <div class="mb-3">
-            <label for='userMQTT' class="form-label">MQTT username</label>
+            <label for='userMQTT' class="form-label">Identifiant MQTT</label>
             <input class='form-control' id='userMQTT' type='text' name='userMQTT' value='{{userMQTT}}'>
           </div>
           <div class="mb-3">
-            <label for='passMQTT' class="form-label">MQTT password</label>
+            <label for='passMQTT' class="form-label">Mot de passe MQTT</label>
             <input class='form-control' id='passMQTT' type='password' name='passMQTT' value='{{passMQTT}}'>
           </div>
           <div class="mb-3">
-            <label for='headerMQTT' class="form-label">MQTT topic header</label>
+            <label for='headerMQTT' class="form-label">Topic header MQTT</label>
             <input class='form-control' id='headerMQTT' type='text' name='headerMQTT' value='{{headerMQTT}}'>
           </div>
 
@@ -1816,16 +1700,16 @@ const char HTTP_CONFIG_WATER[] PROGMEM =
           </div>
           <div class='form-check'>
             <input class='form-check-input' id='custom' type='radio' name='appliMQTT' value='custom' onClick='document.getElementById("displayCustomMQTT").style.display="block";' {{checkedCustom}}>
-            <label class='form-check-label' for='custom'>Custom</label>
+            <label class='form-check-label' for='custom'>Personnalisé</label>
           </div>
           <div class='form-floating' id='displayCustomMQTT' style='{{displayCustomMQTT}}'>
             <textarea class='form-control' name='customMQTTJson' placeholder='' id='customMQTTJson' style='min-height:200px;'>{{customMQTTJson}}</textarea>
-            <label for='customMQTTJson'>Custom JSON</label>
+            <label for='customMQTTJson'>JSON personnalisé</label>
           </div>
-          <br><Strong>Connected : </strong><span id='mqttStatus'><img src='web/img/wait.gif' /></span>
+          <br><Strong>Connecté : </strong><span id='mqttStatus'><img src='web/img/wait.gif' /></span>
           <br>
           <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-warning btn-lg">Save</button>
+            <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
           </div>
         </form>
         </div>
@@ -1854,25 +1738,25 @@ const char HTTP_CONFIG_WATER[] PROGMEM =
 
  const char HTTP_CONFIG_HTTP[] PROGMEM = R"(
     <div class='container p-4'>
-      <h4 class='card-title mb-4'>Config Security</h4>
+      <h4 class='card-title mb-4'>Config Securité</h4>
       <div class='card mx-auto shadow-sm' >
         <div class="card-body"> 
           <form method='POST' action='saveConfigHTTP'>
           <div class="form-check form-switch mb-3">
             <input class="form-check-input" type="checkbox" id="enableSecureHttp" name='enableSecureHttp' {{checkedHttp}}>
-            <label class="form-check-label" for="enableSecureHttp">Enable HTTP authentification</label>
+            <label class="form-check-label" for="enableSecureHttp">Activer authentification HTTP</label>
           </div>
           <div class="mb-3">
-            <label for='userHTTP' class="form-label">HTTP username</label>
+            <label for='userHTTP' class="form-label">Identifiant HTTP</label>
             <input class='form-control' id='userHTTP' type='text' name='userHTTP' value='{{userHTTP}}' style='{{userborder}}'>
           </div>
           <div class="mb-3">
-            <label for='passHTTP' class="form-label">HTTP password</label>
+            <label for='passHTTP' class="form-label">Mot de passe HTTP</label>
             <input class='form-control' id='passHTTP' type='password' name='passHTTP' value='{{passHTTP}}' style='{{passborder}}'>
           </div>
           <br>
           <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-warning btn-lg">Save</button>
+            <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
           </div>
           </form>
           <div style='color:red'>{{error}}</div>
@@ -1889,35 +1773,35 @@ const char HTTP_CONFIG_WATER[] PROGMEM =
           <form method='POST' action='saveConfigWebPush'>
           <div class="form-check form-switch mb-3">
             <input class="form-check-input" type="checkbox" id="enableWebPush" name='enableWebPush' {{checkedWebPush}}>
-            <label class="form-check-label" for="enableWebPush">Enable WebPush</label>
+            <label class="form-check-label" for="enableWebPush">Activer WebPush</label>
           </div> 
           <div class="mb-3">
-            <label for='servWebPush' class="form-label">Server HTTP</label>
+            <label for='servWebPush' class="form-label">Serveur HTTP</label>
             <input class='form-control' id='servWebPush' type='text' name='servWebPush' value='{{servWebPush}}' style='{{urlborder}}'>
           </div>
           <div class="form-check form-switch mb-3">
             <input class="form-check-input" type="checkbox" id="webPushAuth" name='webPushAuth' {{checkedWebPushAuth}} onClick='toggleDiv("authWebPush");'>
-            <label class="form-check-label" for="webPushAuth">Enable Authentification</label>
+            <label class="form-check-label" for="webPushAuth">Activer l'authentification</label>
           </div> 
           <div id='authWebPush' style='{{displayWebPushAuth}}'>
             <h5>Authentification</h5>
             <div class="mb-3">
-              <label for='userWebPush' class="form-label">Username</label>
+              <label for='userWebPush' class="form-label">Identifiant</label>
               <input class='form-control' id='userWebPush' type='text' name='userWebPush' value='{{userWebPush}}' style='{{userborder}}'>
             </div>
             <div class="mb-3">
-              <label for='passWebPush' class="form-label">Password</label>
+              <label for='passWebPush' class="form-label">Mot de passe</label>
               <input class='form-control' id='passWebPush' type='password' name='passWebPush' value='{{passWebPush}}' style='{{passborder}}'>
             </div>
           </div>
           <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-warning btn-lg">Save</button>
+            <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
           </div>
           </form>
           <div style='color:red'>{{error}}</div>
         </div> 
       </div>
-      <br><br><h5>HTTP datas sent example</h5>
+      <br><br><h5>Exemple données HTTP</h5>
       Header : POST
       <br>Content-Type : JSON
       <br>Content :
@@ -2014,7 +1898,7 @@ const char HTTP_CONFIG_NOTIFICATION_MAIL[] PROGMEM =
 
 const char HTTP_NETWORK[] PROGMEM =
     "<div class='container py-4' >"
-      "<h4>Network status</h4>"
+      "<h4>Etat réseau</h4>"
       "<div class='row g-4'>"
         "<div class='col'>"
           "<div class='card'>"
@@ -2027,13 +1911,13 @@ const char HTTP_NETWORK[] PROGMEM =
             "</div>"
             "<div class='card-body'>"
               "<div id='wifiConfig'>"
-                "<strong>Enable : </strong>{{enableWifi}}"
-                "<br><strong>Connected : </strong>{{connectedWifi}}"
+                "<strong>Actif : </strong>{{enableWifi}}"
+                "<br><strong>Connecté : </strong>{{connectedWifi}}"
                 "<br><strong>SSID : </strong>{{ssidWifi}}"
                 "<br><strong>Mode : </strong>{{modeWifi}}"
                 "<br><strong>@IP : </strong>{{ipWifi}}"
-                "<br><strong>@Mask : </strong>{{maskWifi}}"
-                "<br><strong>@GW : </strong>{{GWWifi}}"
+                "<br><strong>@Masque : </strong>{{maskWifi}}"
+                "<br><strong>@Passerelle : </strong>{{GWWifi}}"
               "</div>"
             "</div>"
           "</div>"
@@ -2048,12 +1932,12 @@ const char HTTP_NETWORK[] PROGMEM =
                 "<path d='M12 9.25C11.8019 9.24741 11.6126 9.16756 11.4725 9.02747C11.3324 8.88737 11.2526 8.69811 11.25 8.5V8C11.25 7.80109 11.329 7.61032 11.4697 7.46967C11.6103 7.32902 11.8011 7.25 12 7.25C12.1989 7.25 12.3897 7.32902 12.5303 7.46967C12.671 7.61032 12.75 7.80109 12.75 8V8.5C12.7474 8.69811 12.6676 8.88737 12.5275 9.02747C12.3874 9.16756 12.1981 9.24741 12 9.25Z' fill='#000000'/>"
                 "<path d='M12 21C10.22 21 8.47991 20.4722 6.99987 19.4832C5.51983 18.4943 4.36628 17.0887 3.68509 15.4442C3.0039 13.7996 2.82567 11.99 3.17294 10.2442C3.5202 8.49836 4.37737 6.89472 5.63604 5.63604C6.89472 4.37737 8.49836 3.5202 10.2442 3.17294C11.99 2.82567 13.7996 3.0039 15.4442 3.68509C17.0887 4.36628 18.4943 5.51983 19.4832 6.99987C20.4722 8.47991 21 10.22 21 12C21 14.387 20.0518 16.6761 18.364 18.364C16.6761 20.0518 14.387 21 12 21ZM12 4.5C10.5166 4.5 9.0666 4.93987 7.83323 5.76398C6.59986 6.58809 5.63856 7.75943 5.07091 9.12988C4.50325 10.5003 4.35473 12.0083 4.64411 13.4632C4.9335 14.918 5.64781 16.2544 6.6967 17.3033C7.7456 18.3522 9.08197 19.0665 10.5368 19.3559C11.9917 19.6453 13.4997 19.4968 14.8701 18.9291C16.2406 18.3614 17.4119 17.4001 18.236 16.1668C19.0601 14.9334 19.5 13.4834 19.5 12C19.5 10.0109 18.7098 8.10323 17.3033 6.6967C15.8968 5.29018 13.9891 4.5 12 4.5Z' fill='#000000'/>"
               "</svg>"
-              " System Infos"
+              " Informations système"
             "</div>"
             "<div class='card-body'>"
               "{{MQTT card}}"
               "{{Marstek card}}"
-              "<Strong>Box temperature :</strong> {{Temperature}} °C<br>"
+              "<Strong>Température Box:</strong> {{Temperature}} °C<br>"
             "</div>"
           "</div>"
         "</div>"
@@ -2106,49 +1990,577 @@ const char HTTP_DASHBOARD[] PROGMEM =
     "</div>"
     "{{javascript}}";
 
-const char HTTP_ENERGY[] PROGMEM =
+const char HTTP_ENERGY[] PROGMEM = R"(
     
-    "<div class='container'>"
-    "<h4>Energy status</h4>" 
-    "<div class='row g-4'>"
-        "<div class='col-md-12'>"
-            "<div class='nav justify-content-end'>"
-              "<div id='h'><a class='link' href='?time=hour' onClick=\"wait('h');\">"
-               "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-clock-history' viewBox='0 0 16 16'>"
-                  "<path d='M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z'/>"
-                  "<path d='M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z'/>"
-                  "<path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5'/>"
-                "</svg>"
-              "</a></div>&nbsp;"
-              "<div id='d'><a class='link' href='?time=day' onClick=\"wait('d');\">"
-                "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'>"
-                  "<path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>"
-                  "<path d='M12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2'/>"
-                "</svg>"             
-              "</a></div>&nbsp;"
-              "<div id='m'><a class='link' href='?time=month' onClick=\"wait('m');\">"
-                "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'>"
-                  "<path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>"
-                  "<path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'/>"
-                "</svg>"
-              "</a></div>&nbsp;"
-              "<div id='y'><a class='link' href='?time=year' onClick=\"wait('y');\">"
-                "<svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'>"
-                  "<path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text>"
-                "</svg>"
-              "</a></div>&nbsp;"
-            "</div>"
-         "</div>"
-      "</div>"
-    "</div>"
-    "<script>"
-      "function wait(div){ document.getElementById(div).innerHTML = \"<img src='web/img/wait.gif' />\";}"
-    "</script>"
-    ;
+    <div class='container'>
+    <h4>Tableau de bord énergétique</h4>
+    <div class='row g-4'>
+        <div class='col-md-12'>
+            <div class='nav justify-content-end'>
+              <div id='h'><a class='link' href='?time=hour' onClick=\"wait('h');\">
+               <svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-clock-history' viewBox='0 0 16 16'>
+                  <path d='M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z'/>
+                  <path d='M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z'/>
+                  <path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5'/>
+                </svg>
+              </a></div>&nbsp;
+              <div id='d'><a class='link' href='?time=day' onClick=\"wait('d');\">
+                <svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'>
+                  <path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>
+                  <path d='M12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2'/>
+                </svg>            
+              </a></div>&nbsp;
+              <div id='m'><a class='link' href='?time=month' onClick=\"wait('m');\">
+                <svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'>
+                  <path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>
+                  <path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'/>
+                </svg>
+              </a></div>&nbsp;
+              <div id='y'><a class='link' href='?time=year' onClick=\"wait('y');\">
+                <svg xmlns='http://www.w3.org/2000/svg' style='width:32px' width='24' height='24' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'>
+                  <path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text>
+                </svg>
+              </a></div>&nbsp;
+            </div>
+         </div>
+      </div>
+    </div>
+    <script>
+      function wait(div){ document.getElementById(div).innerHTML = "<img src='web/img/wait.gif' />";}
+    </script>)";
+    
+
+/*const char HTTP_ENERGY_LINKY[] PROGMEM = R"(
+      <style>
+        
+        .energy-bars-horizontal {
+            display: flex;
+            height: 40px;
+            position: relative;
+            margin: 20px 0 80px 0;
+            border-radius: 8px;
+            overflow: visible;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .energy-bar-horizontal {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border-right: 2px solid white;
+        }
+        
+        .energy-bar-horizontal:last-child {
+            border-right: none;
+        }
+        
+        .energy-bar-horizontal:hover {
+            transform: translateY(-5px);
+            z-index: 2;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+        }
+        
+        .energy-bar-horizontal.A { background-color: #00a651; }
+        .energy-bar-horizontal.B { background-color: #54c93f; }
+        .energy-bar-horizontal.C { background-color: #a4d633; }
+        .energy-bar-horizontal.D { background-color: #fef200; }
+        .energy-bar-horizontal.E { background-color: #ffb400; }
+        .energy-bar-horizontal.F { background-color: #ff8c00; }
+        .energy-bar-horizontal.G { background-color: #e20613; }
+        
+        .bar-label-horizontal {
+            font-weight: bold;
+            font-size: 24px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+            color: white;
+        }
+       
+        .cursor-horizontal {
+            position: absolute;
+            bottom: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            color: #333;
+            opacity: 0;
+            transition: all 0.4s ease;
+            z-index: 3;
+            text-shadow: 0 -2px 4px rgba(255,255,255,0.8);
+        }
+        
+        .cursor-horizontal.active {
+            opacity: 1;
+            animation: gentle-bounce-down 2s infinite;
+        }
+        
+        .value-display-horizontal {
+            position: absolute;
+            bottom: -60px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #333;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 14px;
+            opacity: 0;
+            transition: all 0.4s ease;
+            white-space: nowrap;
+            z-index: 3;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .value-display-horizontal.active {
+            opacity: 1;
+        }
+        
+        .value-display-horizontal::before {
+            content: '';
+            position: absolute;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-bottom: 8px solid #333;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+        }
+
+        // Overlay du popup 
+        .popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .popup-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        // Contenu du popup 
+        .popup-content {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            position: relative;
+            transform: scale(0.8);
+            transition: transform 0.3s ease;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        }
+
+        .popup-overlay.active .popup-content {
+            transform: scale(1);
+        }
+
+        // Bouton de fermeture 
+        .close-btn {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: #ff4757;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 35px;
+            height: 35px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+        }
+
+        .close-btn:hover {
+            background: #ff3742;
+            transform: rotate(90deg);
+        }
+
+        // Contenu informatif 
+        .popup-header {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        .popup-text {
+            color: #555;
+            line-height: 1.6;
+            margin-bottom: 15px;
+            font-size: 16px;
+        }
+
+        .info-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .info-list li {
+            background: #f8f9fa;
+            margin: 10px 0;
+            padding: 12px 15px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            transition: all 0.3s ease;
+        }
+
+        .info-list li:hover {
+            transform: translateX(5px);
+            background: #e9ecef;
+        }
+
+        .highlight {
+            background: #fcf374ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 1px solid #f5d834ff;
+        }
+
+        // Responsive 
+        @media (max-width: 768px) {
+            .popup-content {
+                padding: 20px;
+                margin: 10px;
+            }
+
+            .popup-header {
+                font-size: 20px;
+            }
+
+            .popup-text {
+                font-size: 14px;
+            }
+
+            .open-popup-btn {
+                padding: 12px 25px;
+                font-size: 16px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .popup-content {
+                padding: 15px;
+            }
+
+            .close-btn {
+                width: 30px;
+                height: 30px;
+                font-size: 16px;
+            }
+        }
+
+      </style>
+      <div class='col-sm-12'>
+        {{LinkyStatus}}
+      </div>
+    </div>
+    <div class='container py-4' id='cadre_energy'>
+     <div class='row g-2'  style='{{styleEnergyAlert}}'>
+      <div class='col-12'>
+        <span style='color:red;' id='energyAlert'>⚠️ {{energyAlertMessage}}</span>
+      </div>
+    </div>
+    <div class='row g-2' >
+      <div class='col-12'>
+        <div class='card p-4' id='label-energy'>
+          <h5 class='card-title'>Etiquette énergétique</h5>
+          <div class='card-body'>
+            <div class="energy-bars-horizontal">
+              <div class="energy-bar-horizontal A" data-class="A">
+                <span class="bar-label-horizontal">A</span>
+                <div class="cursor-horizontal"></div>
+                <div class="value-display-horizontal"></div>
+              </div>
+              <div class="energy-bar-horizontal B" data-class="B">
+                <span class="bar-label-horizontal">B</span>
+                <div class="cursor-horizontal"></div>
+                <div class="value-display-horizontal"></div>
+              </div>
+              <div class="energy-bar-horizontal C" data-class="C">
+                <span class="bar-label-horizontal">C</span>
+                <div class="cursor-horizontal"></div>
+                <div class="value-display-horizontal"></div>
+              </div>
+              <div class="energy-bar-horizontal D" data-class="D">
+                <span class="bar-label-horizontal">D</span>
+                <div class="cursor-horizontal"></div>
+                <div class="value-display-horizontal"></div>
+              </div>
+              <div class="energy-bar-horizontal E" data-class="E">
+                <span class="bar-label-horizontal">E</span>
+                <div class="cursor-horizontal"></div>
+                <div class="value-display-horizontal"></div>
+              </div>
+              <div class="energy-bar-horizontal F" data-class="F">
+                <span class="bar-label-horizontal">F</span>
+                <div class="cursor-horizontal"></div>
+                <div class="value-display-horizontal"></div>
+              </div>
+              <div class="energy-bar-horizontal G" data-class="G">
+                <span class="bar-label-horizontal">G</span>
+                <div class="cursor-horizontal"></div>
+                <div class="value-display-horizontal"></div>
+              </div>
+            </div>
+          </div>
+          <a href='#' onClick='openPopup("popupHelpEnergyLabel")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
+            <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
+              <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
+              <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
+            </svg>
+          </a>
+          <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
+            title='Paramétrer la tarification'>
+            <svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>
+              <circle cx='12' cy='12' r='3'></circle>
+              <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+      {{power_gauge}}
+      <div class='col-lg-8 col-md-12 col-12'>
+        <div class='card p-4' id='energyTrend' style='height:100%;'>
+          <h5 class='card-title' style=''>Répartition énergétique</h5>
+          
+          <div class='row'>
+            
+            <div class='col-md-12 col-lg-4'>
+              <div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>
+                <div id='power_trend'></div>
+              </div>
+            </div>
+            <div class='col-md-12 col-lg-4'>
+              <div class='card-body position-relative p-1' style='min-height:240px;'>
+                <div id='donut-chart' style='padding-top:40px;'></div>
+              </div>
+              <div align='center'>
+                <a onclick='loadDistributionChart(\"{{time}}\",\"\");' ><svg fill='#000000' style='width:24px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg></a> 
+                <a onclick='loadDistributionChart(\"{{time}}\",\"euro\");' ><svg style='width:24px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='#000000'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='#000000'/></g></svg></a>
+              </div>
+            </div>
+            <div class='col-md-12 col-lg-4'>
+              <div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>
+                <div id='trend-datas'></div>
+              </div>
+            </div>
+            
+          </div>
+          <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
+            title='Paramétrer la tarification'>
+            <svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>
+              <circle cx='12' cy='12' r='3'></circle>
+              <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>
+            </svg>
+          </a>
+        </div>
+      </div>
+      <div class='col-md-6' style='display:{{stylePowerChart}}'>
+        <div class='card p-4'>
+          <h5 class='card-title'>Puissance apparente (graphique temps réel)</h5>
+          <div class='card-body'>
+              <div id='power-chart'></div>
+          </div>
+        </div>
+      </div>
+      <div class='col-md-6'>
+        <div class='card p-4'>
+          <h5 class='card-title'>Consommation d'électricité</h5>
+          <div class='card-body'>
+              <div id='energy-chart'></div>
+          </div>
+        </div>
+      </div>
+
+      <div class='popup-overlay' id='popupHelpEnergyLabel' onclick='closePopupOnOverlay(event,\'popupHelpEnergyLabel\')'>
+        <div class='popup-content'>
+            <button class='close-btn' onclick='closePopup(\'popupHelpEnergyLabel\')'>×</button> 
+            <h2 class='popup-header'>Etiquette énergétique</h2>
+            <p class='popup-text'>
+                L'étiquette énergétique permet d'avoir une vision simple sur la performance énergétique (électricité / production / gaz en kWh) de votre habitat en fonction de la surface habitable.
+            </p>
+            <div class='highlight'>
+                <strong>Point important :</strong> L'étiquette énergétique n'est affichée qu'à titre informatif et ne remplace pas une étude DPE.
+            </div>
+            <p class='popup-text'>
+                La performance est calculée de la manière suivante:
+            </p>
+
+            <ul class='info-list'>
+                <li><strong>Mode horaire :</strong> (Total énergie (Elect/prod/gaz) x 365) / surface habitable </li>
+                <li><strong>Mode journalier :</strong> (Total énergie (Elect/prod/gaz) x 12) / surface habitable</li>
+                <li><strong>Mode mensuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
+                <li><strong>Mode annuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
+            </ul>
+
+            <p class='popup-text'>
+                Liste des étiquettes :
+            </p>
+            <p class='popup-text'>
+                A : < 50 kWh/m².an
+            </p>
+            <p class='popup-text'>
+                B : 51 - 90 kWh/m².an
+            </p>
+            <p class='popup-text'>
+                C : 91 - 150 kWh/m².an
+            </p>
+            <p class='popup-text'>
+                D : 151 - 230 kWh/m².an
+            </p>
+            <p class='popup-text'>
+                E : 231 - 330 kWh/m².an
+            </p>
+            <p class='popup-text'>
+                F : 331 - 450 kWh/m².an
+            </p>
+            <p class='popup-text'>
+                G : > 451 kWh/m².an
+            </p>
+          </div>
+      </div>
+
+      <script>
+
+        function getEnergyClass(value) {
+            if (value < 50) return { class: 'A', range: '< 50' };
+            if (value >= 51 && value <= 90) return { class: 'B', range: '51 - 90' };
+            if (value >= 91 && value <= 150) return { class: 'C', range: '91 - 150' };
+            if (value >= 151 && value <= 230) return { class: 'D', range: '151 - 230' };
+            if (value >= 231 && value <= 330) return { class: 'E', range: '231 - 330' };
+            if (value >= 331 && value <= 450) return { class: 'F', range: '331 - 450' };
+            if (value >= 451) return { class: 'G', range: '> 451' };
+        }
+
+        function calculateEnergyClass(IEEE,time) {  
+          var xhr = getXhr();
+          xhr.onreadystatechange = function(){
+            if(xhr.readyState == 4 ){
+              if (xhr.responseText>1)
+              {
+                document.getElementById('label-energy').style.display='block';
+                const result = getEnergyClass(xhr.responseText);
+                displayResult(result.class, xhr.responseText, result.range);
+              }else{
+                //pas accès de données
+                document.getElementById('label-energy').style.display='none';
+              }
+            }
+          }
+          xhr.open("GET","loadTotalEnergy?IEEE="+escape(IEEE)+"&time="+escape(time),true);
+          xhr.setRequestHeader('Content-Type','application/html');
+          xhr.send();
+
+        }
+
+        function displayResult(energyClass, value, range) {
+            // Cacher tous les curseurs et valeurs
+            document.querySelectorAll('.cursor-horizontal').forEach(cursor => {
+                cursor.classList.remove('active');
+            });
+            document.querySelectorAll('.value-display-horizontal').forEach(display => {
+                display.classList.remove('active');
+                display.textContent = '';
+            });
+            
+            // Remettre toutes les barres à leur état normal
+            document.querySelectorAll('.energy-bar-horizontal').forEach(bar => {
+                bar.style.transform = 'translateY(0)';
+                bar.style.zIndex = '1';
+                bar.style.boxShadow = 'none';
+                bar.style.border = '2px solid white';
+                bar.style.animation = 'none';
+            });
+            
+            // Trouver la barre correspondante et afficher le curseur
+            const targetBar = document.querySelector(`[data-class="${energyClass}"]`);
+            if (targetBar) {
+                const cursor = targetBar.querySelector('.cursor-horizontal');
+                const valueDisplay = targetBar.querySelector('.value-display-horizontal');
+                
+                cursor.classList.add('active');
+                valueDisplay.classList.add('active');
+                valueDisplay.textContent = `${value} kWh/m².an`;
+                
+                // Ajouter un effet de surbrillance très visible
+                targetBar.style.transform = 'translateY(-12px) scale(1.05)';
+                targetBar.style.zIndex = '10';
+                targetBar.style.boxShadow = '0 15px 30px rgba(100,100,100,0.4), 0 0 0 2px #ffffff, 0 0 0 4px white';
+                targetBar.style.border = '2px solid #ffFFFF';
+                targetBar.style.borderRadius = '4px';
+
+            }
+
+        }
+
+        function openPopup(div) {
+            const overlay = document.getElementById(div);
+            overlay.classList.add('active');
+            
+            // Empêcher le scroll du body quand le popup est ouvert
+            document.body.style.overflow = 'hidden';
+        }
+
+        // Fermer le popup
+        function closePopup(div) {
+            const overlay = document.getElementById(div);
+            overlay.classList.remove('active');
+            
+            // Réactiver le scroll du body
+            document.body.style.overflow = 'auto';
+        }
+
+        // Fermer le popup en cliquant sur l'overlay
+        function closePopupOnOverlay(event,div) {
+            if (event.target === event.currentTarget) {
+                closePopup(div);
+            }
+        }
+
+        // Fermer avec la touche Escape
+        document.addEventListener('keydown', function(event,div) {
+            if (event.key === 'Escape') {
+                const overlay = document.getElementById(div);
+                if (overlay.classList.contains('active')) {
+                    closePopup(div);
+                }
+            }
+        });
+
+        // Empêcher la fermeture quand on clique dans le contenu
+        document.querySelector('.popup-content').addEventListener('click', function(event) {
+            event.stopPropagation();
+        });
+
+      </script>
+      )";*/
 
 const char HTTP_ENERGY_LINKY[] PROGMEM =
     
-    //"<div class='row'>"
       "<div class='col-sm-12'>"
         "{{LinkyStatus}}"
       "</div>"
@@ -2163,7 +2575,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
       "{{power_gauge}}"
       "<div class='col-lg-8 col-md-12 col-12'>"
         "<div class='card p-4' id='energyTrend' style='height:100%;'>"
-          "<h5 class='card-title' style=''>Energy trend</h5>"
+          "<h5 class='card-title' style=''>Tendance</h5>"
           
           "<div class='row'>"
             "<div class='col-md-12 col-lg-4'>"
@@ -2197,7 +2609,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
       "</div>"
       "<div class='col-md-12'>"
         "<div class='card p-4'>"
-          "<h5 class='card-title' style=''>Linky Datas</h5>"
+          "<h5 class='card-title' style=''>Données Linky</h5>"
           "<div class='card-body' style='min-height:270px;'>"
             "<div id='power_data'></div>"
           "</div>"
@@ -2205,7 +2617,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
       "</div>"   
       "<div class='col-md-6' style='display:{{stylePowerChart}}'>"
         "<div class='card p-4'>"
-          "<h5 class='card-title'>Real Time Power chart</h5>"
+          "<h5 class='card-title'>Puissance apparente (graphique temps réel)</h5>"
           "<div class='card-body'>"
               "<div id='power-chart'></div>"
           "</div>"
@@ -2213,28 +2625,20 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
       "</div>"
       "<div class='col-md-6'>"
         "<div class='card p-4'>"
-          "<h5 class='card-title'>Energy Usage</h5>"
+          "<h5 class='card-title'>Consommation d'électricité</h5>"
           "<div class='card-body'>"
               "<div id='energy-chart'></div>"
           "</div>"
         "</div>"
       "</div>"
-      /*"<div class='col-md-6' style='display:{{styleProdChart}}'>"
-        "<div class='card p-4'>"
-          "<h5 class='card-title'>Production injection</h5>"
-          "<div class='card-body'>"
-              "<div id='production-chart'></div>"
-          "</div>"
-        "</div>"
-      "</div>"*/;
-    //"</div>";
+;
 
 const char HTTP_ENERGY_GAZ[] PROGMEM =
 
     //"<br><div class='row g-4'>"
     "<div class='col-md-6'>"
         "<div class='card p-4'>"
-          "<h5 class='card-title'>Gaz Usage</h5>"
+          "<h5 class='card-title'>Consommation de Gaz</h5>"
           "<div class='card-body'>"
               "<div id='gaz-chart'></div>"
           "</div>"
@@ -2247,7 +2651,7 @@ const char HTTP_ENERGY_WATER[] PROGMEM =
     //"<br><div class='row g-4'>"
     "<div class='col-md-6'>"
         "<div class='card p-4'>"
-          "<h5 class='card-title'>Water Usage</h5>"
+          "<h5 class='card-title'>Consommation d'eau</h5>"
           "<div class='card-body'>"
               "<div id='water-chart'></div>"
           "</div>"
@@ -2275,7 +2679,7 @@ const char HTTP_CONFIG_WIFI[] PROGMEM = R"(
           </div>
           <!-- Password -->
           <div class="mb-3">
-            <label for="password" class="form-label">Password</label>
+            <label for="password" class="form-label">Mot de passe</label>
             <input type="password" class="form-control" id="password"  name='WIFIpassword' value='{{password}}' style='{{passborder}}'>
           </div>
           <!-- DHCP Toggle -->
@@ -2288,21 +2692,21 @@ const char HTTP_CONFIG_WIFI[] PROGMEM = R"(
               <div class="mb-3">
                 <label for="ip" class="form-label">@IP</label>
                 <input type="text" class="form-control mb-2" id="ip" name='ipAddress' value='{{ip}}' style='{{ipborder}}'>
-                <label for="mask" class="form-label">@Mask</label>
+                <label for="mask" class="form-label">@Masque</label>
                 <input type="text" class="form-control mb-2" id="mask" name='ipMask' value='{{mask}}' style='{{ipmask}}'>
-                <label for="gateway" class="form-label">@Gateway</label>
+                <label for="gateway" class="form-label">@Passerelle</label>
                 <input type="text" class="form-control" id="gateway"  name='ipGW' value='{{gw}}' style='{{ipgw}}'>
               </div>
             </div>
           </div>
           <!-- Save Button -->
           <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Save</button>
+            <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Enregistrer</button>
           </div>
         </form>
         <div style='color:red'>{{error}}</div>
         <div style='color:red'>{{ipError}}</div>
-        <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>
+        <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Redémarrage ...</div>
       </div>
     </div>
   </div>
@@ -2321,7 +2725,7 @@ const char HTTP_CREATE_DEVICE[] PROGMEM =
     " <textarea class='form-control' id='file' name='file' rows='20'>"
     "</textarea>"
     "</div>"
-    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Save</button>"
+    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Enregistrer</button>"
     "</form>";
 const char HTTP_CREATE_HISTORY[] PROGMEM =
     "<h4>Create history file</h4>"
@@ -2336,7 +2740,7 @@ const char HTTP_CREATE_HISTORY[] PROGMEM =
     " <textarea class='form-control' id='file' name='file' rows='20'>"
     "</textarea>"
     "</div>"
-    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Save</button>"
+    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Enregistrer</button>"
     "</form>";
 const char HTTP_CREATE_TEMPLATE[] PROGMEM =
     "<h4>Create tp file</h4>"
@@ -2351,7 +2755,7 @@ const char HTTP_CREATE_TEMPLATE[] PROGMEM =
     " <textarea class='form-control' id='file' name='file' rows='20'>"
     "</textarea>"
     "</div>"
-    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Save</button>"
+    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Enregistrer</button>"
     "</form>";
 
 const char HTTP_DEVICE[] PROGMEM =
@@ -2578,10 +2982,10 @@ const char HTTP_HELP[] PROGMEM =  R"(
       <div class="card mx-auto shadow-sm">
         <div class="card-body">
           <h5>Version : {{version}}</h5>
-          You can go to this url :</br>
-          <a href="https://lixee.fr/" target='_blank'>Shop </a></br><br>
-          <h5>Firmware Source & Issues</h5>
-          Please go here :</br>
+          Visitez la boutique :</br>
+          <a href="https://lixee.fr/" target='_blank'>Boutique LiXee </a></br><br>
+          <h5>Sources Firmware</h5>
+          Suivez le lien :</br>
           <a href="https://github.com/fairecasoimeme/LiXee-Gateway" target='_blank'>Sources</a>
         </div>
       </div>
@@ -4059,9 +4463,9 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   
   if (ConfigSettings.enableMqtt)
   {
-    String MqttCard = F("<i>MQTT Infos :</i>");
+    String MqttCard = F("<i>Infos MQTT :</i>");
     MqttCard +=F("<br>");
-    MqttCard +=F("<Strong>MQTT connected :</strong> ");
+    MqttCard +=F("<Strong>MQTT connecté :</strong> ");
     if (mqttClient.connected())
     {
       MqttCard +=F("<img src='/web/img/ok.png'>");
@@ -4116,6 +4520,362 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   request->send(200, "text/html", result);
 }
 
+/*void handleStatusEnergy(AsyncWebServerRequest *request)
+{
+  PSRAMString result(150000);
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADERGRAPH);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_ENERGY);
+  result +=F("<div class='row'>");
+  if (strcmp(ConfigGeneral.ZLinky,"")!=0)
+  {
+    result += FPSTR(HTTP_ENERGY_LINKY);
+  }
+  if (strcmp(ConfigGeneral.Gaz,"")!=0)
+  {
+     result += FPSTR(HTTP_ENERGY_GAZ);
+  }
+  if (strcmp(ConfigGeneral.Water,"")!=0)
+  {
+     result += FPSTR(HTTP_ENERGY_WATER);
+  }
+  result +=F("</div>");
+  result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
+  result +=  R"(<script>
+            document.addEventListener('DOMContentLoaded', () => {
+              const params  = new URLSearchParams(window.location.search);
+              // Si aucun ?time, on choisit 'hour' par défaut
+              const current = params.has('time') ? params.get('time') : 'hour';
+
+              document.querySelectorAll('.link').forEach(link => {
+                const linkTime = new URL(link.href, window.location.href)
+                                  .searchParams.get('time');
+                if (linkTime === current) {
+                  link.classList.add('active');
+                }
+              });
+            });
+
+          </script>)";
+  result+=footer();
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  String LinkyStatus;
+  
+  String tmpStatus = getDeviceStatus(String(ConfigGeneral.ZLinky)+".json");
+  if (tmpStatus =="d4")
+  {
+    LinkyStatus="<div class='alert alert-danger' role='alert'>Appareil déconnecté</div>";
+  }else{
+    LinkyStatus="";
+  }
+  result.replace("{{LinkyStatus}}",LinkyStatus);
+
+
+
+  int i = 0;
+  String time;
+
+  int paramsNr = request->params();
+  if (paramsNr > 0)
+  {
+    time = request->arg(i);
+  }
+  else
+  {
+    time = "hour";
+  }
+
+  if (time == "hour")
+  {
+    result.replace("{{stylePowerChart}}", F("block"));
+  }
+  else{
+    result.replace("{{stylePowerChart}}", F("none"));
+  }
+
+  //if (strcmp(ConfigGeneral.Production,"")==0)
+  //{
+  //  result.replace("{{styleProdChart}}", F("none"));
+  //}else{
+  //  result.replace("{{styleProdChart}}", F("block"));
+  //}
+
+  result.replace("{{time}}",time);
+
+  ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
+    // Status STGE
+  bool foundDevice = false;
+  DeviceData* device;
+  for (size_t ident = 0; ident < devices.size(); ident++) 
+  {   
+    if (devices[ident]->getDeviceID() == String(ConfigGeneral.ZLinky))
+    {
+      device = devices[ident];
+      foundDevice=true;
+      break;
+    }   
+  }
+
+  if (foundDevice)
+  {
+    if ((ConfigGeneral.LinkyMode == 0 ) || (ConfigGeneral.LinkyMode == 2 ))
+    {
+      String tmp = device->getValue(std::string("FF66"),std::string(String("5").c_str()));
+
+      if (tmp.toInt()>0)
+      {
+        result.replace("{{styleEnergyAlert}}", F("display:block;"));
+        result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
+      }else{
+        result.replace("{{styleEnergyAlert}}", F("display:none;"));
+      }
+    }else{
+      String tmp = device->getValue(std::string("FF66"),std::string(String("535").c_str()));
+      auto status = parseStatusRegister(tmp);
+
+      if (status.depassement_ref_pow)
+      {
+        result.replace("{{styleEnergyAlert}}", F("display:block;"));
+        result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
+      }else{
+        result.replace("{{styleEnergyAlert}}", F("display:none;"));
+      }
+    }   
+  }
+  
+  //
+  
+  String powerGauge="";
+
+  if (time == "hour")
+  {
+    if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+    {
+      powerGauge=F("<div class='col-lg-4 col-md-12 col-12'>");
+            powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
+              powerGauge +=F("<h5 class='card-title' >Energie</h5>");
+              powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
+                powerGauge += F("<div class='row'>");
+                  
+                if (strcmp(ConfigGeneral.Production,"") != 0 )
+                {
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.2</h5>");
+                    powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.3</h5>");
+                    powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                  powerGauge +=F("<h5>Production</h5>");
+                    powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                }else{
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.2</h5>");
+                    powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.3</h5>");
+                    powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                }
+                powerGauge +=F("</div>");
+              powerGauge +=F("</div>");
+            powerGauge +=F("</div>");
+          powerGauge +=F("</div>");
+    }else{
+      powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
+            powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
+              powerGauge +=F("<h5 class='card-title'>Energie</h5>");
+              powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
+                powerGauge += F("<div class='row'>");
+                if (strcmp(ConfigGeneral.Production,"") != 0 )
+                {
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+                  powerGauge +=F("</div>");
+                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Production</h5>");
+                    powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
+                  powerGauge +=F("</div>");
+                }else{
+                  powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
+                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
+                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+                  powerGauge +=F("</div>");
+                }
+                powerGauge +=F("</div>");
+              powerGauge +=F("</div>");
+              
+            powerGauge +=F("</div>");
+          powerGauge +=F("</div>");
+    }
+  }else{
+    powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
+      powerGauge +=F("<div id='energyGauge'  class='card p-4' style='height:100%;min-height:270px;'>");
+        powerGauge +=F("<h5 class='card-title'>Energie</h5>");
+        powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
+          powerGauge += F("<div class='row'>");
+            if (strcmp(ConfigGeneral.Production,"") != 0 )
+            {
+              powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                powerGauge +=F("<h5>Consommation</h5>");
+                powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+              powerGauge +=F("</div>");
+              powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
+                powerGauge +=F("<h5>Production</h5>");
+                powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
+              powerGauge +=F("</div>");
+            }else{
+              powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
+                powerGauge +=F("<h5>Consommation</h5>");
+                powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
+              powerGauge +=F("</div>");
+            }
+          powerGauge +=F("</div>");
+        powerGauge +=F("</div>");
+        
+      powerGauge +=F("</div>");
+    powerGauge +=F("</div>");
+  }
+  result.replace("{{power_gauge}}",powerGauge);
+
+  String javascript = "";
+
+  javascript = F("<script language='javascript'>");
+  javascript += F("$(document).ready(function() {");
+  if (strcmp(ConfigGeneral.ZLinky,"")!=0)
+  {
+    if (time == "hour")
+    {
+      
+      javascript += createPowerGraph(ConfigGeneral.ZLinky);
+      if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+      {
+        javascript += F("loadPowerGaugeAbo(2");
+        javascript += F(",'");
+        javascript += String(ConfigGeneral.ZLinky);
+        javascript += F("','2319','");
+        javascript += time;
+        javascript += F("');");
+        javascript += F("loadPowerGaugeAbo(3");
+        javascript += F(",'");
+        javascript += String(ConfigGeneral.ZLinky);
+        javascript += F("','2575','");
+        javascript += time;
+        javascript += F("');");
+      }
+
+    }
+    javascript += createDistributionGraph(ConfigGeneral.ZLinky);
+    javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
+    javascript += F("loadPowerGaugeAbo(1");
+    javascript += F(",'");
+    javascript += String(ConfigGeneral.ZLinky);
+    javascript += F("','1295','");
+    javascript += time;
+    javascript += F("');");
+    
+    if (strcmp(ConfigGeneral.Production,"") != 0 )
+    {
+      javascript += F("loadPowerGaugeAbo(4");
+      javascript += F(",'");
+      javascript += String(ConfigGeneral.Production);
+      javascript += F("','519','");
+      javascript += time;
+      javascript += F("');");
+    }
+    
+    javascript += F("refreshStatusEnergy('");
+    javascript += String(ConfigGeneral.ZLinky);
+    javascript += F("','1295','");
+    javascript += time;
+    javascript += F("');");
+
+    if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
+    {
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','1295','");
+      javascript += time;
+      javascript += F("');");
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','2319','");
+      javascript += time;
+      javascript += F("');");
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','2575','");
+      javascript += time;
+      javascript += F("');");
+
+    }else{
+      if (strcmp(ConfigGeneral.Production,"") != 0 )
+      {
+        javascript += F("refreshGaugeAbo('");
+        javascript += String(ConfigGeneral.Production);
+        javascript += F("','519','");
+        javascript += time;
+        javascript += F("');");
+      }
+      javascript += F("refreshGaugeAbo('");
+      javascript += String(ConfigGeneral.ZLinky);
+      javascript += F("','1295','");
+      javascript += time;
+      javascript += F("');");
+    }
+
+  }
+  if (strcmp(ConfigGeneral.Gaz,"")!=0)
+  {
+    javascript += createEnergyGraph(ConfigGeneral.Gaz, "gaz","['#e67e22','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += F("refreshStatusGaz('");
+    javascript += String(ConfigGeneral.Gaz);
+    javascript += F("','");
+    javascript += time;
+    javascript += F("');");
+  }
+  if (strcmp(ConfigGeneral.Water,"")!=0)
+  {
+    javascript += createEnergyGraph(ConfigGeneral.Water, "water","['#2e86c1','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    javascript += F("refreshStatusWater('");
+    javascript += String(ConfigGeneral.Water);
+    javascript += F("','");
+    javascript += time;
+    javascript += F("');");
+  }
+
+  javascript += F("});");
+  javascript += F("var ET = document.getElementById('energyTrend').offsetHeight;");
+  javascript += F("var EG = document.getElementById('energyGauge').offsetHeight;");
+  javascript += F("var cadre = document.getElementById('cadre_energy').clientWidth;");
+  javascript += F("if (cadre>720){");
+  javascript += F("if (EG<ET){");
+    javascript += F("document.getElementById('energyGauge').style.minHeight=`${ET}px`;");
+  javascript +=F("}else{");
+    javascript += F("document.getElementById('energyTrend').style.minHeight=`${EG}px`;");
+  javascript +=F("} }");  
+  javascript += F("</script>");
+
+  result.replace("{{javascript}}", javascript);
+
+  request->send(200, "text/html", result.c_str());
+}*/
+
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
   PSRAMString result(150000);
@@ -4162,7 +4922,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   String tmpStatus = getDeviceStatus(String(ConfigGeneral.ZLinky)+".json");
   if (tmpStatus =="d4")
   {
-    LinkyStatus="<div class='alert alert-danger' role='alert'>Device Offline</div>";
+    LinkyStatus="<div class='alert alert-danger' role='alert'>Appareil déconnecté</div>";
   }else{
     LinkyStatus="";
   }
@@ -4191,13 +4951,6 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     result.replace("{{stylePowerChart}}", F("none"));
   }
 
-  /*if (strcmp(ConfigGeneral.Production,"")==0)
-  {
-    result.replace("{{styleProdChart}}", F("none"));
-  }else{
-    result.replace("{{styleProdChart}}", F("block"));
-  }*/
-
   result.replace("{{time}}",time);
 
   ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
@@ -4219,6 +4972,14 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     if ((ConfigGeneral.LinkyMode == 0 ) || (ConfigGeneral.LinkyMode == 2 ))
     {
       String tmp = device->getValue(std::string("FF66"),std::string(String("5").c_str()));
+
+      if (tmp.toInt()>0)
+      {
+        result.replace("{{styleEnergyAlert}}", F("display:block;"));
+        result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
+      }else{
+        result.replace("{{styleEnergyAlert}}", F("display:none;"));
+      }
     }else{
       String tmp = device->getValue(std::string("FF66"),std::string(String("535").c_str()));
       auto status = parseStatusRegister(tmp);
@@ -4243,39 +5004,39 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     {
       powerGauge=F("<div class='col-lg-4 col-md-12 col-12'>");
             powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
-              powerGauge +=F("<h5 class='card-title' >Energy gauge</h5>");
+              powerGauge +=F("<h5 class='card-title' >Puissances</h5>");
               powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
                 powerGauge += F("<div class='row'>");
                   
                 if (strcmp(ConfigGeneral.Production,"") != 0 )
                 {
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<h5>Soutirée P.1</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
                   powerGauge +=F("</div>");
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 2</h5>");
+                    powerGauge +=F("<h5>Soutirée P.2</h5>");
                     powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
                   powerGauge +=F("</div>");
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 3</h5>");
+                    powerGauge +=F("<h5>Soutirée P.3</h5>");
                     powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
                   powerGauge +=F("</div>");
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                  powerGauge +=F("<h5>Production</h5>");
+                  powerGauge +=F("<h5>Injectée</h5>");
                     powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
                   powerGauge +=F("</div>");
                 }else{
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<h5>Soutirée P.1</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
                   powerGauge +=F("</div>");
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 2</h5>");
+                    powerGauge +=F("<h5>Soutirée P.2</h5>");
                     powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
                   powerGauge +=F("</div>");
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 3</h5>");
+                    powerGauge +=F("<h5>Soutirée P.3</h5>");
                     powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
                   powerGauge +=F("</div>");
                 }
@@ -4286,22 +5047,22 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     }else{
       powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
             powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
-              powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
+              powerGauge +=F("<h5 class='card-title'>Puissances</h5>");
               powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
                 powerGauge += F("<div class='row'>");
                 if (strcmp(ConfigGeneral.Production,"") != 0 )
                 {
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<h5>Soutirée</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
                   powerGauge +=F("</div>");
                   powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Production</h5>");
+                    powerGauge +=F("<h5>Injectée</h5>");
                     powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
                   powerGauge +=F("</div>");
                 }else{
                   powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Phase 1</h5>");
+                    powerGauge +=F("<h5>Soutirée</h5>");
                     powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
                   powerGauge +=F("</div>");
                 }
@@ -4314,13 +5075,13 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   }else{
     powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
       powerGauge +=F("<div id='energyGauge'  class='card p-4' style='height:100%;min-height:270px;'>");
-        powerGauge +=F("<h5 class='card-title'>Energy gauge</h5>");
+        powerGauge +=F("<h5 class='card-title'>Electricité</h5>");
         powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
           powerGauge += F("<div class='row'>");
             if (strcmp(ConfigGeneral.Production,"") != 0 )
             {
               powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                powerGauge +=F("<h5>Consumption</h5>");
+                powerGauge +=F("<h5>Consommation</h5>");
                 powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
               powerGauge +=F("</div>");
               powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
@@ -4329,7 +5090,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
               powerGauge +=F("</div>");
             }else{
               powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
-                powerGauge +=F("<h5>Consumption</h5>");
+                powerGauge +=F("<h5>Consommation</h5>");
                 powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
               powerGauge +=F("</div>");
             }
@@ -4347,6 +5108,11 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   javascript += F("$(document).ready(function() {");
   if (strcmp(ConfigGeneral.ZLinky,"")!=0)
   {
+    /*javascript+=F("calculateEnergyClass('");
+    javascript += String(ConfigGeneral.ZLinky);
+    javascript += F("','");
+    javascript += time;
+    javascript += F("');");*/
     if (time == "hour")
     {
       
@@ -4489,7 +5255,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   //result += F("<h5>List of devices</h5>");
   
   result += F("<div class='container py-4'>");
-  result += F("<h4>Status Devices</h4>");
+  result += F("<h4>Mesures des appareils</h4>");
   result += F("<div class='row g-4' id='masonry-grid' style=''>"); // data-masonry='{\"percentPosition\": true }'
   
   String str = "";
@@ -4512,7 +5278,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     result += String(ident);
     result += F("' onclick=\"toggleDiv('infoDevice");
     result += String(ident);
-    result += F("')\">+ Info</a>");
+    result += F("')\">+ Infos</a>");
     result += F("<div id='infoDevice");
     result += String(ident);
     result += F("' style='display:none;'>");
@@ -4867,7 +5633,7 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
   
   if (request->arg("error").toInt() > 0)
   {
-    result.replace("{{error}}", "Error : please verify the HTTP username and/or your password length >= 4 characters");
+    result.replace("{{error}}", "Erreur : Veuillez verifier l'identifiant et le mode de passe HTTP ou la longeur du mot de passe >= 4 characters");
     if ((request->arg("error").toInt() & 1) == 1)
     {
       result.replace("{{passborder}}", "border:1px solid red;");
@@ -4909,9 +5675,9 @@ void handleConfigRules(AsyncWebServerRequest *request)
   String rulesList=F("<table class='table table-striped table-hover'>");
   rulesList+=F("<thead>");
     rulesList+=F("<tr>");
-      rulesList+=F("<th scope='col'>Name</th>");
-      rulesList+=F("<th scope='col' width='50px;'>Status</th>");
-      rulesList+=F("<th scope='col' width='150px;'>Last Date</th>");
+      rulesList+=F("<th scope='col'>Nom</th>");
+      rulesList+=F("<th scope='col' width='50px;'>Etat</th>");
+      rulesList+=F("<th scope='col' width='150px;'>Dernière Date</th>");
       rulesList+=F("<th scope='col' width='100px;'>Actions</th>");
     rulesList+=F("</tr>");
   rulesList+=F("</thead>");
@@ -4980,7 +5746,7 @@ void handleConfigRules(AsyncWebServerRequest *request)
   {
     result +="<script>"+js+"</script>";
   }else{
-    result += F("<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No rules yet</div> <br>");
+    result += F("<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>Pas de règles</div> <br>");
   }
   result += footer();
   result += F("</html>");
@@ -4994,14 +5760,13 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  //result += FPSTR(HTTP_CONFIG_LINKY);
   result += FPSTR(HTTP_CONFIG_PARAM_ENERGY);
   result+=footer();
   result += F("</html>");
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
-  listLinky="<Select name='linkyDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  listLinky="<Select name='linkyDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choix--</OPTION>";
   for (size_t i = 0; i < devices.size(); i++) 
   {
   
@@ -5025,7 +5790,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   listLinky +="</select>";
 
   //Trouver les appareils qui ont des actions
-  listDevicesAction ="";
+  listDevicesAction ="<div class='form-check'> ";
   int nbActionDevices = 0;
   String checked;
   for (size_t i = 0; i < devices.size(); i++) 
@@ -5042,15 +5807,16 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
         checked="";
       }
       listDevicesAction += "<input type='checkbox' name='delestage_"+device->getDeviceID()+"' "+checked+"> "+device->getInfo().model+" ("+device->getDeviceID()+")<br>";
+      listDevicesAction += "</div>";
       nbActionDevices++;
     }
   }
   if (!nbActionDevices)
   {
-    listDevicesAction =" No device available. Power Socket needed.";
+    listDevicesAction =" Pas d'appareil disponible. Prise connectée obligatoire.";
   }
 
-  listProd="<Select name='prodDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  listProd="<Select name='prodDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choix--</OPTION>";
   for (size_t i = 0; i < devices.size(); i++) 
   {
   
@@ -5073,7 +5839,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   }
   listProd +="</select>";
 
-  ListGaz="<Select name='gazDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  ListGaz="<Select name='gazDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choix--</OPTION>";
   for (size_t i = 0; i < devices.size(); i++) 
   {
   
@@ -5096,7 +5862,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   }
   ListGaz +="</select>";
 
-  ListWater="<Select name='waterDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  ListWater="<Select name='waterDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choix--</OPTION>";
   for (size_t i = 0; i < devices.size(); i++) 
   {
   
@@ -5121,6 +5887,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
 
   result.replace("{{selectDevicesAction}}", listDevicesAction);
   result.replace("{{selectDevices}}", listLinky);
+  result.replace("{{shon}}", String(ConfigGeneral.HouseSurface));
   result.replace("{{tarifAbo}}", String(ConfigGeneral.tarifAbo));
   result.replace("{{tarifCSPE}}", String(ConfigGeneral.tarifCSPE));
   result.replace("{{tarifCTA}}", String(ConfigGeneral.tarifCTA));
@@ -5186,7 +5953,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_CONFIG_GAZ);
+  //result += FPSTR(HTTP_CONFIG_GAZ);
   result+=footer();
   result += F("</html>");
 
@@ -5194,7 +5961,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
-  list="<Select name='gazDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  list="<Select name='gazDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choix--</OPTION>";
   String str = "";
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
@@ -5244,7 +6011,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_CONFIG_WATER);
+ // result += FPSTR(HTTP_CONFIG_WATER);
   result+=footer();
   result += F("</html>");
 
@@ -5252,7 +6019,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
-  list="<Select name='waterDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choice--</OPTION>";
+  list="<Select name='waterDevice' class='form-select form-select-lg mb-3' aria-label='.form-select-lg example'><OPTION value=''>--Choix--</OPTION>";
   String str = "";
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
@@ -5360,13 +6127,13 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
     result.replace("{{displayWebPushAuth}}","display:none;");
   }
 
-  String error ="Error : ";
+  String error ="Erreur : ";
   if (request->arg("error").toInt() > 0)
   {
     if ((request->arg("error").toInt() & 4) == 4)
     {
       result.replace("{{urlborder}}", "border:1px solid red;");
-      error = error+"Please add an url to the server HTTP. <br>";
+      error = error+"Serveur HTTP vide. <br>";
       
     }else{
       result.replace("{{urlborder}}", "");
@@ -5375,7 +6142,7 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
     if ((request->arg("error").toInt() & 2) == 2)
     {
       result.replace("{{userborder}}", "border:1px solid red;");
-      error = error+"Please add an username.<br>";
+      error = error+"Identifiant manquant.<br>";
     }else{
       result.replace("{{userborder}}", "");
     }
@@ -5383,7 +6150,7 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
     if ((request->arg("error").toInt() & 1) == 1)
     {
       result.replace("{{passborder}}", "border:1px solid red;");
-      error = error + "Please verify the password length >= 4 characters.<br>";
+      error = error + "Mot de passe trop court >= 4 caractères.<br>";
     }else{
       result.replace("{{passborder}}", "");
     }
@@ -5465,13 +6232,13 @@ void handleConfigUdpClient(AsyncWebServerRequest *request)
     result.replace("{{customUDPJson}}", "");
   }
 
-  String error ="Error : ";
+  String error ="Erreur : ";
   if (request->arg("error").toInt() > 0)
   {
     if ((request->arg("error").toInt() & 2) == 2)
     {
       result.replace("{{urlborder}}", "border:1px solid red;");
-      error = error+"Please add an url to the server UDP. <br>";
+      error = error+"Serveur UDP manquant. <br>";
       
     }else{
       result.replace("{{urlborder}}", "");
@@ -5480,7 +6247,7 @@ void handleConfigUdpClient(AsyncWebServerRequest *request)
     if ((request->arg("error").toInt() & 1) == 1)
     {
       result.replace("{{portborder}}", "border:1px solid red;");
-      error = error+"Please add an UDP port.<br>";
+      error = error+"Port UDP manquant.<br>";
     }else{
       result.replace("{{portborder}}", "");
     }
@@ -5510,7 +6277,7 @@ void handleConfigWifi(AsyncWebServerRequest *request)
 
   if (request->arg("error").toInt() > 0)
   {
-    result.replace("{{error}}", "STA Error : please verify the SSID and/or your password length >= 8 characters");
+    result.replace("{{error}}", "Erreur STA : Vérifier le SSID et le mot de passe (Taille >= 8 caractères)");
     if ((request->arg("error").toInt() & 1) == 1)
     {
       result.replace("{{passborder}}", "border:1px solid red;");
@@ -5531,7 +6298,7 @@ void handleConfigWifi(AsyncWebServerRequest *request)
 
   if (request->arg("ipError").toInt() >0 )
   {
-    result.replace("{{ipError}}", "IP Error : Ip Address format not ok");
+    result.replace("{{ipError}}", "Erreur IP : Le format de l'adresse IP n'est pas correcte");
     if ((request->arg("ipError").toInt() & 1) == 1)
     {
       result.replace("{{ipborder}}", "border:1px solid red;");
@@ -5750,7 +6517,7 @@ void handleReboot(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h4>Reboot ...</h4>");
+  result += F("<h4>Redémarrage ...</h4>");
   result = result + F("</body>");
   result+=footer();
   result += F("</html>");
@@ -5936,7 +6703,7 @@ void handleDoRestore(AsyncWebServerRequest *request,
     if (LittleFS.exists(tmpPath)) LittleFS.remove(tmpPath);
     request->_tempFile = LittleFS.open(tmpPath, "w+");
     log_i("Upload start");
-    events.send("Downloading ...", "updateStatusManuel");
+    events.send("Téléchargement ...", "updateStatusManuel");
   }
   // écrire chunk dans le .tar temporaire
   request->_tempFile.write(data, len);
@@ -5944,7 +6711,7 @@ void handleDoRestore(AsyncWebServerRequest *request,
     request->_tempFile.close();
     events.send("Installation ...", "updateStatusManuel");
     untarApplyAndRestore(tmpPath);
-    events.send("Rebooting ...", "updateStatusManuel");
+    events.send("Redémarrage ...", "updateStatusManuel");
 
     executeReboot=true;
     
@@ -5975,7 +6742,7 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size
   }
 
   if (final) {
-    AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "Please wait while the device reboots");
+    AsyncWebServerResponse *response = request->beginResponse(302, "text/plain", "Attendre pendant le redémarrage");
     response->addHeader("Refresh", "20");  
     response->addHeader("Location", "/");
     request->send(response);
@@ -6550,9 +7317,9 @@ void handleDebugFiles(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete</button>");
+  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
   result += F("</div>");
-  result += F("<button type='submit' class='btn btn-danger mb-2' name='deleteAll' value='deleteAll' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete ALL</button>");
+  result += F("<button type='submit' class='btn btn-danger mb-2' name='deleteAll' value='deleteAll' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Tout supprimer</button>");
 
   result += F("</Form>");
   result += F("</div>");
@@ -6612,8 +7379,8 @@ void handleFSbrowserBackup(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' class='btn btn-warning mb-2' name='save' value='save'>Save</button>&nbsp;");
-  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete</button>");
+  result += F("<button type='submit' class='btn btn-warning mb-2' name='save' value='save'>Enregistrer</button>&nbsp;");
+  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
   result += F("</div>");
   result += F("</Form>");
   result += F("</div>");
@@ -6634,7 +7401,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("<h4>Devices list files</h4>");
-  result += F("<div align='right'><a href='/createDevice' class='btn btn-primary mb-2'>+ New</a></div>");
+  result += F("<div align='right'><a href='/createDevice' class='btn btn-primary mb-2'>+ Nouveau</a></div>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -6673,8 +7440,8 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' class='btn btn-warning mb-2' name='save' value='save'>Save</button>&nbsp;");
-  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete</button>");
+  result += F("<button type='submit' class='btn btn-warning mb-2' name='save' value='save'>Enregistrer</button>&nbsp;");
+  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
   result += F("</div>");
   result += F("</Form>");
   result += F("</div>");
@@ -6731,7 +7498,7 @@ void handleHistory(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("<h4>History</h4>");
-  result += F("<div align='right'><a href='/createHistory' class='btn btn-primary mb-2'>+ New</a></div>");
+  result += F("<div align='right'><a href='/createHistory' class='btn btn-primary mb-2'>+ Nouveau</a></div>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -6770,8 +7537,8 @@ void handleHistory(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Save</button>&nbsp;");
-  result += F("<button type='submit' name='delete' value='delete' class='btn btn-danger mb-2' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete</button>");
+  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
+  result += F("<button type='submit' name='delete' value='delete' class='btn btn-danger mb-2' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
   result += F("</div>");
   result += F("</Form>");
 
@@ -6806,7 +7573,7 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("<h4>Templates</h4>");
-  result += F("<div align='right'><a href='/createTemplate' class='btn btn-primary mb-2'>+ New</a></div>");
+  result += F("<div align='right'><a href='/createTemplate' class='btn btn-primary mb-2'>+ Nouveau</a></div>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -6845,8 +7612,8 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Save</button>&nbsp;");
-  result += F("<button type='submit' name='delete' value='delete' class='btn btn-danger mb-2' onClick=\"if (confirm('Are you sure ?')==true){return true;}else{return false;};\">Delete</button>");
+  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
+  result += F("<button type='submit' name='delete' value='delete' class='btn btn-danger mb-2' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
   result += F("</div>");
   result += F("</Form>");
 
@@ -6868,7 +7635,7 @@ void handleRules(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h4>Rules</h4>");
+  result += F("<h4>Règles</h4>");
   result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
   result += F("      <div class='navbar-header'>");
   result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
@@ -6913,7 +7680,7 @@ void handleRules(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Save</button>&nbsp;");
+  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
   result += F("</div>");
   result += F("</Form>");
 
@@ -7185,7 +7952,7 @@ void handleJavascript(AsyncWebServerRequest *request)
   result += F("</textarea>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Save</button>");
+  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Enregistrer</button>");
   result += F("</div>");
   result += F("</Form>");
   result += F("</div>");
@@ -7444,7 +8211,7 @@ void handleScanNetwork(AsyncWebServerRequest * request)
     } else if (ConfigGeneral.scanNumber > 0) {
       
       result = "<select name='WIFISSID' onChange='updateSSID(this.value);'>";
-      result += "<OPTION value=''>--Choose SSID--</OPTION>";
+      result += "<OPTION value=''>--Choix SSID--</OPTION>";
       for (int i = 0; i < ConfigGeneral.scanNumber; ++i) {
             result += "<OPTION value='";
             result +=WiFi.SSID(i);
@@ -7561,7 +8328,7 @@ void handlePermitJoin(AsyncWebServerRequest *request)
 
   PrioritycommandList->push(trame);
   //commandList->push(trame);
-  alertList->push(Alert{"Permit Join : 30 sec", 2});
+  alertList->push(Alert{"Jumelage actif : 30 sec", 2});
   request->send(200, F("text/html"), "");
 }
 
@@ -7705,6 +8472,11 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
   {
     strlcpy(ConfigGeneral.ZLinky, request->arg("linkyDevice").c_str(), sizeof(ConfigGeneral.ZLinky));
     config_write(path, "ZLinky", String(request->arg("linkyDevice")));
+  }
+  if (request->arg("shon").toInt() >= 0)
+  {
+    ConfigGeneral.HouseSurface = request->arg("shon").toInt();
+    config_write(path, "shon", String(request->arg("shon")));
   }
   if (request->arg("tarifAbo").toFloat() >= 0)
   {
@@ -8879,6 +9651,19 @@ void handleLoadDatasTrend(AsyncWebServerRequest *request)
   Time = request->arg(2);
 
   result = getDatasPower(IEEE, Attribute, Time);
+
+  request->send(200, F("text/html"), result);
+}
+
+void handleLoadTotalEnergy(AsyncWebServerRequest *request)
+{
+
+  String IEEE, Attribute, Time, result;
+  int i = 0;
+  IEEE = request->arg(i);
+  Time = request->arg(1);
+
+  result = getTotalEnergy(IEEE, Time);
 
   request->send(200, F("text/html"), result);
 }
@@ -10864,6 +11649,17 @@ void initWebServer()
     }
     handleLoadDatasTrend(request); 
   });
+
+  serverWeb.on("/loadTotalEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleLoadTotalEnergy(request); 
+  });
+
   serverWeb.on("/loadPowerChart", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
