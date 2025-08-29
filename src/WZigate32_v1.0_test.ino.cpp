@@ -1415,6 +1415,8 @@ bool loadConfigGeneral() {
 
   ConfigGeneral.epochTime = doc["epoch"].as<long>();
 
+  ConfigGeneral.HouseSurface=(int)doc["shon"];
+ 
   strlcpy(ConfigGeneral.tarifAbo, doc["tarifAbo"] | "0", sizeof(ConfigGeneral.tarifAbo));
   strlcpy(ConfigGeneral.tarifCTA, doc["tarifCTA"] | "0", sizeof(ConfigGeneral.tarifCTA));
   strlcpy(ConfigGeneral.tarifCSPE, doc["tarifCSPE"] | "0", sizeof(ConfigGeneral.tarifCSPE));
