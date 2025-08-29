@@ -8,6 +8,7 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time);
 String getLastValuePower(String IEEE,String Attribute, String Time);
 String getTrendPower(String IEEE,String Attribute, String Time);
 String getDatasPower(String IEEE,String Attribute, String Time);
+String   getTotalEnergy(String IEEE, String Time);
 String getTrendEnergyEuros(String IEEE);
 String getPowerGaugeTimeDay(String IEEE, String Attribute);
 String getPowerDatas( String IEEE, String type, String Attribute, String time);

@@ -635,7 +635,7 @@ String getLinkyDatas(String IEEE)
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
         result+=F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-upc-scan' viewBox='0 0 16 16'>");
         result+=F("<path d='M1.5 1a.5.5 0 0 0-.5.5v3a.5.5 0 0 1-1 0v-3A1.5 1.5 0 0 1 1.5 0h3a.5.5 0 0 1 0 1zM11 .5a.5.5 0 0 1 .5-.5h3A1.5 1.5 0 0 1 16 1.5v3a.5.5 0 0 1-1 0v-3a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 1-.5-.5M.5 11a.5.5 0 0 1 .5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 1 0 1h-3A1.5 1.5 0 0 1 0 14.5v-3a.5.5 0 0 1 .5-.5m15 0a.5.5 0 0 1 .5.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a.5.5 0 0 1 0-1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 1 .5-.5M3 4.5a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0z'/>");
-        result+="</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Serial Number)</i></span>";
+        result+="</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Numéro de série)</i></span>";
       }
       tmp = String(strtol(device->getValue(std::string("FF66"),std::string("768")).c_str(),0,16));
       if (tmp !="")
@@ -652,7 +652,7 @@ String getLinkyDatas(String IEEE)
         result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
         result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
         result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
-        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Subscription)</i></span>";
+        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Abonnement)</i></span>";
       }
       tmp = String(device->getValue(std::string("FF66"),std::string("16")));
       if (tmp!="")
@@ -661,7 +661,7 @@ String getLinkyDatas(String IEEE)
         result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-layout-text-window' viewBox='0 0 16 16'>");
         result+= F("<path d='M3 6.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m0 3a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 0 1h-5a.5.5 0 0 1-.5-.5m.5 2.5a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1z'/>");
         result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
-        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Tariff Period)</i></span>";
+        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Période tarifaire)</i></span>";
       }
       tmp = String(device->getValue(std::string("FF66"),std::string("512")));
       if (tmp!="")
@@ -671,7 +671,7 @@ String getLinkyDatas(String IEEE)
         result+= F("<path d='M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z'/>");
         result+= F("<path d='M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z'/>");
         result+= F("<path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5'/>");      
-        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Current price)</i></span>";
+        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Tarif en cours)</i></span>";
       }
       tmp = String(device->getValue(std::string("FF66"),std::string("32")));
       if (tmp!="")
@@ -681,7 +681,7 @@ String getLinkyDatas(String IEEE)
         result+= F("<path d='M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z'/>");
         result+= F("<path d='M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z'/>");
         result+= F("<path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5'/>");      
-        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Current price)</i></span>";
+        result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Tarif en cours)</i></span>";
       }
 
       tmp = String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16));
@@ -692,9 +692,9 @@ String getLinkyDatas(String IEEE)
         result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
         if ((modeTmp==0) || (modeTmp==2))
         {
-          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Subscribed intensity)</i></span>";
+          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Intensité souscrite)</i></span>";
         }else{
-          result+= "</svg><br><strong>"+tmp+" kVA</strong><br><i style='font-size:12px;'>(Subscribed power)</i></span>";
+          result+= "</svg><br><strong>"+tmp+" kVA</strong><br><i style='font-size:12px;'>(Puissance souscrite)</i></span>";
         }
         
       }
@@ -710,9 +710,9 @@ String getLinkyDatas(String IEEE)
           
           if (modeTmp==0)
           {
-            result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity)</i></span>";
+            result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Intensité Max)</i></span>";
           }else if (modeTmp==2){
-            result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity Ph.1)</i></span>";
+            result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Intensité Max Ph.1)</i></span>";
           }
           
         }
@@ -726,7 +726,7 @@ String getLinkyDatas(String IEEE)
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
           result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
           result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>"); 
-          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity Ph.2)</i></span>";
+          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Intensité Max Ph.2)</i></span>";
         }
         
       }
@@ -739,7 +739,7 @@ String getLinkyDatas(String IEEE)
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
           result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
           result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
-          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Max Intensity Ph.3)</i></span>";
+          result+= "</svg><br><strong>"+tmp+" A</strong><br><i style='font-size:12px;'>(Intensité Max Ph.3)</i></span>";
           
           
         }
@@ -753,7 +753,7 @@ String getLinkyDatas(String IEEE)
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
           result+= F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' class='bi bi-lightning-charge-fill' viewBox='0 0 16 16'>");
           result+= F("<path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/>");
-          result+= "</svg><br><strong>"+tmp+" W</strong><br><i style='font-size:12px;'>(Max Triphased Power)</i></span>";
+          result+= "</svg><br><strong>"+tmp+" W</strong><br><i style='font-size:12px;'>(Puissance triphasé max)</i></span>";
         }
         
       }
@@ -1293,6 +1293,157 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
   return result;
 }
 
+String getTotalEnergy(String IEEE, String Time)
+{
+  // Trouver le device
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d == nullptr) {
+      log_e("Warning: NULL pointer found in devices vector\n");
+      continue;
+    }
+    try {
+      if (d->getDeviceID() == IEEE) { 
+        dev = d; 
+        break; 
+      }
+    } catch (...) {
+      log_e("Exception caught while accessing device ID");
+      continue;
+    }
+  }
+  if (!dev) {
+    return "";
+  }
+
+  // Sélectionner la période
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+  if      (Time=="hour")  pd=&eh.hours;
+  else if (Time=="day")   pd=&eh.days;
+  else if (Time=="month") pd=&eh.months;
+  else if (Time=="year")  pd=&eh.years;
+  else                      return "";
+
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+
+  long TotalWh =0;
+  // Calcul de la somme par section
+  std::map<int, long> sums;
+  std::map<int, int> attrib;
+  for (auto &kv : pd->graph) {
+    ValueMap &vm = kv.second;   
+    for (size_t i = 2; i < arrayLength; ++i) {
+      int attrId = section[i].toInt();
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sums[(i-1)] += itv->second;
+        TotalWh += itv->second;
+        attrib[(i-1)] = attrId;
+      }
+    }
+  }
+
+  //Production
+  long sumProd=0;
+  if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
+  {
+    DeviceData* devProd = nullptr;
+    for (auto* d : devices) {
+      if (d == nullptr) {
+        log_e("Warning: NULL pointer found in devices vector\n");
+        continue;
+      }
+      if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
+    }
+
+    DeviceEnergyHistory& ehProd = devProd->energyHistory;
+    PeriodData* pdProd = nullptr;
+    if      (Time=="hour")  pdProd=&ehProd.hours;
+    else if (Time=="day")   pdProd=&ehProd.days;
+    else if (Time=="month") pdProd=&ehProd.months;
+    else if (Time=="year")  pdProd=&ehProd.years;
+    else                      return "";
+
+    
+    for (auto &kv : pdProd->graph) {
+      ValueMap &vm = kv.second;   
+      int attrId = 1;
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sumProd += itv->second;
+      }
+    }
+
+  }
+
+  //GAZ
+  long sumGaz=0;
+  if ((strcmp(ConfigGeneral.Gaz,"")!=0))
+  {
+    DeviceData* devGaz = nullptr;
+    for (auto* d : devices) {
+      if (d == nullptr) {
+        log_e("Warning: NULL pointer found in devices vector\n");
+        continue;
+      }
+      try{
+        if (d->getDeviceID() == ConfigGeneral.Gaz) {
+          devGaz = d;
+          break; 
+        }
+      }catch (...){
+        log_e("Exception caught while accessing device ID\n");
+        continue;
+      }
+    }
+    try {
+      DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
+      PeriodData* pdGaz = nullptr;
+      if      (Time=="hour")  pdGaz=&ehGaz.hours;
+      else if (Time=="day")   pdGaz=&ehGaz.days;
+      else if (Time=="month") pdGaz=&ehGaz.months;
+      else if (Time=="year")  pdGaz=&ehGaz.years;
+      else                      return "";
+
+      
+      for (auto &kv : pdGaz->graph) {
+        ValueMap &vm = kv.second;   
+        int attrId = 0;
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end()) {       
+          sumGaz += itv->second * ConfigGeneral.coeffGaz;
+        }
+      }
+    }catch (...) {
+      log_e("Exception in getDatasPower\n");
+      return "";
+    }
+
+  }
+
+  //calcul kWh/m²/an
+  float TotalEnergy=0;
+  int SurfaceEnergy=0;
+  float TimeEnergy=0;
+  if (ConfigGeneral.HouseSurface>0)
+  {
+    TotalEnergy = (TotalWh+sumProd+sumGaz) / 1000;
+    
+    if      (Time=="hour")  TimeEnergy=TotalEnergy * 365;
+    else if (Time=="day")   TimeEnergy=TotalEnergy * 12;
+    else if (Time=="month") TimeEnergy=TotalEnergy ;
+    else if (Time=="year")  TimeEnergy=TotalEnergy ;
+
+
+    SurfaceEnergy = TimeEnergy / ConfigGeneral.HouseSurface;
+  }
+  
+
+  return String(SurfaceEnergy);
+
+}
+
 String getDatasPower(String IEEE,String Attribute, String Time)
 {
   // Trouver le device
@@ -1426,7 +1577,7 @@ String getDatasPower(String IEEE,String Attribute, String Time)
 
 
   String color[9] = { "#d35400","#2980b9","#154360","#7f8c8d","#000000","#e74c3c","#c0392b","#f5b041","#145a32"};
-  String result = "<h5>Legend</h5>";
+  String result = "<h5>Répartition</h5>";
   for (auto &p : sums) {
     result += "<div class='row'><div class='col-1'><div style=\"border:1px solid grey;width:10px;height:15px;background-color:";
     if (p.first <= 10)
@@ -1583,7 +1734,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         trendColor="grey";
         op="";
       }
-      result +="<h5>Power</h5><div style='text-align:center;'>";
+      result +="<h5>Puiss. App.</h5><div style='text-align:center;'>";
         result +="<div style='float:left;display:inline-block;width:64px;'>";
         result += "<svg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>";
           result += "<rect width='100' height='100' rx='20' ry='20' fill='"+trendColor+"'/>";
@@ -1601,7 +1752,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         result+="</span></div>";   
       result += "</div>";
 
-      result += "<br><h5>History</h5>";
+      result += "<br><h5>Historique</h5>";
       result += "<div class='row'>";
         result += "<div class='col-12'>";
           result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>  <text x='8' y='10' font-size='10' fill='currentColor' text-anchor='middle' dominant-baseline='middle'>-1</text></svg>";
@@ -1883,7 +2034,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
       op="";
       trend=0;
     }
-    result +="<div style='text-align:center;'>";
+    result +="<h5>Consommation</h5><div style='text-align:center;'>";
     result +="<div style='float:left;display:inline-block;width:64px;'>";
     result += "<svg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>";
       result += "<rect width='100' height='100' rx='20' ry='20' fill='"+trendColor+"'/>";
