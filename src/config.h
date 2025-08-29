@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.5"
+#define VERSION "v2.5a"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -90,6 +90,7 @@ struct ConfigGeneralStruct {
   char Gaz[20];
   char Water[20];
   int LinkyMode;
+  int HouseSurface;
   int powerMaxDatas;
   char ntpserver[50];
   int timeoffset;
