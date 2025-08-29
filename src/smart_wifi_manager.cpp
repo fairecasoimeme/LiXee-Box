@@ -480,7 +480,7 @@ void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) 
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             setState(WIFI_STATE_DISCONNECTED);
             notifyEvent("WiFi disconnected (reason: " + String(info.wifi_sta_disconnected.reason) + ")");
-            
+            ConfigSettings.connectedWifiSta = false;
             // Auth failed = redémarrer provisioning
             if (info.wifi_sta_disconnected.reason == 201) {
                 //DEBUG_PRINTLN("🔐 Authentication failed, starting provisioning...");
@@ -492,11 +492,13 @@ void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) 
         case ARDUINO_EVENT_WIFI_STA_GOT_IP:
             setState(WIFI_STATE_CONNECTED);
             notifyEvent("IP obtained: " + WiFi.localIP().toString());
+            ConfigSettings.connectedWifiSta = true;
             break;
             
         case ARDUINO_EVENT_WIFI_STA_LOST_IP:
             setState(WIFI_STATE_FAILED);
             notifyEvent("IP lost");
+            ConfigSettings.connectedWifiSta = false;
             break;
             
         default:
