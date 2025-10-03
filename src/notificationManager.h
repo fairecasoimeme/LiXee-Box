@@ -1,0 +1,55 @@
+#ifndef NOTIFICATION_MANAGER_H
+#define NOTIFICATION_MANAGER_H
+
+#include <Arduino.h>
+#include <ArduinoJson.h>
+#include <LittleFS.h>
+#include <vector>
+#include "config.h"
+
+class NotificationManager {
+private:
+  std::vector<Notification*> notifications; // Vecteur en mémoire standard
+  const char* jsonFilePath;
+  size_t maxNotifications;
+
+public:
+  // Constructeur
+  NotificationManager(const char* filePath = "/config/notifications.json", size_t maxSize = 100);
+  
+  // Destructeur
+  ~NotificationManager();
+  
+  // Initialisation
+  bool begin();
+  
+  // Gestion des notifications
+  bool addNotification(const String& title, const String& message, int type = 0);
+  bool addNotification(const Notification& notification);
+  
+  // Accès aux données
+  size_t getCount() const;
+  Notification* getNotification(size_t index) const;
+  std::vector<Notification*> getNotifications(size_t offset = 0, size_t limit = 10) const;
+  
+  // Gestion des états
+  bool markAsViewed(size_t index);
+  bool markAllAsViewed(); 
+  bool deleteNotification(size_t index);
+  void clearAll();
+  
+  // Persistance
+  bool saveToFile();
+  bool loadFromFile();
+  
+  // Export JSON
+  String toJson(size_t offset = 0, size_t limit = 10) const;
+  String getStatsJson() const;
+  
+private:
+  void cleanupOldNotifications();
+  void* allocatePSRAM(size_t size);
+  void freePSRAM(void* ptr);
+};
+
+#endif
