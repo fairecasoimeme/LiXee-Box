@@ -47,8 +47,13 @@ extern "C" {
 #include "energyHistory.h"
 
 #include "smart_wifi_manager.h"
+#include "notificationManager.h"
 
 SmartWiFiManager smartWiFi;
+
+// Gestionnaire de notifications
+NotificationManager notificationManager;
+bool oldProdZero = false;
 
 bool wifiServicesStarted = false;
 bool zigbeeInitialized = false;
@@ -59,6 +64,7 @@ bool executeReboot=false;
 bool updatePending = false;
 
 #include <TaskScheduler.h>
+
 
 
 // application config
@@ -105,6 +111,7 @@ String modeWiFi="STA";
 
 extern int ZiGateMode;
 extern int TimedFiFo;
+extern String section[12];
 
 #define BAUD_RATE 115200
 #define TCP_LISTEN_PORT 9999
@@ -164,26 +171,7 @@ Scheduler runner;
 
 void initCircularBuffer()
 {
-  /*commandList = (CircularBuffer<Packet, 100>*) ps_malloc(sizeof(CircularBuffer<Packet, 100>));
-  PrioritycommandList = (CircularBuffer<Packet, 10>*) ps_malloc(sizeof(CircularBuffer<Packet, 10>));
-  PriorityQueuePacket= (CircularBuffer<SerialPacket, 30>*) ps_malloc(sizeof(CircularBuffer<SerialPacket, 30>));
-  alertList = (CircularBuffer<Alert, 10>*) ps_malloc(sizeof(CircularBuffer<Alert, 10>));
-  notifList = (CircularBuffer<Notification, 10>*) ps_malloc(sizeof(CircularBuffer<Notification, 10>));
-  deviceList = (CircularBuffer<Device, 50>*) ps_malloc(sizeof(CircularBuffer<Device, 50>));
-  QueuePacket = (CircularBuffer<SerialPacket,300>*) ps_malloc(sizeof(CircularBuffer<SerialPacket,300>));
 
-  if (!QueuePacket || !commandList || !PrioritycommandList || !PriorityQueuePacket || !alertList || !notifList|| !deviceList) {
-      DEBUG_PRINTLN("Erreur lors de l'allocation de CircularBuffer en PSRAM!");
-      return;
-  }
-  // Initialiser le buffer en utilisant le constructeur de placement
-  new (commandList) CircularBuffer<Packet, 100>();
-  new (PrioritycommandList) CircularBuffer<Packet, 10>();
-  new (PriorityQueuePacket) CircularBuffer<SerialPacket, 30>();
-  new (alertList) CircularBuffer<Alert, 10>();
-  new (notifList) CircularBuffer<Notification, 10>();
-  new (deviceList) CircularBuffer<Device, 50>();
-  new (QueuePacket) CircularBuffer<SerialPacket,300>();*/
   commandList = (CircularBuffer<Packet,100>*)heap_caps_malloc(sizeof(*commandList), MALLOC_CAP_SPIRAM);
   new(commandList) CircularBuffer<Packet,100>();
   PrioritycommandList = (CircularBuffer<Packet,70>*)heap_caps_malloc(sizeof(*PrioritycommandList), MALLOC_CAP_SPIRAM);
@@ -206,6 +194,138 @@ void delayRebootCallBack()
   DEBUG_PRINTLN("reboot...");
   ESP.restart();
 }
+
+bool ScanDevicesToRAZ() {
+  // Récupérer l’heure courante
+  time_t now = time(nullptr);
+  struct tm nowTm;
+  localtime_r(&now, &nowTm);
+
+  // Parcours de tous les devices
+  for (DeviceData* device : devices) {
+      String model = device->getInfo().model;
+      
+      // On ne gère que ZLinky_TIC et ZiPulses
+      if (model != "ZLinky_TIC" && model != "ZiPulses") 
+          continue;
+      // RAZ périodiques
+      if (Minute == "00") {
+        for (const auto &graphEntry : device->energyHistory.hours.graph) {
+          const PsString &Key = graphEntry.first;
+          const ValueMap &valMap   = graphEntry.second;
+          if (strcmp(Hour.c_str(),Key.c_str())==0)
+          {
+            for (const auto &attrPair : valMap.attributes) {
+              int attrId   = attrPair.first;
+              device->energyHistory.hours.graph[PsString(Hour.c_str())].attributes[attrId] = 0;
+              device->energyHistory.hours.trend.attributes[attrId] = 0;
+              device->energyHistory.hours.data[PsString(Hour.c_str())].attributes[attrId] = device->energyHistory.hours.last.attributes[attrId];
+            }
+          }
+        }
+      }
+
+      if ((Hour == "00") && (Minute == "00")) {
+        //Notification Journalière
+        if (ConfigNotif.OverBudget)
+        {
+          int arrayLength = sizeof(section) / sizeof(section[0]);
+          long TotalWh =0;
+          for (auto &kv : device->energyHistory.days.graph) {
+            ValueMap &vm = kv.second;   
+            for (size_t i = 2; i < arrayLength; ++i) {
+              int attrId = section[i].toInt();
+              auto itv = vm.attributes.find(attrId);
+              if (itv != vm.attributes.end()) {       
+                TotalWh += itv->second;
+              }
+            }
+          }     
+          if (ConfigNotif.OverBudgetThreshold)
+          {
+            if ( TotalWh >  getkWhBudget(String(ConfigGeneral.ZLinky), "day", ConfigNotif.OverBudgetThreshold))
+            {
+              if (!notifList->isFull()) {
+                  notifList->push(Notification{"💸🚨Dépassement de budget", "Attention la consommation de ce jour dépasse votre budget prévu", FormattedDate, 3, 0});
+              } else {
+                  notifList->shift();
+                  notifList->push(Notification{"💸🚨Dépassement de budget", "Attention la consommation de ce jour dépasse votre budget prévu", FormattedDate, 3, 0});
+              }
+              notificationManager.addNotification("💸🚨Dépassement de budget", "Attention la consommation de ce jour dépasse votre budget prévu", 0);
+            }
+          }
+        }
+
+        for (const auto &graphEntry : device->energyHistory.days.graph) {
+          const PsString &Key = graphEntry.first;
+          const ValueMap &valMap   = graphEntry.second;
+          if (strcmp(Day.c_str(),Key.c_str())==0)
+          {
+            for (const auto &attrPair : valMap.attributes) {
+              int attrId   = attrPair.first;
+              device->energyHistory.days.graph[PsString(Day.c_str())].attributes[attrId] = 0;
+            }
+          }
+        }
+      }
+
+      if ((Day == "01") && (Hour == "00") && (Minute == "00")) {
+        for (const auto &graphEntry : device->energyHistory.months.graph) {
+          const PsString &Key = graphEntry.first;
+          const ValueMap &valMap   = graphEntry.second;
+          if (strcmp(Month.c_str(),Key.c_str())==0)
+          {
+            for (const auto &attrPair : valMap.attributes) {
+              int attrId   = attrPair.first;
+              device->energyHistory.months.graph[PsString(Month.c_str())].attributes[attrId] = 0;
+            }
+          }
+        }
+      }
+
+      // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
+      time_t lastSeen = device->getLastSeenEpoch();
+
+      if ((now - lastSeen) > 3600) {
+        
+        String textError = "device : "+device->getDeviceID()+" - Pas vu depuis plus de 1 heure";
+        addDebugLog(textError);
+
+        device->setValue(std::string("0B04"),std::string("1295"),std::string("0"));
+        device->setValue(std::string("0B04"),std::string("2319"),std::string("0"));
+        device->setValue(std::string("0B04"),std::string("2575"),std::string("0"));
+
+        addMeasurement(device->powerHistory,1295,0);
+        addMeasurement(device->powerHistory,2319,0);
+        addMeasurement(device->powerHistory,2575,0);
+       
+        if (!device->powerHistory.stats[1295].last) {
+          device->powerHistory.stats[1295].trend = 0;
+        } else {
+          device->powerHistory.stats[1295].trend = 0 - device->powerHistory.stats[1295].last;
+        }
+        device->powerHistory.stats[1295].last = 0;
+
+        if (!device->powerHistory.stats[2319].last) {
+          device->powerHistory.stats[2319].trend = 0;
+        } else {
+          device->powerHistory.stats[2319].trend = 0 - device->powerHistory.stats[2319].last;
+        }
+        device->powerHistory.stats[2319].last = 0;
+
+        if (!device->powerHistory.stats[2575].last) {
+          device->powerHistory.stats[2575].trend = 0;
+        } else {
+          device->powerHistory.stats[2575].trend = 0 - device->powerHistory.stats[2575].last;
+        }
+        device->powerHistory.stats[2575].last = 0;
+      }
+  }
+
+  return true;
+}
+
+
 
 void scanCallback()
 {
@@ -238,6 +358,69 @@ DEBUG_PRINTLN(F("config_write OK"));
   {
     rulesManager.applyRules();
   }
+
+  // Notifications
+
+  if (ConfigNotif.ProdZero)
+  {
+    //Production
+    long sumProd=0;
+    if (strcmp(ConfigGeneral.Production,"")!=0)
+    {
+      DeviceData* devProd = nullptr;
+      for (auto* d : devices) {
+        if (d == nullptr) {
+          log_e("Warning: NULL pointer found in devices vector\n");
+          continue;
+        }
+        if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
+      }
+
+      DeviceEnergyHistory& ehProd = devProd->energyHistory;
+      PeriodData* pdProd = nullptr;
+      pdProd=&ehProd.hours;
+      
+      for (auto &kv : pdProd->graph) {
+        ValueMap &vm = kv.second;   
+        int attrId = 1;
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end()) {       
+          sumProd += itv->second;
+        }
+      }
+
+    }
+
+    if (sumProd == 0)
+    {
+      if (!oldProdZero)
+      {
+        oldProdZero=true;
+        String text = "Pas de production photovoltaïque sur 24H";
+        if (!notifList->isFull())
+        {
+          notifList->push(Notification{" ☀️⚡Production nulle",text,FormattedDate,3,0});
+          notificationManager.addNotification(
+            "☀️⚡Production nulle", 
+            text, 
+            1
+          );
+        }else{
+          notifList->shift();
+          notificationManager.addNotification(
+            "☀️⚡Production nulle", 
+            text, 
+            1
+          );
+          notifList->push(Notification{"Production nulle",text,FormattedDate,3,0});
+        } 
+      }
+    }else{
+      oldProdZero=false;
+    }
+
+  }
+
 
   log_e("Sauvegarde de tous les devices");
   for (auto d : devices) {
@@ -1176,6 +1359,8 @@ void onMqttConnect(bool sessionPresent) {
   DEBUG_PRINTLN(F("Connected to MQTT."));
   DEBUG_PRINT(F("Session present: "));
   DEBUG_PRINTLN(sessionPresent);
+  extern unsigned long lastConnectionTest;
+  lastConnectionTest = millis();
 
 }
 
@@ -1188,9 +1373,11 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   // Sinon, forcer une réinitialisation complète
   mqttClient.disconnect(true); // Force disconnect
 
-  if (WiFi.isConnected()) {
-    xTimerStart(mqttReconnectTimer, 0);
+  // Tentative de reconnexion seulement si WiFi est connecté
+  if (WiFi.isConnected() && WifiReconnectTimer != NULL) {
+      xTimerStart(mqttReconnectTimer, 0);
   }
+
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
@@ -1477,6 +1664,17 @@ bool loadConfigGeneral() {
   ConfigNotif.PowerOutage = (int)doc["PowerOutage"];
   ConfigNotif.PriceChange = (int)doc["PriceChange"];
   ConfigNotif.SubscribedPower = (int)doc["SubscribedPower"];
+  ConfigNotif.ProdSupConso = (int)doc["ProdSupConso"];
+  ConfigNotif.ProdZero = (int)doc["ProdZero"];
+  ConfigNotif.ColorTomorrow = (int)doc["ColorTomorrow"];
+  ConfigNotif.OverBudget = (int)doc["OverBudget"];
+  ConfigNotif.OverBudgetThreshold = (int)doc["OverBudgetThreshold"];
+  ConfigNotif.OverVoltage = (int)doc["OverVoltage"];
+  ConfigNotif.OverVoltageThreshold = (int)doc["OverVoltageThreshold"];
+  ConfigNotif.UnderVoltage = (int)doc["UnderVoltage"];
+  ConfigNotif.UnderVoltageThreshold = (int)doc["UnderVoltageThreshold"];
+  ConfigNotif.PEJP = (int)doc["PEJP"];
+  ConfigNotif.RedColor = (int)doc["RedColor"];
 
   configFile.close();
   return true;
@@ -1940,14 +2138,17 @@ void setup(void)
         return;
     }
 
-    
-
-    
     Serial.println("📊 Memory after WiFi Manager init:");
     Serial.printf("   Free Heap: %u bytes\n", ESP.getFreeHeap());
     Serial.printf("   Free PSRAM: %u bytes\n", ESP.getFreePsram());
     
     Serial.println("✅ Setup complete - entering main loop");
+
+    // Initialisation du manager de notifications
+  if (!notificationManager.begin()) {
+    Serial.println("Erreur: initialisation NotificationManager échouée");
+    return;
+  }
   
 }
 
@@ -2000,8 +2201,11 @@ void monitorSerialSimple() {
     }
 }
 
+static uint32_t maxLoopTime = 0;
+
 void loop(void)
 {
+  unsigned long loopStart = millis();
   esp_task_wdt_reset();
 
   smartWiFi.handleEvents();
@@ -2043,9 +2247,27 @@ void loop(void)
       monitor_heap();
   }
 
-    
-
-  vTaskDelay(10);
+  // DÉLAI ADAPTATIF pour éviter la surcharge CPU
+  unsigned long loopTime = millis() - loopStart;
+  
+  // Surveillance du temps de boucle
+  if (loopTime > maxLoopTime) {
+      maxLoopTime = loopTime;
+  }
+  
+  if (loopTime > 100) {
+      log_w("Slow loop detected: %lu ms", loopTime);
+  }
+  
+  // Délai adaptatif basé sur la charge système
+  uint32_t freeHeap = ESP.getFreeHeap();
+  if (freeHeap < 100000) {
+      vTaskDelay(pdMS_TO_TICKS(50)); // Plus de délai si mémoire faible
+  } else if (loopTime > 50) {
+      vTaskDelay(pdMS_TO_TICKS(20)); // Délai moyen si boucle lente
+  } else {
+      vTaskDelay(pdMS_TO_TICKS(10)); // Délai normal
+  }
 
 }
 
