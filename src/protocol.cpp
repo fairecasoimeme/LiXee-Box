@@ -18,6 +18,8 @@
 extern std::vector<DeviceData*> devices;
 
 extern struct ZigbeeConfig ZConfig;
+extern ConfigNotification ConfigNotif;
+
 
 // Variables globales pour monitoring CRC
 uint32_t lastCrcError = 0;
@@ -26,7 +28,7 @@ extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
 extern CircularBuffer<SerialPacket, 300> *QueuePacket;
 extern CircularBuffer<SerialPacket, 30> *PriorityQueuePacket;
-//extern CircularBuffer<Packet, 10> commandTimedList;
+
 extern CircularBuffer<Alert, 10> *alertList;
 
 extern SemaphoreHandle_t Queue_Mutex ;
@@ -39,7 +41,7 @@ extern String Day;
 extern String Month;
 extern String epochTime;
 extern unsigned long timeLog;
-extern String section[12];
+
 
 //OTA 
 extern uint8_t* au8OTAFile;
@@ -1720,102 +1722,4 @@ bool ScanDeviceToPoll() {
   return true;
 }
 
-bool ScanDevicesToRAZ() {
-  // Récupérer l’heure courante
-  time_t now = time(nullptr);
-  struct tm nowTm;
-  localtime_r(&now, &nowTm);
 
-  // Parcours de tous les devices
-  for (DeviceData* device : devices) {
-      String model = device->getInfo().model;
-      
-      // On ne gère que ZLinky_TIC et ZiPulses
-      if (model != "ZLinky_TIC" && model != "ZiPulses") 
-          continue;
-      // RAZ périodiques
-      if (Minute == "00") {
-        for (const auto &graphEntry : device->energyHistory.hours.graph) {
-          const PsString &Key = graphEntry.first;
-          const ValueMap &valMap   = graphEntry.second;
-          if (strcmp(Hour.c_str(),Key.c_str())==0)
-          {
-            for (const auto &attrPair : valMap.attributes) {
-              int attrId   = attrPair.first;
-              device->energyHistory.hours.graph[PsString(Hour.c_str())].attributes[attrId] = 0;
-              device->energyHistory.hours.trend.attributes[attrId] = 0;
-              device->energyHistory.hours.data[PsString(Hour.c_str())].attributes[attrId] = device->energyHistory.hours.last.attributes[attrId];
-            }
-          }
-        }
-      }
-
-      if ((Hour == "00") && (Minute == "00")) {
-        for (const auto &graphEntry : device->energyHistory.days.graph) {
-          const PsString &Key = graphEntry.first;
-          const ValueMap &valMap   = graphEntry.second;
-          if (strcmp(Day.c_str(),Key.c_str())==0)
-          {
-            for (const auto &attrPair : valMap.attributes) {
-              int attrId   = attrPair.first;
-              device->energyHistory.days.graph[PsString(Day.c_str())].attributes[attrId] = 0;
-            }
-          }
-        }
-      }
-
-      if ((Day == "01") && (Hour == "00") && (Minute == "00")) {
-        for (const auto &graphEntry : device->energyHistory.months.graph) {
-          const PsString &Key = graphEntry.first;
-          const ValueMap &valMap   = graphEntry.second;
-          if (strcmp(Month.c_str(),Key.c_str())==0)
-          {
-            for (const auto &attrPair : valMap.attributes) {
-              int attrId   = attrPair.first;
-              device->energyHistory.months.graph[PsString(Month.c_str())].attributes[attrId] = 0;
-            }
-          }
-        }
-      }
-
-      // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
-      time_t lastSeen = device->getLastSeenEpoch();
-
-      if ((now - lastSeen) > 3600) {
-        
-        String textError = "device : "+device->getDeviceID()+" - Pas vu depuis plus de 1 heure";
-        addDebugLog(textError);
-
-        device->setValue(std::string("0B04"),std::string("1295"),std::string("0"));
-        device->setValue(std::string("0B04"),std::string("2319"),std::string("0"));
-        device->setValue(std::string("0B04"),std::string("2575"),std::string("0"));
-
-        addMeasurement(device->powerHistory,1295,0);
-        addMeasurement(device->powerHistory,2319,0);
-        addMeasurement(device->powerHistory,2575,0);
-       
-        if (!device->powerHistory.stats[1295].last) {
-          device->powerHistory.stats[1295].trend = 0;
-        } else {
-          device->powerHistory.stats[1295].trend = 0 - device->powerHistory.stats[1295].last;
-        }
-        device->powerHistory.stats[1295].last = 0;
-
-        if (!device->powerHistory.stats[2319].last) {
-          device->powerHistory.stats[2319].trend = 0;
-        } else {
-          device->powerHistory.stats[2319].trend = 0 - device->powerHistory.stats[2319].last;
-        }
-        device->powerHistory.stats[2319].last = 0;
-
-        if (!device->powerHistory.stats[2575].last) {
-          device->powerHistory.stats[2575].trend = 0;
-        } else {
-          device->powerHistory.stats[2575].trend = 0 - device->powerHistory.stats[2575].last;
-        }
-        device->powerHistory.stats[2575].last = 0;
-      }
-  }
-
-  return true;
-}

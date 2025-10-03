@@ -15,7 +15,6 @@ uint8_t getChecksum(int type, int len, uint8_t datas[512]);
 void transcode(uint8_t c);
 
 bool ScanDeviceToPoll();
-bool ScanDevicesToRAZ();
 
 String getMacAddress(uint8_t mac[9]);
 String GetMacAdrr(int shortAddr);
