@@ -9,283 +9,307 @@
 #include "mqtt.h"
 #include "device.h"
 #include "energyHistory.h"
+#include <unordered_map>
+#include <unordered_set>
 
+// Déclarations extern (conservées)
 extern std::vector<DeviceData*> devices;
-
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
-
 extern CircularBuffer<Device, 50> *deviceList;
 
-void SimpleMeterManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
-{
-  //String inifile;
-  char value[256];
-  String tmp="";
-  //inifile = GetMacAdrr(shortaddr);
-  
-  switch (attribute)
-  {
-    case 0:   
-    case 256:
-    case 258:
-    case 260:
-    case 262:
-    case 264:
-    case 266:
-    case 268:
-    case 270:
-    case 272:
-    case 274:
-    {
-      for(int i=0;i<len;i++)
-      {
-        sprintf(value, "%02X",datas[i]);
-        tmp+=value;
-      }
+// Cache pour éviter les recherches répétées
+static std::unordered_map<std::string, DeviceData*> simpleMeterDeviceCache;
+static bool simpleMeterCacheInitialized = false;
 
-      if (ini_exist(inifile))
-      {
-        //MQTT
-        if (ConfigSettings.enableMqtt)
-        {
-          mqttPublish(inifile.substring(0,16),"0702",String(attribute),"numeric",String(tmp));
-        }
-        //WebPush
-        if (ConfigSettings.enableWebPush)
-        {
-          String tmpvalue;
-          tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-          WebPush(inifile.substring(0,16),"0702",(String)attribute,tmpvalue.c_str());
-        }
+// Set des attributs d'énergie standard pour optimiser les comparaisons
+static const std::unordered_set<int> ENERGY_ATTRIBUTES = {
+    0, 256, 258, 260, 262, 264, 266, 268, 270, 272, 274
+};
 
-        // Device update value;
-        if (!deviceList->isFull())
-        {
-          int shortaddr = GetShortAddr(inifile);
-          deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
-        }
-        
-        //ini_trendEnergy(inifile, (String)attribute, (String) tmp);
-      }
+// Structure pour éviter la duplication
+struct SimpleMeterData {
+    String deviceId;
+    String clusterId;
+    String attributeStr;
+    String value;
+    String valueType;
+    long numericValue;
+    int attribute;
+    bool isNumeric;
+};
 
-      for (size_t i = 0; i < devices.size(); i++) 
-      {
+// Initialiser le cache des devices une seule fois
+void initializeSimpleMeterDeviceCache() {
+    if (simpleMeterCacheInitialized) return;
+    
+    simpleMeterDeviceCache.clear();
+    for (size_t i = 0; i < devices.size(); i++) {
         DeviceData* device = devices[i];
-        if (device->getDeviceID() == inifile.substring(0, 16))
-        {
-          if ((device->getInfo().model=="ZLinky_TIC") && (attribute == 0))
-          {
-            device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-          }else{
-            device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-            addEnergyMeasurement(device->energyHistory,String(attribute),strtol(tmp.c_str(), NULL, 16));
-            for (uint8_t i = 0; i < 11; ++i) {
-              if (attribute == INDEX_ID_LIST[i]) {
-                device->updateIndex(i, strtol(tmp.c_str(), NULL, 16));
-                break;
-              }
-            }
-          }
-          
-          break;
-        }
-      }
-      break; 
+        simpleMeterDeviceCache[device->getDeviceID().c_str()] = device;
     }
-    case 1: 
-      
-      for(int i=0;i<len;i++)
-      {
-        sprintf(value, "%02X",datas[i]);
-        tmp+=value;
-      }
-     
-      if (ini_exist(inifile))
-      {
-        //ini_write(inifile,"0702", (String)attribute, (String)tmp);
-        //MQTT
-        if (ConfigSettings.enableMqtt)
-        {
-          mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
-        }
-        tmp="-"+tmp;
-        //WebPush
-        if (ConfigSettings.enableWebPush)
-        {
-          String tmpvalue;
-          tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-          WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
-        }
+    simpleMeterCacheInitialized = true;
+}
 
-        // Device update value;
-        if (!deviceList->isFull())
-        {
-          int shortaddr = GetShortAddr(inifile);
-          deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+// Fonction helper pour trouver rapidement un device
+DeviceData* findSimpleMeterDevice(const String& deviceId) {
+    if (!simpleMeterCacheInitialized) {
+        initializeSimpleMeterDeviceCache();
+    }
+    
+    auto it = simpleMeterDeviceCache.find(deviceId.c_str());
+    return (it != simpleMeterDeviceCache.end()) ? it->second : nullptr;
+}
+
+// Fonction centralisée pour créer les données depuis les données brutes (format hex)
+SimpleMeterData createHexMeterData(const String& inifile, int attribute, 
+                                   uint8_t* datas, int len, const String& prefix = "") {
+    String tmp = "";
+    char value[3]; // Taille optimisée
+    
+    for(int i = 0; i < len; i++) {
+        sprintf(value, "%02X", datas[i]);
+        tmp += value;
+    }
+    
+    // Appliquer le préfixe si nécessaire (pour l'attribut 1)
+    String finalValue = prefix + tmp;
+    
+    return {
+        inifile.substring(0, 16),  // deviceId
+        "1794",                    // clusterId
+        String(attribute),         // attributeStr
+        finalValue,                // value
+        "numeric",                 // valueType
+        strtol(finalValue.c_str(), NULL, 16), // numericValue
+        attribute,                 // attribute
+        true                       // isNumeric
+    };
+}
+
+// Fonction centralisée pour créer les données depuis les données brutes (format texte)
+SimpleMeterData createTextMeterData(const String& inifile, int attribute, 
+                                    uint8_t* datas, int len, bool isString = false) {
+    String tmp = "";
+    
+    for(int i = 0; i < len; i++) {
+        if(datas[i] > 0) {
+            tmp += (char)datas[i];
         }
-        /*ini_energy(inifile, (String)attribute, (String) tmp);
-        ini_trendEnergy(inifile, (String)attribute, (String) tmp);*/
-      }
-      for (size_t i = 0; i < devices.size(); i++) 
-      {
-        DeviceData* device = devices[i];
-        if (device->getDeviceID() == inifile.substring(0, 16))
-        {
-          device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-          addEnergyMeasurement(device->energyHistory,String(attribute),strtol(tmp.c_str(), NULL, 16));   
-          for (uint8_t i = 0; i < 11; ++i) {
-            if (attribute == INDEX_ID_LIST[i]) {
-              device->updateIndex(i, strtol(tmp.c_str(), NULL, 16));
-              break;
-            }
-          }
-         
+    }
+    
+    return {
+        inifile.substring(0, 16),  // deviceId
+        "1794",                    // clusterId
+        String(attribute),         // attributeStr
+        tmp,                       // value
+        isString ? "string" : "numeric", // valueType
+        isString ? 0 : strtol(tmp.c_str(), NULL, 16), // numericValue
+        attribute,                 // attribute
+        !isString                  // isNumeric
+    };
+}
+
+// Fonction centralisée pour publier les données de mesure
+void publishSimpleMeterData(const SimpleMeterData& data, const String& inifile) {
+    if (!ini_exist(inifile)) return;
+    
+    // MQTT
+    if (ConfigSettings.enableMqtt) {
+        mqttPublish(data.deviceId, data.clusterId, data.attributeStr, data.valueType, data.value);
+    }
+    
+    // WebPush
+    if (ConfigSettings.enableWebPush) {
+        if (data.isNumeric) {
+            String numValue = String(data.numericValue);
+            WebPush(data.deviceId, data.clusterId, data.attributeStr, numValue.c_str());
+        } else {
+            WebPush(data.deviceId, data.clusterId, data.attributeStr, data.value);
         }
-        if ((ConfigGeneral.ZLinky != ConfigGeneral.Production) && (strcmp(ConfigGeneral.Production,"")!=0))
-        {
-          if (device->getDeviceID() == ConfigGeneral.ZLinky)
-          {
-            device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-            addEnergyMeasurement(device->energyHistory,String(attribute),strtol(tmp.c_str(), NULL, 16));   
-            for (uint8_t i = 0; i < 11; ++i) {
-              if (attribute == INDEX_ID_LIST[i]) {
-                device->updateIndex(i, strtol(tmp.c_str(), NULL, 16));
+    }
+    
+    // Device list update
+    if (!deviceList->isFull()) {
+        int shortaddr = GetShortAddr(inifile);
+        if (data.isNumeric) {
+            deviceList->push(Device{shortaddr, 1794, data.attribute, String(data.numericValue)});
+        } else {
+            deviceList->push(Device{shortaddr, 1794, data.attribute, data.value});
+        }
+    }
+}
+
+// Fonction centralisée pour mettre à jour les valeurs des devices avec gestion des index
+void updateSimpleMeterDeviceValue(const SimpleMeterData& data) {
+    DeviceData* device = findSimpleMeterDevice(data.deviceId);
+    if (!device) return;
+    
+    // Cas spécial pour ZLinky_TIC avec attribut 0
+    if (device->getInfo().model == "ZLinky_TIC" && data.attribute == 0) {
+        device->setValue(std::string("0702"), 
+                        std::string(data.attributeStr.c_str()), 
+                        std::string(data.value.c_str()));
+        return;
+    }
+    
+    // Cas général
+    device->setValue(std::string("0702"), 
+                    std::string(data.attributeStr.c_str()), 
+                    std::string(data.value.c_str()));
+    
+    // Ajout aux mesures d'énergie si numérique
+    if (data.isNumeric) {
+        addEnergyMeasurement(device->energyHistory, data.attributeStr, data.numericValue);
+        
+        // Mise à jour des index si applicable
+        for (uint8_t i = 0; i < 11; ++i) {
+            if (data.attribute == INDEX_ID_LIST[i]) {
+                device->updateIndex(i, data.numericValue);
                 break;
-              }
             }
-          }
         }
-      }
-      break; 
-    case 32:
-      {
-        String tmp;
-        for(int i=0;i<len;i++)
-        {
-          if(datas[i]>0)
-          {
-            tmp+= datas[i];
-          }
-        }
-        if (ini_exist(inifile))
-        {
-          //ini_write(inifile,"0702", (String)attribute, (String)tmp);
-          //MQTT
-          if (ConfigSettings.enableMqtt)
-          {
-            mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
-          }
-          //WebPush
-          if (ConfigSettings.enableWebPush)
-          {
-            String tmpvalue;
-            tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
-          }
+    }
+}
 
-          // Device update value;
-          if (!deviceList->isFull())
-          {
-            int shortaddr = GetShortAddr(inifile);
-            deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
-          }
+// Fonction pour gérer la logique spéciale de l'attribut 1 (ZLinky vs Production)
+void handleSpecialAttribute1Logic(const SimpleMeterData& data) {
+    // Gestion spéciale si ZLinky != Production
+    if ((ConfigGeneral.ZLinky != ConfigGeneral.Production) && 
+        (strcmp(ConfigGeneral.Production, "") != 0)) {
+        
+        DeviceData* zlinkyDevice = findSimpleMeterDevice(ConfigGeneral.ZLinky);
+        if (zlinkyDevice) {
+            zlinkyDevice->setValue(std::string("0702"), 
+                                  std::string(data.attributeStr.c_str()), 
+                                  std::string(data.value.c_str()));
+            
+            if (data.isNumeric) {
+                addEnergyMeasurement(zlinkyDevice->energyHistory, data.attributeStr, data.numericValue);
+                
+                for (uint8_t i = 0; i < 11; ++i) {
+                    if (data.attribute == INDEX_ID_LIST[i]) {
+                        zlinkyDevice->updateIndex(i, data.numericValue);
+                        break;
+                    }
+                }
+            }
         }
-        for (size_t i = 0; i < devices.size(); i++) 
-        {
-          DeviceData* device = devices[i];
-          if (device->getDeviceID() == inifile.substring(0, 16))
-          {
-            device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-            break;
-          }
-        }
-        break;
-      }
-      case 776:
-      {
-        String tmp;
-        for(int i=0;i<len;i++)
-        {
-          if(datas[i]>0)
-          {
-            tmp+= datas[i];
-          }
-        }
-        if (ini_exist(inifile))
-        {
-          //ini_write(inifile,"0702", (String)attribute, (String)tmp);
-          //MQTT
-          if (ConfigSettings.enableMqtt)
-          {
-            mqttPublish(inifile.substring(0,16),"1794",String(attribute),"string",String(tmp));
-          }
-          //WebPush
-          if (ConfigSettings.enableWebPush)
-          {
+    }
+}
 
-            WebPush(inifile.substring(0,16),"1794",(String)attribute,String(tmp));
-          }
+// Gestionnaire pour les attributs d'énergie standard (0, 256, 258, etc.)
+void handleEnergyAttributes(const String& inifile, int attribute, uint8_t* datas, int len) {
+    auto data = createHexMeterData(inifile, attribute, datas, len);
+    
+    publishSimpleMeterData(data, inifile);
+    updateSimpleMeterDeviceValue(data);
+}
 
-          // Device update value;
-          if (!deviceList->isFull())
-          {
-            int shortaddr = GetShortAddr(inifile);
-            deviceList->push(Device{shortaddr,1794,attribute,String(tmp)});
-          }
-        }
-        for (size_t i = 0; i < devices.size(); i++) 
-        {
-          DeviceData* device = devices[i];
-          if (device->getDeviceID() == inifile.substring(0, 16))
-          {
-            device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-            break;
-          }
-        }
-      }
-    break;
-    default:
-      
-      for(int i=0;i<len;i++)
-      {
-        sprintf(value, "%02X",datas[i]);
-        tmp+=value;
-      }
-      if (ini_exist(inifile))
-      {
-        //ini_write(inifile,"0702", (String)attribute, (String)tmp);
-        //MQTT
-        if (ConfigSettings.enableMqtt)
-        {
-          mqttPublish(inifile.substring(0,16),"1794",String(attribute),"numeric",String(tmp));
-        }
-        //WebPush
-        if (ConfigSettings.enableWebPush)
-        {
-          String tmpvalue;
-          tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-          WebPush(inifile.substring(0,16),"1794",(String)attribute,tmpvalue.c_str());
-        }
+// Gestionnaire pour l'attribut 1 (avec préfixe négatif et logique spéciale)
+void handleAttribute1(const String& inifile, uint8_t* datas, int len) {
+    auto data = createHexMeterData(inifile, 1, datas, len);
+    
+    publishSimpleMeterData(data, inifile);
+    
+    // Modifier la valeur pour ajouter le préfixe négatif après publication MQTT
+    data.value = "-" + data.value;
+    data.numericValue = strtol(data.value.c_str(), NULL, 16);
+    
+    updateSimpleMeterDeviceValue(data);
+    handleSpecialAttribute1Logic(data);
+}
 
-        // Device update value;
-        if (!deviceList->isFull())
-        {
-          int shortaddr = GetShortAddr(inifile);
-          deviceList->push(Device{shortaddr,1794,attribute,String(strtol(tmp.c_str(), NULL, 16))});
+// Gestionnaire pour l'attribut 32 (données texte numériques)
+void handleAttribute32(const String& inifile, uint8_t* datas, int len) {
+    auto data = createTextMeterData(inifile, 32, datas, len, false);
+    
+    publishSimpleMeterData(data, inifile);
+    
+    // Pour l'attribut 32, on met à jour sans les fonctionnalités d'énergie
+    DeviceData* device = findSimpleMeterDevice(data.deviceId);
+    if (device) {
+        device->setValue(std::string("0702"), 
+                        std::string(data.attributeStr.c_str()), 
+                        std::string(data.value.c_str()));
+    }
+}
+
+// Gestionnaire pour l'attribut 776 (données string)
+void handleAttribute776(const String& inifile, uint8_t* datas, int len) {
+    auto data = createTextMeterData(inifile, 776, datas, len, true);
+    
+    publishSimpleMeterData(data, inifile);
+    
+    // Pour l'attribut 776, on met à jour sans les fonctionnalités d'énergie
+    DeviceData* device = findSimpleMeterDevice(data.deviceId);
+    if (device) {
+        device->setValue(std::string("0702"), 
+                        std::string(data.attributeStr.c_str()), 
+                        std::string(data.value.c_str()));
+    }
+}
+
+// Gestionnaire pour les attributs par défaut
+void handleDefaultAttribute(const String& inifile, int attribute, uint8_t* datas, int len) {
+    auto data = createHexMeterData(inifile, attribute, datas, len);
+    
+    publishSimpleMeterData(data, inifile);
+    
+    // Pour les attributs par défaut, mise à jour simple sans fonctionnalités d'énergie
+    DeviceData* device = findSimpleMeterDevice(data.deviceId);
+    if (device) {
+        device->setValue(std::string("0702"), 
+                        std::string(data.attributeStr.c_str()), 
+                        std::string(data.value.c_str()));
+    }
+}
+
+// Fonction principale optimisée
+void SimpleMeterManage(String inifile, int attribute, uint8_t datatype, 
+                      int len, char* datas) {
+    // Cast vers uint8_t* pour plus de clarté
+    uint8_t* data = reinterpret_cast<uint8_t*>(datas);
+    
+    // Dispatch optimisé vers les gestionnaires spécialisés
+    if (ENERGY_ATTRIBUTES.find(attribute) != ENERGY_ATTRIBUTES.end()) {
+        // Attributs d'énergie standard (0, 256, 258, etc.)
+        handleEnergyAttributes(inifile, attribute, data, len);
+    } else {
+        // Switch pour les cas spéciaux
+        switch (attribute) {
+            case 1:
+                handleAttribute1(inifile, data, len);
+                break;
+                
+            case 32:
+                handleAttribute32(inifile, data, len);
+                break;
+                
+            case 776:
+                handleAttribute776(inifile, data, len);
+                break;
+                
+            default:
+                handleDefaultAttribute(inifile, attribute, data, len);
+                break;
         }
-      }
-      for (size_t i = 0; i < devices.size(); i++) 
-      {
-        DeviceData* device = devices[i];
-        if (device->getDeviceID() == inifile.substring(0, 16))
-        {
-          device->setValue(std::string("0702"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
-          break;
-        }
-      }
-      break;      
-  }
-  
+    }
+}
+
+// Fonction utilitaire pour invalider le cache si les devices changent
+void invalidateSimpleMeterDeviceCache() {
+    simpleMeterCacheInitialized = false;
+    simpleMeterDeviceCache.clear();
+}
+
+// Fonction utilitaire pour obtenir les statistiques du cache
+size_t getSimpleMeterCacheSize() {
+    return simpleMeterDeviceCache.size();
+}
+
+// Fonction utilitaire pour vérifier si un attribut est un attribut d'énergie
+bool isEnergyAttribute(int attribute) {
+    return ENERGY_ATTRIBUTES.find(attribute) != ENERGY_ATTRIBUTES.end();
 }
