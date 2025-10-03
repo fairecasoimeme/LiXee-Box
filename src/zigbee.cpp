@@ -619,9 +619,11 @@ String getValuekWh(long energy)
   return result;
 }
 
-String getLinkyDatas(String IEEE)
+PSRAMString getLinkyDatas(String IEEE)
 {
-  String result,tmp; 
+  String tmp; 
+  PSRAMString result(150000);
+  result ="";
   for (size_t i = 0; i < devices.size(); i++) 
   {
     DeviceData* device = devices[i];
@@ -1023,8 +1025,8 @@ String getLinkyDatas(String IEEE)
       return result;
     }
   }
-
-  return "";
+  result = "";
+  return result;
 
 }
 
@@ -1213,11 +1215,11 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
 
       if (tmp > 0)
       {
-        result= String(tmp)+";"+String(maxVal);
+        result= String(tmp)+";"+getValuekWh(maxVal);
         return result;
       }else if (tmp < 0)
       {
-        result= String(tmp)+";"+String(minVal);
+        result= String(tmp)+";"+getValuekWh(minVal);
         return result;
       }     
 
@@ -1248,11 +1250,11 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
          
       if (tmp > 0)
       {
-        result= String(tmp)+";"+String(maxVal);
+        result= String(tmp)+";"+getValuekWh(maxVal);
         return result;
       }else if (tmp < 0)
       {
-        result= String(tmp)+";"+String(minVal);
+        result= String(tmp)+";"+getValuekWh(minVal);
         return result;
       }
     }else if (Time=="year")
@@ -1281,11 +1283,11 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
          
       if (tmp > 0)
       {
-        result= String(tmp)+";"+String(maxVal);
+        result= String(tmp)+";"+getValuekWh(maxVal);
         return result;
       }else if (tmp < 0)
       {
-        result= String(tmp)+";"+String(minVal);
+        result= String(tmp)+";"+getValuekWh(minVal);
         return result;
       }
     }
@@ -1444,7 +1446,7 @@ String getTotalEnergy(String IEEE, String Time)
 
 }
 
-String getDatasPower(String IEEE,String Attribute, String Time)
+int getkWhBudget(String IEEE, String Time, int budget)
 {
   // Trouver le device
   DeviceData* dev = nullptr;
@@ -1464,7 +1466,7 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     }
   }
   if (!dev) {
-    return "";
+    return 0;
   }
 
   // Sélectionner la période
@@ -1474,7 +1476,92 @@ String getDatasPower(String IEEE,String Attribute, String Time)
   else if (Time=="day")   pd=&eh.days;
   else if (Time=="month") pd=&eh.months;
   else if (Time=="year")  pd=&eh.years;
-  else                      return "";
+  else                      return 0;
+
+  // Adapter le budget mensuel à la période demandée
+  float budgetAdjuste = budget;
+  if (Time == "hour") {
+    budgetAdjuste = budget / (30.0 * 24.0);  // Budget horaire
+  } else if (Time == "day") {
+    budgetAdjuste = budget / 30.0;  // Budget journalier
+  } else if (Time == "month") {
+    budgetAdjuste = budget;  // Budget mensuel (inchangé)
+  } else if (Time == "year") {
+    budgetAdjuste = budget * 12.0;  // Budget annuel
+  }
+
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+
+  long TotalWh = 0;
+  float TotalEuros = 0;
+  
+  // Calcul de la somme par section avec les coûts (électricité uniquement)
+  std::map<int, long> sums;
+  std::map<int, int> attrib;
+  for (auto &kv : pd->graph) {
+    ValueMap &vm = kv.second;   
+    for (size_t i = 2; i < arrayLength; ++i) {
+      int attrId = section[i].toInt();
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end()) {       
+        sums[(i-1)] += itv->second;
+        TotalWh += itv->second;
+        attrib[(i-1)] = attrId;
+      }
+    }
+  }
+
+  // Calcul du coût total de la consommation électrique
+  for (auto &p : sums) {
+    TotalEuros += p.second * getTarif(attrib[p.first],"energy")/1000;
+  }
+
+  // Éviter la division par zéro
+  if (TotalEuros <= 0) {
+    return 0;
+  }
+
+  // Produit en croix : TotalWh / TotalEuros = X / budgetAdjuste
+  // X = (budgetAdjuste * TotalWh) / TotalEuros
+  float WhPourBudget = (budgetAdjuste * TotalWh) / TotalEuros;
+  
+  return (int)round(WhPourBudget);  // Retourne des Wh en entier
+}
+
+
+PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
+{
+  // Trouver le device
+  PSRAMString result(150000);
+  result="";
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d == nullptr) {
+      log_e("Warning: NULL pointer found in devices vector\n");
+      continue;
+    }
+    try {
+      if (d->getDeviceID() == IEEE) { 
+        dev = d; 
+        break; 
+      }
+    } catch (...) {
+      log_e("Exception caught while accessing device ID");
+      continue;
+    }
+  }
+  if (!dev) {
+    return result;
+  }
+
+  // Sélectionner la période
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+  if      (Time=="hour")  pd=&eh.hours;
+  else if (Time=="day")   pd=&eh.days;
+  else if (Time=="month") pd=&eh.months;
+  else if (Time=="year")  pd=&eh.years;
+  else                      return result;
 
   int arrayLength = sizeof(section) / sizeof(section[0]);
 
@@ -1515,7 +1602,7 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     else if (Time=="day")   pdProd=&ehProd.days;
     else if (Time=="month") pdProd=&ehProd.months;
     else if (Time=="year")  pdProd=&ehProd.years;
-    else                      return "";
+    else                      return result;
 
     
     for (auto &kv : pdProd->graph) {
@@ -1556,7 +1643,7 @@ String getDatasPower(String IEEE,String Attribute, String Time)
       else if (Time=="day")   pdGaz=&ehGaz.days;
       else if (Time=="month") pdGaz=&ehGaz.months;
       else if (Time=="year")  pdGaz=&ehGaz.years;
-      else                      return "";
+      else                      return result;
 
       
       for (auto &kv : pdGaz->graph) {
@@ -1569,15 +1656,14 @@ String getDatasPower(String IEEE,String Attribute, String Time)
       }
     }catch (...) {
       log_e("Exception in getDatasPower\n");
-      return "";
+      return result;
     }
 
   }
 
-
-
   String color[9] = { "#d35400","#2980b9","#154360","#7f8c8d","#000000","#e74c3c","#c0392b","#f5b041","#145a32"};
-  String result = "<h5>Répartition</h5>";
+  
+  result = "<h5>Répartition</h5>";
   for (auto &p : sums) {
     result += "<div class='row'><div class='col-1'><div style=\"border:1px solid grey;width:10px;height:15px;background-color:";
     if (p.first <= 10)
@@ -1654,7 +1740,7 @@ String getDatasPower(String IEEE,String Attribute, String Time)
     result += "</div>";
   }
 
-  result += "<br><div class='position-absolute bottom-0 start-0'><h5>Total</h5>";
+  result += "<br><div class=''><h5>Total</h5>"; //<div class='position-absolute bottom-0 start-0'>
   result += "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
   result += getValuekWh((TotalWh+sumProd+sumGaz));
   result += " ";
@@ -1667,7 +1753,7 @@ String getDatasPower(String IEEE,String Attribute, String Time)
   result+="</g>";
   result+="</svg>  ";
 
-  result += TotalEuros;
+  result += String(TotalEuros);
   result += " € ";
   result += "</div>";
 
@@ -1675,12 +1761,11 @@ String getDatasPower(String IEEE,String Attribute, String Time)
 
 }
 
-String getTrendPower(String IEEE,String Attribute, String Time)
+PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
 {
-  String result="";
   String trendIcon="";
   String trendColor="";
-
+  PSRAMString result(150000);
   if (Time=="hour")
   {
     String min,max,trend,last;
@@ -1752,7 +1837,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
         result+="</span></div>";   
       result += "</div>";
 
-      result += "<br><h5>Historique</h5>";
+      result += "<h5>Stats</h5>";
       result += "<div class='row'>";
         result += "<div class='col-12'>";
           result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>  <text x='8' y='10' font-size='10' fill='currentColor' text-anchor='middle' dominant-baseline='middle'>-1</text></svg>";
@@ -1789,7 +1874,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
             result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
             result+="</g>";
           result+="</svg>  ";
-          result += tmpEuros;
+          result += String(tmpEuros);
           result += " €";
 
         }
@@ -1832,7 +1917,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
             result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
             result+="</g>";
           result+="</svg>  ";
-          result += tmpEuros;
+          result += String(tmpEuros);
           result += " €";
 
         }
@@ -1876,7 +1961,7 @@ String getTrendPower(String IEEE,String Attribute, String Time)
             result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
             result+="</g>";
           result+="</svg>  ";
-          result += tmpEuros;
+          result += String(tmpEuros);
           result += " €";
 
         }
@@ -2042,13 +2127,12 @@ String getTrendPower(String IEEE,String Attribute, String Time)
     result += "</svg>";
     result +="</div>";
     result+="<div style='display:inline-box;height:100px;padding-top:15px;'><span style='font-size:24px;'>";
-      result +=op+trend+ " Wh ";
+      result +=op+getValuekWh(trend);
     result+="</span>";
     result+="<br><span style='font-size:12px;'><strong>Min:</strong> ";
-      result+=minVal;
-      result+=" Wh <br> <strong>Max :</strong> ";
-      result+=maxVal;
-      result+=" Wh";
+      result+=getValuekWh(minVal);
+      result+="<br> <strong>Max :</strong> ";
+      result+=getValuekWh(maxVal);
     result+="</span></div>";   
     result+="<br><div style='display:inline-block;width:64px;float:left;'>";
 
@@ -2189,7 +2273,17 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         }
       }
     }
-    result= String(sum);
+
+
+    if ((sum > 1000) || (sum < -1000))
+    {
+      float wh = sum;
+      float kwh = wh / 1000.0;
+      result = String(kwh,2);
+    }else{
+      result = String(sum);
+    }
+
   }
   return result;
 }

@@ -2,12 +2,14 @@ void getBind(uint64_t mac, int device_id, String model);
 void getConfigReport(uint8_t shortAddr[2], int device_id, String model);
 bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model);
 void SpecificTreatment(uint8_t shortAddr[2], int endpoint, String model);
-String getLinkyDatas(String IEEE);
+PSRAMString getLinkyDatas(String IEEE);
 String getLinkyMode(int mode);
 String getPowerGaugeAbo(String IEEE, String Attribute, String Time);
 String getLastValuePower(String IEEE,String Attribute, String Time);
-String getTrendPower(String IEEE,String Attribute, String Time);
-String getDatasPower(String IEEE,String Attribute, String Time);
+PSRAMString getTrendPower(String IEEE,String Attribute, String Time);
+PSRAMString getDatasPower(String IEEE,String Attribute, String Time);
+int getkWhBudget(String IEEE, String Time, int budget);
+
 String   getTotalEnergy(String IEEE, String Time);
 String getTrendEnergyEuros(String IEEE);
 String getPowerGaugeTimeDay(String IEEE, String Attribute);
