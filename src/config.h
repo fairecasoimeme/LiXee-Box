@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.5a"
+#define VERSION "v2.7"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -79,8 +79,19 @@ struct ZiGateInfosStruct {
 
 struct ConfigNotification{
   bool PriceChange;
+  bool PEJP;
+  bool ColorTomorrow;
+  bool RedColor;
+  bool OverVoltage;
+  int  OverVoltageThreshold;
+  bool UnderVoltage;
+  int  UnderVoltageThreshold;
+  bool OverBudget;
+  int  OverBudgetThreshold;
   bool SubscribedPower;
   bool PowerOutage;
+  bool ProdSupConso;
+  bool ProdZero;
 };
 
 struct ConfigGeneralStruct {
@@ -225,9 +236,8 @@ typedef struct {
   String message;
   String timeStamp;
   int type;
+  int viewed;
 } Notification;
-
-
 
 typedef struct{
   String manufacturer;
@@ -295,4 +305,80 @@ using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
 
 String encodeBase64(const String &input);
 
-
+// ===== CLASSE STRING PSRAM SIMPLE =====
+class PSRAMString {
+private:
+    char* buffer;
+    size_t capacity;
+    size_t len;
+    
+public:
+    PSRAMString(size_t size = 100000) {
+        capacity = size;
+        buffer = (char*)ps_malloc(capacity);
+        if (!buffer) {
+            Serial.println("Erreur allocation PSRAM, utilisation heap");
+            buffer = (char*)malloc(capacity);
+        }
+        clear();
+    }
+    
+    ~PSRAMString() {
+        if (buffer) free(buffer);
+    }
+    
+    // Opérateur += comme String normale
+    PSRAMString& operator+=(const String& str) {
+        append(str.c_str());
+        return *this;
+    }
+    
+    PSRAMString& operator+=(const char* str) {
+        append(str);
+        return *this;
+    }
+    
+    PSRAMString& operator+=(const __FlashStringHelper* str) {
+        append(reinterpret_cast<const char*>(str));
+        return *this;
+    }
+    
+    // Opérateur = pour affecter
+    PSRAMString& operator=(const String& str) {
+        clear();
+        append(str.c_str());
+        return *this;
+    }
+    
+    PSRAMString& operator=(const __FlashStringHelper* str) {
+        clear();
+        append(reinterpret_cast<const char*>(str));
+        return *this;
+    }
+    
+    // Fonction replace comme String normale
+    void replace(const String& find, const String& replace) {
+        String temp(buffer);
+        temp.replace(find, replace);
+        clear();
+        append(temp.c_str());
+    }
+    
+    // Fonctions utiles
+    const char* c_str() const { return buffer; }
+    size_t length() const { return len; }
+    void clear() { buffer[0] = '\0'; len = 0; }
+    
+private:
+    void append(const char* str) {
+        if (!str) return;
+        size_t strLen = strlen(str);
+        if (len + strLen >= capacity) {
+            // Agrandir si nécessaire
+            capacity = (len + strLen + 1) * 2;
+            buffer = (char*)realloc(buffer, capacity);
+        }
+        strcpy(buffer + len, str);
+        len += strLen;
+    }
+};
