@@ -2,22 +2,22 @@
 
 ## Description
 
-**LiXee-Box** is a multi-protocol gateway for Zigbee devices, designed to be a central hub for **energy management** and home automation. This application transforms your LiXee-ZiWifi32 into a complete gateway capable of managing your Zigbee devices, your Linky, production, gaz, water meter, and integrating everything into your home automation system.
+**LiXee-Box** est une passerelle multi-protocole pour appareils Zigbee, conçue pour être un hub central de **gestion de l'énergie** et de domotique. Cette application transforme votre LiXee-ZiWifi32 en une passerelle complète capable de gérer vos appareils Zigbee, votre Linky, compteur de production, gaz, eau, et d'intégrer le tout dans votre système domotique.
 
-## Compatible Hardware
+## Matériel Compatible
 
-This application works with:
+Cette application fonctionne avec :
 
-- **[LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)** (WiFi only)
-  - Based on ESP32-S3-WROOM-N16R8 (PSRAM: 8MB Flash: 16MB)
-  - Equipped with JN5189 module running [ZiGate v2 firmware](https://github.com/fairecasoimeme/ZiGatev2)
+- **[LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)** (WiFi uniquement)
+  - Basé sur ESP32-S3-WROOM-N16R8 (PSRAM : 8MB Flash : 16MB)
+  - Équipé d'un module JN5189 exécutant le [firmware ZiGate v2](https://github.com/fairecasoimeme/ZiGatev2)
 
-> **Note**: You can also use this code with other ESP32S3 boards, depending on your board's pin connections.
+> **Note** : Vous pouvez également utiliser ce code avec d'autres cartes ESP32S3, selon les connexions de broches de votre carte.
 
 <table><tr><td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_face.png" width="480"></td>
 <td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_pile.png" width="480">  </td></tr></table>
       
-## Operating diagram
+## Schéma de fonctionnement
 
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee-Box_Schema.png" width="1024">  
 
@@ -25,82 +25,91 @@ This application works with:
 
 [![Tutoriel Installation LiXee-Box](https://img.youtube.com/vi/1w0yDo08sk0/0.jpg)](https://youtu.be/1w0yDo08sk0)
 
-## Typical Use Cases
+## Cas d'Usage Typiques
 
-- **Long-distance relay**: Linky (ZLinky) ↔ Zigbee ↔ LiXee-Box ↔ WiFi ↔ MQTT ↔ Home-Assistant/Jeedom/Domoticz
-- **Cloud gateway**: Relay Zigbee device data to web services via API
-- **Advanced energy management**: Monitoring, load shedding, energy routing
+- **Relais longue distance** : Linky (ZLinky) ↔ Zigbee ↔ LiXee-Box ↔ WiFi ↔ MQTT ↔ Home-Assistant/Jeedom/Domoticz
+- **Passerelle cloud** : Relayer les données des appareils Zigbee vers des services web via API
+- **Gestion énergétique avancée** : Surveillance, délestage de charge, routage énergétique
 
-## ✨ Main Features
-The main feature is to relay Zigbee device datas to a website or a MQTT service
+## ✨ Fonctionnalités Principales
+La fonctionnalité principale est de relayer les données des appareils Zigbee vers un site web ou un service MQTT
 
-The device can be configured with a local website
+L'appareil peut être configuré via un site web local
 
-### 🔧 Zigbee Device Management
-- Creation and management of Zigbee objects
-- Customizable templates for different device types
-- Status and action management
-- Historical data for power and energy devices
-- OTA (Over-The-Air) automatic and manual updates
+### 🔧 Gestion des Appareils Zigbee
+- Création et gestion d'objets Zigbee
+- Modèles personnalisables pour différents types d'appareils
+- Gestion des états et actions
+- Historique des données pour les appareils de puissance et d'énergie
+- Mises à jour OTA (Over-The-Air) automatiques et manuelles
 
-### 📊 Monitoring and Dashboard
-- Energy dashboard with gauges and charts
-- Real-time consumption monitoring
-- Trend and historical graphs
-- Integrated Linky data
+### 📊 Surveillance et Tableau de Bord
+- Tableau de bord énergétique avec jauges et graphiques
+- Surveillance de la consommation en temps réel
+- Graphiques de tendance et historiques
+- Données Linky intégrées
 
-### 🌐 Connectivity
-- **MQTT**: Customizable server/port/user/password
-- **MQTT Discovery** compatible with Home Assistant
-- **WebPush API**: URL/user/password
-- **Marstek CT001 Emulation** for battery management
+### 🌐 Connectivité
+- **MQTT** : Serveur/port/utilisateur/mot de passe personnalisables
+- **MQTT Discovery** compatible avec Home Assistant
+- **WebPush API** : URL/utilisateur/mot de passe
 
-### ⚡ Energy Management
-- Automated rules for load shedding and energy routing
-- Configurable thresholds with automatic actions
-- Production management and energy distribution
-- Tariff management for energy, production, gas, and water
+### ⚡ Gestion de l'Énergie
+- Règles automatisées pour le délestage de charge et le routage énergétique
+- Seuils configurables avec actions automatiques
+- Gestion de la production et distribution d'énergie
+- Gestion tarifaire pour l'énergie, la production, le gaz et l'eau
 
-### 🔄 Updates and Maintenance
+### 🔄 Mises à Jour et Maintenance
 
-- Configuration backup/restore
-- Developer mode for debugging
+- Sauvegarde/restauration de configuration
+- Mode développeur pour le débogage
 
-## 📱 User Interface
+## 📱 Interface Utilisateur
 
-### Firmware Update
-![Firmware Update](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Update.png)
+### Mise à Jour du Firmware
+![Mise à Jour du Firmware](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Update.png)
 
-The update interface allows you to keep your LiXee-Box up to date with the latest features.
+L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour avec les dernières fonctionnalités.
 
-### Device Pairing
-![Device Pairing](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p1.png)
-![LiXee-Box Pairing](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p2.png)
-![Device Search](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p3.png)
+### Appairage d'Appareils
+![Appairage d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p1.png)
+![Appairage LiXee-Box](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p2.png)
+![Recherche d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p3.png)
 
-The pairing process is simplified with a step-by-step wizard to connect your Zigbee devices.
+Le processus d'appairage est simplifié avec un assistant pas à pas pour connecter vos appareils Zigbee.
 
-### Device Management
-![Zigbee Device Configuration](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_config_zigbee.png)
-![Device Status](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_DeviceStatus.png)
+### Gestion des Appareils
+![Configuration des Appareils Zigbee](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_config_zigbee.png)
+![État des Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_DeviceStatus.png)
 
-Complete interface to configure and monitor all your connected Zigbee devices.
+Interface complète pour configurer et surveiller tous vos appareils Zigbee connectés.
 
-### Energy Dashboard
-![Energy Status](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_1.png)
-![Detailed Charts](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_2.png)
-![Mobile Interface](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Mobile_energy.png)
+### Tableau de Bord Énergétique
+![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_2.7.png)
+![Graphiques Détaillés](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_2.png)
+![Interface Mobile](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Mobile_energy.png)
 
-Complete dashboard with real-time visualization of your energy consumption, historical charts, and responsive mobile interface.
+Tableau de bord complet avec visualisation en temps réel de votre consommation énergétique, graphiques historiques et interface mobile responsive.
 
-## 🚀 Installation and Configuration
+### Notifications
 
-### First Setup
+Les notifications permettent d'être informé ou alerté des évènements de votre habitat selon vos besoins
 
-#### From v2.2a
+#### Exemple configuration
+![Configuration notifications](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_ConfigNotifications.png)
 
-with **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
-Please download the app to process 
+#### Exemple d'évènements
+![Evènements](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Notifications.png)
+
+## 🚀 Installation et Configuration
+
+### Configuration Initiale
+
+#### À partir de la v2.2a
+
+avec **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
+Veuillez télécharger l'application pour procéder 
 <table><tr><td><a target="_blank" href="https://play.google.com/store/apps/details?id=com.lixee.assist" style="display: inline-block;">
   <img width="150px" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
        alt="Get it on Google Play" 
@@ -110,36 +119,36 @@ Please download the app to process
     <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/fr-fr?releaseDate=1751500800" alt="Download on the App Store" style="width: 150px; vertical-align: middle; object-fit: contain;" />
     </a></td></tr></table>
 
-Just scan the device (with BLE) and complete the pairing with your local WiFi login/pass
+Scannez simplement l'appareil (avec BLE) et complétez l'appairage avec vos identifiants WiFi locaux
 
-#### Before v2.2a
-With web navigator
-1. **Power**: Plug the device into a USB power supply
-2. **WiFi**: Scan available WiFi networks with your mobile/computer
-3. **Connection**: Connect to SSID `LIXEEGW-XXXX` (XXXX = part of MAC address)
-4. **Authentication**: Default password `adminXXXX` (XXXX = SSID suffix)
-5. **Configuration**: Open `http://lixee-gw` in your browser
-6. **Home WiFi**: Configure your main WiFi network
-7. **Reboot**: Device restarts and connects to your network
+#### Avant la v2.2a
+Avec un navigateur web
+1. **Alimentation** : Branchez l'appareil sur une alimentation USB
+2. **WiFi** : Scannez les réseaux WiFi disponibles avec votre mobile/ordinateur
+3. **Connexion** : Connectez-vous au SSID `LIXEEGW-XXXX` (XXXX = partie de l'adresse MAC)
+4. **Authentification** : Mot de passe par défaut `adminXXXX` (XXXX = suffixe du SSID)
+5. **Configuration** : Ouvrez `http://lixee-gw` dans votre navigateur
+6. **WiFi Principal** : Configurez votre réseau WiFi principal
+7. **Redémarrage** : L'appareil redémarre et se connecte à votre réseau
 
-### Zigbee Configuration
+### Configuration Zigbee
 
-1. Go to **Network** menu → **Zigbee**
-2. Click **Add Device** to start pairing (30 seconds)
-3. Blue LED blinks slowly during pairing
-4. Execute the pairing procedure on your Zigbee device
+1. Allez dans le menu **Réseau** → **Zigbee**
+2. Cliquez sur **Ajouter un Appareil** pour démarrer l'appairage (30 secondes)
+3. La LED bleue clignote lentement pendant l'appairage
+4. Exécutez la procédure d'appairage sur votre appareil Zigbee
    
-⚠️ **If a device is paired, a green alert appears. You can refresh to see devices properties.**  
+⚠️ **Si un appareil est appairé, une alerte verte apparaît. Vous pouvez rafraîchir pour voir les propriétés de l'appareil.**  
   
-## How to template a new zigbee device
+## Comment créer un modèle pour un nouvel appareil Zigbee
 
-A template file is a JSON structure which give status and actions to a device type. The name of the template file corresponds to the device identification (decimal).
-When a Zigbee device is joining, **LiXee-Box** create an object following the corresponding template with status and actions, binding and configure reporting if it is necessary.
+Un fichier modèle est une structure JSON qui définit les états et actions d'un type d'appareil. Le nom du fichier modèle correspond à l'identification de l'appareil (en décimal).
+Lorsqu'un appareil Zigbee rejoint le réseau, **LiXee-Box** crée un objet suivant le modèle correspondant avec les états et actions, effectue les liaisons et configure les rapports si nécessaire.
 
-### Template Structure
-Here is the structure :
+### Structure du Modèle
+Voici la structure :
 
-    ├── Device model or 'default'    
+    ├── Modèle d'appareil ou 'default'    
     │   ├── status   
     │   │   ├── name   
     │   │   ├── cluster  
@@ -171,8 +180,8 @@ Here is the structure :
     │   │   ├── timeout   
     │   │   ├── change  
 
-You can find Template examples in `data/tp` directory  
-Example of 24321.json device id (5F01 Hex) :
+Vous pouvez trouver des exemples de modèles dans le répertoire `data/tp`  
+Exemple de fichier 24321.json pour l'appareil id (5F01 Hex) :
 ```json
 {
 	"lumi.sensor_switch.aq2" : [
@@ -210,60 +219,60 @@ Example of 24321.json device id (5F01 Hex) :
 }
 ```
 
-### Status Parameters
+### Paramètres de Status
 
-| Parameter | Mandatory | Type | Description |
-|-----------|-----------|------|-------------|
-| `name` | ✓ | String | Display name |
-| `cluster` | ✓ | String | Cluster ID (hex) |
-| `attribut` | ✓ | Decimal | Attribute number |
+| Paramètre | Obligatoire | Type | Description |
+|-----------|-------------|------|-------------|
+| `name` | ✓ | String | Nom d'affichage |
+| `cluster` | ✓ | String | ID du cluster (hex) |
+| `attribut` | ✓ | Decimal | Numéro d'attribut |
 | `type` | | String | "numeric", "float" |
-| `unit` | | String | Unit of measure |
-| `coefficient` | | Float | Multiplier coefficient |
+| `unit` | | String | Unité de mesure |
+| `coefficient` | | Float | Coefficient multiplicateur |
 | `jauge` | | String | "Gauge", "Battery", "text" |
-| `visible` | | Decimal | 1 (visible) or 0 (hidden) |
-| `poll` | | Decimal | Polling interval (sec) |
-| `mqtt_device_class` | | String | MQTT device class for HA |
-| `mqtt_state_class` | | String | MQTT state class for HA |
-| `mqtt_icon` | | String | MQTT icon for HA |
+| `visible` | | Decimal | 1 (visible) ou 0 (masqué) |
+| `poll` | | Decimal | Intervalle d'interrogation (sec) |
+| `mqtt_device_class` | | String | Classe de périphérique MQTT pour HA |
+| `mqtt_state_class` | | String | Classe d'état MQTT pour HA |
+| `mqtt_icon` | | String | Icône MQTT pour HA |
 
 ### Action
-### Action Parameters
+### Paramètres d'Action
 
-| Parameter | Mandatory | Type | Description |
-|-----------|-----------|------|-------------|
-| `name` | ✓ | String | Action name |
-| `command` | ✓ | Decimal | Command ID |
-| `endpoint` | ✓ | Decimal | Endpoint number |
-| `value` | ✓ | Decimal | Value to send |
-| `visible` | | Decimal | 1 (visible) or 0 (hidden) |
+| Paramètre | Obligatoire | Type | Description |
+|-----------|-------------|------|-------------|
+| `name` | ✓ | String | Nom de l'action |
+| `command` | ✓ | Decimal | ID de commande |
+| `endpoint` | ✓ | Decimal | Numéro de point de terminaison |
+| `value` | ✓ | Decimal | Valeur à envoyer |
+| `visible` | | Decimal | 1 (visible) ou 0 (masqué) |
 
 ### Bind
-List of cluster(in numeric) which will be binded
-example : `bind : "1026;1029;1794"`
+Liste des clusters (en numérique) qui seront liés
+exemple : `bind : "1026;1029;1794"`
 
 ### Report
 
-|Command|Mandatory|Type|Value|Comment|
-|-------|---------|----|-----|-------|			
-|`cluster`|✓|String||cluster id in hexadecimal|  
-|`attribut`|✓|Decimal||attribute number in decimal|  
-|`type`|✓|Decimal|| Correspond to the numeric type of attribut| 
-|`min`|✓|Decimal||min time (in second) to send report| 
-|`max`|✓|Decimal||max time (in second) to send report| 
-|`timeout`| |Decimal|| in millisecond| 
-|`change`| |Decimal|| change value to send report| 
+| Commande | Obligatoire | Type | Valeur | Commentaire |
+|----------|-------------|------|--------|-------------|			
+| `cluster` | ✓ | String | | ID du cluster en hexadécimal |  
+| `attribut` | ✓ | Decimal | | Numéro d'attribut en décimal |  
+| `type` | ✓ | Decimal | | Correspond au type numérique de l'attribut | 
+| `min` | ✓ | Decimal | | Temps minimum (en secondes) pour envoyer un rapport | 
+| `max` | ✓ | Decimal | | Temps maximum (en secondes) pour envoyer un rapport | 
+| `timeout` | | Decimal | | En millisecondes | 
+| `change` | | Decimal | | Valeur de changement pour envoyer un rapport | 
 
 
-## How to create rules
+## Comment créer des règles
 
-For the moment, you have to edit a json file to create / modify / delete rule.  
-For the moment, you can create only 10 rules.  
-One rule can contains one or more conditions.  
-One rule can contains one or more actions.  
+Pour le moment, vous devez éditer un fichier JSON pour créer / modifier / supprimer une règle.  
+Pour le moment, vous ne pouvez créer que 10 règles.  
+Une règle peut contenir une ou plusieurs conditions.  
+Une règle peut contenir une ou plusieurs actions.  
 
 ### Structure
-Here is the structure :  
+Voici la structure :  
 
     ├── Rule     
     │   ├── name   
@@ -282,28 +291,28 @@ Here is the structure :
     │   │   ├── value    
 
 
-### Condition Parameters
+### Paramètres de Condition
 
-| Parameter | Mandatory | Type | Value | Comment |
-|-----------|-----------|------|-------|---------|
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|-------------|------|--------|-------------|
 | `type` | ✓ | String | "device" | |
-| `IEEE` | ✓ | String | MAC address without ':' or '-' | |
-| `cluster` | ✓ | Decimal | Cluster ID in decimal | |
-| `attribut` | ✓ | Decimal | Attribute number | |
+| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
+| `cluster` | ✓ | Decimal | ID du cluster en décimal | |
+| `attribut` | ✓ | Decimal | Numéro d'attribut | |
 | `operator` | ✓ | String | "<", ">", "==", "!=", ">=", "<=" | |
-| `value` | ✓ | Decimal | Comparison value | |
-| `logic` | | String | "AND", "OR" | Only for multiple conditions |
+| `value` | ✓ | Decimal | Valeur de comparaison | |
+| `logic` | | String | "AND", "OR" | Uniquement pour conditions multiples |
 
-### Action Parameters
+### Paramètres d'Action
 
-| Parameter | Mandatory | Type | Value | Comment |
-|-----------|-----------|------|-------|---------|
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|-------------|------|--------|-------------|
 | `type` | ✓ | String | "onoff" | |
-| `IEEE` | ✓ | String | MAC address without ':' or '-' | |
-| `endpoint` | ✓ | Decimal | Endpoint ID | |
-| `value` | ✓ | String | Action value | |
+| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
+| `endpoint` | ✓ | Decimal | ID du point de terminaison | |
+| `value` | ✓ | String | Valeur de l'action | |
 
-For example :  
+Par exemple :  
 
 ```json 
 {
@@ -355,10 +364,10 @@ For example :
 }
 ```
 
-## 🔌WEB API
-To access to the API command, go to http://<HOST>/<command>
+## 🔌 API WEB
+Pour accéder aux commandes de l'API, allez sur http://<HOST>/<commande>
 
-### Commands List
+### Liste des Commandes
 
 * [getSystem](#getSystem)
 * [getDevices](#getDevices)
@@ -367,17 +376,17 @@ To access to the API command, go to http://<HOST>/<command>
 * [getTemplates](#getTemplates)
 
 
-### Methods
+### Méthodes
 
 #### getSystem
 
-##### Request
+##### Requête
 ```bash
 curl -X GET 'https://<HOST>/getSystem'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
-##### Response
+##### Réponse
 ```json
 {
   "network": {
@@ -415,13 +424,13 @@ curl -X GET 'https://<HOST>/getSystem'\
 ```
 #### getDevices
 
-##### Request
+##### Requête
 ```bash
 curl -X GET 'https://<HOST>/getDevices'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
-##### Response
+##### Réponse
 ```json
 {
   "00158d0006203a63": {
@@ -454,13 +463,13 @@ curl -X GET 'https://<HOST>/getDevices'\
 ```
 #### getDevice
 
-##### Request
+##### Requête
 ```bash
 curl -X GET 'https://<HOST>/getDevice?id=04cf8cdf3c79ce2b'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
-##### Response
+##### Réponse
 ```json
 {
   "04cf8cdf3c79ce2b": {
@@ -488,13 +497,13 @@ curl -X GET 'https://<HOST>/getDevice?id=04cf8cdf3c79ce2b'\
 
 #### getLinky
 
-##### Request
+##### Requête
 ```bash
 curl -X GET 'https://<HOST>/getLinky'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
-##### Response
+##### Réponse
 ```json
 {
   "65382_768": 0,
@@ -523,13 +532,13 @@ curl -X GET 'https://<HOST>/getLinky'\
 ```
 #### getTemplates
 
-##### Request
+##### Requête
 ```bash
 curl -X GET 'https://<HOST>/getTemplates'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
-##### Response
+##### Réponse
 ```json
 {
   "24321.json": {
@@ -569,8 +578,8 @@ curl -X GET 'https://<HOST>/getTemplates'\
 }
 ```
 
-## 📦 Firmware Installation
-Just install esptools and run this command
+## 📦 Installation du Firmware
+Installez simplement esptools et exécutez cette commande
 
 ### Windows
 
@@ -586,36 +595,36 @@ esptool.py.exe --chip esp32s3 --port "COMXX" \
 	 0x910000 littleFS.bin
 ```
 
-## 🏠 Home Assistant Integration
+## 🏠 Intégration Home Assistant
 
-**LiXee-Gateway** is compatible with the MQTT discover from HA.
+**LiXee-Gateway** est compatible avec la découverte MQTT de Home Assistant.
 
-Just go to **Gateway** menu --> **MQTT** and enable the feature
+Allez simplement dans le menu **Passerelle** --> **MQTT** et activez la fonctionnalité
 
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
 
-Fill the form :
-  * MQTT server
-  * MQTT port
-  * MQTT username
-  * MQTT password
+Remplissez le formulaire :
+  * Serveur MQTT
+  * Port MQTT
+  * Nom d'utilisateur MQTT
+  * Mot de passe MQTT
 
-Then click to **Home-Assistant** and **Save**  
-Wait a moment and if all it's good, the connected icon will change to green.
+Puis cliquez sur **Home-Assistant** et **Sauvegarder**  
+Attendez un moment et si tout est correct, l'icône de connexion deviendra verte.
 
-Then go to **Network** menu --> **Zigbee**
+Ensuite, allez dans le menu **Réseau** --> **Zigbee**
 
-For each Zigbee devices, a new button **MQTT Discover** appear. Please click on it to create a new device on HA. And that's it.
+Pour chaque appareil Zigbee, un nouveau bouton **MQTT Discover** apparaît. Veuillez cliquer dessus pour créer un nouveau périphérique sur HA. Et voilà.
 <div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_Devices_mqtt_discover.png" width="320">  </div>
 
-Wait a moment and go to your HA MQTT devices:
+Attendez un moment et allez dans vos périphériques MQTT HA :
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_Create_MQTT_device.png" width="1024">  
 
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_MQTT_device_entities.png" width="800">
 
-## Credits
+## Crédits
 
-Thanks to all authors of 3rd party libraries which are used in this project:
+Merci à tous les auteurs des bibliothèques tierces utilisées dans ce projet :
 
 * [espressif / arduino-esp32](https://github.com/espressif/arduino-esp32)
 * [rlogiacco/CircularBuffer](https://github.com/rlogiacco/CircularBuffer)
@@ -626,65 +635,91 @@ Thanks to all authors of 3rd party libraries which are used in this project:
 * [me-no-dev/AsyncTCP](https://github.com/me-no-dev/AsyncTCP)
 * [me-no-dev/ESPAsyncWebServer](https://github.com/me-no-dev/ESPAsyncWebServer)
 
-Thanks to [ZigStar](https://github.com/mercenaruss) for the update OTA
+Merci à [ZigStar](https://github.com/mercenaruss) pour la mise à jour OTA
 
-## Changelog
+## Journal des modifications
+
+### V2.7
+
+* Ajout étiquette énergétique dans le tableau d'énergie
+* Ajout des aides dans le tableau d'énergie
+* Restructuration du tableau d'énergie
+* Ajout de la gestion des notifications
+* Ajout des notifications : 
+  * Production à Zéro
+  * Production > consommation
+  * Couleur du lendemain
+  * Jour rouge
+  * Préavis EJP
+  * Surtension et sous-tension d'une phase
+  * Dépassement de budget
+* Optimisation des process (PSRAM et restructurations)
+* Optimisation et correction client MQTT
+* Fix Bugs
+
+### V2.5a
+
+* Ajout de la valeur SHON
+* Ajout d'une nouvelle fonction pour obtenir l'énergie totale
+* Correction du statut de connexion WiFi
+* Correction du bug de message d'alerte
+* Changement vers la langue française
+* Correction de bugs
 
 ### V2.2a
-* Change provision (only BLE with LiXee-Assit)
-* Add OTA for zigbee devices
-* Best network management
-* Fix bugs
+* Modification de l'approvisionnement (uniquement BLE avec LiXee-Assist)
+* Ajout de l'OTA pour les appareils Zigbee
+* Meilleure gestion du réseau
+* Correction de bugs
 
 ### V2.0j
-* Fix Signed value for MQTT HA
-* Fix MQTT deconnection
-* Fix reboot issues
-* Fix real time power graph
-* Fix bugs
+* Correction des valeurs signées pour MQTT HA
+* Correction de la déconnexion MQTT
+* Correction des problèmes de redémarrage
+* Correction du graphique de puissance en temps réel
+* Correction de bugs
 
 ### V1.2
-* Add mDNS service for lixee-assist
-* Add api to set WiFi
-* Add poll webpage
-* Fix wifi enable bug
-* Fix Scan Wifi network
-* Fix Json file load to PSRAM
-* Reboot when wifi is configured
-* Fix memory leak
-* Enhance memory use
+* Ajout du service mDNS pour lixee-assist
+* Ajout d'API pour configurer le WiFi
+* Ajout d'une page web de sondage
+* Correction du bug d'activation WiFi
+* Correction du scan des réseaux WiFi
+* Correction du chargement de fichier JSON vers PSRAM
+* Redémarrage lors de la configuration WiFi
+* Correction de fuite mémoire
+* Amélioration de l'utilisation de la mémoire
 
 ### V1.1
-* Add API commands
-* Add Marstek compatibility
-* Add Rules capacity
-* Add Dashboard feature
-* Fix HA MQTT discovery
-* Fix files management
-* Optimize some treatment
-* Fix some bugs
+* Ajout de commandes API
+* Ajout de la compatibilité Marstek
+* Ajout de la capacité de règles
+* Ajout de la fonctionnalité Tableau de bord
+* Correction de la découverte MQTT HA
+* Correction de la gestion des fichiers
+* Optimisation de certains traitements
+* Correction de bugs
 
-### V1.0 (initial stable version)
-#### Initial stable version
+### V1.0 (version stable initiale)
+#### Version stable initiale
 
-* Network Status
-* Devices Status
-* Config WiFi
-* Config Zigbee
-* MQTT gateway
-* WebPush API gateway
-* NTP client
-* HTTP Security
-* Backup / Restore
-* Update
+* État du réseau
+* État des appareils
+* Configuration WiFi
+* Configuration Zigbee
+* Passerelle MQTT
+* Passerelle API WebPush
+* Client NTP
+* Sécurité HTTP
+* Sauvegarde / Restauration
+* Mise à jour
 
-#### Compatible devices
+#### Appareils compatibles
 * ZLinky
 * ZiPulses
-* Power socket
-* All other (need template update)
+* Prise électrique
+* Tous les autres (nécessitent une mise à jour du modèle)
 
 
 ### V1.0a
-* Initial source 
-  
+* Source init
