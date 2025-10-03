@@ -32,6 +32,7 @@
 #include "rules.h"
 #include "microtar.h"
 #include "device.h"
+#include "notificationManager.h"
 
 extern std::vector<DeviceData*> devices;
 
@@ -55,6 +56,8 @@ extern RulesManager rulesManager;;
 extern bool executeReboot;
 extern bool updatePending ;
 
+extern NotificationManager notificationManager;
+
 int maxDayOfTheMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 String section[12] = { "0", "1", "256", "258" , "260", "262", "264" ,"266", "268", "270", "272", "274"};
 
@@ -74,83 +77,7 @@ AsyncEventSource events("/events");
 
 extern uint8_t* au8OTAFile;
 
-// ===== CLASSE STRING PSRAM SIMPLE =====
-class PSRAMString {
-private:
-    char* buffer;
-    size_t capacity;
-    size_t len;
-    
-public:
-    PSRAMString(size_t size = 100000) {
-        capacity = size;
-        buffer = (char*)ps_malloc(capacity);
-        if (!buffer) {
-            Serial.println("Erreur allocation PSRAM, utilisation heap");
-            buffer = (char*)malloc(capacity);
-        }
-        clear();
-    }
-    
-    ~PSRAMString() {
-        if (buffer) free(buffer);
-    }
-    
-    // Opérateur += comme String normale
-    PSRAMString& operator+=(const String& str) {
-        append(str.c_str());
-        return *this;
-    }
-    
-    PSRAMString& operator+=(const char* str) {
-        append(str);
-        return *this;
-    }
-    
-    PSRAMString& operator+=(const __FlashStringHelper* str) {
-        append(reinterpret_cast<const char*>(str));
-        return *this;
-    }
-    
-    // Opérateur = pour affecter
-    PSRAMString& operator=(const String& str) {
-        clear();
-        append(str.c_str());
-        return *this;
-    }
-    
-    PSRAMString& operator=(const __FlashStringHelper* str) {
-        clear();
-        append(reinterpret_cast<const char*>(str));
-        return *this;
-    }
-    
-    // Fonction replace comme String normale
-    void replace(const String& find, const String& replace) {
-        String temp(buffer);
-        temp.replace(find, replace);
-        clear();
-        append(temp.c_str());
-    }
-    
-    // Fonctions utiles
-    const char* c_str() const { return buffer; }
-    size_t length() const { return len; }
-    void clear() { buffer[0] = '\0'; len = 0; }
-    
-private:
-    void append(const char* str) {
-        if (!str) return;
-        size_t strLen = strlen(str);
-        if (len + strLen >= capacity) {
-            // Agrandir si nécessaire
-            capacity = (len + strLen + 1) * 2;
-            buffer = (char*)realloc(buffer, capacity);
-        }
-        strcpy(buffer + len, str);
-        len += strLen;
-    }
-};
+
 
 
 const char HTTP_SHELLY_EMULE[] PROGMEM = 
@@ -197,7 +124,7 @@ const char HTTP_HEADER[] PROGMEM =
 const char HTTP_HEADERGRAPH[] PROGMEM = 
     "<head>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
-    "<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
+    //"<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
     //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>" 
     "<script type='text/javascript' src='web/js/raphael-min.js'></script>"
     "<script type='text/javascript' src='web/js/morris.min.js'></script>"
@@ -205,6 +132,7 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<script type='text/javascript' src='web/js/functions.js'></script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
+    "<link href='web/css/energy.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width, initial-scale=1'>"
     "<style>"
@@ -241,6 +169,7 @@ const char HTTP_MENU[] PROGMEM =
    "<div class='container-fluid' style=''>"
    "<button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNavDropdown' aria-controls='navbarNavDropdown' aria-expanded='false' aria-label='Toggle navigation'>"
    "<span class='navbar-toggler-icon'></span>"
+   "<div class='AlertNotif' style='display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "<div class='AboutMaj' style='display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</button>"
    "<a class='navbar-brand p-0 me-0 me-lg-2' href='/' style='margin-right:0px;'>"
@@ -400,6 +329,15 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'></path>"
    "</svg>"
    " Outils"
+   "</a>"
+   "</li>"
+   "<li class='nav-item' id='Notifs'>"
+   "<a class='nav-link' href='/notifications'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-bell' viewBox='0 0 16 16'>"
+      "<path d='M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6'/>"
+   "</svg>"
+   " Notifications"
+   "<div class='AlertNotif' style='display: none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</a>"
    "</li>"
    "<li class='nav-item dropdown'>"
@@ -880,18 +818,61 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 <div class="collapse" id="notifLinky" style="display:none;">
                   <h5>Alertes</h5>
                   <div class='form-check'>
-                    <input class='form-check-input' id='NotifSubscribedPower' type='checkbox' name='NotifSubscribedPower' {{checkedNotifSubscribedPower}}>
-                    <label class='form-check-label' for='NotifSubscribedPower'>Dépassement de puissance souscrite</label>
+                    <input class='' id='NotifSubscribedPower' type='checkbox' name='NotifSubscribedPower' {{checkedNotifSubscribedPower}}>
+                    <label class='' for='NotifSubscribedPower'> Dépassement de puissance souscrite</label>
                   </div>
                   <div class='form-check'>
-                    <input class='form-check-input' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
-                    <label class='form-check-label' for='NotifPowerOutage'>Puissance nulle</label>
+                    <input class='' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
+                    <label class='' for='NotifPowerOutage'> Puissance nulle</label>
+                  </div>
+                  <div class='form-check'>
+                    <input class='' id='NotifRedColor' type='checkbox' name='NotifRedColor' {{checkedNotifRedColor}}>
+                    <label class='' for='NotifRedColor'> Jour rouge (uniquement pour les abonnements Tempo)</label>
+                  </div>
+                  <div class='form-check'>
+                    Sur-tension
+                    <div class="input-group mb-3">
+                      <div class="input-group-text">
+                        <input class="mt-0" type="checkbox" name='NotifOverVoltage' {{checkedNotifOverVoltage}}>
+                      </div>
+                      <input type="text" class="form-control" name='NotifOverVoltageThreshold' value='{{valOverVoltageThreshold}}'>
+                      <span class="input-group-text"> V</span> 
+                    </div>
+                  </div>
+                  <div class='form-check'>
+                    Sous-tension
+                    <div class="input-group mb-3">
+                      <div class="input-group-text">
+                        <input class="mt-0" type="checkbox" name='NotifUnderVoltage' {{checkedNotifUnderVoltage}}>
+                      </div>
+                      <input type="text" class="form-control" name='NotifUnderVoltageThreshold' value='{{valUnderVoltageThreshold}}'>
+                      <span class="input-group-text"> V</span> 
+                    </div>
                   </div>
                   <h5>Infos</h5>
                   <div class='form-check'>
-                    <input class='form-check-input' id='NotifPriceChange' type='checkbox' name='NotifPriceChange' {{checkedNotifPriceChange}}>
-                    <label class='form-check-label' for='NotifPriceChange'>Changement de tarif</label>
+                    <input class='' id='NotifPriceChange' type='checkbox' name='NotifPriceChange' {{checkedNotifPriceChange}}>
+                    <label class='' for='NotifPriceChange'> Changement de tarif</label>
                   </div>
+                  <div class='form-check'>
+                    <input class='' id='NotifPEJP' type='checkbox' name='NotifPEJP' {{checkedNotifPEJP}}>
+                    <label class='' for='NotifPEJP'> Préavis EJP (uniquement pour les abonnements EJP)</label>
+                  </div>
+                  <div class='form-check'>
+                    <input class='' id='NotifColorTomorrow' type='checkbox' name='NotifColorTomorrow' {{checkedNotifColorTomorrow}}>
+                    <label class='' for='NotifColorTomorrow'> Changement de couleur du lendemain (uniquement pour les abonnements Tempo)</label>
+                  </div>
+                  <div class='form-check'>
+                    Dépassement de budget
+                    <div class="input-group mb-3">
+                      <div class="input-group-text">
+                        <input class="mt-0" type="checkbox" name='NotifOverBudget' {{checkedNotifOverBudget}}>
+                      </div>
+                      <input type="text" class="form-control" name='NotifOverBudgetThreshold' value='{{valOverBudgetThreshold}}'>
+                      <span class="input-group-text"> € </span> 
+                    </div>
+                  </div>
+                  
                 </div>
                 <h5>Délestage automatique
                   <button
@@ -985,14 +966,16 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </h5>
                 <div class="collapse" id="notifProd" style="display:none;">
                   <h5>Alertes</h5>
-                  <div class='form-check'>
-                    
-                  </div>
+                    <div class='form-check'>
+                      <input class='' id='NotifProdZero' type='checkbox' name='NotifProdZero' {{checkedNotifProdZero}}>
+                      <label class='' for='NotifProdZero'>Production = 0</label>
+                    </div>
                   
                   <h5>Infos</h5>
-                  <div class='form-check'>
-                    
-                  </div>
+                    <div class='form-check'>
+                      <input class='' id='NotifProdSupConso' type='checkbox' name='NotifProdSupConso' {{checkedNotifProdSupConso}}>
+                      <label class='' for='NotifProdSupConso'>Production > Consommation</label>
+                    </div>
                 </div>
               </div>
               <div class="d-flex justify-content-end">
@@ -2025,541 +2008,923 @@ const char HTTP_ENERGY[] PROGMEM = R"(
          </div>
       </div>
     </div>
-    <script>
-      function wait(div){ document.getElementById(div).innerHTML = "<img src='web/img/wait.gif' />";}
-    </script>)";
+    )";
     
-
-/*const char HTTP_ENERGY_LINKY[] PROGMEM = R"(
-      <style>
-        
-        .energy-bars-horizontal {
-            display: flex;
-            height: 40px;
-            position: relative;
-            margin: 20px 0 80px 0;
-            border-radius: 8px;
-            overflow: visible;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        
-        .energy-bar-horizontal {
-            flex: 1;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border-right: 2px solid white;
-        }
-        
-        .energy-bar-horizontal:last-child {
-            border-right: none;
-        }
-        
-        .energy-bar-horizontal:hover {
-            transform: translateY(-5px);
-            z-index: 2;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
-        }
-        
-        .energy-bar-horizontal.A { background-color: #00a651; }
-        .energy-bar-horizontal.B { background-color: #54c93f; }
-        .energy-bar-horizontal.C { background-color: #a4d633; }
-        .energy-bar-horizontal.D { background-color: #fef200; }
-        .energy-bar-horizontal.E { background-color: #ffb400; }
-        .energy-bar-horizontal.F { background-color: #ff8c00; }
-        .energy-bar-horizontal.G { background-color: #e20613; }
-        
-        .bar-label-horizontal {
-            font-weight: bold;
-            font-size: 24px;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
-            color: white;
-        }
-       
-        .cursor-horizontal {
-            position: absolute;
-            bottom: -25px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 24px;
-            color: #333;
-            opacity: 0;
-            transition: all 0.4s ease;
-            z-index: 3;
-            text-shadow: 0 -2px 4px rgba(255,255,255,0.8);
-        }
-        
-        .cursor-horizontal.active {
-            opacity: 1;
-            animation: gentle-bounce-down 2s infinite;
-        }
-        
-        .value-display-horizontal {
-            position: absolute;
-            bottom: -60px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #333;
-            color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 14px;
-            opacity: 0;
-            transition: all 0.4s ease;
-            white-space: nowrap;
-            z-index: 3;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        }
-        
-        .value-display-horizontal.active {
-            opacity: 1;
-        }
-        
-        .value-display-horizontal::before {
-            content: '';
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 0;
-            height: 0;
-            border-bottom: 8px solid #333;
-            border-left: 8px solid transparent;
-            border-right: 8px solid transparent;
-        }
-
-        // Overlay du popup 
-        .popup-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            opacity: 0;
-            visibility: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .popup-overlay.active {
-            opacity: 1;
-            visibility: visible;
-        }
-
-        // Contenu du popup 
-        .popup-content {
-            background: white;
-            border-radius: 15px;
-            padding: 30px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            position: relative;
-            transform: scale(0.8);
-            transition: transform 0.3s ease;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-        }
-
-        .popup-overlay.active .popup-content {
-            transform: scale(1);
-        }
-
-        // Bouton de fermeture 
-        .close-btn {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            background: #ff4757;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 35px;
-            height: 35px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            font-weight: bold;
-            transition: all 0.3s ease;
-        }
-
-        .close-btn:hover {
-            background: #ff3742;
-            transform: rotate(90deg);
-        }
-
-        // Contenu informatif 
-        .popup-header {
-            color: #2c3e50;
-            margin-bottom: 20px;
-            font-size: 24px;
-            font-weight: bold;
-        }
-
-        .popup-text {
-            color: #555;
-            line-height: 1.6;
-            margin-bottom: 15px;
-            font-size: 16px;
-        }
-
-        .info-list {
-            list-style: none;
-            padding: 0;
-        }
-
-        .info-list li {
-            background: #f8f9fa;
-            margin: 10px 0;
-            padding: 12px 15px;
-            border-radius: 8px;
-            border-left: 4px solid #667eea;
-            transition: all 0.3s ease;
-        }
-
-        .info-list li:hover {
-            transform: translateX(5px);
-            background: #e9ecef;
-        }
-
-        .highlight {
-            background: #fcf374ff;
-            padding: 15px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border: 1px solid #f5d834ff;
-        }
-
-        // Responsive 
-        @media (max-width: 768px) {
-            .popup-content {
-                padding: 20px;
-                margin: 10px;
-            }
-
-            .popup-header {
-                font-size: 20px;
-            }
-
-            .popup-text {
-                font-size: 14px;
-            }
-
-            .open-popup-btn {
-                padding: 12px 25px;
-                font-size: 16px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .popup-content {
-                padding: 15px;
-            }
-
-            .close-btn {
-                width: 30px;
-                height: 30px;
-                font-size: 16px;
-            }
-        }
-
-      </style>
-      <div class='col-sm-12'>
-        {{LinkyStatus}}
+/*<script>
+      function wait(div){ document.getElementById(div).innerHTML = "<img src='web/img/wait.gif' />";}
+    </script>*/
+const char HTTP_ENERGY_LINKY[] PROGMEM = R"(
+<div class='col-sm-12'>
+  {{LinkyStatus}}
+</div>
+</div>
+<div class='container py-4' id='cadre_energy'>
+ <div class='row g-2'  style='{{styleEnergyAlert}}'>
+  <div class='col-12'>
+    <span style='color:red;' id='energyAlert'>⚠️ {{energyAlertMessage}}</span>
+  </div>
+</div>
+<div class='row g-2' >
+  <div class='col-12'>
+    <div class='card p-4' id='label-energy'>
+      <h5 class='card-title'>Etiquette énergétique</h5>
+      <div class='card-body'>
+        <div class="energy-bars-horizontal">
+          <div class="energy-bar-horizontal A" data-class="A">
+            <span class="bar-label-horizontal">A</span>
+            <div class="cursor-horizontal"></div>
+            <div class="value-display-horizontal"></div>
+          </div>
+          <div class="energy-bar-horizontal B" data-class="B">
+            <span class="bar-label-horizontal">B</span>
+            <div class="cursor-horizontal"></div>
+            <div class="value-display-horizontal"></div>
+          </div>
+          <div class="energy-bar-horizontal C" data-class="C">
+            <span class="bar-label-horizontal">C</span>
+            <div class="cursor-horizontal"></div>
+            <div class="value-display-horizontal"></div>
+          </div>
+          <div class="energy-bar-horizontal D" data-class="D">
+            <span class="bar-label-horizontal">D</span>
+            <div class="cursor-horizontal"></div>
+            <div class="value-display-horizontal"></div>
+          </div>
+          <div class="energy-bar-horizontal E" data-class="E">
+            <span class="bar-label-horizontal">E</span>
+            <div class="cursor-horizontal"></div>
+            <div class="value-display-horizontal"></div>
+          </div>
+          <div class="energy-bar-horizontal F" data-class="F">
+            <span class="bar-label-horizontal">F</span>
+            <div class="cursor-horizontal"></div>
+            <div class="value-display-horizontal"></div>
+          </div>
+          <div class="energy-bar-horizontal G" data-class="G">
+            <span class="bar-label-horizontal">G</span>
+            <div class="cursor-horizontal"></div>
+            <div class="value-display-horizontal"></div>
+          </div>
+        </div>
       </div>
+      <a href='javascript:void(0)' onclick='showPopup("popupHelpEnergyLabel")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
+        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
+          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
+          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
+        </svg>
+      </a>
+      <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
+        title='Paramétrer la tarification'>
+        <svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>
+          <circle cx='12' cy='12' r='3'></circle>
+          <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>
+        </svg>
+      </a>
     </div>
-    <div class='container py-4' id='cadre_energy'>
-     <div class='row g-2'  style='{{styleEnergyAlert}}'>
-      <div class='col-12'>
-        <span style='color:red;' id='energyAlert'>⚠️ {{energyAlertMessage}}</span>
+  </div>
+
+  {{power_gauge}}
+
+  <div class='col-lg-5 col-md-6 col-12'>
+    <div class='card p-4' id='energyTrend' style='height:100%;'>
+      <h5 class='card-title' style=''>Répartition énergétique</h5>
+      <div class='row'>
+        <div class='col-md-12 col-lg-6'>
+          <div class='card-body position-relative p-1' style='min-height:240px;'>
+            <div id='donut-chart' style='padding-top:40px;'></div>
+          </div>
+          <div align='center'>
+            <a href='javascript:void(0)' onclick='loadDistributionChart("{{time}}","");' ><svg fill='#000000' style='width:24px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg></a> 
+            <a href='javascript:void(0)' onclick='loadDistributionChart("{{time}}","euro");' ><svg style='width:24px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='#000000'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='#000000'/></g></svg></a>
+          </div>
+        </div>
+        <div class='col-md-12 col-lg-6'>
+          <div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>
+            <div id='trend-datas'></div>
+          </div>
+        </div>
+        
       </div>
+      <a href='javascript:void(0)' onclick='showPopup("popupHelpEnergyDispatch")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
+        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
+          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
+          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
+        </svg>
+      </a>
+      <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
+        title='Paramétrer la tarification'>
+        <svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>
+          <circle cx='12' cy='12' r='3'></circle>
+          <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>
+        </svg>
+      </a>
     </div>
-    <div class='row g-2' >
-      <div class='col-12'>
-        <div class='card p-4' id='label-energy'>
-          <h5 class='card-title'>Etiquette énergétique</h5>
-          <div class='card-body'>
-            <div class="energy-bars-horizontal">
-              <div class="energy-bar-horizontal A" data-class="A">
-                <span class="bar-label-horizontal">A</span>
-                <div class="cursor-horizontal"></div>
-                <div class="value-display-horizontal"></div>
-              </div>
-              <div class="energy-bar-horizontal B" data-class="B">
-                <span class="bar-label-horizontal">B</span>
-                <div class="cursor-horizontal"></div>
-                <div class="value-display-horizontal"></div>
-              </div>
-              <div class="energy-bar-horizontal C" data-class="C">
-                <span class="bar-label-horizontal">C</span>
-                <div class="cursor-horizontal"></div>
-                <div class="value-display-horizontal"></div>
-              </div>
-              <div class="energy-bar-horizontal D" data-class="D">
-                <span class="bar-label-horizontal">D</span>
-                <div class="cursor-horizontal"></div>
-                <div class="value-display-horizontal"></div>
-              </div>
-              <div class="energy-bar-horizontal E" data-class="E">
-                <span class="bar-label-horizontal">E</span>
-                <div class="cursor-horizontal"></div>
-                <div class="value-display-horizontal"></div>
-              </div>
-              <div class="energy-bar-horizontal F" data-class="F">
-                <span class="bar-label-horizontal">F</span>
-                <div class="cursor-horizontal"></div>
-                <div class="value-display-horizontal"></div>
-              </div>
-              <div class="energy-bar-horizontal G" data-class="G">
-                <span class="bar-label-horizontal">G</span>
-                <div class="cursor-horizontal"></div>
-                <div class="value-display-horizontal"></div>
-              </div>
-            </div>
-          </div>
-          <a href='#' onClick='openPopup("popupHelpEnergyLabel")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
-            <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
-              <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
-              <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
-            </svg>
-          </a>
-          <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
-            title='Paramétrer la tarification'>
-            <svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>
-              <circle cx='12' cy='12' r='3'></circle>
-              <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>
-            </svg>
-          </a>
+  </div>
+  <div class='col-lg-3 col-md-6 col-12'>
+    <div class='card p-4' id='energyTrend' style='height:100%;'>
+      <h5 class='card-title' style=''>Tendances</h5>
+      <div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>
+        <div id='power_trend'></div>
+      </div>
+      {{helpTrend}}
+      
+    </div>
+  </div>
+  <div class='col-md-6' style='display:{{stylePowerChart}}'>
+    <div class='card p-4'>
+      <h5 class='card-title'>Puissance apparente (graphique temps réel)</h5>
+      <div class='card-body'>
+          <div id='power-chart'></div>
+      </div>
+      <a href='javascript:void(0)' onclick='showPopup("popupHelpApparentPower")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
+        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
+          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
+          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
+        </svg>
+      </a>
+    </div>
+  </div>
+  <div class='col-md-6'>
+    <div class='card p-4'>
+      <h5 class='card-title'>Usage d'électricité</h5>
+      <div class='card-body'>
+          <div id='energy-chart'></div>
+      </div>
+      <a href='javascript:void(0)' onclick='showPopup("popupHelpElectricity")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
+        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
+          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
+          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
+        </svg>
+      </a>
+    </div>
+  </div>
+
+  <!-- Popup avec système simple -->
+  <div id='popupHelpPowerJaugeHour' class='popup' onclick='hidePopup("popupHelpPowerJaugeHour", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupHelpPowerJaugeHour")'>&times;</button> 
+      <h2 class='popup-header'>Jauges de puissance</h2>
+      <p class='popup-text'>
+          Les jauges de puissance permettent d'obtenir, en temps réel, la puissance apparente soutirée de chaque phase mais aussi la puissance injectée si votre Linky est en mode producteur.
+      </p>
+      <p class='popup-text'>
+        Pour les puissances soutirées et injectées, les jauges auront pour échelle : le minimum à 0 et le maximum correspondant à votre puissance souscrite.
+      </p>
+    </div>
+  </div>
+  <div id='popupHelpPowerJauge' class='popup' onclick='hidePopup("popupHelpPowerJauge", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupHelpPowerJauge")'>&times;</button> 
+      <h2 class='popup-header'>Electricité</h2>
+      <p class='popup-text'>
+          La (les) jauge(s) affiche(nt) , selon la période sélectionnée, la consommation ou la production totale de vore habitat.
+      </p>
+      <p class='popup-text'>
+        Concernant les jauges, l'échelle utilise la valeur minimal ou maximal déjà rencontrée. Grâce à ce principe vous pourrez comparer votre consommation / production en fonction des records historiques.
+      </p>
+    </div>
+  </div>
+  <div id='popupHelpEnergyDispatch' class='popup' onclick='hidePopup("popupHelpEnergyDispatch", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupHelpEnergyDispatch")'>&times;</button> 
+      <h2 class='popup-header'>Répartition énergétique</h2>
+      <p class='popup-text'>
+        Grâce au graphe en donut, vous pourrez avoir une meilleur vision de la répartition des ressources énergétiques selon la période choisie.
+      </p>
+      <div class='highlight'>
+        <strong>Attention !</strong> Toutes les données sont calculées sur des périodes glissantes. <br>Par exemple, si vous avez sélectionné :<br>
+          * Heure : les données reprendront les 24 dernières heures.<br>
+          * Jour : les données reprendront les 30 derniers jours<br>
+          * Mois : Les données reprendront les 12 derniers mois.<br>
+          * Année : Les données reprendront toutes les données.<br>
+      </div>
+      <p class='popup-text'>
+        Que ce soit de l'électricité, de la production solaire ou de la consommation de gaz, vous pourrez observer la répartition de chaque source énergétique en kWh ou en €.  
+      </p>
+      <p class='popup-text'>
+        Enfin la consommation totale (selon la période choisie) vous permettra d'avoir une vue globale sur votre consommation énergétique.
+      </p>
+    </div>
+  </div>
+  <div id='popupHelpEnergyTrendHour' class='popup' onclick='hidePopup("popupHelpEnergyTrendHour", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrendHour")'>&times;</button> 
+      <h2 class='popup-header'>Tendances</h2>
+      <h5>Puissance apparente</h5>
+      <p class='popup-text'>
+        La tendance de la puissance apparente permet d'avoir en temps réel les variations de puissances. Vous pourrez aussi observer la puissance apparente minimale et maximale soutirée de votre habitat.
+      </p>
+      <h5>Stats</h5>
+      <p class='popup-text'>
+       Cette section permet d'avoir les consommations :<br>
+        * de la veille<br>
+        * du mois en cours<br>
+        * de l'année en cours.<br>
+      </p>
+      
+    </div>
+  </div>
+  <div id='popupHelpEnergyTrend' class='popup' onclick='hidePopup("popupHelpEnergyTrend", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrend")'>&times;</button> 
+      <h2 class='popup-header'>Tendances</h2>
+      <h5>Consommation</h5>
+      <p class='popup-text'>
+        Selon la période choisie, vous aurez la variation de consommation par rapport à la veille en kWh avec le minimum et maximum consommé en fonction de la période de temps choisie.
+      </p>
+
+      <p class='popup-text'>
+        Si vous avez rempli la tarification, vous aurez aussi la somme en € que représente la consommation d'électricité sur la période.
+      </p>
+      
+    </div>
+  </div>
+  <div id='popupLinkyDatas' class='popup' onclick='hidePopup("popupLinkyDatas", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupLinkyDatas")'>&times;</button> 
+      <h2 class='popup-header'>Données Linky</h2>
+      <div id='power_data'></div>
+    </div>
+  </div>
+
+  <div id='popupHelpApparentPower' class='popup' onclick='hidePopup("popupHelpApparentPower", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupHelpApparentPower")'>&times;</button> 
+      <h2 class='popup-header'>Graphe puissance apparente</h2>
+      <div class='highlight'>
+        <strong>Attention !</strong> Toutes les données sont calculées sur des périodes glissantes. <br>Par exemple, si vous avez sélectionné l'horloge, les données reprendront les 24 dernières heures.
+      </div>
+      <p class='popup-text'>
+        Le graphe permet de voir les puissances apparentes (de toutes les phases) à la minute sur les 24 dernières heures.
+      </p>
+      <p class='popup-text'>
+        <span style='color:red'> --- </span> La ligne rouge correspond à la valeur de la puissance souscrite. 
+      </p>
+    </div>
+  </div>
+  <div id='popupHelpElectricity' class='popup' onclick='hidePopup("popupHelpElectricity", event)'>
+    <div class='popup-content'>
+      <button class='close-btn' onclick='hidePopup("popupHelpElectricity")'>&times;</button> 
+      <h2 class='popup-header'>Graphe Usage d'électricité</h2>
+      <div class='highlight'>
+        <strong>Attention !</strong> Toutes les données sont calculées sur des périodes glissantes. <br>Par exemple, si vous avez sélectionné l'horloge, les données reprendront les 24 dernières heures.
+      </div>
+      <p class='popup-text'>
+        Le graphe permet, selon la période sélectionnée, d'avoir l'usage complet d'électricité consommé ou produit par votre habitat: <br>
+        * La consommation selon tarifs <br>
+        * La production d'électricité
+      </p>
+      <p class='popup-text'>
+        <span style='color:red'> --- </span> La ligne rouge correspond à la valeur en kWh du budget que vous avez fixez mensuellement. 
+      </p>
+    </div>
+  </div>
+  
+  <div id='popupHelpEnergyLabel' class='popup' onclick='hidePopup("popupHelpEnergyLabel", event)'>
+    <div class='popup-content'>
+        <button class='close-btn' onclick='hidePopup("popupHelpEnergyLabel")'>&times;</button> 
+        <h2 class='popup-header'>Etiquette énergétique</h2>
+        <p class='popup-text'>
+            L'étiquette énergétique permet d'avoir une vision simple sur la performance énergétique (électricité / production / gaz en kWh) de votre habitat en fonction de la surface habitable.
+        </p>
+        <div class='highlight'>
+            <strong>Point important :</strong> L'étiquette énergétique n'est affichée qu'à titre informatif et ne remplace pas une étude DPE.
         </div>
+        <p class='popup-text'>
+            La performance est calculée de la manière suivante:
+        </p>
+
+        <ul class='info-list'>
+            <li><strong>Mode horaire :</strong> (Total énergie (Elect/prod/gaz) x 365) / surface habitable </li>
+            <li><strong>Mode journalier :</strong> (Total énergie (Elect/prod/gaz) x 12) / surface habitable</li>
+            <li><strong>Mode mensuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
+            <li><strong>Mode annuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
+        </ul>
+
+        <p class='popup-text'>
+            Liste des étiquettes :
+        </p>
+        <p class='popup-text'>
+            A : < 50 kWh/m².an
+        </p>
+        <p class='popup-text'>
+            B : 51 - 90 kWh/m².an
+        </p>
+        <p class='popup-text'>
+            C : 91 - 150 kWh/m².an
+        </p>
+        <p class='popup-text'>
+            D : 151 - 230 kWh/m².an
+        </p>
+        <p class='popup-text'>
+            E : 231 - 330 kWh/m².an
+        </p>
+        <p class='popup-text'>
+            F : 331 - 450 kWh/m².an
+        </p>
+        <p class='popup-text'>
+            G : > 451 kWh/m².an
+        </p>
       </div>
-      {{power_gauge}}
-      <div class='col-lg-8 col-md-12 col-12'>
-        <div class='card p-4' id='energyTrend' style='height:100%;'>
-          <h5 class='card-title' style=''>Répartition énergétique</h5>
-          
-          <div class='row'>
-            
-            <div class='col-md-12 col-lg-4'>
-              <div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>
-                <div id='power_trend'></div>
-              </div>
-            </div>
-            <div class='col-md-12 col-lg-4'>
-              <div class='card-body position-relative p-1' style='min-height:240px;'>
-                <div id='donut-chart' style='padding-top:40px;'></div>
-              </div>
-              <div align='center'>
-                <a onclick='loadDistributionChart(\"{{time}}\",\"\");' ><svg fill='#000000' style='width:24px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg></a> 
-                <a onclick='loadDistributionChart(\"{{time}}\",\"euro\");' ><svg style='width:24px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='#000000'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='#000000'/></g></svg></a>
-              </div>
-            </div>
-            <div class='col-md-12 col-lg-4'>
-              <div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>
-                <div id='trend-datas'></div>
-              </div>
-            </div>
-            
-          </div>
-          <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
-            title='Paramétrer la tarification'>
-            <svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' class='feather feather-settings'>
-              <circle cx='12' cy='12' r='3'></circle>
-              <path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>
-            </svg>
-          </a>
-        </div>
-      </div>
-      <div class='col-md-6' style='display:{{stylePowerChart}}'>
-        <div class='card p-4'>
-          <h5 class='card-title'>Puissance apparente (graphique temps réel)</h5>
-          <div class='card-body'>
-              <div id='power-chart'></div>
-          </div>
-        </div>
-      </div>
-      <div class='col-md-6'>
-        <div class='card p-4'>
-          <h5 class='card-title'>Consommation d'électricité</h5>
-          <div class='card-body'>
-              <div id='energy-chart'></div>
-          </div>
-        </div>
-      </div>
+  </div>
 
-      <div class='popup-overlay' id='popupHelpEnergyLabel' onclick='closePopupOnOverlay(event,\'popupHelpEnergyLabel\')'>
-        <div class='popup-content'>
-            <button class='close-btn' onclick='closePopup(\'popupHelpEnergyLabel\')'>×</button> 
-            <h2 class='popup-header'>Etiquette énergétique</h2>
-            <p class='popup-text'>
-                L'étiquette énergétique permet d'avoir une vision simple sur la performance énergétique (électricité / production / gaz en kWh) de votre habitat en fonction de la surface habitable.
-            </p>
-            <div class='highlight'>
-                <strong>Point important :</strong> L'étiquette énergétique n'est affichée qu'à titre informatif et ne remplace pas une étude DPE.
-            </div>
-            <p class='popup-text'>
-                La performance est calculée de la manière suivante:
-            </p>
+  <script>
 
-            <ul class='info-list'>
-                <li><strong>Mode horaire :</strong> (Total énergie (Elect/prod/gaz) x 365) / surface habitable </li>
-                <li><strong>Mode journalier :</strong> (Total énergie (Elect/prod/gaz) x 12) / surface habitable</li>
-                <li><strong>Mode mensuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
-                <li><strong>Mode annuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
-            </ul>
+    function getEnergyClass(value) {
+        if (value < 50) return { class: 'A', range: '< 50' };
+        if (value >= 51 && value <= 90) return { class: 'B', range: '51 - 90' };
+        if (value >= 91 && value <= 150) return { class: 'C', range: '91 - 150' };
+        if (value >= 151 && value <= 230) return { class: 'D', range: '151 - 230' };
+        if (value >= 231 && value <= 330) return { class: 'E', range: '231 - 330' };
+        if (value >= 331 && value <= 450) return { class: 'F', range: '331 - 450' };
+        if (value >= 451) return { class: 'G', range: '> 451' };
+    }
 
-            <p class='popup-text'>
-                Liste des étiquettes :
-            </p>
-            <p class='popup-text'>
-                A : < 50 kWh/m².an
-            </p>
-            <p class='popup-text'>
-                B : 51 - 90 kWh/m².an
-            </p>
-            <p class='popup-text'>
-                C : 91 - 150 kWh/m².an
-            </p>
-            <p class='popup-text'>
-                D : 151 - 230 kWh/m².an
-            </p>
-            <p class='popup-text'>
-                E : 231 - 330 kWh/m².an
-            </p>
-            <p class='popup-text'>
-                F : 331 - 450 kWh/m².an
-            </p>
-            <p class='popup-text'>
-                G : > 451 kWh/m².an
-            </p>
-          </div>
-      </div>
-
-      <script>
-
-        function getEnergyClass(value) {
-            if (value < 50) return { class: 'A', range: '< 50' };
-            if (value >= 51 && value <= 90) return { class: 'B', range: '51 - 90' };
-            if (value >= 91 && value <= 150) return { class: 'C', range: '91 - 150' };
-            if (value >= 151 && value <= 230) return { class: 'D', range: '151 - 230' };
-            if (value >= 231 && value <= 330) return { class: 'E', range: '231 - 330' };
-            if (value >= 331 && value <= 450) return { class: 'F', range: '331 - 450' };
-            if (value >= 451) return { class: 'G', range: '> 451' };
-        }
-
-        function calculateEnergyClass(IEEE,time) {  
-          var xhr = getXhr();
-          xhr.onreadystatechange = function(){
+    function calculateEnergyClass(IEEE, time) {  
+        var xhr = getXhr();
+        xhr.onreadystatechange = function(){
             if(xhr.readyState == 4 ){
-              if (xhr.responseText>1)
-              {
-                document.getElementById('label-energy').style.display='block';
-                const result = getEnergyClass(xhr.responseText);
-                displayResult(result.class, xhr.responseText, result.range);
-              }else{
-                //pas accès de données
-                document.getElementById('label-energy').style.display='none';
-              }
-            }
-          }
-          xhr.open("GET","loadTotalEnergy?IEEE="+escape(IEEE)+"&time="+escape(time),true);
-          xhr.setRequestHeader('Content-Type','application/html');
-          xhr.send();
-
-        }
-
-        function displayResult(energyClass, value, range) {
-            // Cacher tous les curseurs et valeurs
-            document.querySelectorAll('.cursor-horizontal').forEach(cursor => {
-                cursor.classList.remove('active');
-            });
-            document.querySelectorAll('.value-display-horizontal').forEach(display => {
-                display.classList.remove('active');
-                display.textContent = '';
-            });
-            
-            // Remettre toutes les barres à leur état normal
-            document.querySelectorAll('.energy-bar-horizontal').forEach(bar => {
-                bar.style.transform = 'translateY(0)';
-                bar.style.zIndex = '1';
-                bar.style.boxShadow = 'none';
-                bar.style.border = '2px solid white';
-                bar.style.animation = 'none';
-            });
-            
-            // Trouver la barre correspondante et afficher le curseur
-            const targetBar = document.querySelector(`[data-class="${energyClass}"]`);
-            if (targetBar) {
-                const cursor = targetBar.querySelector('.cursor-horizontal');
-                const valueDisplay = targetBar.querySelector('.value-display-horizontal');
-                
-                cursor.classList.add('active');
-                valueDisplay.classList.add('active');
-                valueDisplay.textContent = `${value} kWh/m².an`;
-                
-                // Ajouter un effet de surbrillance très visible
-                targetBar.style.transform = 'translateY(-12px) scale(1.05)';
-                targetBar.style.zIndex = '10';
-                targetBar.style.boxShadow = '0 15px 30px rgba(100,100,100,0.4), 0 0 0 2px #ffffff, 0 0 0 4px white';
-                targetBar.style.border = '2px solid #ffFFFF';
-                targetBar.style.borderRadius = '4px';
-
-            }
-
-        }
-
-        function openPopup(div) {
-            const overlay = document.getElementById(div);
-            overlay.classList.add('active');
-            
-            // Empêcher le scroll du body quand le popup est ouvert
-            document.body.style.overflow = 'hidden';
-        }
-
-        // Fermer le popup
-        function closePopup(div) {
-            const overlay = document.getElementById(div);
-            overlay.classList.remove('active');
-            
-            // Réactiver le scroll du body
-            document.body.style.overflow = 'auto';
-        }
-
-        // Fermer le popup en cliquant sur l'overlay
-        function closePopupOnOverlay(event,div) {
-            if (event.target === event.currentTarget) {
-                closePopup(div);
-            }
-        }
-
-        // Fermer avec la touche Escape
-        document.addEventListener('keydown', function(event,div) {
-            if (event.key === 'Escape') {
-                const overlay = document.getElementById(div);
-                if (overlay.classList.contains('active')) {
-                    closePopup(div);
+                if (xhr.responseText > 1) {
+                    document.getElementById('label-energy').style.display = 'block';
+                    const result = getEnergyClass(xhr.responseText);
+                    displayResult(result.class, xhr.responseText, result.range);
+                } else {
+                    document.getElementById('label-energy').style.display = 'none';
                 }
             }
+        }
+        xhr.open("GET", "loadTotalEnergy?IEEE=" + escape(IEEE) + "&time=" + escape(time), true);
+        xhr.setRequestHeader('Content-Type', 'application/html');
+        xhr.send();
+    }
+
+    function displayResult(energyClass, value, range) {
+        // Cacher tous les curseurs et valeurs
+        document.querySelectorAll('.cursor-horizontal').forEach(cursor => {
+            cursor.classList.remove('active');
         });
-
-        // Empêcher la fermeture quand on clique dans le contenu
-        document.querySelector('.popup-content').addEventListener('click', function(event) {
-            event.stopPropagation();
+        document.querySelectorAll('.value-display-horizontal').forEach(display => {
+            display.classList.remove('active');
+            display.textContent = '';
         });
+        
+        // Remettre toutes les barres à leur état normal
+        document.querySelectorAll('.energy-bar-horizontal').forEach(bar => {
+            bar.style.transform = 'translateY(0)';
+            bar.style.zIndex = '1';
+            bar.style.boxShadow = 'none';
+            bar.style.border = '2px solid white';
+            bar.style.animation = 'none';
+        });
+        
+        // Trouver la barre correspondante et afficher le curseur
+        const targetBar = document.querySelector(`[data-class="${energyClass}"]`);
+        if (targetBar) {
+            const cursor = targetBar.querySelector('.cursor-horizontal');
+            const valueDisplay = targetBar.querySelector('.value-display-horizontal');
+            
+            cursor.classList.add('active');
+            valueDisplay.classList.add('active');
+            valueDisplay.textContent = `${value} kWh/m².an`;
+            
+            // Ajouter un effet de surbrillance très visible
+            targetBar.style.transform = 'translateY(-12px) scale(1.05)';
+            targetBar.style.zIndex = '10';
+            targetBar.style.boxShadow = '0 15px 30px rgba(100,100,100,0.4), 0 0 0 2px #ffffff, 0 0 0 4px white';
+            targetBar.style.border = '2px solid #ffFFFF';
+            targetBar.style.borderRadius = '4px';
+        }
+    }
 
-      </script>
-      )";*/
+    // Fonctions popup ultra-simples
+    function showPopup(id) {
+        document.getElementById(id).classList.add('show');
+        document.body.style.overflow = 'hidden';
+    }
 
-const char HTTP_ENERGY_LINKY[] PROGMEM =
+    function hidePopup(id, event) {
+        // Si on clique sur l'overlay (pas sur le contenu)
+        if (event && event.target !== event.currentTarget) {
+            return;
+        }
+        
+        document.getElementById(id).classList.remove('show');
+        document.body.style.overflow = 'auto';
+    }
+
+    // Fermer avec Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const openPopup = document.querySelector('.popup.show');
+            if (openPopup) {
+                hidePopup(openPopup.id);
+            }
+        }
+    });
+
+    // Empêcher la fermeture quand on clique dans le contenu
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.popup-content').forEach(content => {
+            content.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+        });
+    });
+
+  </script>
+      )";
+
+const char HTTP_NOTIFICATION[] PROGMEM = 
+R"HTML(
+    <style>
+     
+        .pagination-info {
+            color: #666;
+            font-size: 14px;
+        }
+        .notification-title {
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .notification-message {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .notification-date {
+          font-size: 0.7em;
+        }
+
+        .type-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .type-0 { background: #17a2b8; }
+        .type-1 { background: #ffc107; color: #333; }
+        .type-2 { background: #dc3545; }
+        
+        .status-viewed { font-size: 0.8em;color: #28a745; }
+        .status-unread { font-size: 0.8em;color: #dc3545; font-weight: bold; }
+        
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+        }
+        
+        .page-btn {
+            padding: 8px 16px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .page-btn:hover:not(.active) {
+            background: #e9ecef;
+        }
+        
+        .page-btn.active {
+            background: #3553d8ff;
+            color: white;
+            border-color: #3553d8ff;
+        }
+        
+        .page-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border-left: 4px solid #dc3545;
+        }     
+        .btn-small {
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 15px;
+        }
+
+    </style>
+
+    <div class='row p-4'>
+      <h4 class='card-title mb-4'>Notifications</h4>
+      <div class="d-flex justify-content-end">
+        <button class="btn btn-primary mb-1 " onclick="markAllAsRead()" id="markAllBtn">
+          <svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-binoculars' viewBox='0 0 16 16'>
+            <path d='M3 2.5A1.5 1.5 0 0 1 4.5 1h1A1.5 1.5 0 0 1 7 2.5V5h2V2.5A1.5 1.5 0 0 1 10.5 1h1A1.5 1.5 0 0 1 13 2.5v2.382a.5.5 0 0 0 .276.447l.895.447A1.5 1.5 0 0 1 15 7.118V14.5a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 14.5v-3a.5.5 0 0 1 .146-.354l.854-.853V9.5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5v.793l.854.853A.5.5 0 0 1 7 11.5v3A1.5 1.5 0 0 1 5.5 16h-3A1.5 1.5 0 0 1 1 14.5V7.118a1.5 1.5 0 0 1 .83-1.342l.894-.447A.5.5 0 0 0 3 4.882zM4.5 2a.5.5 0 0 0-.5.5V3h2v-.5a.5.5 0 0 0-.5-.5zM6 4H4v.882a1.5 1.5 0 0 1-.83 1.342l-.894.447A.5.5 0 0 0 2 7.118V13h4v-1.293l-.854-.853A.5.5 0 0 1 5 10.5v-1A1.5 1.5 0 0 1 6.5 8h3A1.5 1.5 0 0 1 11 9.5v1a.5.5 0 0 1-.146.354l-.854.853V13h4V7.118a.5.5 0 0 0-.276-.447l-.895-.447A1.5 1.5 0 0 1 12 4.882V4h-2v1.5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5zm4-1h2v-.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5zm4 11h-4v.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5zm-8 0H2v.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5z'/>
+          </svg>
+            Tout vu
+        </button> &nbsp;
+        <button type="button" onclick="clearAllNotifications()" class="btn btn-danger mb-1">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16">
+            <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"></path>
+            <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"></path>
+            </svg>
+            RAZ
+        </button>
+      </div>
+    </div>
+    <div class='row p-4'>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body">
+          <div class="content">
+              <div id="loadingMessage" class="loading">
+                  <p>📡 Chargement des notifications...</p>
+              </div>
+              
+              <div id="errorMessage" class="error" style="display: none;"></div>
+              
+              <table class="table table-hover" id="notificationsTable" style="display: none;">
+                  <thead>
+                      <tr>
+                          <th scope="col">Titre</th>
+                          <th scope="col">Date/Heure</th>
+                          <th scope="col">Statut</th>
+                          <th scope="col">Actions</th>
+                      </tr>
+                  </thead>
+                  <tbody id="notificationsBody">
+                  </tbody>
+              </table>
+              <div class="controls">
+                <div class="pagination-info" id="paginationInfo">
+                    Chargement...
+                </div>
+              </div>
+              <div class="pagination" id="pagination" style="display: none;">
+              </div>
+            </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+        let currentPage = 1;
+        const itemsPerPage = 10;
+        let totalPages = 1;
+        let totalItems = 0;
+
+        // Charger les notifications au démarrage
+        document.addEventListener('DOMContentLoaded', function() {
+          
+          loadNotifications(currentPage);
+          updateMarkAllButton();
+          setInterval(() => {
+            loadNotifications(currentPage);
+            updateMarkAllButton();
+          }, 10000);
+        });
+        async function loadNotifications(page = 1) {
+            try {
+                document.getElementById('loadingMessage').style.display = 'block';
+                document.getElementById('notificationsTable').style.display = 'none';
+                document.getElementById('errorMessage').style.display = 'none';
+                document.getElementById('pagination').style.display = 'none';
+               
+                const response = await fetch(`/api/notifications?page=${page}&limit=${itemsPerPage}`);
+                const data = await response.json();
+                
+                // Vérifier si les notifications ont des IDs
+                if (data.notifications && data.notifications.length > 0) {
+                    data.notifications.forEach((notif, index) => {
+
+                    });
+                }
+
+                currentPage = page;
+                totalItems = data.total;
+                totalPages = Math.ceil(totalItems / itemsPerPage);
+
+                updatePaginationInfo(data);
+                displayNotifications(data.notifications);
+                createPagination();
+
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('notificationsTable').style.display = 'table';
+                document.getElementById('pagination').style.display = 'flex';
+
+            } catch (error) {
+                console.error('Erreur chargement notifications:', error);
+                showError('Erreur lors du chargement des notifications');
+            }
+        }
+
+        function displayNotifications(notifications) {
+            const tbody = document.getElementById('notificationsBody');
+            tbody.innerHTML = '';
+
+            if (notifications.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 50px; color: #666;">📭 Aucune notification</td></tr>';
+                return;
+            }
+
+            notifications.forEach((notif, index) => {
+                const row = document.createElement('tr');
+                
+                // Vérification et fallback pour l'ID
+                const notifId = typeof notif.id !== 'undefined' ? notif.id : ((currentPage - 1) * itemsPerPage + index);
+                
+                const typeLabels = {
+                    0: 'Info',
+                    1: 'Attention',
+                    2: 'Erreur'
+                };
+
+                row.innerHTML = `
+                    <td>
+                        <div class="notification-title">
+                        <span class="type-badge type-${notif.type}">
+                            ${typeLabels[notif.type] || 'Inconnu'}
+                        </span>
+                        &nbsp;${escapeHtml(notif.title)}
+                        </div>
+                        <div class="notification-message">${escapeHtml(notif.message)}</div>
+                    </td>
+                    <td class="notification-date">${escapeHtml(notif.timeStamp)}</td>
+                    <td>
+                        <span class="${notif.viewed ? 'status-viewed' : 'status-unread'}">
+                            ${notif.viewed ? '✅ Lu' : '🚨 Non lu'}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            ${!notif.viewed ? `<button class="btn btn-small success" onclick="markAsRead(${notifId})">
+                              <svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='#3553d8ff' class='bi bi-binoculars' viewBox='0 0 16 16'>
+                                <path d='M3 2.5A1.5 1.5 0 0 1 4.5 1h1A1.5 1.5 0 0 1 7 2.5V5h2V2.5A1.5 1.5 0 0 1 10.5 1h1A1.5 1.5 0 0 1 13 2.5v2.382a.5.5 0 0 0 .276.447l.895.447A1.5 1.5 0 0 1 15 7.118V14.5a1.5 1.5 0 0 1-1.5 1.5h-3A1.5 1.5 0 0 1 9 14.5v-3a.5.5 0 0 1 .146-.354l.854-.853V9.5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5v.793l.854.853A.5.5 0 0 1 7 11.5v3A1.5 1.5 0 0 1 5.5 16h-3A1.5 1.5 0 0 1 1 14.5V7.118a1.5 1.5 0 0 1 .83-1.342l.894-.447A.5.5 0 0 0 3 4.882zM4.5 2a.5.5 0 0 0-.5.5V3h2v-.5a.5.5 0 0 0-.5-.5zM6 4H4v.882a1.5 1.5 0 0 1-.83 1.342l-.894.447A.5.5 0 0 0 2 7.118V13h4v-1.293l-.854-.853A.5.5 0 0 1 5 10.5v-1A1.5 1.5 0 0 1 6.5 8h3A1.5 1.5 0 0 1 11 9.5v1a.5.5 0 0 1-.146.354l-.854.853V13h4V7.118a.5.5 0 0 0-.276-.447l-.895-.447A1.5 1.5 0 0 1 12 4.882V4h-2v1.5a.5.5 0 0 1-.5.5h-3a.5.5 0 0 1-.5-.5zm4-1h2v-.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5zm4 11h-4v.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5zm-8 0H2v.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5z'/>
+                              </svg>
+                             </button>` : ''}
+                            <button class="btn btn-small danger" onclick="deleteNotification(${notifId})">
+                            <svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='#dc3545' class='bi bi-trash' viewBox='0 0 16 16'>
+                              <path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>
+                              <path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>
+                            </svg>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                
+                tbody.appendChild(row);
+            });
+        }
+
+        function updatePaginationInfo(data) {
+            const start = data.offset + 1;
+            const end = Math.min(data.offset + data.notifications.length, data.total);
+            document.getElementById('paginationInfo').textContent = 
+                `Affichage ${start}-${end} sur ${data.total} notifications`;
+        }
+
+        function createPagination() {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+
+            // Bouton précédent
+            const prevBtn = document.createElement('button');
+            prevBtn.textContent = '◀ Précédent';
+            prevBtn.className = 'page-btn';
+            prevBtn.disabled = currentPage <= 1;
+            prevBtn.onclick = () => currentPage > 1 && loadNotifications(currentPage - 1);
+            pagination.appendChild(prevBtn);
+
+            // Numéros de pages
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+
+            if (startPage > 1) {
+                addPageButton(1);
+                if (startPage > 2) {
+                    const dots = document.createElement('span');
+                    dots.textContent = '...';
+                    dots.style.padding = '8px';
+                    pagination.appendChild(dots);
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                addPageButton(i);
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    const dots = document.createElement('span');
+                    dots.textContent = '...';
+                    dots.style.padding = '8px';
+                    pagination.appendChild(dots);
+                }
+                addPageButton(totalPages);
+            }
+
+            // Bouton suivant
+            const nextBtn = document.createElement('button');
+            nextBtn.textContent = 'Suivant ▶';
+            nextBtn.className = 'page-btn';
+            nextBtn.disabled = currentPage >= totalPages;
+            nextBtn.onclick = () => currentPage < totalPages && loadNotifications(currentPage + 1);
+            pagination.appendChild(nextBtn);
+        }
+
+        function addPageButton(pageNum) {
+            const pagination = document.getElementById('pagination');
+            const btn = document.createElement('button');
+            btn.textContent = pageNum;
+            btn.className = 'page-btn' + (pageNum === currentPage ? ' active' : '');
+            btn.onclick = () => loadNotifications(pageNum);
+            pagination.appendChild(btn);
+        }
+
+        async function markAsRead(index) {
+            try {
+                const response = await fetch(`/api/notifications/read?id=${index}`, {
+                    method: 'PUT'
+                });
+
+                if (response.ok) {
+                    
+                    await loadNotifications(currentPage);
+                } else {
+                    const errorData = await response.json();
+                    showError(errorData.error || 'Erreur lors du marquage comme lu');
+                }
+            } catch (error) {
+                console.error('Erreur mark as read:', error);
+                showError('Erreur lors du marquage comme lu');
+            }
+        }
+
+        async function markAllAsRead() {
+            try {
+                const markAllBtn = document.getElementById('markAllBtn');
+                const originalText = markAllBtn.textContent;
+                
+                // Indicateur de chargement
+                markAllBtn.textContent = '⏳ Marquage...';
+                markAllBtn.disabled = true;
+
+                const response = await fetch('/api/notifications/read-all', {
+                    method: 'PUT'
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('Toutes les notifications marquées comme lues:', result);
+                    
+                    // Feedback visuel temporaire
+                    markAllBtn.textContent = '✅ Terminé !';
+                    markAllBtn.classList.add('success');
+                    
+                    // Actualiser les données
+                    await loadNotifications(currentPage);
+                    
+                    // Restaurer le bouton après 2 secondes
+                    setTimeout(() => {
+                        markAllBtn.textContent = originalText;
+                        markAllBtn.disabled = false;
+                        markAllBtn.classList.remove('success');
+                        updateMarkAllButton(); // Met à jour l'état du bouton
+                    }, 2000);
+                    
+                } else {
+                    const errorData = await response.json();
+                    showError(errorData.error || 'Erreur lors du marquage');
+                    
+                    // Restaurer le bouton
+                    markAllBtn.textContent = originalText;
+                    markAllBtn.disabled = false;
+                }
+            } catch (error) {
+                console.error('Erreur mark all as read:', error);
+                showError('Erreur lors du marquage de toutes les notifications');
+                
+                // Restaurer le bouton
+                const markAllBtn = document.getElementById('markAllBtn');
+                markAllBtn.textContent = 'Tout lu';
+                markAllBtn.disabled = false;
+            }
+        }
+
+        // Fonction pour mettre à jour l'état du bouton "Tout marquer lu"
+        async function updateMarkAllButton() {
+            try {
+                const response = await fetch('/api/stats');
+                if (response.ok) {
+                    const stats = await response.json();
+                    const markAllBtn = document.getElementById('markAllBtn');
+                    
+                    if (stats.unread > 0) {
+                        markAllBtn.disabled = false;
+                        markAllBtn.style.opacity = '1';
+                        markAllBtn.setAttribute('title', `Marquer ${stats.unread} notification(s) comme lues`);
+                        markAllBtn.textContent = `Tout vu (${stats.unread})`;
+                    } else {
+                        markAllBtn.disabled = true;
+                        markAllBtn.style.opacity = '0.5';
+                        markAllBtn.setAttribute('title', 'Aucune notification non lue');
+                        markAllBtn.textContent = 'Tout vu';
+                    }
+                }
+            } catch (error) {
+                console.error('Erreur lors de la mise à jour du bouton:', error);
+            }
+        }
+
+        async function deleteNotification(index) {
+            if (!confirm('Êtes-vous sûr de vouloir supprimer cette notification ?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/notifications/delete?id=${index}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    // Si on supprime le dernier élément de la page et qu'on n'est pas sur la première page,
+                    // revenir à la page précédente
+                    const newTotalPages = Math.ceil((totalItems - 1) / itemsPerPage);
+                    if (currentPage > newTotalPages && currentPage > 1) {
+                        await loadNotifications(currentPage - 1);
+                    } else {
+                        await loadNotifications(currentPage);
+                    }
+                } else {
+                    const errorData = await response.json();
+                    showError(errorData.error || 'Erreur lors de la suppression');
+                }
+            } catch (error) {
+                console.error('Erreur delete:', error);
+                showError('Erreur lors de la suppression');
+            }
+        }
+
+        async function clearAllNotifications() {
+            if (!confirm('Êtes-vous sûr de vouloir supprimer TOUTES les notifications ?')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/notifications/clear', {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    currentPage = 1;
+                    await loadNotifications(currentPage);
+                } else {
+                    showError('Erreur lors de la suppression');
+                }
+            } catch (error) {
+                console.error('Erreur clear all:', error);
+                showError('Erreur lors de la suppression');
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            document.getElementById('loadingMessage').style.display = 'none';
+            
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function escapeHtml(text) {
+            const map = {
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#039;'
+            };
+            return text.replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+    </script>
+)HTML";
+
+/*const char HTTP_ENERGY_LINKY[] PROGMEM =
     
       "<div class='col-sm-12'>"
         "{{LinkyStatus}}"
@@ -2631,7 +2996,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"
-;
+;*/
 
 const char HTTP_ENERGY_GAZ[] PROGMEM =
 
@@ -2786,6 +3151,15 @@ const char HTTP_FOOTER[] PROGMEM = R"(
         });
       }
 
+      async function showAlertNotification(){
+        const hasUnread = await hasUnreadNotifications();
+        if (hasUnread) {
+          $(".AlertNotif").css('display', 'inline-block');
+        }else{
+          $(".AlertNotif").hide();
+        }
+      }
+
       function showTools(val){
         if (val) {
           $('#Tools').show();
@@ -2793,12 +3167,37 @@ const char HTTP_FOOTER[] PROGMEM = R"(
           $('#Tools').hide();
         }
       }
+
+      async function hasUnreadNotifications() {
+          try {
+              const response = await fetch(`http://${window.location.host}/api/stats`);
+              if (!response.ok) {
+                  console.error('Erreur API stats:', response.status);
+                  return -1;
+              }
+              
+              const stats = await response.json();
+              return stats.unread || 0;
+              
+          } catch (error) {
+            console.error('Erreur lors de la vérification des notifications:', error);
+            return -1;
+          }
+
+      }
+    showAlertNotification();
+    setInterval(() => {
+            showAlertNotification();
+          }, 10000);      
+   
     showTools({{value}});
     getReleaseInfo();
     getFormattedDate();
     getAlert();
     </script>
     )";
+
+
 const char HTTP_FOOTER_ASSIST[] PROGMEM = R"(
     <script type='text/javascript' src='web/js/bootstrap.min.js'></script>
     <script language='javascript'>
@@ -3734,7 +4133,7 @@ String createPowerGraph(String IEEE)
   }  
   result += F("],");
   result += F(" ymax: ");
-    result += String(round(goal * 1.25));
+    result += String(round((goal * 1.25) / 1000) * 1000);
   result += F(",");
   result += F(" postUnits: ' VA',");
   result += F(" dataLabels: false,");
@@ -3744,7 +4143,7 @@ String createPowerGraph(String IEEE)
   return result;
 }
 
-String createEnergyGraph(String IEEE, String Type, String barColor)
+String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
 {
   String result = "";
   String unit = "";
@@ -3772,30 +4171,34 @@ String createEnergyGraph(String IEEE, String Type, String barColor)
       {
         sep = "";
       }
-      JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{\"name\":\"" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "\",\"coeff\":\"1\",\"price\":" + getTarif(String(section[cntsection]).toInt(),"energy") +",\"abo\":"+ConfigGeneral.tarifAbo+",\"taxe\":"+ConfigGeneral.tarifCSPE+",\"unit\":\"Wh\"}";
+      if (section[cntsection]!="1") // on exclut EAIT
+      {
+        JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{\"name\":\"" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "\",\"coeff\":1,\"price\":" + getTarif(String(section[cntsection]).toInt(),"energy") +",\"abo\":"+ConfigGeneral.tarifAbo+",\"taxe\":"+ConfigGeneral.tarifCSPE+",\"unit\":\"Wh\"}";
+      } 
       result += sep + String(section[cntsection]);
       i++;
+      
     }
     if (strcmp(ConfigGeneral.Production,"")!=0)
     {
-      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":\"1\",\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
+      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
     }  
     unit = F(" postUnits: ' Wh',");
     
   }else if (Type=="gaz")
   {
-      JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":\""+String(ConfigGeneral.coeffGaz)+"\",\"price\":" + getTarif(0,"gaz") + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
+      JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":"+String(ConfigGeneral.coeffGaz)+",\"price\":" + getTarif(0,"gaz") + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
       result += "0"; 
       unit = " postUnits: ' "+String(ConfigGeneral.unitGaz)+"',";
 
   }else if (Type=="water")
   {
-    JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":\""+String(ConfigGeneral.coeffWater)+"\",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
+    JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":"+String(ConfigGeneral.coeffWater)+",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
     result += "0";
     unit = " postUnits: ' "+String(ConfigGeneral.unitWater)+"',";
   }else if (Type=="production")
   {
-    JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":\"1\",\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
+    JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
     result += "1";
     unit = F(" postUnits: ' Wh',");
   }
@@ -3813,6 +4216,14 @@ String createEnergyGraph(String IEEE, String Type, String barColor)
   result += F("redraw: true,");
   result += F(" xLabelAngle: 70,");
   result += F("stacked: true,");
+  
+  if (budget > 0)
+  { 
+      result += F(" goals : [");
+      result += String(budget);
+      result +=F("],");
+  }
+
   result += F(" dataLabels: false,");
   result += F(" animate: false,");
   result += F("hoverCallback: function (index, options, content, row) {");
@@ -4427,7 +4838,7 @@ void handleDashboard(AsyncWebServerRequest *request)
 
 void handleStatusNetwork(AsyncWebServerRequest *request)
 {
-  String result;
+  PSRAMString result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
@@ -4515,9 +4926,7 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   temperature = temperatureReadFixed();
   result.replace("{{Temperature}}", String(temperature));
 
-  request->send(200, "text/html", result);
-
-  request->send(200, "text/html", result);
+  request->send(200, "text/html", result.c_str());
 }
 
 /*void handleStatusEnergy(AsyncWebServerRequest *request)
@@ -4878,8 +5287,8 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
 
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
-  PSRAMString result(150000);
-  result += F("<html>");
+  PSRAMString result(300000);
+  result = F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ENERGY);
@@ -4946,9 +5355,24 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   if (time == "hour")
   {
     result.replace("{{stylePowerChart}}", F("block"));
+    
+    String help="<a href='javascript:void(0)' onclick='showPopup(\"popupHelpEnergyTrendHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>";
+    help+="<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>";  
+    help+="<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>  ";
+    help+="<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>";
+    help+="</svg>";
+    help+="</a>";
+    result.replace("{{helpTrend}}", help);
   }
   else{
     result.replace("{{stylePowerChart}}", F("none"));
+    String help="<a href='javascript:void(0)' onclick='showPopup(\"popupHelpEnergyTrend\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>";
+    help+="<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>";  
+    help+="<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>  ";
+    help+="<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>";
+    help+="</svg>";
+    help+="</a>";
+    result.replace("{{helpTrend}}", help);
   }
 
   result.replace("{{time}}",time);
@@ -4997,14 +5421,13 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   //
   
   String powerGauge="";
-
   if (time == "hour")
   {
     if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
     {
       powerGauge=F("<div class='col-lg-4 col-md-12 col-12'>");
             powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
-              powerGauge +=F("<h5 class='card-title' >Puissances</h5>");
+              powerGauge +=F("<h5 class='card-title' >Linky : Puissances</h5>");
               powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
                 powerGauge += F("<div class='row'>");
                   
@@ -5041,13 +5464,25 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
                   powerGauge +=F("</div>");
                 }
                 powerGauge +=F("</div>");
+                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>");
+                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>");  
+                    powerGauge +=F("<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>");
+                    powerGauge +=F("<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>");
+                  powerGauge +=F("</svg>");
+                powerGauge +=F("</a>");  
+                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupLinkyDatas\")' class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>");
+                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");  
+                    powerGauge +=F("<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>");
+                    powerGauge +=F("<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>");
+                  powerGauge +=F("</svg>");
+                powerGauge +=F("</a>"); 
               powerGauge +=F("</div>");
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
     }else{
       powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
             powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
-              powerGauge +=F("<h5 class='card-title'>Puissances</h5>");
+              powerGauge +=F("<h5 class='card-title' >Linky : Puissances</h5>");
               powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
                 powerGauge += F("<div class='row'>");
                 if (strcmp(ConfigGeneral.Production,"") != 0 )
@@ -5067,15 +5502,26 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
                   powerGauge +=F("</div>");
                 }
                 powerGauge +=F("</div>");
-              powerGauge +=F("</div>");
-              
+                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>");
+                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>");  
+                    powerGauge +=F("<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>");
+                    powerGauge +=F("<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>");
+                  powerGauge +=F("</svg>");
+                powerGauge +=F("</a>");  
+                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupLinkyDatas\")' class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>");
+                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");  
+                    powerGauge +=F("<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>");
+                    powerGauge +=F("<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>");
+                  powerGauge +=F("</svg>");
+                powerGauge +=F("</a>"); 
+              powerGauge +=F("</div>");  
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
     }
   }else{
     powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
       powerGauge +=F("<div id='energyGauge'  class='card p-4' style='height:100%;min-height:270px;'>");
-        powerGauge +=F("<h5 class='card-title'>Electricité</h5>");
+        powerGauge +=F("<h5 class='card-title'>Linky </h5>");
         powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
           powerGauge += F("<div class='row'>");
             if (strcmp(ConfigGeneral.Production,"") != 0 )
@@ -5095,24 +5541,29 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
               powerGauge +=F("</div>");
             }
           powerGauge +=F("</div>");
+          powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJauge\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>");
+            powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>");  
+              powerGauge +=F("<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>");
+              powerGauge +=F("<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>");
+            powerGauge +=F("</svg>");
+          powerGauge +=F("</a>"); 
         powerGauge +=F("</div>");
-        
       powerGauge +=F("</div>");
     powerGauge +=F("</div>");
   }
   result.replace("{{power_gauge}}",powerGauge);
 
   String javascript = "";
-
+  int budget = 0;
   javascript = F("<script language='javascript'>");
   javascript += F("$(document).ready(function() {");
   if (strcmp(ConfigGeneral.ZLinky,"")!=0)
   {
-    /*javascript+=F("calculateEnergyClass('");
+    javascript+=F("calculateEnergyClass('");
     javascript += String(ConfigGeneral.ZLinky);
     javascript += F("','");
     javascript += time;
-    javascript += F("');");*/
+    javascript += F("');");
     if (time == "hour")
     {
       
@@ -5135,7 +5586,14 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
     }
     javascript += createDistributionGraph(ConfigGeneral.ZLinky);
-    javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
+   
+    if (ConfigNotif.OverBudgetThreshold)
+    {
+      budget= getkWhBudget(String(ConfigGeneral.ZLinky), time, ConfigNotif.OverBudgetThreshold);
+    }
+     
+
+    javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']",budget);
     javascript += F("loadPowerGaugeAbo(1");
     javascript += F(",'");
     javascript += String(ConfigGeneral.ZLinky);
@@ -5196,7 +5654,8 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   }
   if (strcmp(ConfigGeneral.Gaz,"")!=0)
   {
-    javascript += createEnergyGraph(ConfigGeneral.Gaz, "gaz","['#e67e22','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    budget = 0;
+    javascript += createEnergyGraph(ConfigGeneral.Gaz, "gaz","['#e67e22','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']",budget);
     javascript += F("refreshStatusGaz('");
     javascript += String(ConfigGeneral.Gaz);
     javascript += F("','");
@@ -5205,7 +5664,8 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   }
   if (strcmp(ConfigGeneral.Water,"")!=0)
   {
-    javascript += createEnergyGraph(ConfigGeneral.Water, "water","['#2e86c1','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
+    budget = 0;
+    javascript += createEnergyGraph(ConfigGeneral.Water, "water","['#2e86c1','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']",budget);
     javascript += F("refreshStatusWater('");
     javascript += String(ConfigGeneral.Water);
     javascript += F("','");
@@ -5917,6 +6377,57 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   result.replace("{{tarifWater}}", String(ConfigGeneral.tarifWater));
 
   // NOTIFICATION
+  result.replace("{{valOverVoltageThreshold}}", String(ConfigNotif.OverVoltageThreshold));
+  result.replace("{{valUnderVoltageThreshold}}", String(ConfigNotif.UnderVoltageThreshold));
+  result.replace("{{valOverBudgetThreshold}}", String(ConfigNotif.OverBudgetThreshold));
+  if (ConfigNotif.ColorTomorrow)
+  {
+    result.replace("{{checkedNotifColorTomorrow}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifColorTomorrow}}", "");
+  }
+  if (ConfigNotif.OverBudget)
+  {
+    result.replace("{{checkedNotifOverBudget}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifOverBudget}}", "");
+  }
+  if (ConfigNotif.RedColor)
+  {
+    result.replace("{{checkedNotifRedColor}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifRedColor}}", "");
+  }
+  if (ConfigNotif.PEJP)
+  {
+    result.replace("{{checkedNotifPEJP}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifPEJP}}", "");
+  }
+  if (ConfigNotif.UnderVoltage)
+  {
+    result.replace("{{checkedNotifUnderVoltage}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifUnderVoltage}}", "");
+  }
+  if (ConfigNotif.OverVoltage)
+  {
+    result.replace("{{checkedNotifOverVoltage}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifOverVoltage}}", "");
+  }
   if (ConfigNotif.PowerOutage)
   {
     result.replace("{{checkedNotifPowerOutage}}", "Checked");
@@ -5940,6 +6451,22 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   else
   {
     result.replace("{{checkedNotifSubscribedPower}}", "");
+  }
+  if (ConfigNotif.ProdSupConso)
+  {
+    result.replace("{{checkedNotifProdSupConso}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifProdSupConso}}", "");
+  }
+  if (ConfigNotif.ProdZero)
+  {
+    result.replace("{{checkedNotifProdZero}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedNotifProdZero}}", "");
   }
 
   request->send(200, "text/html", result);
@@ -6388,6 +6915,22 @@ void handleLogs(AsyncWebServerRequest *request)
   result += F("</html>");
   request->send(200, F("text/html"), result);
 }
+
+void handleNotifications(AsyncWebServerRequest *request)
+{
+
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result += FPSTR(HTTP_NOTIFICATION);
+  result+=footer();
+  result += F("</html>");
+ 
+  request->send(200,"text/html", result);
+}
+
 
 void handleTools(AsyncWebServerRequest *request)
 {
@@ -7698,7 +8241,12 @@ void handleGenerateNotif(AsyncWebServerRequest *request)
 
   if (!notifList->isFull())
   {
-    notifList->push(Notification{"TEST","Test de "+String(ConfigGeneral.ZLinky),FormattedDate,1});
+    notifList->push(Notification{"TEST","Test de "+String(ConfigGeneral.ZLinky),FormattedDate,1,0});
+    notificationManager.addNotification(
+      "TEST", 
+      "Test de "+String(ConfigGeneral.ZLinky), 
+      0
+    );
   }  
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/tools"));
@@ -8597,8 +9145,100 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
     ConfigNotif.PriceChange = false;
   }
   config_write(path, "PriceChange", NotifPriceChange);
-  
 
+  String NotifColorTomorrow;
+  if (request->arg("NotifColorTomorrow") == "on")
+  {
+    NotifColorTomorrow = "1";
+    ConfigNotif.ColorTomorrow = true;
+  }
+  else
+  {
+    NotifColorTomorrow = "0";
+    ConfigNotif.ColorTomorrow = false;
+  }
+  config_write(path, "ColorTomorrow", NotifColorTomorrow);
+
+  String NotifPEJP;
+  if (request->arg("NotifPEJP") == "on")
+  {
+    NotifPEJP = "1";
+    ConfigNotif.PEJP = true;
+  }
+  else
+  {
+    NotifPEJP = "0";
+    ConfigNotif.PEJP = false;
+  }
+  config_write(path, "PEJP", NotifPEJP);
+
+  String NotifRedColor;
+  if (request->arg("NotifRedColor") == "on")
+  {
+    NotifRedColor = "1";
+    ConfigNotif.RedColor = true;
+  }
+  else
+  {
+    NotifRedColor = "0";
+    ConfigNotif.RedColor = false;
+  }
+  config_write(path, "RedColor", NotifRedColor);
+
+  String NotifOverBudget;
+  if (request->arg("NotifOverBudget") == "on")
+  {
+    NotifOverBudget = "1";
+    ConfigNotif.OverBudget = true;
+  }
+  else
+  {
+    NotifOverBudget = "0";
+    ConfigNotif.OverBudget = false;
+  }
+  config_write(path, "OverBudget", NotifOverBudget);
+  if (request->arg("NotifOverBudgetThreshold").toInt() >= 0)
+  {
+    ConfigNotif.OverBudgetThreshold = request->arg("NotifOverBudgetThreshold").toInt();
+    config_write(path, "OverBudgetThreshold", String(request->arg("NotifOverBudgetThreshold")));
+  }
+
+  String NotifOverVoltage;
+  if (request->arg("NotifOverVoltage") == "on")
+  {
+    NotifOverVoltage = "1";
+    ConfigNotif.OverVoltage = true;
+  }
+  else
+  {
+    NotifOverVoltage = "0";
+    ConfigNotif.OverVoltage = false;
+  }
+  config_write(path, "OverVoltage", NotifOverVoltage);
+  if (request->arg("NotifOverVoltageThreshold").toInt() >= 0)
+  {
+    ConfigNotif.OverVoltageThreshold = request->arg("NotifOverVoltageThreshold").toInt();
+    config_write(path, "OverVoltageThreshold", String(request->arg("NotifOverVoltageThreshold")));
+  }
+
+  String NotifUnderVoltage;
+  if (request->arg("NotifUnderVoltage") == "on")
+  {
+    NotifUnderVoltage = "1";
+    ConfigNotif.UnderVoltage = true;
+  }
+  else
+  {
+    NotifUnderVoltage = "0";
+    ConfigNotif.UnderVoltage = false;
+  }
+  config_write(path, "UnderVoltage", NotifUnderVoltage);
+  if (request->arg("NotifUnderVoltageThreshold").toInt() >= 0)
+  {
+    ConfigNotif.UnderVoltageThreshold = request->arg("NotifUnderVoltageThreshold").toInt();
+    config_write(path, "UnderVoltageThreshold", String(request->arg("NotifUnderVoltageThreshold")));
+  }
+  
   //Enregistrement device délestage.
   String delestageIDs="";
   int j=0;
@@ -8649,6 +9289,32 @@ void handleSaveConfigProduction(AsyncWebServerRequest *request)
     strlcpy(ConfigGeneral.tarifIdxProd, request->arg("tarifIdxProd").c_str(), sizeof(ConfigGeneral.tarifIdxProd));
     config_write(path, "tarifIdxProd", String(request->arg("tarifIdxProd")));
   }
+
+  String NotifProdSupConso;
+  if (request->arg("NotifProdSupConso") == "on")
+  {
+    NotifProdSupConso = "1";
+    ConfigNotif.ProdSupConso = true;
+  }
+  else
+  {
+    NotifProdSupConso = "0";
+    ConfigNotif.ProdSupConso = false;
+  }
+  config_write(path, "ProdSupConso", NotifProdSupConso);
+
+  String NotifProdZero;
+  if (request->arg("NotifProdZero") == "on")
+  {
+    NotifProdZero = "1";
+    ConfigNotif.ProdZero = true;
+  }
+  else
+  {
+    NotifProdZero = "0";
+    ConfigNotif.ProdZero = false;
+  }
+  config_write(path, "ProdZero", NotifProdZero);
 
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configEnergy"));
@@ -9125,6 +9791,7 @@ void handleSaveConfigNotification(AsyncWebServerRequest *request)
     ConfigNotif.PriceChange = false;
   }
   config_write(path, "PriceChange", NotifPriceChange);
+
   
 
   AsyncWebServerResponse *response = request->beginResponse(303);
@@ -9518,13 +10185,28 @@ void handleAssistDevice(AsyncWebServerRequest *request)
 void handleZigbeeAction(AsyncWebServerRequest *request)
 {
 
-  int ShortAddr, command, endpoint;
-  String tmpValue;
-  int i = 0;
-  ShortAddr = request->arg(i).toInt();
-  command = request->arg(1).toInt();
-  endpoint = request->arg(2).toInt();
-  tmpValue = request->arg(3);
+  // Récupérer les paramètres avec vérification
+  int ShortAddr = 0;
+  int command = 0; 
+  int endpoint = 0;
+  String tmpValue = "";
+  
+  // Vérification et conversion sécurisée
+  if (request->hasArg("0") || request->args() > 0) {
+      ShortAddr = request->arg(static_cast<size_t>(0)).toInt();
+  }
+  
+  if (request->hasArg("1") || request->args() > 1) {
+      command = request->arg(1).toInt();
+  }
+  
+  if (request->hasArg("2") || request->args() > 2) {
+      endpoint = request->arg(2).toInt();
+  }
+  
+  if (request->hasArg("3") || request->args() > 3) {
+      tmpValue = request->arg(3); // Pas besoin de String()
+  }
   SendAction(command, ShortAddr, endpoint, tmpValue);
 
   request->send(200, F("text/html"), "");
@@ -9592,9 +10274,9 @@ void handleLoadLinkyDatas(AsyncWebServerRequest *request)
   int i = 0;
   IEEE = request->arg(i);
 
-  result = getLinkyDatas(IEEE);
+  //result = getLinkyDatas(IEEE);
 
-  request->send(200, F("text/html"), result);
+  request->send(200, F("text/html"), getLinkyDatas(IEEE).c_str());
 }
 
 void handleRefreshLabel(AsyncWebServerRequest *request)
@@ -9630,29 +10312,31 @@ void handleRefreshGaugeAbo(AsyncWebServerRequest *request)
 void handleLoadPowerTrend(AsyncWebServerRequest *request)
 {
 
-  String IEEE, Attribute, Time, result;
+  String IEEE, Attribute, Time;
+  
   int i = 0;
   IEEE = request->arg(i);
   Attribute = request->arg(1);
   Time = request->arg(2);
 
-  result = getTrendPower(IEEE, Attribute, Time);
+  //result = getTrendPower(IEEE, Attribute, Time);
 
-  request->send(200, F("text/html"), result);
+  request->send(200, F("text/html"), getTrendPower(IEEE, Attribute, Time).c_str());
 }
 
 void handleLoadDatasTrend(AsyncWebServerRequest *request)
 {
 
-  String IEEE, Attribute, Time, result;
+  String IEEE, Attribute, Time;
+  
   int i = 0;
   IEEE = request->arg(i);
   Attribute = request->arg(1);
   Time = request->arg(2);
 
-  result = getDatasPower(IEEE, Attribute, Time);
+  //result = getDatasPower(IEEE, Attribute, Time);
 
-  request->send(200, F("text/html"), result);
+  request->send(200, F("text/html"), getDatasPower(IEEE, Attribute, Time).c_str());
 }
 
 void handleLoadTotalEnergy(AsyncWebServerRequest *request)
@@ -11203,6 +11887,153 @@ void initWebServer()
     }
     handleSaveWifi(request); 
   });
+
+  // API: Obtenir les notifications (avec pagination)
+  serverWeb.on("/api/notifications", HTTP_GET, [](AsyncWebServerRequest *request){
+    int page = request->hasParam("page") ? request->getParam("page")->value().toInt() : 1;
+    int limit = request->hasParam("limit") ? request->getParam("limit")->value().toInt() : 10;
+    
+    // Validation des paramètres
+    page = max(1, page);
+    limit = min(max(1, limit), 50); // Limite entre 1 et 50
+    
+    size_t offset = (page - 1) * limit;
+        
+    String json = notificationManager.toJson(offset, limit);
+    
+    request->send(200, "application/json", json);
+  });
+  
+  // API: Ajouter une notification
+  serverWeb.on("/api/notifications", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+      DynamicJsonDocument doc(1024);
+      DeserializationError error = deserializeJson(doc, (char*)data);
+      
+      if (error) {
+        request->send(400, "application/json", "{\"error\":\"JSON invalide\"}");
+        return;
+      }
+      
+      String title = doc["title"] | "";
+      String message = doc["message"] | "";
+      int type = doc["type"] | 0;
+      
+      if (title.isEmpty() || message.isEmpty()) {
+        request->send(400, "application/json", "{\"error\":\"Title et message requis\"}");
+        return;
+      }
+      
+      bool success = notificationManager.addNotification(title, message, type);
+      
+      if (success) {
+        request->send(200, "application/json", "{\"success\":true}");
+      } else {
+        request->send(500, "application/json", "{\"error\":\"Erreur ajout notification\"}");
+      }
+    });
+  
+  // API: Marquer comme lu - Route simplifiée
+  serverWeb.on("/api/notifications/read", HTTP_PUT, [](AsyncWebServerRequest *request){
+    if (!request->hasParam("id")) {
+      log_e("Erreur markAsRead: paramètre id manquant");
+      request->send(400, "application/json", "{\"error\":\"Paramètre id manquant\"}");
+      return;
+    }
+    
+    int index = request->getParam("id")->value().toInt();
+   
+    bool success = notificationManager.markAsViewed(index);
+    
+    if (success) {
+      request->send(200, "application/json", "{\"success\":true}");
+    } else {
+      log_e("Erreur: notification %d non trouvée\n", index);
+      request->send(404, "application/json", "{\"error\":\"Notification non trouvée\"}");
+    }
+  });
+
+  // API: Marquer TOUTES les notifications comme lues - NOUVEAU
+  serverWeb.on("/api/notifications/read-all", HTTP_PUT, [](AsyncWebServerRequest *request){
+    
+    bool success = notificationManager.markAllAsViewed();
+    
+    if (success) {
+      Serial.println("Toutes les notifications marquées comme lues");
+      request->send(200, "application/json", "{\"success\":true,\"message\":\"Toutes les notifications marquées comme lues\"}");
+    } else {
+      log_e("Erreur lors du marquage global");
+      request->send(500, "application/json", "{\"error\":\"Erreur lors du marquage global\"}");
+    }
+  });
+  
+  // API: Supprimer une notification - Route simplifiée
+  serverWeb.on("/api/notifications/delete", HTTP_DELETE, [](AsyncWebServerRequest *request){
+    if (!request->hasParam("id")) {
+      log_e("Erreur deleteNotification: paramètre id manquant");
+      request->send(400, "application/json", "{\"error\":\"Paramètre id manquant\"}");
+      return;
+    }
+    
+    int index = request->getParam("id")->value().toInt();
+    Serial.printf("Tentative deleteNotification index: %d, total: %d\n", index, notificationManager.getCount());
+    
+    bool success = notificationManager.deleteNotification(index);
+    
+    if (success) {
+      request->send(200, "application/json", "{\"success\":true}");
+    } else {
+      log_e("Erreur: notification %d non trouvée\n", index);
+      request->send(404, "application/json", "{\"error\":\"Notification non trouvée\"}");
+    }
+  });
+  
+  // API: Statistiques
+  serverWeb.on("/api/stats", HTTP_GET, [](AsyncWebServerRequest *request){
+    String json = notificationManager.getStatsJson();
+    request->send(200, "application/json", json);
+  });
+  
+  // API: Debug - Lister les notifications avec leurs index
+  serverWeb.on("/api/debug", HTTP_GET, [](AsyncWebServerRequest *request){
+    DynamicJsonDocument doc(2048);
+    JsonArray array = doc.createNestedArray("notifications");
+    
+    for (size_t i = 0; i < notificationManager.getCount(); i++) {
+      Notification* notif = notificationManager.getNotification(i);
+      if (notif) {
+        JsonObject obj = array.createNestedObject();
+        obj["index"] = i;
+        obj["title"] = notif->title;
+        obj["viewed"] = notif->viewed;
+      }
+    }
+    
+    doc["total"] = notificationManager.getCount();
+    doc["psramFree"] = ESP.getFreePsram();
+    
+    String result;
+    serializeJson(doc, result);
+    request->send(200, "application/json", result);
+  });
+  
+  // API: Vider toutes les notifications
+  serverWeb.on("/api/notifications/clear", HTTP_DELETE, [](AsyncWebServerRequest *request){
+    notificationManager.clearAll();
+    notificationManager.saveToFile();
+    request->send(200, "application/json", "{\"success\":true}");
+  });
+
+  serverWeb.on("/notifications", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleNotifications(request); 
+  });
+
   serverWeb.on("/tools", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -11941,6 +12772,7 @@ void initWebServer()
   serverWeb.serveStatic("/web/js/masonry.pkgd.min.js", LittleFS, "/web/js/masonry.pkgd.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/style.css", LittleFS, "/web/css/style.css").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/css/energy.css", LittleFS, "/web/css/energy.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/logo.png", LittleFS, "/web/img/logo.png").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/wait.gif", LittleFS, "/web/img/wait.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/ziwifi32.gif", LittleFS, "/web/img/ziwifi32.gif").setCacheControl("max-age=600");
@@ -11952,7 +12784,6 @@ void initWebServer()
   serverWeb.addHandler(&events);
 
   serverWeb.begin();
-  
 
   //Update.onProgress(printProgress);
 }
