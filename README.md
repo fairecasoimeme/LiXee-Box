@@ -592,7 +592,25 @@ esptool.py.exe --chip esp32s3 --port "COMXX" \
 	 0x8000 partitions.bin \
 	 0xe000 boot_app0.bin \
 	 0x10000 firmware.bin \
-	 0x910000 littleFS.bin
+	 0x910000 littlefs.bin
+```
+### Linux
+
+```bash
+esptool.py --chip esp32s3 \
+--port /dev/ttyUSB0 \
+--baud 460800 \
+--before default-reset \
+--after hard-reset \
+write-flash -z \
+--flash-mode dio \
+--flash-freq 40m \
+--flash-size 16MB \
+0x0 bootloader.bin \
+0x8000 partitions.bin \
+0xe000 boot_app0.bin \
+0x10000 firmware.bin \
+0x910000 littlefs.bin
 ```
 
 ## 🏠 Intégration Home Assistant
