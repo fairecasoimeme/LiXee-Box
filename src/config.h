@@ -382,3 +382,4 @@ private:
         len += strLen;
     }
 };
+

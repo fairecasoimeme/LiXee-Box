@@ -78,8 +78,6 @@ AsyncEventSource events("/events");
 extern uint8_t* au8OTAFile;
 
 
-
-
 const char HTTP_SHELLY_EMULE[] PROGMEM = 
 "{"
     "\"name\":null,"
@@ -3170,7 +3168,7 @@ const char HTTP_FOOTER[] PROGMEM = R"(
 
       async function hasUnreadNotifications() {
           try {
-              const response = await fetch(`http://${window.location.host}/api/stats`);
+              const response = await fetch('/api/stats');
               if (!response.ok) {
                   console.error('Erreur API stats:', response.status);
                   return -1;
@@ -11429,6 +11427,8 @@ void launchUpdateTask() {
   }
 }
 
+
+
 void initWebServer()
 {
 
@@ -12759,8 +12759,6 @@ void initWebServer()
     APIgetTemplates(request); 
     
   });
-
-
 
   serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/functions.js", LittleFS, "/web/js/functions.js").setCacheControl("max-age=600");

@@ -65,8 +65,6 @@ bool updatePending = false;
 
 #include <TaskScheduler.h>
 
-
-
 // application config
 unsigned long timeLog;
 ConfigSettingsStruct ConfigSettings;
@@ -131,9 +129,6 @@ MDNSResponder mdns;
 
 unsigned long previousTime = 0; // Variable pour stocker le temps précédent
 unsigned long interval = 60000; // Intervalle de 1 minute en millisecondes
-
-//char timeServer[]="";
-//char timeServer[] = "51.38.81.135";
 
 //UDP Async
 AsyncUDP UdpServer;
@@ -2149,7 +2144,7 @@ void setup(void)
     Serial.println("Erreur: initialisation NotificationManager échouée");
     return;
   }
-  
+ 
 }
 
 void sendTreatment()
@@ -2247,6 +2242,7 @@ void loop(void)
       monitor_heap();
   }
 
+  
   // DÉLAI ADAPTATIF pour éviter la surcharge CPU
   unsigned long loopTime = millis() - loopStart;
   

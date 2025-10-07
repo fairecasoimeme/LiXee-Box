@@ -4,7 +4,6 @@ bool TemplateExist(int deviceId);
 String createEnergyGraph(String IEEE, String Type, int budget);
 
 void initWebServer();
-void webServerHandleClient();
 void handleRoot();
 void handleNotFound();
 void handleSaveConfig();

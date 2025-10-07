@@ -1,0 +1,7 @@
+rlogiacco/CircularBuffer@^1.4.0
+paulstoffregen/Time@^1.6.1
+https://github.com/ESP32Async/AsyncTCP.git#main
+marvinroger/AsyncMqttClient@^0.9.0
+arkhipenko/TaskScheduler@^3.8.5
+https://github.com/ESP32Async/ESPAsyncWebServer.git#main
+bblanchon/ArduinoJson@^6.21.3

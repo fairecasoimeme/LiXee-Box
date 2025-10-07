@@ -591,7 +591,7 @@ function loadPowerGaugeTimeDay(IEEE,attribute)
 					max: datas[2],
 					title: 'Target',
 					label: 'VA',
-					gaugeWidthScale: 0.6,
+					gaugeWidthScale: 0.6, 
 					pointer: true,
 					pointerOptions: {
 					   toplength: 10,
