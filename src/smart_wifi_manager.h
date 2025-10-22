@@ -55,6 +55,13 @@ public:
     String getMacAddress() const;
     int32_t getRSSI() const;
     String getStatusString() const;
+
+    // === CONTRÔLE RECONNEXION ===
+    void setAutoReconnect(bool enable);
+    void setMaxReconnectAttempts(uint8_t attempts);
+    void setReconnectDelay(unsigned long delayMs);
+    uint8_t getReconnectAttempts() const;
+    bool isReconnecting() const;
     
     // === CALLBACKS ===
     void onStateChange(WiFiStateCallback callback) { _stateCallback = callback; }
@@ -70,6 +77,14 @@ private:
     WiFiState _currentState;
     String _configPath;
     
+    // === GESTION RECONNEXION AVANCÉE ===
+    bool _autoReconnect;                             // Reconnexion auto activée
+    uint8_t _reconnectAttempts;                      // Tentatives actuelles
+    uint8_t _maxReconnectAttempts;                   // Max avant BLE (défaut: 10)
+    unsigned long _reconnectDelayMs;                 // Délai entre tentatives
+    unsigned long _lastReconnectTime;                // Dernier essai
+    bool _reconnecting;                              // Flag reconnexion en cours
+
     // === GESTION CONNEXION ===
     unsigned long _lastConnectionAttempt;
     unsigned long _connectionTimeout;
@@ -87,6 +102,8 @@ private:
     WiFiEventCallback _eventCallback;
     
     // === MÉTHODES PRIVÉES ===
+    // Méthode de reconnexion
+    void attemptReconnection();
     
     // Logique principale
     bool determineStartupMode();                     // Détermine le mode de démarrage

@@ -23,6 +23,12 @@ SmartWiFiManager::SmartWiFiManager()
     , _bleManager(nullptr)
     , _bleLoadAttempted(false)
     , _provisioningRequired(false)
+    , _autoReconnect(true)                    
+    , _reconnectAttempts(0)                   
+    , _maxReconnectAttempts(10)             
+    , _reconnectDelayMs(5000)                 
+    , _lastReconnectTime(0)                   
+    , _reconnecting(false)                    
 {
     _instance = this;
 }
@@ -31,6 +37,51 @@ SmartWiFiManager::SmartWiFiManager()
 SmartWiFiManager::~SmartWiFiManager() {
     end();
     _instance = nullptr;
+}
+
+void SmartWiFiManager::attemptReconnection() {
+    if (!_reconnecting || !_autoReconnect) {
+        return;
+    }
+    
+    // Vérifier le délai entre tentatives
+    if ((millis() - _lastReconnectTime) < _reconnectDelayMs) {
+        return;
+    }
+    
+    _lastReconnectTime = millis();
+    _reconnectAttempts++;
+    
+    Serial.printf("🔄 Tentative de reconnexion %d/%d...\n", 
+                  _reconnectAttempts, _maxReconnectAttempts);
+    
+    // Vérifier si max atteint
+    if (_reconnectAttempts >= _maxReconnectAttempts) {
+        Serial.println("❌ Nombre maximum de tentatives atteint");
+        Serial.println("📱 Basculement vers BLE provisioning...");
+        
+        _reconnecting = false;
+        _reconnectAttempts = 0;
+        
+        // Basculer vers BLE après échecs répétés
+        delay(1000);
+        startBLEProvisioning();
+        return;
+    }
+    
+    // Tentative de reconnexion
+    Serial.println("   → Déconnexion WiFi...");
+    WiFi.disconnect();
+    delay(500);
+    
+    Serial.println("   → Reconnexion...");
+    setState(WIFI_STATE_CONNECTING);
+    WiFi.begin(ConfigSettings.ssid, ConfigSettings.password);
+    
+    // Délai progressif (backoff exponentiel)
+    _reconnectDelayMs = min(_reconnectDelayMs * 2, 30000UL); // Max 30 secondes
+    
+    Serial.printf("   → Prochain essai dans %lu secondes\n", _reconnectDelayMs / 1000);
 }
 
 // === DÉMARRAGE INTELLIGENT ===
@@ -343,7 +394,7 @@ bool SmartWiFiManager::connect(uint32_t timeoutMs) {
         }
     }
     Serial.printf("SSID : %s\n",ConfigSettings.ssid);
-    Serial.printf("pass : %s\n",ConfigSettings.password);
+    //Serial.printf("pass : %s\n",ConfigSettings.password);
     Serial.printf("ip : %s\n",ConfigSettings.ipAddressWiFi);
     Serial.printf("gw : %s\n",ConfigSettings.ipGWWiFi);
     // Démarrer connexion
@@ -434,6 +485,11 @@ void SmartWiFiManager::handleEvents() {
     if (_bleManager && _currentState == WIFI_STATE_BLE_PROVISIONING) {
         _bleManager->handleEvents();
     }
+
+    if (_reconnecting && _autoReconnect) {
+        attemptReconnection();
+        return; // Priorité à la reconnexion
+    }
     
     // Gestion reconnexion automatique
     if (_currentState == WIFI_STATE_FAILED || 
@@ -475,17 +531,31 @@ void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) 
     switch (event) {
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
             notifyEvent("WiFi connected");
+            _reconnectAttempts = 0;  
+            _reconnecting = false;   
             break;
             
         case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
             setState(WIFI_STATE_DISCONNECTED);
             notifyEvent("WiFi disconnected (reason: " + String(info.wifi_sta_disconnected.reason) + ")");
+            // Raisons de déconnexion
+                // 201 = Auth failed (mauvais mot de passe)
+                // 202 = Association failed
+                // 203 = Handshake timeout
+                // 204 = Beacon timeout (AP disparu)
             ConfigSettings.connectedWifiSta = false;
             // Auth failed = redémarrer provisioning
             if (info.wifi_sta_disconnected.reason == 201) {
                 //DEBUG_PRINTLN("🔐 Authentication failed, starting provisioning...");
                 delay(1000);
                 startBLEProvisioning();
+            } else {
+                // Autres raisons = reconnexion automatique
+                if (_autoReconnect) {
+                    Serial.println("🔄 Déconnexion détectée → reconnexion auto activée");
+                    _reconnecting = true;
+                    _lastReconnectTime = millis();
+                }
             }
             break;
             
@@ -493,12 +563,21 @@ void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) 
             setState(WIFI_STATE_CONNECTED);
             notifyEvent("IP obtained: " + WiFi.localIP().toString());
             ConfigSettings.connectedWifiSta = true;
+            _reconnectAttempts = 0;  // ← Reset compteur
+            _reconnecting = false;   // ← Reset flag
+            Serial.printf("✅ Connexion établie: %s (RSSI: %d dBm)\n", 
+                         WiFi.localIP().toString().c_str(), WiFi.RSSI());
             break;
             
         case ARDUINO_EVENT_WIFI_STA_LOST_IP:
             setState(WIFI_STATE_FAILED);
             notifyEvent("IP lost");
             ConfigSettings.connectedWifiSta = false;
+            if (_autoReconnect) {
+                Serial.println("🔄 IP perdue → reconnexion auto activée");
+                _reconnecting = true;
+                _lastReconnectTime = millis();
+            }
             break;
             
         default:
@@ -507,6 +586,28 @@ void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) 
 }
 
 // === UTILITAIRES ET GETTERS ===
+void SmartWiFiManager::setAutoReconnect(bool enable) {
+    _autoReconnect = enable;
+    Serial.printf("📡 Reconnexion automatique: %s\n", enable ? "ACTIVÉE" : "DÉSACTIVÉE");
+}
+
+void SmartWiFiManager::setMaxReconnectAttempts(uint8_t attempts) {
+    _maxReconnectAttempts = attempts;
+    Serial.printf("📡 Nombre max de tentatives: %d\n", attempts);
+}
+
+void SmartWiFiManager::setReconnectDelay(unsigned long delayMs) {
+    _reconnectDelayMs = delayMs;
+    Serial.printf("📡 Délai entre tentatives: %lu ms\n", delayMs);
+}
+
+uint8_t SmartWiFiManager::getReconnectAttempts() const {
+    return _reconnectAttempts;
+}
+
+bool SmartWiFiManager::isReconnecting() const {
+    return _reconnecting;
+}
 
 // Changement d'état
 void SmartWiFiManager::setState(WiFiState newState) {
@@ -569,3 +670,4 @@ IPAddress SmartWiFiManager::parseIPAddress(const String& ip) {
     result.fromString(ip);
     return result;
 }
+
