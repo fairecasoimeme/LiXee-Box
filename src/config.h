@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.7"
+#define VERSION "v2.8"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -35,7 +35,7 @@ struct ConfigSettingsStruct {
   int RSSIWifi;
   char ssid[50];
   String bssid;
-  char password[50];
+  char password[150];
   char ipAddressWiFi[18];
   char ipMaskWiFi[16];
   char ipGWWiFi[18];
