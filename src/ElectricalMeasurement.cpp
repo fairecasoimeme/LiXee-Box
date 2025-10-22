@@ -4,6 +4,7 @@
 #include "log.h"
 #include "protocol.h"
 #include "SPIFFS_ini.h"
+#include "zigbee.h"
 #include <AsyncMqttClient.h>
 #include <WebPush.h>
 #include "mqtt.h"
@@ -13,6 +14,8 @@
 #include "notificationManager.h"
 #include <map>
 #include <unordered_map>
+
+
 
 // Déclarations extern (conservées)
 extern std::vector<DeviceData*> devices;
@@ -110,7 +113,7 @@ ElectricalMeasurementData createMeasurementData(const String& inifile, int attri
         "2820",                    // clusterId
         String(attribute),         // attributeStr
         tmp,                       // value
-        strtol(tmp.c_str(), NULL, 16), // numericValue
+        strtol(tmp.c_str(), NULL, 16),                  // numericValue
         attribute                  // attribute
     };
 }
@@ -126,14 +129,13 @@ void publishElectricalData(const ElectricalMeasurementData& data, const String& 
     
     // WebPush
     if (ConfigSettings.enableWebPush) {
-        String numValue = String(data.numericValue);
-        WebPush(data.deviceId, data.clusterId, data.attributeStr, numValue.c_str());
+        
+        WebPush(data.deviceId, data.clusterId, data.attributeStr, String(data.numericValue).c_str());
     }
     
     // UDP (uniquement pour certains attributs comme 1295)
     if (ConfigSettings.enableUDP && data.attribute == 1295) {
-        String numValue = String(data.numericValue);
-        UDPsend(numValue);
+        UDPsend(String(data.numericValue));
     }
     
     // Device list update
@@ -147,10 +149,140 @@ void publishElectricalData(const ElectricalMeasurementData& data, const String& 
 void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
     DeviceData* device = findElectricalDevice(data.deviceId);
     if (!device) return;
+
+    String value = data.value;
+   
+    //GESTION INJECTION AUTOCONSOMMATION
+    if (strcmp(ConfigGeneral.ZLinky,data.deviceId.c_str()) == 0 )
+    {
+        long tmpValue = data.numericValue;
+        long injection = 0 ;
+        
+        if ((data.attribute == 1295) ||(data.attribute == 2319) ||(data.attribute == 2575))
+        {
+            if (tmpValue == 0)
+            {
+                switch (ConfigGeneral.LinkyMode) 
+                {
+                    case 1 :
+                    case 5 :
+                    {
+                        //mode STANDARD MONOPHASE
+                        if (data.attribute == 1295)
+                        {
+                            long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16); //URMS1
+                            long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IRMS1
+                            //tmp = String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16));
+                            injection = -URMS1 * IRMS1;
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 1, injection);
+                        }
+
+                    }
+                    break;
+                    case 3:
+                    case 7:
+                    //if ( (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ) )
+                    {
+                        //mode STANDARD TRIPHASE
+                        if (data.attribute == 1295)
+                        {
+                            long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16); //URMS1
+                            long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IRMS1
+                            injection = -URMS1 * IRMS1;
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 1, injection);
+
+                        }else if (data.attribute == 2319)
+                        {
+                            long URMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2309")).c_str(),0,16); //URMS2
+                            long IRMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16); //IRMS2
+                            injection = -URMS2 * IRMS2; 
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 2, injection);
+                            
+                        }else if (data.attribute == 2575)
+                        {
+                            long URMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2565")).c_str(),0,16); //URMS3
+                            long IRMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16); //IRMS3
+                            injection = -URMS3 * IRMS3; 
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 3, injection);
+                        }
+
+                    }
+                    break;
+                    case 0:
+                    //if (ConfigGeneral.LinkyMode == 0 )
+                    {
+                        //mode HISTORIQUE monophasé
+                        if (data.attribute == 1295)
+                        {
+                            long voltage = 200;
+                            long IINST =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IINST
+                            injection = -voltage * IINST;
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 1, injection);
+                        }
+
+                    }
+                    break;
+                    case 2:
+                    //if (ConfigGeneral.LinkyMode == 2 ){
+                    {
+                        //mode HISTORIQUE monophasé
+                        long voltage = 200; 
+                        if (data.attribute == 1295)
+                        {
+                            long IINST1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IINST1
+                            injection = -voltage * IINST1;
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 1, injection);
+
+                        }else if (data.attribute == 2319)
+                        {
+                            long IINST2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16); //IINST2
+                            injection = -voltage * IINST2; 
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 2, injection);
+
+                        }else if (data.attribute == 2575)
+                        {
+                            long IINST3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16); //IINST3
+                            injection = -voltage * IINST3;
+                            value = String(injection, HEX);  // "ff"
+                            value.toUpperCase();
+
+                            addMeasurement(device->powerHistory, 3, injection);
+                        }
+                    }
+                    break;
+
+                    default:
+                    break;
+                }
+            }
+        }
+    }
     
+
     device->setValue(std::string("0B04"), 
                     std::string(data.attributeStr.c_str()), 
-                    std::string(data.value.c_str()));
+                    std::string(value.c_str()));
     
     if ((ConfigGeneral.Production == device->getDeviceID().c_str()) && (data.attribute == 519))
     {
