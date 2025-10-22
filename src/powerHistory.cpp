@@ -5,6 +5,7 @@
 #include "LittleFS.h"
 #include "config.h"
 #include "powerHistory.h"
+#include "esp_task_wdt.h"
 
 #ifndef MIN
 #define MIN(a,b) (((a)<(b))?(a):(b))
@@ -131,10 +132,13 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
     
     for (const DataRecord& rec : history.datas)
     {
+       
         // Éviter la conversion String inutile
         if (!rec.timeStamp.empty())
             sorted.push_back(&rec);
     }
+
+    esp_task_wdt_reset();
 
     std::sort(sorted.begin(), sorted.end(),
               [](const DataRecord* a, const DataRecord* b)
@@ -161,6 +165,8 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
     {
         pivoted = std::move(sorted);
     }
+
+    esp_task_wdt_reset();
 
     /*----------- 4. Construction du document JSON (avec retry) -----------*/
     SpiRamJsonDocument* doc = nullptr;
@@ -223,6 +229,11 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
     
     for (const DataRecord* prec : pivoted)
     {
+        // RESET WATCHDOG tous les 100 records
+        if (addedRecords % 100 == 0) {
+            esp_task_wdt_reset();
+            yield(); // Laisser les autres tâches s'exécuter
+        }
         // Vérification de la mémoire disponible (v6 utilise memoryUsage())
         if (doc->memoryUsage() > memoryThreshold)
         {
@@ -266,6 +277,8 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
         }
     }
 
+    esp_task_wdt_reset();
+
     log_i("Ajouté %zu/%zu enregistrements\n", addedRecords, pivoted.size());
 
     /*----------- 6. Construction de l'objet "stats" ----------------------*/
@@ -294,6 +307,7 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
         }
     }
 
+    esp_task_wdt_reset();
     /*----------- 7. Vérification finale avant sérialisation -------------*/
     if (doc->overflowed())
     {
@@ -337,6 +351,7 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
     }
 
     delete doc; // Libération mémoire
+    esp_task_wdt_reset();
     return out;
 }
 
