@@ -121,13 +121,14 @@ const char HTTP_HEADER[] PROGMEM =
 
 const char HTTP_HEADERGRAPH[] PROGMEM = 
     "<head>"
-    "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
-    //"<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
-    //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>" 
+    
     "<script type='text/javascript' src='web/js/raphael-min.js'></script>"
     "<script type='text/javascript' src='web/js/morris.min.js'></script>"
+    "<script type='text/javascript' src='web/js/chart.umd.min.js'></script>"
+    "<script type='text/javascript' src='web/js/annotation.min.js'></script>"
     "<script type='text/javascript' src='web/js/justgage.min.js'></script>"
     "<script type='text/javascript' src='web/js/functions.js'></script>"
+    "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/energy.css' rel='stylesheet' type='text/css' />"
@@ -2132,7 +2133,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"(
     <div class='card p-4'>
       <h5 class='card-title'>Puissance apparente (graphique temps réel)</h5>
       <div class='card-body'>
-          <div id='power-chart'></div>
+          <canvas id='power-chart' height="342"></canvas>
       </div>
       <a href='javascript:void(0)' onclick='showPopup("popupHelpApparentPower")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
         <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
@@ -2146,7 +2147,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"(
     <div class='card p-4'>
       <h5 class='card-title'>Usage d'électricité</h5>
       <div class='card-body'>
-          <div id='energy-chart'></div>
+          <canvas id='energy-chart' style='height: 342px;'></canvas>
       </div>
       <a href='javascript:void(0)' onclick='showPopup("popupHelpElectricity")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
         <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
@@ -3003,7 +3004,7 @@ const char HTTP_ENERGY_GAZ[] PROGMEM =
         "<div class='card p-4'>"
           "<h5 class='card-title'>Consommation de Gaz</h5>"
           "<div class='card-body'>"
-              "<div id='gaz-chart'></div>"
+              "<canvas id='gaz-chart' style='height: 342px;'></canvas>"
           "</div>"
         "</div>"
       "</div>"
@@ -3016,7 +3017,7 @@ const char HTTP_ENERGY_WATER[] PROGMEM =
         "<div class='card p-4'>"
           "<h5 class='card-title'>Consommation d'eau</h5>"
           "<div class='card-body'>"
-              "<div id='water-chart'></div>"
+              "<canvas id='water-chart' style='height: 342px;'></canvas>"
           "</div>"
         "</div>"
       "</div>";
@@ -4078,7 +4079,7 @@ String createDistributionGraph(String IEEE)
   return result;
 }
 
-String createPowerGraph(String IEEE)
+/*String createPowerGraph(String IEEE)
 {
   String result = "";
   result += F("powerChart = Morris.Bar({");
@@ -4090,28 +4091,27 @@ String createPowerGraph(String IEEE)
   {
     if (strcmp(ConfigGeneral.Production,"")!=0)
     {
-      result += F(" ykeys: [1295,2319,2575,519],");
-      result += F(" labels: ['Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)','Production(VA)'],");
+      result += F(" ykeys: ['1','2','3','1295','2319','2575'],");
+      result += F(" labels: ['Injection Ph1(VA)','Injection Ph2(VA)','Injection Ph3(VA)','Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)''],");
     }else{
-      result += F(" ykeys: [1295,2319,2575],");
-      result += F(" labels: ['Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)'],");
+      result += F(" ykeys: ['1','2','3','1295','2319','2575'],");
+      result += F(" labels: ['Injection Ph1(VA)','Injection Ph2(VA)','Injection Ph3(VA)','Power Ph1(VA)','Power Ph2(VA)','Power Ph3(VA)'],");
     }
-      result += F(" barColors: ['#1e88e5','#5dade2','#85c1e9','#27ae60'],");
+      result += F(" barColors: ['#27ae60','#0ed160ff','#08612dff','#1e88e5','#5dade2','#85c1e9'],");
   }else{
     if (strcmp(ConfigGeneral.Production,"")!=0)
     {
       //result += F(" ykeys: [1295,519],");
       //result += F(" labels: ['Power (VA)','Production(VA)'],");
-      result += F(" ykeys: [1295],");
-      result += F(" labels: ['Power (VA)'],");
+      result += F(" ykeys: ['1','2','3','1295'],");
+      result += F(" labels: ['Injection Ph1(VA)','Injection Ph2(VA)','Injection Ph3(VA)','Power (VA)'],");
 
     }else{
-      result += F(" ykeys: [1295],");
-      result += F(" labels: ['Power (VA)'],");
+      result += F(" ykeys: ['1','2','3','1295'],");
+      result += F(" labels: ['Injection Ph1(VA)','Injection Ph2(VA)','Injection Ph3(VA)','Power (VA)'],");
     }
-    result += F(" barColors: ['#1e88e5','#27ae60'],");
+    result += F(" barColors: ['#27ae60','#0ed160ff','#08612dff','#1e88e5'],");
   }
-
   result += F(" resize: true,");
   result += F(" redraw: true,");
   result += F(" xLabelAngle: 70,");
@@ -4129,7 +4129,11 @@ String createPowerGraph(String IEEE)
       break;
     }
   }  
+
   result += F("],");
+  result += F(" ymin: ");
+  result += String(-1 * round((goal * 0.5) / 1000) * 1000); // 50% du goal en négatif
+  result += F(",");
   result += F(" ymax: ");
     result += String(round((goal * 1.25) / 1000) * 1000);
   result += F(",");
@@ -4139,9 +4143,135 @@ String createPowerGraph(String IEEE)
   result += F(" });");
 
   return result;
+}*/
+
+String createPowerGraph(String IEEE)
+{
+  String result = "";
+  
+  result += F("var canvas = document.getElementById('power-chart');");
+  result += F("if (!canvas) { console.error('Canvas power-chart non trouvé'); return; }");
+  result += F("var ctx = canvas.getContext('2d');");
+  result += F("if (window.powerChart) window.powerChart.destroy();");
+  
+  // Calculer le goal AVANT la création du chart
+  int goal = 0;
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == IEEE)
+    {
+      goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 230;
+      break;
+    }
+  }
+  
+  // Exposer le goal comme variable globale
+  result += F("window.powerGoal = ");
+  result += String(goal);
+  result += F(";");
+  
+  // Indiquer si c'est triphasé ou non
+  bool isTriphase = (ConfigGeneral.LinkyMode == 2) || (ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7);
+  result += F("window.powerIsTriphasé = ");
+  result += isTriphase ? F("true") : F("false");
+  result += F(";");
+  
+  result += F("window.powerChart = new Chart(ctx, {");
+  result += F(" type: 'bar',");
+  result += F(" data: {");
+  result += F("  labels: [],");
+  result += F("  datasets: [");
+
+  if (isTriphase)
+  {
+    // TRIPHASÉ : 3 injections + 3 consommations
+    result += F("   {label: 'Injection Ph1', data: [], backgroundColor: '#27ae60', stack: 'Stack0', hidden: true},");
+    result += F("   {label: 'Injection Ph2', data: [], backgroundColor: '#0ed160', stack: 'Stack0', hidden: true},");
+    result += F("   {label: 'Injection Ph3', data: [], backgroundColor: '#08612d', stack: 'Stack0', hidden: true},");
+    result += F("   {label: 'Puissance Ph1', data: [], backgroundColor: '#1e88e5', stack: 'Stack0'},");
+    result += F("   {label: 'Puissance Ph2', data: [], backgroundColor: '#5dade2', stack: 'Stack0'},");
+    result += F("   {label: 'Puissance Ph3', data: [], backgroundColor: '#85c1e9', stack: 'Stack0'}");
+  }
+  else
+  {
+    // MONOPHASÉ : 1 injection + 1 consommation
+    result += F("   {label: 'Injection', data: [], backgroundColor: '#27ae60', stack: 'Stack0', hidden: true},");
+    result += F("   {label: 'Puissance', data: [], backgroundColor: '#1e88e5', stack: 'Stack0'}");
+  }
+
+  result += F("  ]");
+  result += F(" },");
+  result += F(" options: {");
+  result += F("  responsive: true,");
+  result += F("  maintainAspectRatio: false,");
+  result += F("  scales: {");
+  result += F("   x: {");
+  result += F("    stacked: true,");
+  result += F("    ticks: { maxRotation: 70, minRotation: 70, autoSkip: true, maxTicksLimit: 20 }");
+  result += F("   },");
+  result += F("   y: {");
+  result += F("    stacked: true,");
+  result += F("    beginAtZero: false,");
+  result += F("    ticks: { callback: function(value) { return value + ' VA'; } }");
+  result += F("   }");
+  result += F("  },");
+  result += F("  barPercentage: 0.9,");
+  result += F("  categoryPercentage: 0.95,");
+  result += F("  plugins: {");
+  result += F("   tooltip: {");
+  result += F("    callbacks: {");
+  result += F("     label: function(context) {");
+  result += F("      var label = context.dataset.label || '';");
+  result += F("      if (context.parsed.y !== 0) {");
+  result += F("       label += ': ' + context.parsed.y + ' VA';");
+  result += F("      }");
+  result += F("      return label;");
+  result += F("     }");
+  result += F("    }");
+  result += F("   },");
+  result += F("   legend: { display: true, position: 'top' }");
+  
+  // Ajouter l'annotation si goal > 0
+  if (goal > 0)
+  {
+    result += F(",");
+    result += F("   annotation: {");
+    result += F("    annotations: {");
+    result += F("     goalLine: {");
+    result += F("      type: 'line',");
+    result += F("      yMin: ");
+    result += String(goal);
+    result += F(",");
+    result += F("      yMax: ");
+    result += String(goal);
+    result += F(",");
+    result += F("      borderColor: 'rgb(255, 0, 0)',");
+    result += F("      borderWidth: 2,");
+    result += F("      borderDash: [5, 5],");
+    result += F("      label: {");
+    result += F("       display: true,");
+    result += F("       content: 'Puiss. souscrite: ");
+    result += String(goal);
+    result += F(" VA',");
+    result += F("       position: 'end',");
+    result += F("       backgroundColor: 'rgba(255, 0, 0, 0.8)',");
+    result += F("       color: 'white'");
+    result += F("      }");
+    result += F("     }");
+    result += F("    }");
+    result += F("   }");
+  }
+  
+  result += F("  }"); // Fermeture plugins
+  result += F(" }"); // Fermeture options
+  result += F("});");
+
+  return result;
 }
 
-String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
+
+/*String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
 {
   String result = "";
   String unit = "";
@@ -4233,6 +4363,221 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += F("}");
   result += F("});");
   
+  return result;
+}*/
+
+String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
+{
+  String result = "";
+  String unit = "";
+  String sep = "";
+  result +=F("var ");
+  result +=Type;
+  result += F("Chart = document.getElementById('");
+  result += Type;
+  result += F("-chart');");
+  result += F("if (!");
+  result += Type;
+  result += F("Chart) { console.error('Canvas ");
+  result += Type;
+  result += F("-chart non trouvé'); return; }");
+  result += F("var ctx");
+  result += Type;
+  result += F(" = ");
+  result += Type;
+  result += F("Chart.getContext('2d');");
+  result += F("if (window.");
+  result += Type;
+  result += F("Chart) window.");
+  result += Type;
+  result += F("Chart.destroy();");
+  
+  // Préparer les informations de tarifs et sections
+  String JsonEuros = "{";
+  String ykeys = "[";
+  String labels = "[";
+  String colors = "[";
+  
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+  
+  if (Type == "energy")
+  {
+    int i = 0;
+    for (int cntsection = 0; cntsection < arrayLength; cntsection++)
+    {
+      sep = (i > 0) ? "," : "";
+      
+      if (section[cntsection] != "1") // Exclure EAIT
+      {
+        JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{";
+        JsonEuros += "\"name\":\"" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "\",";
+        JsonEuros += "\"coeff\":1,";
+        JsonEuros += "\"price\":" + String(getTarif(String(section[cntsection]).toInt(), "energy")) + ",";
+        JsonEuros += "\"abo\":" + String(ConfigGeneral.tarifAbo) + ",";
+        JsonEuros += "\"taxe\":" + String(ConfigGeneral.tarifCSPE) + ",";
+        JsonEuros += "\"unit\":\"Wh\"}";
+        
+        ykeys += sep + "'" + String(section[cntsection]) + "'";
+        labels += sep + "'" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "'";
+        i++;
+      }
+    }
+    
+    // Ajouter la production si configurée
+    if (strcmp(ConfigGeneral.Production, "") != 0)
+    {
+      sep = (i > 0) ? "," : "";
+      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + String(getTarif(1, "production")) + ",\"unit\":\"Wh\"}";
+      ykeys += sep + "'1'";
+      labels += sep + "'Production'";
+    }
+    
+    unit = "Wh";
+  }
+  else if (Type == "gaz")
+  {
+    JsonEuros += "\"0\":{";
+    JsonEuros += "\"name\":\"Gaz\",";
+    JsonEuros += "\"coeff\":" + String(ConfigGeneral.coeffGaz) + ",";
+    JsonEuros += "\"price\":" + String(getTarif(0, "gaz")) + ",";
+    JsonEuros += "\"unit\":\"" + String(ConfigGeneral.unitGaz) + "\"}";
+    
+    ykeys += "'0'";
+    labels += "'Gaz'";
+    unit = String(ConfigGeneral.unitGaz);
+  }
+  else if (Type == "water")
+  {
+    JsonEuros += "\"0\":{";
+    JsonEuros += "\"name\":\"Eau\",";
+    JsonEuros += "\"coeff\":" + String(ConfigGeneral.coeffWater) + ",";
+    JsonEuros += "\"price\":" + String(getTarif(0, "water")) + ",";
+    JsonEuros += "\"unit\":\"" + String(ConfigGeneral.unitWater) + "\"}";
+    
+    ykeys += "'0'";
+    labels += "'Eau'";
+    unit = String(ConfigGeneral.unitWater);
+  }
+  else if (Type == "production")
+  {
+    JsonEuros += "\"1\":{";
+    JsonEuros += "\"name\":\"Production\",";
+    JsonEuros += "\"coeff\":1,";
+    JsonEuros += "\"price\":" + String(getTarif(1, "production")) + ",";
+    JsonEuros += "\"unit\":\"Wh\"}";
+    
+    ykeys += "'1'";
+    labels += "'Production'";
+    unit = "Wh";
+  }
+  
+  JsonEuros += "}";
+  ykeys += "]";
+  labels += "]";
+  
+  // Exposer les infos comme variables globales
+  result += F("window.");
+  result += Type;
+  result += F("TarifInfo = ");
+  result += JsonEuros;
+  result += F(";");
+  
+  result += F("window.");
+  result += Type;
+  result += F("Keys = ");
+  result += ykeys;
+  result += F(";");
+  
+  result += F("window.");
+  result += Type;
+  result += F("Budget = ");
+  result += String(budget);
+  result += F(";");
+  
+  // Créer le graphique Chart.js
+  result += F("window.");
+  result += Type;
+  result += F("Chart = new Chart(ctx");
+  result += Type;
+  result +=F(", {");
+  result += F(" type: 'bar',");
+  result += F(" data: {");
+  result += F("  labels: [],");
+  result += F("  datasets: []"); // Sera rempli dynamiquement
+  result += F(" },");
+  result += F(" options: {");
+  result += F("  responsive: true,");
+  result += F("  maintainAspectRatio: false,");
+  result += F("  animation: false,");
+  result += F("  scales: {");
+  result += F("   x: {");
+  result += F("    stacked: true,");
+  result += F("    ticks: { maxRotation: 70, minRotation: 70, autoSkip: true }");
+  result += F("   },");
+  result += F("   y: {");
+  result += F("    stacked: true,");
+  result += F("    beginAtZero: true,");
+  result += F("    ticks: { callback: function(value) { return value + ' ");
+  result += unit;
+  result += F("'; } }");
+  result += F("   }");
+  result += F("  },");
+  result += F("  barPercentage: 0.9,");
+  result += F("  categoryPercentage: 0.95,");
+  result += F("  plugins: {");
+  result += F("   tooltip: {");
+  result += F("    callbacks: {");
+  result += F("     label: function(context) {");
+  result += F("      return getEnergyTooltipLabel(context, '");
+  result += Type;
+  result += F("');");
+  result += F("     },");
+  result += F("     footer: function(tooltipItems) {");
+  result += F("      return getEnergyTooltipFooter(tooltipItems, '");
+  result += Type;
+  result += F("');");
+  result += F("     }");
+  result += F("    }");
+  result += F("   },");
+  result += F("   legend: { display: true, position: 'top' }");
+  
+  // Ajouter la ligne de budget si défini
+  if (budget > 0)
+  {
+    result += F(",");
+    result += F("   annotation: {");
+    result += F("    annotations: {");
+    result += F("     budgetLine: {");
+    result += F("      type: 'line',");
+    result += F("      yMin: ");
+    result += String(budget);
+    result += F(",");
+    result += F("      yMax: ");
+    result += String(budget);
+    result += F(",");
+    result += F("      borderColor: 'rgba(162, 0, 255, 1)',");
+    result += F("      borderWidth: 2,");
+    result += F("      borderDash: [5, 5],");
+    result += F("      label: {");
+    result += F("       display: true,");
+    result += F("       content: 'Budget: ");
+    result += String(budget);
+    result += F(" ");
+    result += unit;
+    result += F("',");
+    result += F("       position: 'end',");
+    result += F("       backgroundColor: 'rgba(162, 0, 255, 1)',");
+    result += F("       color: 'white'");
+    result += F("      }");
+    result += F("     }");
+    result += F("    }");
+    result += F("   }");
+  }
+  
+  result += F("  }"); // Fermeture plugins
+  result += F(" }"); // Fermeture options
+  result += F("});");
+
   return result;
 }
 
@@ -5613,7 +5958,8 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += String(ConfigGeneral.ZLinky);
     javascript += F("','1295','");
     javascript += time;
-    javascript += F("');");
+    javascript += "','energy'";
+    javascript += F(");");
 
     if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
     {
@@ -10570,7 +10916,7 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
 
 }
 
-void handleLoadEnergyChart(AsyncWebServerRequest* request) {
+/*void handleLoadEnergyChart(AsyncWebServerRequest* request) {
   // 1) Récupération des arguments
   String IEEE  = request->arg(static_cast<size_t>(0));
   String time = request->arg(static_cast<size_t>(1));
@@ -10803,6 +11149,200 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
   result += F("]");
   // 7) Envoi
   request->send(200, "application/json", result);
+}*/
+
+void handleLoadEnergyChart(AsyncWebServerRequest* request) {
+  String IEEE = request->arg(static_cast<size_t>(0));
+  String time = request->arg(static_cast<size_t>(1));
+
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d->getDeviceID() == IEEE) {
+      dev = d;
+      break;
+    }
+  }
+  if (!dev) {
+    request->send(404, "application/json", "[]");
+    return;
+  }
+
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+
+  if (time == "hour") pd = &eh.hours;
+  else if (time == "day") pd = &eh.days;
+  else if (time == "month") pd = &eh.months;
+  else if (time == "year") pd = &eh.years;
+  else {
+    request->send(400, "application/json", "[]");
+    return;
+  }
+
+  esp_task_wdt_reset();
+  // Créer un stream pour écrire directement dans la réponse
+  AsyncResponseStream *response = request->beginResponseStream("application/json");
+  
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+  response->print("[");
+
+  if (time == "hour") {
+    int now = Hour.toInt();
+    for (int i = 0; i < 24; i++) {
+      if (i > 0) response->print(",");
+      
+      now++;
+      if (now > 23) now = 0;
+      
+      String tmpi = now < 10 ? "0" + String(now) : String(now);
+      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
+      
+      response->print("{\"y\":\"");
+      response->print(tmpi);
+      response->print("H\"");
+
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            response->print(",\"");
+            response->print(section[cntsection]);
+            response->print("\":");
+            response->print(itv->second);
+          }
+        }
+      }
+      response->print("}");
+    }
+  }
+  else if (time == "day") {
+    int now = Day.toInt();
+    int reste = 30 - now;
+    int lastNbDayMonth = (Month.toInt() - 2 > 0) ? maxDayOfTheMonth[Month.toInt() - 2] : 31;
+    
+    if (reste > 0) now = (lastNbDayMonth - reste) + 1;
+    else if (reste < 0) now = 2;
+    else now = 1;
+
+    for (int i = 0; i < 30; i++) {
+      if (i > 0) response->print(",");
+      
+      if (reste > 0 && now > lastNbDayMonth) now = 1;
+      
+      String tmpi = now < 10 ? "0" + String(now) : String(now);
+      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
+      
+      String tmpm;
+      if (i > now) {
+        tmpm = Month;
+      } else {
+        if (reste <= 0) {
+          tmpm = Month;
+        } else {
+          if ((Month.toInt() - 1) > 0) {
+            tmpm = (Month.toInt() - 1) < 10 ? "0" + String(Month.toInt() - 1) : String(Month.toInt() - 1);
+          } else {
+            tmpm = "12";
+          }
+        }
+      }
+      
+      response->print("{\"y\":\"");
+      response->print(tmpi);
+      response->print("/");
+      response->print(tmpm);
+      response->print("\"");
+
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            response->print(",\"");
+            response->print(section[cntsection]);
+            response->print("\":");
+            response->print(itv->second);
+          }
+        }
+      }
+      response->print("}");
+      now++;
+    }
+  }
+  else if (time == "month") {
+    int now = Month.toInt();
+    for (int i = 0; i < 12; i++) {
+      if (i > 0) response->print(",");
+      
+      now++;
+      if (now > 12) now = 1;
+      
+      String tmpi = now < 10 ? "0" + String(now) : String(now);
+      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
+      String y = (i < now) ? String(Year.toInt() - 1) : Year;
+      
+      response->print("{\"y\":\"");
+      response->print(tmpi);
+      response->print("/");
+      response->print(y);
+      response->print("\"");
+
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            response->print(",\"");
+            response->print(section[cntsection]);
+            response->print("\":");
+            response->print(itv->second);
+          }
+        }
+      }
+      response->print("}");
+    }
+  }
+  else if (time == "year") {
+    int now = Year.toInt() - 10;
+    for (int i = 0; i < 11; i++) {
+      if (i > 0) response->print(",");
+      
+      response->print("{\"y\":\"");
+      response->print(now);
+      response->print("\"");
+      
+      PsString keyPS(String(now).c_str(), PsramAllocator<char>());
+      auto it = pd->graph.find(keyPS);
+      if (it != pd->graph.end()) {
+        ValueMap& vm = it->second;
+        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
+          int attrId = atoi(section[cntsection].c_str());
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end() && itv->second != 0) {
+            response->print(",\"");
+            response->print(section[cntsection]);
+            response->print("\":");
+            response->print(itv->second);
+          }
+        }
+      }
+      response->print("}");
+      now++;
+    }
+  }
+  
+  response->print("]");
+
+  esp_task_wdt_reset();
+
+  request->send(response);
 }
 
 void handleLoadLabelEnergy(AsyncWebServerRequest *request)
@@ -12768,6 +13308,8 @@ void initWebServer()
   serverWeb.serveStatic("/web/js/bootstrap.min.js", LittleFS, "/web/js/bootstrap.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/bootstrap.bundle.min.js.map", LittleFS, "/web/js/bootstrap.map").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/masonry.pkgd.min.js", LittleFS, "/web/js/masonry.pkgd.min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/chart.umd.min.js", LittleFS, "/web/js/chart.umd.min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/annotation.min.js", LittleFS, "/web/js/annotation.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/style.css", LittleFS, "/web/css/style.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/energy.css", LittleFS, "/web/css/energy.css").setCacheControl("max-age=600");
