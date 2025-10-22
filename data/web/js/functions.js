@@ -81,7 +81,7 @@ function GetAction(mac)
 	xhr.send();
 }
 
-function ZigbeeAction(shortaddr,command,value)
+function ZigbeeAction(shortaddr,command,endpoint,value)
 {
 	var xhr = getXhr();
 	xhr.onreadystatechange = function(){
@@ -89,12 +89,12 @@ function ZigbeeAction(shortaddr,command,value)
 			leselect = xhr.responseText;
 		}
 	}
-	xhr.open("GET","ZigbeeAction?shortaddr="+escape(shortaddr)+"&command="+escape(command)+"&value="+escape(value),true);
+	xhr.open("GET","ZigbeeAction?shortaddr="+escape(shortaddr)+"&command="+escape(command)+"&endpoint="+escape(endpoint)+"&value="+escape(value),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
 
-function ZigbeeSendRequest(shortaddr,cluster,attribute)
+function ZigbeeSendRequest(shortaddr,endpoint,cluster,attribute)
 {
 	var xhr = getXhr();
 	xhr.onreadystatechange = function(){
@@ -102,7 +102,7 @@ function ZigbeeSendRequest(shortaddr,cluster,attribute)
 			leselect = xhr.responseText;
 		}
 	}
-	xhr.open("GET","ZigbeeSendRequest?shortaddr="+escape(shortaddr)+"&cluster="+escape(cluster)+"&attribute="+escape(attribute),true);
+	xhr.open("GET","ZigbeeSendRequest?shortaddr="+escape(shortaddr)+"&endpoint="+escape(endpoint)+"&cluster="+escape(cluster)+"&attribute="+escape(attribute),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
@@ -485,20 +485,20 @@ function refreshStatusProduction(IEEE,time)
 	setTimeout(function(){refreshStatusProduction(IEEE,time); }, 60000);
 }
 
-function refreshStatusEnergy(IEEE,attribute,time)
+function refreshStatusEnergy(IEEE,attribute,time,type)
 {
 	//refreshGaugeAbo(IEEE,attribute,time);
 	loadPowerTrend(IEEE,attribute,time);
 	loadDatasTrend(IEEE,attribute,time);
 	loadLinkyDatas(IEEE);
-	loadEnergyChart(IEEE,time);
+	loadEnergyChart(IEEE,time,type);
 	loadDistributionChart(time,"");
 	if (time=='hour')
 	{
 		loadPowerChart(IEEE,attribute);
-		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time); }, 15000);
+		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time,type); }, 15000);
 	}else{
-		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time); }, 60000);
+		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time,type); }, 60000);
 	}
 }
 
@@ -641,25 +641,141 @@ function loadGaugeDashboard(div,IEEE,cluster,attribute,type,coefficient,min,max,
 	xhr.send();
 }
 
-
-function loadPowerChart(IEEE,attribute)
+function loadPowerChart(IEEE, attribute) {
+    var xhr = getXhr();
+    xhr.onreadystatechange = function() {
+        if(xhr.readyState == 4) {
+            var response = JSON.parse(xhr.responseText);
+            var datas = response.datas;
+            
+            var labels = datas.map(function(d) { return d.y; });
+            
+            var inj1 = [], inj2 = [], inj3 = [];
+            var pow1 = [], pow2 = [], pow3 = [];
+            
+            var hasInjection = false;
+            
+            datas.forEach(function(item) {
+                var i1 = item['519'] || item['1'] || 0;
+                var i2 = item['2'] || 0;
+                var i3 = item['3'] || 0;
+                
+                inj1.push(i1 < 0 ? i1 : 0);
+                inj2.push(i2 < 0 ? i2 : 0);
+                inj3.push(i3 < 0 ? i3 : 0);
+                
+                if (i1 < 0 || i2 < 0 || i3 < 0) hasInjection = true;
+                
+                pow1.push((item['1295'] || 0) > 0 ? item['1295'] : 0);
+                pow2.push((item['2319'] || 0) > 0 ? item['2319'] : 0);
+                pow3.push((item['2575'] || 0) > 0 ? item['2575'] : 0);
+            });
+            
+            powerChart.data.labels = labels;
+            
+            var isTriphasé = window.powerIsTriphasé || false;
+            
+            if (isTriphasé) {
+                // TRIPHASÉ : 6 datasets (3 injections + 3 consommations)
+                powerChart.data.datasets[0].data = inj1;
+                powerChart.data.datasets[1].data = inj2;
+                powerChart.data.datasets[2].data = inj3;
+                powerChart.data.datasets[3].data = pow1;
+                powerChart.data.datasets[4].data = pow2;
+                powerChart.data.datasets[5].data = pow3;
+                
+                // Masquer les injections vides
+                powerChart.data.datasets[0].hidden = !inj1.some(v => v < 0);
+                powerChart.data.datasets[1].hidden = !inj2.some(v => v < 0);
+                powerChart.data.datasets[2].hidden = !inj3.some(v => v < 0);
+            } else {
+                // MONOPHASÉ : 2 datasets (1 injection + 1 consommation)
+                // Combiner toutes les injections dans le dataset 0
+                var injTotal = inj1.map((v, i) => Math.min(0, v + inj2[i] + inj3[i]));
+                powerChart.data.datasets[0].data = injTotal;
+                powerChart.data.datasets[1].data = pow1;
+                
+                // Masquer l'injection si vide
+                powerChart.data.datasets[0].hidden = !injTotal.some(v => v < 0);
+            }
+            
+            // Calculer l'échelle dynamiquement EN INCLUANT LE GOAL
+            var allValues = [...inj1, ...inj2, ...inj3, ...pow1, ...pow2, ...pow3];
+            var minValue = Math.min(...allValues);
+            var maxValue = Math.max(...allValues);
+            
+            // Inclure le goal dans le calcul si défini
+            var goal = window.powerGoal || 0;
+            if (goal > 0) {
+                maxValue = Math.max(maxValue, goal);
+            }
+            
+            // Calculer les limites avec marges
+            var yMin = minValue < 0 ? Math.floor(minValue * 1.2) : 0;
+            var yMax = Math.ceil(maxValue * 1.2);
+            
+            // S'assurer qu'on a au moins un peu d'espace
+            if (yMax < 100) yMax = 100;
+                      
+            powerChart.options.scales.y.min = yMin;
+            powerChart.options.scales.y.max = yMax;
+            
+            powerChart.update('active');
+        }
+    }
+    xhr.open("GET", "loadPowerChart?IEEE=" + escape(IEEE) + "&attribute=" + escape(attribute), true);
+    xhr.setRequestHeader('Content-Type', 'application/html');
+    xhr.send();
+}
+/*function loadPowerChart(IEEE,attribute)
 {
 	var xhr = getXhr();
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
-			var datas = JSON.parse(xhr.responseText);
-			powerChart.setData(datas['datas']);
-			/*var j = '[{"y":"16:37","519":-200,"1295":970,"2319":0},{"y":"16:38","519":-1956,"1295":1180}]';
-			var datas = JSON.parse(j);
-			powerChart.setData(datas);*/		
+			var response = JSON.parse(xhr.responseText);
+			var datas = response.datas;
+			// Transformer les données en garantissant TOUTES les clés
+            var transformedData = datas.map(function(item) {
+                // Initialiser toutes les clés à 0
+                var transformed = {
+                    y: item.y,
+                    '1': 0,
+                    '2': 0,
+                    '3': 0,
+                    '1295': 0,
+                    '2319': 0,
+                    '2575': 0
+                };
+				
+				var inj1 = item['1'] || 0;
+                var inj2 = item['2'] || 0;
+                var inj3 = item['3'] || 0;
+                
+                transformed['1'] = inj1 < 0 ? inj1 : 0;
+                transformed['2'] = inj2 < 0 ? inj2 : 0;
+                transformed['3'] = inj3 < 0 ? inj3 : 0;
+                
+                // Consommation (valeurs positives)
+                transformed['1295'] = (item['1295'] || 0) > 0 ? item['1295'] : 0;
+                transformed['2319'] = (item['2319'] || 0) > 0 ? item['2319'] : 0;
+                transformed['2575'] = (item['2575'] || 0) > 0 ? item['2575'] : 0;
+
+                
+                return transformed;
+			});
+			// Debug : vérifier les données
+            console.log('Échantillon avec injection:', transformedData.find(d => d['2'] < 0));
+            console.log('Échantillon normal:', transformedData[0]);
+            
+			powerChart.setData(transformedData);	
 		}
 	}
 	xhr.open("GET","loadPowerChart?IEEE="+escape(IEEE)+"&attribute="+escape(attribute),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
-}
+}*/
 
-function loadEnergyChart(IEEE,time)
+/*function loadEnergyChart(IEEE,time)
 {
 	var xhr = getXhr();
 	xhr.onreadystatechange = function(){
@@ -671,6 +787,270 @@ function loadEnergyChart(IEEE,time)
 	xhr.open("GET","loadEnergyChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
+}*/
+
+function loadEnergyChart(IEEE, time,type) {
+    // DEBUG - vérifier l'existence du chart       
+    var xhr = getXhr();
+    xhr.onreadystatechange = function() {
+        if(xhr.readyState == 4) {
+            if (xhr.status !== 200) {
+                console.error('Erreur chargement:', xhr.status);
+                return;
+            }
+            
+            // LE SERVEUR RETOURNE DIRECTEMENT LE TABLEAU
+            var datas = JSON.parse(xhr.responseText);
+           
+            var tarifInfo = window[type + 'TarifInfo'] || {};
+            var keys = window[type + 'Keys'] || [];
+            
+            // Extraire les labels (heures/jours/mois)
+            var labels = datas.map(function(d) { return d.y; });
+            
+            // Séparer les datasets en production (négatif) et consommation (positif)
+            var datasetsProduction = [];
+            var datasetsConsommation = [];
+            var colors = getBarColors(type, keys.length);
+            
+            keys.forEach(function(key, index) {
+                var keyStr = key.replace(/'/g, '');
+                var info = tarifInfo[keyStr] || {};
+                
+                var dataProd = [];
+                var dataConso = [];
+                
+                // Extraire et séparer les données
+                datas.forEach(function(d) {
+                    var value = d[keyStr] || 0;
+                    
+                    // Appliquer le coefficient si défini
+                    if (info.coeff && info.coeff != 1) {
+                        value = value * parseFloat(info.coeff);
+                    }
+                    
+                    // Séparer production (négatif) et consommation (positif)
+                    if (value < 0) {
+                        dataProd.push(value);
+                        dataConso.push(0);
+                    } else {
+                        dataProd.push(0);
+                        dataConso.push(value);
+                    }
+                });
+                
+                // Créer dataset production si présent
+                var hasProduction = dataProd.some(function(v) { return v < 0; });
+                if (hasProduction) {
+                    datasetsProduction.push({
+                        label: (info.name || 'Section ' + keyStr) + ' (Prod)',
+                        data: dataProd,
+                        backgroundColor: '#27ae60', // Vert pour production
+                        stack: 'Stack0'
+                    });
+                }
+                
+                // Créer dataset consommation si présent
+                var hasConsommation = dataConso.some(function(v) { return v > 0; });
+                if (hasConsommation) {
+                    datasetsConsommation.push({
+                        label: info.name || 'Section ' + keyStr,
+                        data: dataConso,
+                        backgroundColor: colors[index],
+                        stack: 'Stack0'
+                    });
+                }
+            });
+            
+            // Combiner : production d'abord, puis consommation
+            var datasets = datasetsProduction.concat(datasetsConsommation);
+            
+            // Mettre à jour le graphique
+            energyChart.data.labels = labels;
+            energyChart.data.datasets = datasets;
+            
+            // Calculer l'échelle dynamiquement
+            var allValues = [];
+            datas.forEach(function(d) {
+                keys.forEach(function(key) {
+                    var keyStr = key.replace(/'/g, '');
+                    var value = d[keyStr];
+                    if (value !== undefined && value !== null) {
+                        var info = tarifInfo[keyStr] || {};
+                        if (info.coeff && info.coeff != 1) {
+                            value = value * parseFloat(info.coeff);
+                        }
+                        allValues.push(value);
+                    }
+                });
+            });
+            
+            var minValue = allValues.length > 0 ? Math.min(...allValues) : 0;
+            var maxValue = allValues.length > 0 ? Math.max(...allValues) : 100;
+            
+            // Inclure le budget dans le calcul si défini
+            var budget = window[type + 'Budget'] || 0;
+            if (budget > 0) {
+                maxValue = Math.max(maxValue, budget);
+            }
+            
+            // Calculer les limites avec marges
+            var yMin = minValue < 0 ? Math.floor(minValue * 1.2) : 0;
+            var yMax = Math.ceil(maxValue * 1.2);
+            
+            if (yMax < 100) yMax = 100;
+            
+            energyChart.options.scales.y.min = yMin;
+            energyChart.options.scales.y.max = yMax;
+            
+            energyChart.update('active');
+        }
+    }
+    
+    // L'URL doit correspondre à votre endpoint
+    xhr.open("GET", "loadEnergyChart?IEEE=" + escape(IEEE) + "&time=" + escape(time), true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.send();
+}
+
+// Fonction pour obtenir les couleurs selon le type
+function getBarColors(type, count) {
+    var baseColors = {
+        'energy': ['#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b'],
+        'gaz': ['#e67e22'],
+        'water': ['#3498db'],
+        'production': ['#27ae60']
+    };
+    
+    var colors = baseColors[type] || ['#1e88e5'];
+    
+    while (colors.length < count) {
+        colors = colors.concat(baseColors[type]);
+    }
+    
+    return colors.slice(0, count);
+}
+
+// Fonction pour le tooltip personnalisé
+function getEnergyTooltipLabel(context, type) {
+    var tarifInfo = window[type + 'TarifInfo'] || {};
+    var keys = window[type + 'Keys'] || [];
+    var value = context.parsed.y;
+    
+    // Extraire le label pour trouver la clé
+    var datasetLabel = context.dataset.label || '';
+    var isProduction = datasetLabel.includes('(Prod)');
+    
+    // Trouver la clé correspondante
+    var keyStr = null;
+    for (var i = 0; i < keys.length; i++) {
+        var k = keys[i].replace(/'/g, '');
+        var info = tarifInfo[k] || {};
+        var labelToMatch = isProduction ? (info.name || 'Section ' + k) + ' (Prod)' : (info.name || 'Section ' + k);
+        if (labelToMatch === datasetLabel) {
+            keyStr = k;
+            break;
+        }
+    }
+    
+    var info = tarifInfo[keyStr] || {};
+    var unit = info.unit || 'Wh';
+    
+    var label = datasetLabel + ': ' + Math.abs(value).toFixed(0) + ' ' + unit;
+    
+    // Calculer le coût si prix défini
+    if (info.price && info.price > 0) {
+        var valueInKwh = unit === 'Wh' ? Math.abs(value) / 1000 : Math.abs(value);
+        var cost = valueInKwh * parseFloat(info.price);
+        
+        if (info.taxe && info.taxe > 0) {
+            cost += valueInKwh * parseFloat(info.taxe);
+        }
+        
+        label += ' ≈ ' + cost.toFixed(3) + ' €';
+    }
+    
+    return label;
+}
+
+// Fonction pour le footer du tooltip (total)
+function getEnergyTooltipFooter(tooltipItems, type) {
+    if (tooltipItems.length === 0) return '';
+    
+    var tarifInfo = window[type + 'TarifInfo'] || {};
+    var keys = window[type + 'Keys'] || [];
+    
+    var totalProduction = 0;
+    var totalConsommation = 0;
+    var totalCostProd = 0;
+    var totalCostConso = 0;
+    var unit = 'Wh';
+    
+    tooltipItems.forEach(function(item) {
+        var value = item.parsed.y;
+        var datasetLabel = item.dataset.label || '';
+        var isProduction = datasetLabel.includes('(Prod)');
+        
+        // Trouver la clé
+        var keyStr = null;
+        for (var i = 0; i < keys.length; i++) {
+            var k = keys[i].replace(/'/g, '');
+            var info = tarifInfo[k] || {};
+            var labelToMatch = isProduction ? (info.name || 'Section ' + k) + ' (Prod)' : (info.name || 'Section ' + k);
+            if (labelToMatch === datasetLabel) {
+                keyStr = k;
+                break;
+            }
+        }
+        
+        var info = tarifInfo[keyStr] || {};
+        if (info.unit) unit = info.unit;
+        
+        if (value < 0) {
+            totalProduction += Math.abs(value);
+            if (info.price && info.price > 0) {
+                var valueInKwh = unit === 'Wh' ? Math.abs(value) / 1000 : Math.abs(value);
+                totalCostProd += valueInKwh * parseFloat(info.price);
+            }
+        } else {
+            totalConsommation += value;
+            if (info.price && info.price > 0) {
+                var valueInKwh = unit === 'Wh' ? value / 1000 : value;
+                var cost = valueInKwh * parseFloat(info.price);
+                if (info.taxe && info.taxe > 0) {
+                    cost += valueInKwh * parseFloat(info.taxe);
+                }
+                totalCostConso += cost;
+            }
+        }
+    });
+    
+    var footer = '─────────────';
+    
+    if (totalProduction > 0) {
+        footer += '\nProduction: ' + totalProduction.toFixed(0) + ' ' + unit;
+        if (totalCostProd > 0) {
+            footer += ' ≈ ' + totalCostProd.toFixed(3) + ' €';
+        }
+    }
+    
+    if (totalConsommation > 0) {
+        footer += '\nConsommation: ' + totalConsommation.toFixed(0) + ' ' + unit;
+        if (totalCostConso > 0) {
+            footer += ' ≈ ' + totalCostConso.toFixed(3) + ' €';
+        }
+    }
+    
+    if (totalProduction > 0 && totalConsommation > 0) {
+        var net = totalConsommation - totalProduction;
+        var netCost = totalCostConso - totalCostProd;
+        footer += '\nNet: ' + net.toFixed(0) + ' ' + unit;
+        if (netCost != 0) {
+            footer += ' ≈ ' + netCost.toFixed(3) + ' €';
+        }
+    }
+    
+    return footer;
 }
 
 function loadDistributionChart(time,type)
