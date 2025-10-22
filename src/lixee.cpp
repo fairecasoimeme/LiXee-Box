@@ -107,10 +107,10 @@ void updateDeviceValue(const String& deviceId, int attribute, const String& valu
 // Fonction pour gérer les notifications
 void handleNotification(const String& title, const String& text, int priority = 0) {
     if (!notifList->isFull()) {
-        notifList->push(Notification{title, text, FormattedDate, 3, 0});
+        notifList->push(Notification{title, text, FormattedDate, priority, 0});
     } else {
         notifList->shift();
-        notifList->push(Notification{title, text, FormattedDate, 3, 0});
+        notifList->push(Notification{title, text, FormattedDate, priority, 0});
     }
     notificationManager.addNotification(title, text, priority);
 }
@@ -330,11 +330,40 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
         
         if ((oldColor != tmp.c_str()) && (oldColor != "")) {
             handleNotification("🕓💵Couleur du lendemain", 
-                              "Couleur : " + tmp, 0);
+                              "Couleur : " + tmp, 1);
         }
         oldColor = tmp.c_str();
     }
-    
+    //Notification PEJP
+    if (attribute == 4)
+    {
+        if (ConfigNotif.PEJP && (strcmp(ConfigGeneral.ZLinky,inifile.substring(0,16).c_str()) == 0 ))
+        {
+            if ((oldPEJP != tmp.c_str()) && (oldPEJP!=""))
+            { 
+
+            String text ="Préavis EJP : "+tmp+" min";
+            handleNotification("⚡Préavis début EJP", 
+                              text, 1);
+               
+            }
+            oldPEJP = tmp.c_str();
+        }
+    }
+    //Notification PriceChange
+    if (attribute == 16)
+    {
+        if (ConfigNotif.PriceChange && (strcmp(ConfigGeneral.ZLinky,inifile.substring(0,16).c_str()) == 0 ))
+        {
+            if ((oldPriceChange != tmp.c_str()) && (oldPriceChange!=""))
+            {
+                String text ="--> tarif : "+tmp;
+                handleNotification("🕓💵 Changement de tarif", 
+                                text,0);
+            }
+            oldPriceChange = tmp.c_str();
+        }
+    }
     // Autres notifications similaires...
 }
 
