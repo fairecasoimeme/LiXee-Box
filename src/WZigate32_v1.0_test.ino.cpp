@@ -65,6 +65,162 @@ bool updatePending = false;
 
 #include <TaskScheduler.h>
 
+
+/*// ========== WEBSOCKET TUNNEL ==============
+#include "WebSocketTunnel.h"
+// Instance globale
+WebSocketTunnel wsTunnel;
+
+// ============================================
+// CONFIGURATION OPTIMISÉE PSRAM
+// ============================================
+WebSocketTunnelConfig createOptimizedConfig() {
+    WebSocketTunnelConfig config;
+    
+    // Paramètres tunnel
+    config.deviceToken = "votre_token_ici";
+    config.tunnelHost = "lixee-box.fr";
+    config.tunnelPort = 80;
+    config.tunnelPath = "/device";
+    config.deviceName = "ESP32-LIXEEBOX";
+    
+    // Authentification HTTP locale
+    config.localHttpUser = "-------";
+    config.localHttpPass = "-------";
+    
+    // === OPTIMISATIONS PSRAM ===
+    config.usePSRAM = true;                    // ACTIVER PSRAM
+    config.jsonBufferSize = 24 * 1024;         // 24KB pour JSON (ajustez selon besoins)
+    config.httpBufferSize = 48 * 1024;         // 48KB pour HTTP (réponses volumineuses)
+    
+    // Monitoring
+    config.enableMemoryMonitoring = true;      // Surveiller la mémoire
+    config.memoryMonitorInterval = 30000;      // Stats toutes les 30s
+    config.debugEnabled = true;                // Logs détaillés
+    
+    // Timing
+    config.reconnectInterval = 5000;
+    config.heartbeatInterval = 30000;
+    
+    return config;
+}
+
+// ========== OPENAI CONFIGURATION ==========
+#include "OpenAIAnalyzer.h"
+// OpenAI
+const char* OPENAI_API_KEY = "-------------------";
+
+// Timing
+#define ANALYSIS_INTERVAL_MS (24 * 60 * 60 * 1000)  // 1 fois par jour
+unsigned long last_analysis = 0;
+
+// Instance globale
+OpenAIAnalyzer ai_analyzer;
+
+LinkyData collectLinkyData() {
+    LinkyData data;
+    
+    // Exemple avec vos données du document
+    data.index_hc = 17893668;           // Wh
+    data.index_hp = 33153177;           // Wh
+    data.puissance_max_p1 = 8070;       // W
+    data.puissance_max_p2 = 0;          // Monophasé
+    data.puissance_max_p3 = 0;
+    data.puissance_souscrite = 9;       // kVA
+    data.nb_jours = 120;
+    
+    strcpy(data.horaires_hc, "00h00-08h00");
+    strcpy(data.type_abonnement, "HCHP");
+    
+    // Calcul des statistiques
+    LinkyUtils::calculateStats(data);
+    
+    return data;
+}
+
+void performDetailedAnalysis() {
+    Serial.println("\n╔══════════════════════════════════════════╗");
+    Serial.println("║   ANALYSE DÉTAILLÉE AVEC JSON COMPLET    ║");
+    Serial.println("╚══════════════════════════════════════════╝\n");
+    
+    // 1. Préparer le résumé
+    LinkyData summary;
+    summary.index_hc = 17893668;
+    summary.index_hp = 33153177;
+    summary.puissance_max_totale = 2700;
+    summary.puissance_souscrite = 6;
+    summary.nb_jours = 365;
+    strcpy(summary.type_abonnement, "HCHP");
+    strcpy(summary.horaires_hc, "22h30-06h30");
+    LinkyUtils::calculateStats(summary);
+    
+    // 2. Vos JSON complets (stockés en PSRAM ou SPIFFS)
+    // Option A: En dur (si petit)
+    //const char* json_hours = R"({"hours":{"trend":{"256":0,"258":0}...}})";
+    //const char* json_minutes = R"({"datas":[{"y":"13:46","519":0...}]})";
+    String r;
+    r.reserve(MAXHEAP);
+    String filename = "/hst/pwr_00158d0006204fcf.json";
+    File file = LittleFS.open(filename, "r");
+    if (!file || file.isDirectory())
+    {
+      file.close();
+      return;
+    }
+    size_t fileSize = file.size();
+    // Allocation d'un buffer dans la PSRAM avec heap_caps_malloc 
+    char* buffer = (char*) heap_caps_malloc(fileSize + 1, MALLOC_CAP_SPIRAM); 
+    if (!buffer) { 
+      Serial.println("Erreur d'allocation dans la PSRAM"); 
+      file.close(); 
+    }
+
+    size_t readBytes = file.readBytes(buffer, fileSize); 
+    buffer[readBytes] = '\0';
+    file.close();
+
+    r = String(buffer,readBytes);
+    heap_caps_free(buffer); 
+
+    const char* json_minutes = r.c_str();
+    const char* json_hours = r.c_str();
+    // Option B: Lus depuis SPIFFS/SD (recommandé)
+    // String json_hours = readFile("/linky_hours.json");
+    // String json_minutes = readFile("/linky_minutes.json");
+    
+    // 3. Configuration analyse détaillée
+    FullAnalysisConfig full_config;
+    full_config.include_hourly_data = true;
+    full_config.include_daily_data = true;
+    full_config.include_monthly_data = true;
+    full_config.use_gpt4 = true;  // true pour GPT-4 (meilleur mais +cher)
+    full_config.max_tokens = 1500;  // Plus de détails
+    
+    // 4. Analyse
+    AIAnalysisResult result;
+    bool success = ai_analyzer.analyzeWithFullJSON(
+        json_hours,
+        json_minutes,
+        summary,
+        result,
+        full_config
+    );
+    
+    if (success) {
+        Serial.println("\n╔═══════════════════════════════════════════════╗");
+        Serial.println("║       ANALYSE DÉTAILLÉE - RÉSULTAT            ║");
+        Serial.println("╠═══════════════════════════════════════════════╣");
+        Serial.println(result.response_text);
+        Serial.println("╠═══════════════════════════════════════════════╣");
+        Serial.printf("║ Tokens: %u | Coût: $%.6f USD            ║\n",
+            result.total_tokens, result.estimated_cost_usd);
+        Serial.println("╚═══════════════════════════════════════════════╝\n");
+        
+        result.free();
+    }
+}
+*/
+
 // application config
 unsigned long timeLog;
 ConfigSettingsStruct ConfigSettings;
@@ -226,7 +382,7 @@ bool ScanDevicesToRAZ() {
         {
           int arrayLength = sizeof(section) / sizeof(section[0]);
           long TotalWh =0;
-          for (auto &kv : device->energyHistory.days.graph) {
+          for (auto &kv : device->energyHistory.hours.graph) {
             ValueMap &vm = kv.second;   
             for (size_t i = 2; i < arrayLength; ++i) {
               int attrId = section[i].toInt();
@@ -238,15 +394,17 @@ bool ScanDevicesToRAZ() {
           }     
           if (ConfigNotif.OverBudgetThreshold)
           {
-            if ( TotalWh >  getkWhBudget(String(ConfigGeneral.ZLinky), "day", ConfigNotif.OverBudgetThreshold))
+            int budgetkWh = getkWhBudget(String(ConfigGeneral.ZLinky), "day", ConfigNotif.OverBudgetThreshold);
+            if ( TotalWh > budgetkWh)
             {
+              String text = "Attention la consommation de ce jour dépasse votre budget prévu - consommé :"+String(TotalWh)+"Wh budget : "+String(budgetkWh)+ "Wh";
               if (!notifList->isFull()) {
-                  notifList->push(Notification{"💸🚨Dépassement de budget", "Attention la consommation de ce jour dépasse votre budget prévu", FormattedDate, 3, 0});
+                  notifList->push(Notification{"💸🚨Dépassement de budget",text , FormattedDate, 3, 0});
               } else {
                   notifList->shift();
-                  notifList->push(Notification{"💸🚨Dépassement de budget", "Attention la consommation de ce jour dépasse votre budget prévu", FormattedDate, 3, 0});
+                  notifList->push(Notification{"💸🚨Dépassement de budget", text, FormattedDate, 3, 0});
               }
-              notificationManager.addNotification("💸🚨Dépassement de budget", "Attention la consommation de ce jour dépasse votre budget prévu", 0);
+              notificationManager.addNotification("💸🚨Dépassement de budget", text, 0);
             }
           }
         }
@@ -290,6 +448,9 @@ bool ScanDevicesToRAZ() {
         device->setValue(std::string("0B04"),std::string("2319"),std::string("0"));
         device->setValue(std::string("0B04"),std::string("2575"),std::string("0"));
 
+        addMeasurement(device->powerHistory,1,0);
+        addMeasurement(device->powerHistory,2,0);
+        addMeasurement(device->powerHistory,3,0);
         addMeasurement(device->powerHistory,1295,0);
         addMeasurement(device->powerHistory,2319,0);
         addMeasurement(device->powerHistory,2575,0);
@@ -448,109 +609,6 @@ SemaphoreHandle_t Queue_Mutex = NULL;
 SemaphoreHandle_t QueuePrio_Mutex = NULL;
 
 
-// UART_RX_IRQ will be executed as soon as data is received by the UART
-// This is a callback function executed from a high priority
-// task created when onReceive() is used
-/*uint8_t uartBuffer[BUFFER_SIZE];
-size_t uartBufferLength;*/
-/*static uint8_t* uartBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_8BIT | MALLOC_CAP_SPIRAM);
-size_t uartBufferLength = 0;
-
-void SERIAL_RX_CB() {
-  // take the mutex, waits forever until loop() finishes its processing
-
-  if (xSemaphoreTake(uart_buffer_Mutex, pdMS_TO_TICKS(50))) {
-    //while(Serial1.available() && (uart_buffer.length() < (BUFFER_SIZE /2)))
-
-    while (Serial1.available())
-    {
-        
-        uartBufferLength = Serial1.readBytesUntil(0x03,uartBuffer,BUFFER_SIZE);
-        uartBuffer[uartBufferLength++]=0x03;
-      
-    }
-    
-    xSemaphoreGive(uart_buffer_Mutex);
-   
-  }
-}*/
-
-/*// Variables globales pour l'ISR (ajoutez près de g_uart_has_data)
-TaskHandle_t serialTaskHandle = NULL;
-static volatile bool g_uart_has_data = false;
-static volatile bool g_packet_ready = false;
-static volatile size_t g_packet_length = 0;
-
-// ISR simplifiée qui utilise votre logique existante
-void IRAM_ATTR SERIAL_RX_CB() {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    
-    if (Serial1.available()) {
-        g_uart_has_data = true;
-        
-        // Si une tâche attend, la réveiller
-        if (serialTaskHandle != NULL) {
-            xTaskNotifyFromISR(serialTaskHandle, 0x01, eSetBits, 
-                              &xHigherPriorityTaskWoken);
-        }
-    }
-    
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}*/
-
-
-
-// Variables globales simples pour l'ISR
-/*static volatile bool g_uart_has_data = false;
-
-// ISR ULTRA-MINIMALISTE - SEULEMENT SIGNALER
-void IRAM_ATTR SERIAL_RX_CB() {
-    // JUSTE signaler qu'il y a des données - RIEN D'AUTRE
-    if (Serial1.available()) {
-        g_uart_has_data = true;
-    }
-}*/
-
-/*portMUX_TYPE rxMux = portMUX_INITIALIZER_UNLOCKED;
-static volatile uint32_t isr_packets_received = 0;
-static volatile uint32_t isr_buffer_overflows = 0;
-void IRAM_ATTR SERIAL_RX_CB() {
-    static SerialBuffer packet;
-    static size_t index = 0;
-
-    portENTER_CRITICAL_ISR(&rxMux);
-    // Lire tout ce qui est dispo
-    while (Serial1.available()) {
-        char c = Serial1.read();
-
-        if (index < BUFFER_SIZE - 1) {
-            packet.data[index++] = c;
-
-            // Si on atteint le délimiteur (ex: 0x03), on considère le paquet complet
-            if ((uint8_t)c == 0x03) {
-                packet.length = index;
-
-                if (!QueueBuffer->isFull()) {
-                    QueueBuffer->push(packet);
-                    isr_packets_received++; 
-                } else {
-                    isr_buffer_overflows++; // ✅ COMPTEUR OVERFLOW
-                }
-
-                // Reset pour prochain paquet
-                index = 0;
-                memset(&packet, 0, sizeof(SerialBuffer));
-            }
-        } else {
-            // Overflow : reset sécurité
-            isr_buffer_overflows++;
-            index = 0;
-            memset(&packet, 0, sizeof(SerialBuffer));
-        }
-    }
-    portEXIT_CRITICAL_ISR(&rxMux);
-}*/
-
 TaskHandle_t taskTCP;
 
 void TcpTreatment(void * pvParameters)
@@ -676,29 +734,7 @@ void datasTreatment(void * pvParameters)
     if (stackRemaining < 1000) { // Seuil d'alerte
         log_e("Stack critique: %d bytes restants", stackRemaining);
     }
-
-    /*while (!PriorityQueuePacket->isEmpty())
-    {
-      DEBUG_PRINTLN("Priority Packet shift : protocol datas");
-      SerialPacket packet;
-      xSemaphoreTake(QueuePrio_Mutex, portMAX_DELAY);
-      packet = (SerialPacket)PriorityQueuePacket->shift();
-      xSemaphoreGive(QueuePrio_Mutex);
-      datasManage((char *)packet.raw,packet.len);
-      vTaskDelay(30);
-    }
-    
-    if (!QueuePacket->isEmpty())
-    {   
-      //DEBUG_PRINTLN("Packet shift : protocol datas");
-      SerialPacket packet;
-      xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
-      packet = (SerialPacket)QueuePacket->shift();
-      xSemaphoreGive(Queue_Mutex);
-      datasManage((char *)packet.raw,packet.len);
-      vTaskDelay(100);
-    }*/
-    
+   
     sendPacket();
     vTaskDelay(10 / portTICK_PERIOD_MS);
   }
@@ -970,273 +1006,6 @@ void SerialTask(void *pvParameters) {
     }
 }
 
-
-
-/*void SerialTask(void *pvParameters) {
-    // Buffer en DRAM pour traitement rapide
-    static uint8_t* rxBuffer = nullptr;
-    static bool bufferInitialized = false;
-    static uint32_t packetTimeout = 0;
-    static uint32_t lastByteTime = 0;
-    
-    // Augmenter la priorité de cette tâche
-    vTaskPrioritySet(NULL, 22);
-    
-    if (!bufferInitialized) {
-        // CRITIQUE : utiliser DRAM au lieu de PSRAM pour la réactivité
-        rxBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE * 2, MALLOC_CAP_INTERNAL);
-        if (!rxBuffer) {
-            log_e("❌ Erreur allocation rxBuffer en DRAM");
-            // Fallback vers PSRAM si pas assez de DRAM
-            rxBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE * 2, MALLOC_CAP_SPIRAM);
-            if (!rxBuffer) {
-                vTaskDelete(NULL);
-                return;
-            }
-            log_w("⚠️ Utilisation PSRAM pour rxBuffer");
-        } else {
-            log_i("✅ rxBuffer alloué en DRAM (%d bytes)", BUFFER_SIZE * 2);
-        }
-        bufferInitialized = true;
-    }
-
-    uint32_t notification_value;
-    
-    while (true) {
-        esp_task_wdt_reset();
-        
-        // Attendre notification de l'ISR avec timeout court
-        if (xTaskNotifyWait(0x00, 0xFFFFFFFF, &notification_value, 
-                           pdMS_TO_TICKS(10)) == pdTRUE) {
-            
-            // Traitement rapide si données disponibles
-            if (g_uart_has_data) {
-                g_uart_has_data = false;
-                
-                size_t bytesRead = 0;
-                while (Serial1.available() && bytesRead < (BUFFER_SIZE * 2) - 1) {
-                    rxBuffer[bytesRead++] = Serial1.read();
-                }
-                
-                if (bytesRead > 0) {
-                    protocolDatas(rxBuffer, bytesRead);
-                    
-                    if (ConfigSettings.enableDebug) {
-                        printHexData(rxBuffer, bytesRead);
-                    }
-                }
-            }
-        } else {
-            // Timeout - vérifier quand même s'il y a des données
-            if (g_uart_has_data) {
-                g_uart_has_data = false;
-                
-                size_t bytesRead = 0;
-                while (Serial1.available() && bytesRead < (BUFFER_SIZE * 2) - 1) {
-                    rxBuffer[bytesRead++] = Serial1.read();
-                }
-                
-                if (bytesRead > 0) {
-                    protocolDatas(rxBuffer, bytesRead);
-                }
-            }
-        }
-        
-        // Délai minimal pour éviter la saturation CPU
-        vTaskDelay(pdMS_TO_TICKS(1));
-    }
-    
-    if (rxBuffer) {
-        heap_caps_free(rxBuffer);
-    }
-}*/
-
-/*void SerialTask(void *pvParameters) {
-    // Allouer le buffer en PSRAM au démarrage de la tâche
-    static uint8_t* rxBuffer = nullptr;
-    static bool bufferInitialized = false;
-    
-    // Initialisation unique du buffer PSRAM
-    if (!bufferInitialized) {
-        rxBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE * 2, MALLOC_CAP_SPIRAM);
-        if (!rxBuffer) {
-            log_e("❌ Erreur allocation rxBuffer en PSRAM");
-            vTaskDelete(NULL);
-            return;
-        }
-        log_i("✅ rxBuffer alloué en PSRAM (%d bytes)", BUFFER_SIZE * 2);
-        bufferInitialized = true;
-    }
-
-    while (true) {
-        esp_task_wdt_reset();
-        
-        if (g_uart_has_data) {
-            g_uart_has_data = false;
-            
-            // Lire toutes les données dans le buffer PSRAM
-            size_t bytesRead = 0;
-            while (Serial1.available() && bytesRead < (BUFFER_SIZE * 2) - 1) {
-                rxBuffer[bytesRead++] = Serial1.read();
-            }
-            
-            if (bytesRead > 0) {
-                // ✅ APPEL DIRECT avec buffer PSRAM
-                protocolDatas(rxBuffer, bytesRead);
-                
-                if (ConfigSettings.enableDebug) {
-                    printHexData(rxBuffer, bytesRead);
-                }
-            }
-        }
-        
-        vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    
-    // Nettoyage (ne devrait jamais être atteint)
-    if (rxBuffer) {
-        heap_caps_free(rxBuffer);
-    }
-}*/
-
-
-/*void SerialTask(void *pvParameters) {
-    while (true) {
-        esp_task_wdt_reset();  // Watchdog
-
-        // Surveille la stack restante
-        UBaseType_t stackRemaining = uxTaskGetStackHighWaterMark(NULL);
-        if (stackRemaining < 1024) {
-            log_e("⚠️ Stack faible : %d bytes restants", stackRemaining);
-        }
-
-        if (!QueueBuffer->isEmpty()) {
-            portENTER_CRITICAL(&rxMux);
-            SerialBuffer packet = QueueBuffer->shift();
-            portEXIT_CRITICAL(&rxMux);
-            // Appel à la fonction principale de décodage Zigbee
-            
-            protocolDatas(packet.data, packet.length);
-            
-            if (ConfigSettings.enableDebug) {
-                printHexData(packet.data, packet.length);
-            }
-
-
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(10));  // pas de donnée, on évite le spinlock
-        }
-    }
-}*/
-
-/*void SerialTask(void * pvParameters) {
-   esp_err_t wdt_err = esp_task_wdt_add(NULL);
-   if (wdt_err != ESP_OK) {
-        log_w("Échec ajout watchdog: %s", esp_err_to_name(wdt_err));
-    }
-    // Initialisation unique du buffer de traitement
-    if (!serialTaskInitialized) {
-        serialProcessBuffer = (uint8_t*)heap_caps_malloc(BUFFER_SIZE, MALLOC_CAP_SPIRAM);
-        if (!serialProcessBuffer) {
-            log_e("Erreur allocation buffer SerialTask");
-            vTaskDelete(NULL);
-            return;
-        }
-        serialTaskInitialized = true;
-        log_i("SerialTask buffer allocated in PSRAM");
-    }
-    
-    size_t bytes_read = 0;
-    uint32_t lastProcessTime = 0;
-    const uint32_t MIN_PROCESS_INTERVAL = 5; // ms minimum entre traitements
-    
-    while(true) {
-        esp_task_wdt_reset();
-        
-        // Vérification avec délai minimum pour éviter le polling excessif
-        uint32_t currentTime = millis();
-        if (uartBufferLength > 0 && (currentTime - lastProcessTime) >= MIN_PROCESS_INTERVAL) {
-            
-            // === SECTION CRITIQUE OPTIMISÉE ===
-            if (xSemaphoreTake(uart_buffer_Mutex, pdMS_TO_TICKS(5))) {
-                if (uartBufferLength > 0) { // Double vérification
-                    // Copier seulement la taille réelle, pas tout le buffer
-                    memcpy(serialProcessBuffer, uartBuffer, uartBufferLength);
-                    bytes_read = uartBufferLength;
-                    uartBufferLength = 0;
-                    // Pas besoin de memset, on écrase au fur et à mesure
-                }
-                
-                xSemaphoreGive(uart_buffer_Mutex);
-                
-                if (bytes_read > 0) {
-                    // Traitement des données
-                    protocolDatas(serialProcessBuffer, bytes_read);
-                    
-                    // Debug optimisé (seulement si debug activé)
-                    if (ConfigSettings.enableDebug) {
-                        printHexData(serialProcessBuffer, bytes_read);
-                    }
-                    
-                    bytes_read = 0;
-                    lastProcessTime = currentTime;
-                }
-            }
-        }
-        
-        // Délai adaptatif basé sur l'activité
-        if (uartBufferLength > 0) {
-            vTaskDelay(pdMS_TO_TICKS(1)); // Traitement rapide si données en attente
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(10)); // Délai plus long si pas de données
-        }
-    }
-    
-    // Nettoyage (ne devrait jamais être atteint)
-    if (serialProcessBuffer) {
-        heap_caps_free(serialProcessBuffer);
-        serialProcessBuffer = nullptr;
-    }
-    vTaskDelete(NULL);
-}*/
-
-/*void SerialTask( void * pvParameters)
-{
-  size_t bytes_read;
-  uint8_t packetRead[BUFFER_SIZE];
-  while(true)
-  {
-    esp_task_wdt_reset();
-    if (uartBufferLength>0)
-    {
-      //protocolDatas(packetRead);
-      bytes_read=0;
-      if (xSemaphoreTake(uart_buffer_Mutex, portMAX_DELAY)) {
-        memcpy(packetRead,uartBuffer,BUFFER_SIZE);
-        bytes_read = uartBufferLength; 
-        memset(uartBuffer,0,0);
-        uartBufferLength=0;
-        xSemaphoreGive(uart_buffer_Mutex);
-      }  
-      protocolDatas(packetRead,bytes_read);
-      
-      for (int i=0;i<bytes_read;i++)
-      {
-        char tmpP[4];
-        snprintf(tmpP,3, "%02X",packetRead[i]);
-        DEBUG_PRINT(tmpP);
-        DEBUG_PRINT(F(" "));  
-        if (packetRead[i] == 0x03){DEBUG_PRINTLN();}
-
-      }                                                  
-    }
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-
-  }
-  
-  vTaskDelete(NULL);
-}*/
-
 void connectToMqtt() {
   
   if (ConfigSettings.enableMqtt)
@@ -1258,7 +1027,7 @@ void connectToMqtt() {
 
 }
 
-void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
+/*void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
   addDebugLog(F("WiFi Disconnected"));
     log_d("%d",info.wifi_sta_disconnected.reason);
   // added in V2.20:  call disconnect before reconnecting to reset wifi stack
@@ -1297,14 +1066,14 @@ void WiFiStationDisconnected(WiFiEvent_t event, WiFiEventInfo_t info) {
       WiFi.setSleep(false);
 
     }
-}
+}*/
 
 /*const char * pop = ""; // Proof of possession - otherwise called a PIN - string provided by the device, entered by the user in the phone app
 const char * service_name = "LIXEE_GW"; // Name of your device (the Espressif apps expects by default device name starting with "Prov_")
 const char * service_key = NULL; // Password used for SofAP method (NULL = no password needed)
 bool reset_provisioned = true; // When true the library will automatically delete previously provisioned data.*/
 
-void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+/*void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
   switch (event) {
 
     case ARDUINO_EVENT_WIFI_READY:
@@ -1327,9 +1096,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     case ARDUINO_EVENT_WIFI_STA_STOP:
     case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
       addDebugLog(F("ARDUINO_EVENT_WIFI_STA_DISCONNECTED"));
-     
-
-     
+          
       break;
     case ARDUINO_EVENT_WIFI_STA_LOST_IP:
       addDebugLog(F("WiFi LOST IP"));
@@ -1346,7 +1113,7 @@ void WiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     default:
       break;
   }
-}
+}*/
 
 
 
@@ -1737,23 +1504,6 @@ bool setupSTAWifi() {
     
 }
 
-void reconnectWifi()
-{
-  DEBUG_PRINT(F("reconnect to WiFi..."));
-  DEBUG_PRINTLN(ConfigSettings.ssid);
-  addDebugLog("reconnect to WiFi...");
-  WiFi.disconnect();
-  if (WiFi.getMode() == WIFI_MODE_STA)
-  {
-    if (String(ConfigSettings.ssid).length()>0)
-    {
-      WiFi.begin(ConfigSettings.ssid,ConfigSettings.password);
-      addDebugLog("WiFi begin...");
-    }
-  }
-  
-}
-
 uint32_t prevheap = 0;
 void monitor_heap(void) {
     uint32_t curheap = ESP.getFreeHeap();
@@ -1778,8 +1528,8 @@ void initWiFiServices() {
   // Cette fonction contient tous vos services WiFi actuels
   // MQTT, mDNS, serveur web, etc.
   
-  WiFi.onEvent(WiFiEvent);
-  WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  //WiFi.onEvent(WiFiEvent);
+  //WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   
   // mDNS
   String localdns = "LIXEEBOX-" + getIDWifi();
@@ -1789,6 +1539,8 @@ void initWiFiServices() {
   
   // MQTT si activé
   if (ConfigSettings.enableMqtt) {
+
+    
     mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
     
     mqttClient.onConnect(onMqttConnect);
@@ -1904,15 +1656,6 @@ void setupZigbeeAndTasks() {
                       22,//17,          // Priority of the task 
                       NULL,       // Task handle. 
                       1);  
-
-  /*xTaskCreatePinnedToCore(
-                    datasTreatment,   // Function to implement the task 
-                    "datasTreatment", // Name of the task 
-                    2*1024,      // Stack size in words 
-                    NULL,       // Task input parameter 
-                    17,          // Priority of the task 
-                    NULL,       // Task handle. 
-                    0);*/
 
   log_w("📊 - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
@@ -2079,7 +1822,15 @@ void setup(void)
         switch (state) {
             case WIFI_STATE_CONNECTED:
                 Serial.println("🌐 ✅ WiFi connected - Services will start");
+                addDebugLog(F("WiFi Connected"));
                 wifiServicesStarted = false; // Trigger init in loop
+
+                // Reconnexion MQTT automatique
+                if (ConfigSettings.enableMqtt) {
+                    Serial.println("📡 Reconnexion MQTT suite à WiFi...");
+                    connectToMqtt();
+                }
+
                 break;
                 
             case WIFI_STATE_BLE_PROVISIONING:
@@ -2089,7 +1840,13 @@ void setup(void)
                 
             case WIFI_STATE_DISCONNECTED:
                 Serial.println("🌐 ❌ WiFi disconnected");
+                addDebugLog(F("WiFi disconnected"));
                 wifiServicesStarted = false;
+
+                if (mqttClient.connected()) {
+                    Serial.println("📡 Arrêt MQTT suite à perte WiFi");
+                    mqttClient.disconnect();
+                }
                 break;
                 
             case WIFI_STATE_FAILED:
@@ -2112,7 +1869,12 @@ void setup(void)
     Serial.println("    → Will load BLE only if needed");
     
     if (smartWiFi.begin()) {
+        
         Serial.println("✅ Smart WiFi Manager started");
+
+        smartWiFi.setAutoReconnect(true);           // Activer la reconnexion auto
+        smartWiFi.setMaxReconnectAttempts(10);      // 10 tentatives avant BLE
+        smartWiFi.setReconnectDelay(5000);          // 5 secondes entre tentatives
         
         // Afficher l'état après démarrage
         Serial.println("📊 Current state: " + smartWiFi.getStatusString());
@@ -2144,6 +1906,71 @@ void setup(void)
     Serial.println("Erreur: initialisation NotificationManager échouée");
     return;
   }
+
+  // Configuration WebSocket tunnel
+  // === CONFIGURATION WEBSOCKET PSRAM ===
+  /*WebSocketTunnelConfig configWSTunnel = createOptimizedConfig();
+  wsTunnel.onConnectionChange([](bool connected) {
+      if (connected) {
+          Serial.println("✅ Tunnel WebSocket actif");
+      } else {
+          Serial.println("❌ Tunnel WebSocket inactif");
+      }
+  });
+
+  // URL du tunnel disponible
+  wsTunnel.onConnected([](const String& deviceId, const String& url) {
+      Serial.println("\n╔════════════════════════════════════════╗");
+      Serial.println("║      TUNNEL ACTIF - ACCÈS DISTANT      ║");
+      Serial.println("╠════════════════════════════════════════╣");
+      Serial.printf("║ Device ID: %-28s ║\n", deviceId.c_str());
+      Serial.printf("║ URL: https://%-28s ║\n", url.c_str());
+      Serial.println("╚════════════════════════════════════════╝");
+      
+      // Optionnel: sauvegarder l'URL
+      // File f = LittleFS.open("/tunnel_url.txt", "w");
+      // f.println(url);
+      // f.close();
+  });
+  
+  // === DÉMARRER LE TUNNEL ===
+  if (wsTunnel.begin(configWSTunnel)) {
+      Serial.println("\n✅ WebSocket Tunnel initialisé");
+      wsTunnel.printMemoryStats();
+  } else {
+      Serial.println("\n❌ Erreur initialisation tunnel");
+      while(1) delay(1000);
+  }*/
+
+  // Configuration OpenAI
+  /*OpenAIConfig configAI;
+  configAI.api_key = OPENAI_API_KEY;
+  configAI.model = "gpt-3.5-turbo";      // Ou "gpt-4o-mini" pour plus de qualité
+  configAI.max_tokens = 500;
+  configAI.temperature = 0.7;
+  configAI.timeout_ms = 30000;
+  configAI.use_compact_mode = false;     // true pour économiser des tokens
+  
+  // Initialisation de l'analyseur
+  if (!ai_analyzer.begin(configAI)) {
+      Serial.println("[ERREUR] Impossible d'initialiser l'analyseur IA");
+      while(1) delay(1000);
+  }
+  
+  // Test de connectivité OpenAI
+  Serial.println("\n=== TEST CONNECTIVITÉ ===");
+  if (!ai_analyzer.testConnection()) {
+      Serial.println("\n[ATTENTION] Test de connexion échoué");
+      Serial.println("L'analyse risque de ne pas fonctionner");
+      Serial.println("Vérifiez votre clé API et la connexion réseau\n");
+      // Vous pouvez choisir de continuer ou d'arrêter ici
+  }*/
+  
+  //Serial.println("\n[OK] Système initialisé avec succès!\n");
+  
+  // Première analyse au démarrage
+  //delay(2000);
+  //performDetailedAnalysis();
  
 }
 
@@ -2205,6 +2032,14 @@ void loop(void)
 
   smartWiFi.handleEvents();
 
+  static uint32_t lastStatusPrint = 0;
+  if (smartWiFi.isReconnecting() && (millis() - lastStatusPrint > 5000)) {
+      lastStatusPrint = millis();
+      addDebugLog("WIFI : Reconnexion en cours ...");
+      Serial.printf("🔄 Reconnexion en cours: tentative %d/%d\n", 
+                    smartWiFi.getReconnectAttempts(), 10);
+  }
+
   if (smartWiFi.isConnected() && !wifiServicesStarted) {
       initWiFiServices();
       wifiServicesStarted = true;
@@ -2237,12 +2072,31 @@ void loop(void)
       sendTreatment();
 
       printCrcStats();
-       monitorSerialSimple();
+      monitorSerialSimple();
 
       monitor_heap();
   }
 
-  
+  /*// Appel OBLIGATOIRE (gère heartbeat + monitoring)
+    wsTunnel.loop();
+    
+    // === MONITORING PÉRIODIQUE MANUEL (optionnel) ===
+    static uint32_t lastCheck = 0;
+    if (millis() - lastCheck > 60000) {
+        lastCheck = millis();
+        
+        Serial.println("\n📊 Status:");
+        Serial.printf("   Tunnel: %s\n", wsTunnel.isConnected() ? "✅" : "❌");
+        Serial.printf("   PSRAM usage: %d KB\n", wsTunnel.getPSRAMUsage()/1024);
+        Serial.printf("   DRAM usage: %d KB\n", wsTunnel.getDRAMUsage()/1024);
+        
+        // Optimiser si nécessaire
+        if (wsTunnel.getPSRAMUsage() > 6*1024*1024) { // > 6MB
+            Serial.println("🔧 Optimisation mémoire...");
+            wsTunnel.optimizeMemory();
+        }
+    }
+  */
   // DÉLAI ADAPTATIF pour éviter la surcharge CPU
   unsigned long loopTime = millis() - loopStart;
   
