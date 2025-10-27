@@ -86,11 +86,43 @@ Le processus d'appairage est simplifié avec un assistant pas à pas pour connec
 Interface complète pour configurer et surveiller tous vos appareils Zigbee connectés.
 
 ### Tableau de Bord Énergétique
-![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_2.7.png)
+![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/screenshot_lixee-box-v2.8.PNG)
 ![Graphiques Détaillés](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Energy_2.png)
 ![Interface Mobile](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Mobile_energy.png)
 
 Tableau de bord complet avec visualisation en temps réel de votre consommation énergétique, graphiques historiques et interface mobile responsive.
+
+### Production d'énergie et Injection
+
+#### Mode Producteur
+
+La **LiXee-Box** permet de récupérer la production d'énergie.  
+Au travers du ZLinky, il est possible de récupérer les données d'injection et l'index de production dans les cas suivant :
+* Le Linky est en mode standard
+* vous avez un contrat avec EDF OA
+Ces conditions sont nécessaires pour que votre Linky soit en mode **Producteur**
+
+![Graphe producteur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Lixee-box_producteur.PNG)
+![Jauge_producteur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Lixee-box_puissance_electricite.PNG)
+
+Il suffit donc de paramétrer dans **Config** --> **Energie** puis sélectionner dans l'onglet **Production** le ZLinky qui est mode production.  
+  
+PS : Dans certaines configurations, il y a 2x Linky dont 1x Linky dédié à la production. Il faudra alors brancher et jumeler un autre ZLinky que celui dédié à la consommation
+
+#### Mode Autoconsommation
+Si vous possédez des panneaux photovoltaïques sans contrat, le Linky ne pourra pas être paramétrer en mode Producteur par votre fournisseur d'énergie.  
+Cependant, il sera possible de détecter une sur production lorsque votre production sera supérieure à votre consommation. Dans ce cas, la **LiXee-Box** pourra déterminer la puissance d'injection sur le réseau et agir en conséquence.
+En effet, cette information vous permettra de lancer des machines, enclencher votre chauffe-eau ou encore recharger votre véhicule électrique.
+
+Voici les conditions permettant de détecter une surproduction sur votre Linky
+* une puissance apparente à 0 VA
+* une intensité > 0 A
+
+Si ce cas arrive, vous aurez sur le graphique de puissance les données d'injection.
+
+![Injection](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Injection_autoconsommation.PNG)
+
+
 
 ### Notifications
 
