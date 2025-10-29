@@ -68,10 +68,11 @@ extern String Month;
 extern String Year;
 extern String FormattedDate;
 
+UpdateStatus updateStatus;
+
 HTTPClient clientWeb;
 
 AsyncWebServer serverWeb(80);
-AsyncEventSource events("/events");
 
 #define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/update.tar"
 
@@ -100,7 +101,7 @@ const char HTTP_HEADER[] PROGMEM =
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
     "<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
     //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
-    "<script type='text/javascript' src='web/js/functions.js'></script>"
+    "<script type='text/javascript' src='web/js/functions.min.js'></script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
@@ -126,8 +127,9 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<script type='text/javascript' src='web/js/morris.min.js'></script>"
     "<script type='text/javascript' src='web/js/chart.umd.min.js'></script>"
     "<script type='text/javascript' src='web/js/annotation.min.js'></script>"
+    "<script type='text/javascript' src='web/js/chart-zoom.min.js'></script>"
     "<script type='text/javascript' src='web/js/justgage.min.js'></script>"
-    "<script type='text/javascript' src='web/js/functions.js'></script>"
+    "<script type='text/javascript' src='web/js/functions.min.js'></script>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
@@ -206,13 +208,6 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
    "</svg>"
    " Appareils"
-   "</a>"
-   "<a class='dropdown-item' href='statusNetwork'>"
-   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
-   "  <path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
-   "  <path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
-   "</svg>"
-   " Réseau"
    "</a>"
    "</div>"
    "</li>"
@@ -299,6 +294,13 @@ const char HTTP_MENU[] PROGMEM =
   "</svg>"
    " Energie"
    "</a>"
+
+    "<a class='dropdown-item' href='/configRules'>"
+   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
+   "  <path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
+   "</svg>"
+   " Règles"
+   "</a>"
    "<a class='dropdown-item' href='/configHorloge'>"
    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-clock' viewBox='0 0 16 16'>"
    "  <path d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z'></path><path d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0'></path>"
@@ -312,14 +314,9 @@ const char HTTP_MENU[] PROGMEM =
    "</svg>"
    " Securité"
    "</a>"
-   /*
-   "<a class='dropdown-item' href='/configRules'>"
-   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
-   "  <path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
-   "</svg>"
-   " Règles"
-   "</a>"
-   */
+   
+  
+   
    "</div>"
    "</li>"
    "<li class='nav-item' id='Tools'>"
@@ -356,6 +353,13 @@ const char HTTP_MENU[] PROGMEM =
    "  <path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
    "</svg>"
    " Info"
+   "</a>"
+   "<a class='dropdown-item' href='statusNetwork'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
+   "  <path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
+   "  <path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+   "</svg>"
+   " Système"
    "</a>"
    "<a class='dropdown-item' href='/update'>"
    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-download' viewBox='0 0 16 16'>"
@@ -610,7 +614,7 @@ const char HTTP_BACKUP[] PROGMEM =
        "    e.preventDefault();"
        "    const file = f.files[0];"
        "    if (!file) return alert('Choisissez un .tar');"
-
+       
        "    const xhr = new XMLHttpRequest();"
        "    xhr.open('POST','/doRestore');"
 
@@ -753,7 +757,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                     <input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifCSPE'>Contribution au Service Public d'Electricité (CSPE) (€)</label> 
+                    <label for='tarifCSPE'>Accise sur l'Electricité (€)</label> 
                     <input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'> 
                   </div>
                   <div class="mb-3">
@@ -1148,7 +1152,33 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
       </div>
     </div>
   </div>
-
+  <script>
+  // Fonction pour remplacer virgule par point dans les champs numériques
+    function setupDecimalInputs() {
+      // Sélectionner tous les inputs qui doivent contenir des nombres
+      const numericInputs = document.querySelectorAll(
+        'input[name*="tarif"], input[name*="coeff"], input[name*="Threshold"], input[name*="unit"], input[name="shon"]'
+      );
+      
+      numericInputs.forEach(input => {
+        input.addEventListener('input', function(e) {
+          // Remplacer virgule par point
+          const cursorPos = this.selectionStart;
+          const oldValue = this.value;
+          const newValue = oldValue.replace(',', '.');
+          
+          if (oldValue !== newValue) {
+            this.value = newValue;
+            // Maintenir la position du curseur
+            this.setSelectionRange(cursorPos, cursorPos);
+          }
+        });
+      });
+    }
+    
+    // Exécuter au chargement de la page
+    document.addEventListener('DOMContentLoaded', setupDecimalInputs);
+  </script>
 
 
 )";
@@ -1208,7 +1238,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
               <button id="btnUpdate" style="width:100%" class="btn btn-primary mb-3">
                 Mettre à jour
               </button>
-              <div id="statusDL" class="text-muted">Ready.</div>
+              <div id="statusDL" class="text-muted">Prêt</div>
 
               <div class="progress" style="height:1.5rem">
                 <div
@@ -1245,10 +1275,10 @@ const char HTTP_UPDATE[] PROGMEM = R"(
               name="archive"
               accept=".tar">
           </div>
-          <button type="submit" style="width:100%" class="btn btn-primary mb-3">Mettre à jour</button>
+          <button id="btnUpdateMan" type="submit" style="width:100%" class="btn btn-primary mb-3">Mettre à jour</button>
         </form>
         
-        <div id="status" class="text-muted">Ready.</div>
+        <div id="status" class="text-muted">Prêt</div>
         <div class="progress" style="height:1.5rem">
           <div
             id="barP"
@@ -1302,34 +1332,100 @@ const char HTTP_UPDATE[] PROGMEM = R"(
         });
       }
 
+      let updatePollingInterval = null;
+      let isUpdating = false;
+      
+      function pollUpdateStatusAuto() {
+        $.ajax({
+          url: '/getUpdateStatusAuto',
+          type: 'GET',
+          dataType: 'json',
+          success: function(data) {
+            const stdl = document.getElementById('statusDL');
+            const bardl = document.getElementById('barDL');
+            
+            if (data.status && data.status !== '') {
+              stdl.textContent = data.status;
+            }
+            
+            if (data.progress >= 0) {
+              const pct = parseInt(data.progress);
+              bardl.style.width = pct + '%';
+              bardl.textContent = pct + '%';
+            }
+            
+            if (data.reboot) {
+              setTimeout(function() { location.reload(); }, 3000);
+            }
+          }
+        });
+      }
+      
+      function pollUpdateStatusManuel() {
+        $.ajax({
+          url: '/getUpdateStatusManuel',
+          type: 'GET',
+          dataType: 'json',
+          success: function(data) {
+            const st = document.getElementById('status');
+            const bar = document.getElementById('barP');
+            
+            if (data.status && data.status !== '') {
+              st.textContent = data.status;
+            }
+            
+            // ← AJOUTER : Mettre à jour la barre avec le progress du serveur
+            if (data.progress >= 0) {
+              const pct = parseInt(data.progress);
+              bar.style.width = pct + '%';
+              bar.textContent = pct + '%';
+            }
+            
+            if (data.reboot) {
+              setTimeout(function() { location.reload(); }, 3000);
+            }
+          }
+        });
+      }
+      
+      function startUpdatePolling() {
+        if (updatePollingInterval) return;
+        isUpdating = true;
+        
+        pollUpdateStatusAuto();
+        pollUpdateStatusManuel();
+        
+        updatePollingInterval = setInterval(function() {
+          pollUpdateStatusAuto();
+          pollUpdateStatusManuel();
+        }, 2000); // Toutes les 2 secondes
+      }
+      
+      function stopUpdatePolling() {
+        if (updatePollingInterval) {
+          clearInterval(updatePollingInterval);
+          updatePollingInterval = null;
+        }
+        isUpdating = false;
+      }
+
       getReleaseInfo();
       const btn = document.getElementById('btnUpdate'),
             stdl  = document.getElementById('statusDL');
             bardl  = document.getElementById('barDL');
-
-      const es = new EventSource('/events');
-      es.addEventListener('updateStatusAuto', e => {
-        stdl.textContent = e.data;
-      });
-      
-      es.addEventListener('updateProgress', e => {
-        const pct = parseInt(e.data);
-        barDL.style.width = pct+'%';
-        barDL.textContent = pct+'%';
-      });
-      es.addEventListener('reboot', e => {
-        location.reload();
-      });
       
       btn.addEventListener('click', () => {
         stdl.textContent = 'Démarrage…';
+        startUpdatePolling(); 
         fetch('/downloadUpdate', { method: 'POST' })
           .then(resp => {
             if (resp.ok) {
               stdl.textContent = 'Démarrage. merci d\'attendre ...';
-              btn.disabled = true;
+              //btn.disabled = true;
+              btn.style.display = 'none';
             } else {
               stdl.textContent = 'Erreur: ' + resp.status;
+              stopUpdatePolling();
             }
           })
           .then(text => {
@@ -1337,6 +1433,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
           })
           .catch(err => {
             stdl.textContent = 'Erreur réseau';
+            stopUpdatePolling(); 
           });
       });
 
@@ -1345,14 +1442,14 @@ const char HTTP_UPDATE[] PROGMEM = R"(
             bar = document.getElementById('barP'),
             st  = document.getElementById('status');
       
-      es.addEventListener('updateStatusManuel', e => {
-        st.textContent = e.data;
-      });
 
       frm.addEventListener('submit', e => {
         e.preventDefault();
         const file = f.files[0];
         if (!file) return alert('Choisissez un .tar');
+
+        startUpdatePolling();
+        $("#btnUpdateMan").hide();
 
         const xhr = new XMLHttpRequest();
         xhr.open('POST','/doRestore');
@@ -1371,6 +1468,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
             }, 2000);
           } else {
               st.textContent = 'Erreur: ' + xhr.status;
+              stopUpdatePolling(); 
           }
         };
         const fd = new FormData();
@@ -1625,17 +1723,1170 @@ const char HTTP_CONFIG_HORLOGE[] PROGMEM = R"(
   </div>
 )";
 
-const char HTTP_CONFIG_RULES[] PROGMEM = R"(
+
+const char HTTP_CONFIG_RULES[] PROGMEM = R"rawstring(
     <div class='container p-4'>
-      <h4 class='card-title mb-4'>Config règles</h4>
+      <div class='d-flex justify-content-between align-items-center mb-4'>
+        <h4 class='card-title mb-0'>Config règles</h4>
+        <a href='/addRule' class='btn btn-primary'>
+          <svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>
+            <path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>
+            <path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>
+          </svg>
+          Ajouter une règle
+        </a>
+      </div>
       <div class='card mx-auto shadow-sm' >
         <div class="card-body">
           {{rulesList}}
         </div>
       </div>
     </div>
+    <script>
+      function deleteRule(ruleName) {
+        if (!confirm('Voulez-vous vraiment supprimer la règle "' + ruleName + '" ?')) {
+          return;
+        }
+        
+        $.ajax({
+          url: '/api/rules/delete',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ name: ruleName }),
+          success: function() {
+            alert('Règle supprimée avec succès !');
+            location.reload();
+          },
+          error: function(xhr) {
+            alert('Erreur lors de la suppression : ' + xhr.responseText);
+          }
+        });
+      }
+    </script>
+)rawstring";
 
-)";
+// ============================================
+// HTTP_EDIT_RULE - Page d'édition de règle
+// ============================================
+
+const char HTTP_EDIT_RULE[] PROGMEM = R"rawstring(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Éditer une règle</h4>
+      <div class='card mx-auto shadow-sm'>
+        <div class="card-body">
+          <form id="ruleForm">
+            
+            <input type="hidden" id="oldRuleName" value="">
+            
+            <!-- Nom de la règle -->
+            <div class="mb-4">
+              <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
+              <input class='form-control' id='ruleName' type='text' name='ruleName' placeholder='rule_name' required>
+            </div>
+
+            <!-- Conditions -->
+            <div class="mb-4">
+              <label class="form-label fw-bold">Conditions</label>
+              <div id="conditionsContainer">
+                ⏳ Chargement...
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Ajouter une condition</button>
+            </div>
+
+            <!-- Plages horaires -->
+            <div class="mb-4">
+              <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
+              <div id="timeRangesContainer">
+                ⏳ Chargement...
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Ajouter une plage horaire</button>
+            </div>
+
+            <!-- Actions -->
+            <div class="mb-4">
+              <label class="form-label fw-bold">Actions</label>
+              <div id="actionsContainer">
+                ⏳ Chargement...
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addAction()">+ Ajouter une action</button>
+            </div>
+
+            <!-- Boutons -->
+            <div class="d-flex justify-content-between mt-4">
+              <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
+              <button type="submit" class="btn btn-warning btn-lg">Modifier</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var devices = {};
+      var templates = {};
+      var conditionCount = 0;
+      var actionCount = 0;
+      var timeRangeCount = 0; 
+      var devicesLoaded = false;
+      var templatesLoaded = false;
+
+      $(document).ready(function() {
+        $.get('/getDevices', function(data) {
+          devices = data;
+          devicesLoaded = true;
+          checkDataLoadedAndInit();
+        });
+        
+        $.get('/getTemplates', function(data) {
+          templates = data;
+          templatesLoaded = true;
+          checkDataLoadedAndInit();
+        });
+      });
+
+      function checkDataLoadedAndInit() {
+        if (devicesLoaded && templatesLoaded) {
+          $('#conditionsContainer').text("");
+          $('#actionsContainer').text("");
+          $('#timeRangesContainer').text("");
+          loadExistingRule();
+        }
+      }
+
+      function loadExistingRule() {
+        if (typeof ruleToEdit === 'undefined') {
+          alert('Erreur : règle non trouvée');
+          window.location.href = '/configRules';
+          return;
+        }
+
+        $('#oldRuleName').val(ruleToEdit.name);
+        $('#ruleName').val(ruleToEdit.name);
+
+        for (var i = 0; i < ruleToEdit.conditions.length; i++) {
+          var cond = ruleToEdit.conditions[i];
+          addCondition(cond);
+        }
+
+        //Charger les plages horaires
+        if (ruleToEdit.timeRanges && ruleToEdit.timeRanges.length > 0) {
+          for (var i = 0; i < ruleToEdit.timeRanges.length; i++) {
+            var tr = ruleToEdit.timeRanges[i];
+            addTimeRange(tr);
+          }
+        }
+
+        for (var i = 0; i < ruleToEdit.actions.length; i++) {
+          var act = ruleToEdit.actions[i];
+          addAction(act);
+        }
+      }
+
+      function hasCluster0006(deviceData) {
+        if (!deviceData || !deviceData.INFO) return false;
+        
+        var deviceId = deviceData.INFO.device_id;
+        var model = deviceData.INFO.model || 'default';
+        
+        var templateKey = deviceId + '.json';
+        var templateFile = templates[templateKey];
+        
+        if (!templateFile) return false;
+        
+        var templateData = templateFile[model] || templateFile['default'];
+        
+        if (!templateData || !templateData[0] || !templateData[0].status) return false;
+        
+        var statusItems = templateData[0].status;
+        
+        for (var i = 0; i < statusItems.length; i++) {
+          if (statusItems[i].cluster.toUpperCase() === '0006') {
+            return true;
+          }
+        }
+        
+        return false;
+      }
+
+      function addCondition(existingData) {
+        var id = conditionCount++;
+        
+        var conditionHtml = '<div class="card mb-2 condition-item" data-id="' + id + '">' +
+          '<div class="card-body">' +
+            '<div class="row g-2">' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Device</label>' +
+                '<select class="form-select form-select-sm device-select" onchange="onDeviceChange(' + id + ')" required>' +
+                  '<option value="">-- Choisir --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2">' +
+                '<label class="form-label small">Cluster</label>' +
+                '<select class="form-select form-select-sm cluster-select" onchange="onClusterChange(' + id + ')" required>' +
+                  '<option value="">-- Cluster --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2">' +
+                '<label class="form-label small">Attribut</label>' +
+                '<select class="form-select form-select-sm attribute-select" required>' +
+                  '<option value="">-- Attribut --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-1">' +
+                '<label class="form-label small">Op.</label>' +
+                '<select class="form-select form-select-sm operator-select" onchange="onOperatorChange(' + id + ')" required>' +
+                  '<option value="==">==</option>' +
+                  '<option value="!=">!=</option>' +
+                  '<option value="<">&lt;</option>' +
+                  '<option value="<=">&lt;=</option>' +
+                  '<option value=">">&gt;</option>' +
+                  '<option value=">=">&gt;=</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2">' +
+                '<label class="form-label small">Valeur</label>' +
+                '<input type="text" class="form-control form-control-sm value-input" required>' +
+              '</div>' +
+              '<div class="col-md-1">' +
+                '<label class="form-label small">Logic</label>' +
+                '<select class="form-select form-select-sm logic-select">' +
+                  '<option value="AND">AND</option>' +
+                  '<option value="OR">OR</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-1 d-flex align-items-end">' +
+                '<button type="button" class="btn btn-sm btn-danger" onclick="removeCondition(' + id + ')">×</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+       
+        $('#conditionsContainer').append(conditionHtml);
+        
+        var $card = $('[data-id="' + id + '"]');
+        var $select = $card.find('.device-select');
+        
+        $.each(devices, function(ieee, deviceData) {
+          if (deviceData.INFO) {
+            var model = deviceData.INFO.model || 'Unknown';
+            var alias = deviceData.INFO.alias || '';
+            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee+ ')';
+            $select.append('<option value="' + ieee + '">' + label + '</option>');
+          }
+        });
+
+        if (existingData) {
+          $select.val(existingData.IEEE);
+          onDeviceChange(id);
+          
+          setTimeout(function() {
+            $card.find('.cluster-select').val(existingData.cluster);
+            onClusterChange(id);
+            
+            setTimeout(function() {
+              $card.find('.attribute-select').val(existingData.attribute);
+              $card.find('.operator-select').val(existingData.operator);
+              $card.find('.value-input').val(existingData.value);
+              $card.find('.logic-select').val(existingData.logic);
+              onOperatorChange(id);
+            }, 100);
+          }, 100);
+        }
+      }
+
+      function onOperatorChange(id) {
+        var $card = $('[data-id="' + id + '"]');
+        var operator = $card.find('.operator-select').val();
+        var $valueInput = $card.find('.value-input');
+        
+        if (operator === '==' || operator === '!=') {
+          $valueInput.attr('type', 'text');
+          $valueInput.attr('placeholder', 'Texte ou nombre');
+        } else {
+          $valueInput.attr('type', 'number');
+          $valueInput.attr('placeholder', '');
+          if ($valueInput.val() && isNaN($valueInput.val())) {
+            $valueInput.val('');
+          }
+        }
+      }
+
+      function onDeviceChange(id) {
+        var $card = $('[data-id="' + id + '"]');
+        var ieee = $card.find('.device-select').val();
+        var $clusterSelect = $card.find('.cluster-select');
+        
+        $clusterSelect.html('<option value="">-- Cluster --</option>');
+        $card.find('.attribute-select').html('<option value="">-- Attribut --</option>');
+        
+        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
+        
+        var deviceData = devices[ieee];
+        var deviceId = deviceData.INFO.device_id;
+        var model = deviceData.INFO.model || 'default';
+        
+        var templateKey = deviceId + '.json';
+        var templateFile = templates[templateKey];
+        
+        if (!templateFile) return;
+        
+        var templateData = templateFile[model] || templateFile['default'];
+        
+        if (!templateData || !templateData[0] || !templateData[0].status) return;
+        
+        var statusItems = templateData[0].status;
+        var clustersAdded = {};
+        
+        for (var i = 0; i < statusItems.length; i++) {
+          var item = statusItems[i];
+          var cluster = item.cluster;
+          if (!clustersAdded[cluster]) {
+            clustersAdded[cluster] = true;
+            var clusterDec = parseInt(cluster, 16);
+            $clusterSelect.append('<option value="' + clusterDec + '">0x' + cluster + '</option>');
+          }
+        }
+      }
+
+      function onClusterChange(id) {
+        var $card = $('[data-id="' + id + '"]');
+        var ieee = $card.find('.device-select').val();
+        var clusterDec = parseInt($card.find('.cluster-select').val());
+        var $attributeSelect = $card.find('.attribute-select');
+        
+        $attributeSelect.html('<option value="">-- Attribut --</option>');
+        
+        if (!ieee || !devices[ieee] || !devices[ieee].INFO || !clusterDec) return;
+        
+        var deviceData = devices[ieee];
+        var deviceId = deviceData.INFO.device_id;
+        var model = deviceData.INFO.model || 'default';
+        var clusterHex = clusterDec.toString(16).toUpperCase();
+        while (clusterHex.length < 4) clusterHex = '0' + clusterHex;
+        
+        var templateKey = deviceId + '.json';
+        var templateFile = templates[templateKey];
+        
+        if (!templateFile) return;
+        
+        var templateData = templateFile[model] || templateFile['default'];
+        
+        if (!templateData || !templateData[0] || !templateData[0].status) return;
+        
+        var statusItems = templateData[0].status;
+        
+        for (var i = 0; i < statusItems.length; i++) {
+          var item = statusItems[i];
+          if (item.cluster.toUpperCase() === clusterHex) {
+            $attributeSelect.append('<option value="' + item.attribut + '">' + item.name + ' (' + item.attribut + ')</option>');
+          }
+        }
+      }
+
+      function removeCondition(id) {
+        $('[data-id="' + id + '"]').remove();
+      }
+
+      function addAction(existingData) {
+        var id = actionCount++;
+        
+        var actionHtml = '<div class="card mb-2 action-item" data-action-id="' + id + '">' +
+          '<div class="card-body">' +
+            '<div class="row g-2">' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Type</label>' +
+                '<select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange(' + id + ')" required>' +
+                  '<option value="onoff">ON/OFF</option>' +
+                  '<option value="notification">Notification</option>' +  // ← NOUVEAU
+                '</select>' +
+              '</div>' +
+              // Champs pour ONOFF (visibles par défaut)
+              '<div class="col-md-4 action-onoff-fields">' +
+                '<label class="form-label small">Device</label>' +
+                '<select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange(' + id + ')" required>' +
+                  '<option value="">-- Choisir --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2 action-onoff-fields">' +
+                '<label class="form-label small">Endpoint</label>' +
+                '<input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required>' +
+              '</div>' +
+              '<div class="col-md-2 action-onoff-fields">' +
+                '<label class="form-label small">Valeur</label>' +
+                '<select class="form-select form-select-sm action-value-select" required>' +
+                  '<option value="1">ON (1)</option>' +
+                  '<option value="0">OFF (0)</option>' +
+                  '<option value="2">TOGGLE (2)</option>' +
+                '</select>' +
+              '</div>' +
+              // Champs pour NOTIFICATION (cachés par défaut)
+              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
+                '<label class="form-label small">Titre</label>' +
+                '<input type="text" class="form-control form-control-sm action-title-input" placeholder="Titre de la notification">' +
+              '</div>' +
+              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
+                '<label class="form-label small">Message</label>' +
+                '<input type="text" class="form-control form-control-sm action-message-input" placeholder="Message de la notification">' +
+              '</div>' +
+              '<div class="col-md-1 d-flex align-items-end">' +
+                '<button type="button" class="btn btn-sm btn-danger" onclick="removeAction(' + id + ')">×</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+        
+        $('#actionsContainer').append(actionHtml);
+        
+        var $card = $('[data-action-id="' + id + '"]');
+        var $select = $card.find('.action-device-select');
+        
+        $.each(devices, function(ieee, deviceData) {
+          if (deviceData.INFO && hasCluster0006(deviceData)) {
+            var model = deviceData.INFO.model || 'Unknown';
+            var alias = deviceData.INFO.alias || '';
+            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee.substring(0, 8) + '...)';
+            $select.append('<option value="' + ieee + '">' + label + '</option>');
+          }
+        });
+
+        if (existingData) {
+          $card.find('.action-type-select').val(existingData.type);
+          onActionTypeChange(id); // Afficher les bons champs
+          
+          if (existingData.type === 'onoff') {
+            $select.val(existingData.IEEE);
+            $card.find('.action-endpoint-input').val(existingData.endpoint);
+            $card.find('.action-value-select').val(existingData.value);
+          } else if (existingData.type === 'notification') {
+            $card.find('.action-title-input').val(existingData.title || '');
+            $card.find('.action-message-input').val(existingData.message || '');
+          }
+        }
+      }
+
+      function onActionTypeChange(id) {
+        var $card = $('[data-action-id="' + id + '"]');
+        var type = $card.find('.action-type-select').val();
+        
+        if (type === 'onoff') {
+          $card.find('.action-onoff-fields').show();
+          $card.find('.action-notification-fields').hide();
+          // Rendre les champs onoff requis
+          $card.find('.action-device-select').prop('required', true);
+          $card.find('.action-endpoint-input').prop('required', true);
+          $card.find('.action-value-select').prop('required', true);
+          // Rendre les champs notification non requis
+          $card.find('.action-title-input').prop('required', false);
+          $card.find('.action-message-input').prop('required', false);
+        } else if (type === 'notification') {
+          $card.find('.action-onoff-fields').hide();
+          $card.find('.action-notification-fields').show();
+          // Rendre les champs notification requis
+          $card.find('.action-title-input').prop('required', true);
+          $card.find('.action-message-input').prop('required', true);
+          // Rendre les champs onoff non requis
+          $card.find('.action-device-select').prop('required', false);
+          $card.find('.action-endpoint-input').prop('required', false);
+          $card.find('.action-value-select').prop('required', false);
+        }
+      }
+
+      function onActionDeviceChange(id) {
+        var $card = $('[data-action-id="' + id + '"]');
+        var ieee = $card.find('.action-device-select').val();
+        var $endpointInput = $card.find('.action-endpoint-input');
+        
+        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
+        
+        var endpoint = devices[ieee].INFO.endpoint || '1';
+        $endpointInput.val(endpoint);
+      }
+
+      function removeAction(id) {
+        $('[data-action-id="' + id + '"]').remove();
+      }
+
+      function addTimeRange(existingData) {
+        var id = timeRangeCount++;
+        
+        var timeRangeHtml = '<div class="card mb-2 timerange-item" data-timerange-id="' + id + '">' +
+          '<div class="card-body">' +
+            '<div class="row g-2">' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Heure début</label>' +
+                '<input type="time" class="form-control form-control-sm timerange-start" value="08:00" required>' +
+              '</div>' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Heure fin</label>' +
+                '<input type="time" class="form-control form-control-sm timerange-end" value="18:00" required>' +
+              '</div>' +
+              '<div class="col-md-5">' +
+                '<label class="form-label small">Jours</label>' +
+                '<div class="btn-group btn-group-sm d-flex" role="group">' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-1" value="1" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-1">L</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-2" value="2" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-2">M</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-3" value="3" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-3">M</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-4" value="4" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-4">J</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-5" value="5" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-5">V</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-6" value="6" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-6">S</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-7" value="7" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-7">D</label>' +
+                '</div>' +
+              '</div>' +
+              '<div class="col-md-1 d-flex align-items-end">' +
+                '<button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange(' + id + ')">×</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+        
+        $('#timeRangesContainer').append(timeRangeHtml);
+        
+        // Remplir avec les données existantes si présentes
+        if (existingData) {
+          var $card = $('[data-timerange-id="' + id + '"]');
+          $card.find('.timerange-start').val(existingData.startTime);
+          $card.find('.timerange-end').val(existingData.endTime);
+          
+          if (existingData.days) {
+            for (var i = 0; i < existingData.days.length; i++) {
+              var dayNum = existingData.days[i];
+              $('#day-' + id + '-' + dayNum).prop('checked', true);
+            }
+          }
+        }
+      }
+
+      function removeTimeRange(id) {
+        $('[data-timerange-id="' + id + '"]').remove();
+      }
+
+      $('#ruleForm').on('submit', function(e) {
+        e.preventDefault();
+        
+        var rule = {
+          oldName: $('#oldRuleName').val(),
+          name: $('#ruleName').val(),
+          timeRanges: [],  
+          conditions: [],
+          actions: []
+        };
+
+        //Collecter les plages horaires
+        $('.timerange-item').each(function() {
+          var $card = $(this);
+          var startTime = $card.find('.timerange-start').val();
+          var endTime = $card.find('.timerange-end').val();
+          var days = [];
+          
+          $card.find('.day-check:checked').each(function() {
+            days.push(parseInt($(this).val()));
+          });
+          
+          // Ajouter seulement si au moins un jour est coché
+          if (days.length > 0) {
+            rule.timeRanges.push({
+              startTime: startTime,
+              endTime: endTime,
+              days: days
+            });
+          }
+        });
+        
+        $('.condition-item').each(function() {
+          var $card = $(this);
+          var valueRaw = $card.find('.value-input').val();
+          var operator = $card.find('.operator-select').val();
+          var conditionValue;
+          
+          if (operator === '==' || operator === '!=') {
+            conditionValue = isNaN(valueRaw) ? valueRaw : parseInt(valueRaw);
+          } else {
+            conditionValue = parseInt(valueRaw);
+          }
+          
+          var condition = {
+            type: 'device',
+            IEEE: $card.find('.device-select').val(),
+            cluster: parseInt($card.find('.cluster-select').val()),
+            attribute: parseInt($card.find('.attribute-select').val()),
+            operator: operator,
+            value: conditionValue,
+            logic: $card.find('.logic-select').val()
+          };
+          rule.conditions.push(condition);
+        });
+
+        if (rule.conditions.length === 0) {
+          alert('Erreur : Vous devez ajouter au moins une condition à la règle.');
+          return false;  // Empêche la soumission
+        }
+        
+        $('.action-item').each(function() {
+          var $card = $(this);
+          var type = $card.find('.action-type-select').val();
+          
+          var action = {
+            type: type
+          };
+          
+          if (type === 'onoff') {
+            action.IEEE = $card.find('.action-device-select').val();
+            action.endpoint = parseInt($card.find('.action-endpoint-input').val());
+            action.value = $card.find('.action-value-select').val();
+            action.title = '';    // Vide pour onoff
+            action.message = '';  // Vide pour onoff
+          } else if (type === 'notification') {
+            action.IEEE = '';     // Vide pour notification
+            action.endpoint = 0;  // Vide pour notification
+            action.value = '';    // Vide pour notification
+            action.title = $card.find('.action-title-input').val();
+            action.message = $card.find('.action-message-input').val();
+          }
+          
+          rule.actions.push(action);
+        });
+        
+        $.ajax({
+          url: '/api/rules/edit',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify(rule),
+          success: function() {
+            alert('Règle modifiée avec succès !');
+            window.location.href = '/configRules';
+          },
+          error: function(xhr) {
+            alert('Erreur lors de la modification : ' + xhr.responseText);
+          }
+        });
+      });
+    </script>
+)rawstring";
+
+const char HTTP_ADD_RULE[] PROGMEM = R"rawstring(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Ajouter une règle</h4>
+      <div class='card mx-auto shadow-sm'>
+        <div class="card-body">
+          <form id="ruleForm">
+            
+            <!-- Nom de la règle -->
+            <div class="mb-4">
+              <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
+              <input class='form-control' id='ruleName' type='text' name='ruleName' placeholder='rule_name' required>
+            </div>
+
+            <!-- Conditions -->
+            <div class="mb-4">
+              <label class="form-label fw-bold">Conditions</label>
+              <div id="conditionsContainer">
+                ⏳ Chargement...
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Ajouter une condition</button>
+            </div>
+
+             <!-- ← NOUVEAU: Plages horaires -->
+            <div class="mb-4">
+              <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
+              <div id="timeRangesContainer">
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Ajouter une plage horaire</button>
+            </div>
+
+            <!-- Actions -->
+            <div class="mb-4">
+              <label class="form-label fw-bold">Actions</label>
+              <div id="actionsContainer">
+                ⏳ Chargement...
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addAction()">+ Ajouter une action</button>
+            </div>
+
+            <!-- Boutons -->
+            <div class="d-flex justify-content-between mt-4">
+              <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
+              <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      var devices = {};
+      var templates = {};
+      var conditionCount = 0;
+      var actionCount = 0;
+      var timeRangeCount = 0;
+      var devicesLoaded = false;
+      var templatesLoaded = false;
+
+      $(document).ready(function() {
+        $.get('/getDevices', function(data) {
+          devices = data;
+          devicesLoaded = true;
+          checkDataLoadedAndInit();
+        });
+        
+        $.get('/getTemplates', function(data) {
+          templates = data;
+          templatesLoaded = true;
+          checkDataLoadedAndInit();
+        });
+      });
+
+      function checkDataLoadedAndInit() {
+        if (devicesLoaded && templatesLoaded) {
+          $('#conditionsContainer').text("");
+          $('#actionsContainer').text("");
+          addCondition();
+          addAction();
+        }
+      }
+
+      function hasCluster0006(deviceData) {
+        if (!deviceData || !deviceData.INFO) return false;
+        
+        var deviceId = deviceData.INFO.device_id;
+        var model = deviceData.INFO.model || 'default';
+        
+        var templateKey = deviceId + '.json';
+        var templateFile = templates[templateKey];
+        
+        if (!templateFile) return false;
+        
+        var templateData = templateFile[model] || templateFile['default'];
+        
+        if (!templateData || !templateData[0] || !templateData[0].status) return false;
+        
+        var statusItems = templateData[0].status;
+        
+        for (var i = 0; i < statusItems.length; i++) {
+          if (statusItems[i].cluster.toUpperCase() === '0006') {
+            return true;
+          }
+        }
+        
+        return false;
+      }
+
+      function addCondition() {
+        var id = conditionCount++;
+        
+        var conditionHtml = '<div class="card mb-2 condition-item" data-id="' + id + '">' +
+          '<div class="card-body">' +
+            '<div class="row g-2">' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Device</label>' +
+                '<select class="form-select form-select-sm device-select" onchange="onDeviceChange(' + id + ')" required>' +
+                  '<option value="">-- Choisir --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2">' +
+                '<label class="form-label small">Cluster</label>' +
+                '<select class="form-select form-select-sm cluster-select" onchange="onClusterChange(' + id + ')" required>' +
+                  '<option value="">-- Cluster --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2">' +
+                '<label class="form-label small">Attribut</label>' +
+                '<select class="form-select form-select-sm attribute-select" required>' +
+                  '<option value="">-- Attribut --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-1">' +
+                '<label class="form-label small">Op.</label>' +
+                '<select class="form-select form-select-sm operator-select" onchange="onOperatorChange(' + id + ')" required>' +
+                  '<option value="==">==</option>' +
+                  '<option value="!=">!=</option>' +
+                  '<option value="<">&lt;</option>' +
+                  '<option value="<=">&lt;=</option>' +
+                  '<option value=">">&gt;</option>' +
+                  '<option value=">=">&gt;=</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2">' +
+                '<label class="form-label small">Valeur</label>' +
+                '<input type="text" class="form-control form-control-sm value-input" required>' +
+              '</div>' +
+              '<div class="col-md-1">' +
+                '<label class="form-label small">Logic</label>' +
+                '<select class="form-select form-select-sm logic-select">' +
+                  '<option value="AND">AND</option>' +
+                  '<option value="OR">OR</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-1 d-flex align-items-end">' +
+                '<button type="button" class="btn btn-sm btn-danger" onclick="removeCondition(' + id + ')">×</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+        
+        $('#conditionsContainer').append(conditionHtml);
+        
+        var $select = $('[data-id="' + id + '"] .device-select');
+        $.each(devices, function(ieee, deviceData) {
+          if (deviceData.INFO) {
+            var model = deviceData.INFO.model || 'Unknown';
+            var alias = deviceData.INFO.alias || '';
+            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee + ')';
+            $select.append('<option value="' + ieee + '">' + label + '</option>');
+          }
+        });
+      }
+
+      function onOperatorChange(id) {
+        var $card = $('[data-id="' + id + '"]');
+        var operator = $card.find('.operator-select').val();
+        var $valueInput = $card.find('.value-input');
+        
+        if (operator === '==' || operator === '!=') {
+          $valueInput.attr('type', 'text');
+          $valueInput.attr('placeholder', 'Texte ou nombre');
+        } else {
+          $valueInput.attr('type', 'number');
+          $valueInput.attr('placeholder', '');
+          if ($valueInput.val() && isNaN($valueInput.val())) {
+            $valueInput.val('');
+          }
+        }
+      }
+
+      function onDeviceChange(id) {
+        var $card = $('[data-id="' + id + '"]');
+        var ieee = $card.find('.device-select').val();
+        var $clusterSelect = $card.find('.cluster-select');
+        
+        $clusterSelect.html('<option value="">-- Cluster --</option>');
+        $card.find('.attribute-select').html('<option value="">-- Attribut --</option>');
+        
+        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
+        
+        var deviceData = devices[ieee];
+        var deviceId = deviceData.INFO.device_id;
+        var model = deviceData.INFO.model || 'default';
+        
+        var templateKey = deviceId + '.json';
+        var templateFile = templates[templateKey];
+        
+        if (!templateFile) return;
+        
+        var templateData = templateFile[model] || templateFile['default'];
+        
+        if (!templateData || !templateData[0] || !templateData[0].status) return;
+        
+        var statusItems = templateData[0].status;
+        var clustersAdded = {};
+        
+        for (var i = 0; i < statusItems.length; i++) {
+          var item = statusItems[i];
+          var cluster = item.cluster;
+          if (!clustersAdded[cluster]) {
+            clustersAdded[cluster] = true;
+            var clusterDec = parseInt(cluster, 16);
+            $clusterSelect.append('<option value="' + clusterDec + '">0x' + cluster + '</option>');
+          }
+        }
+      }
+
+      function onClusterChange(id) {
+        var $card = $('[data-id="' + id + '"]');
+        var ieee = $card.find('.device-select').val();
+        var clusterDec = parseInt($card.find('.cluster-select').val());
+        var $attributeSelect = $card.find('.attribute-select');
+        
+        $attributeSelect.html('<option value="">-- Attribut --</option>');
+        
+        if (!ieee || !devices[ieee] || !devices[ieee].INFO || !clusterDec) return;
+        
+        var deviceData = devices[ieee];
+        var deviceId = deviceData.INFO.device_id;
+        var model = deviceData.INFO.model || 'default';
+        var clusterHex = clusterDec.toString(16).toUpperCase();
+        while (clusterHex.length < 4) clusterHex = '0' + clusterHex;
+        
+        var templateKey = deviceId + '.json';
+        var templateFile = templates[templateKey];
+        
+        if (!templateFile) return;
+        
+        var templateData = templateFile[model] || templateFile['default'];
+        
+        if (!templateData || !templateData[0] || !templateData[0].status) return;
+        
+        var statusItems = templateData[0].status;
+        
+        for (var i = 0; i < statusItems.length; i++) {
+          var item = statusItems[i];
+          if (item.cluster.toUpperCase() === clusterHex) {
+            $attributeSelect.append('<option value="' + item.attribut + '">' + item.name + ' (' + item.attribut + ')</option>');
+          }
+        }
+      }
+
+      function removeCondition(id) {
+        $('[data-id="' + id + '"]').remove();
+      }
+
+      function addAction() {
+        var id = actionCount++;
+        
+        var actionHtml = '<div class="card mb-2 action-item" data-action-id="' + id + '">' +
+          '<div class="card-body">' +
+            '<div class="row g-2">' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Type</label>' +
+                '<select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange(' + id + ')" required>' +
+                  '<option value="onoff">ON/OFF</option>' +
+                  '<option value="notification">Notification</option>' +  // ← NOUVEAU
+                '</select>' +
+              '</div>' +
+              // Champs pour ONOFF (visibles par défaut)
+              '<div class="col-md-4 action-onoff-fields">' +
+                '<label class="form-label small">Device</label>' +
+                '<select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange(' + id + ')" required>' +
+                  '<option value="">-- Choisir --</option>' +
+                '</select>' +
+              '</div>' +
+              '<div class="col-md-2 action-onoff-fields">' +
+                '<label class="form-label small">Endpoint</label>' +
+                '<input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required>' +
+              '</div>' +
+              '<div class="col-md-2 action-onoff-fields">' +
+                '<label class="form-label small">Valeur</label>' +
+                '<select class="form-select form-select-sm action-value-select" required>' +
+                  '<option value="1">ON (1)</option>' +
+                  '<option value="0">OFF (0)</option>' +
+                  '<option value="2">TOGGLE (2)</option>' +
+                '</select>' +
+              '</div>' +
+              // Champs pour NOTIFICATION (cachés par défaut)
+              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
+                '<label class="form-label small">Titre</label>' +
+                '<input type="text" class="form-control form-control-sm action-title-input" placeholder="Titre de la notification">' +
+              '</div>' +
+              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
+                '<label class="form-label small">Message</label>' +
+                '<input type="text" class="form-control form-control-sm action-message-input" placeholder="Message de la notification">' +
+              '</div>' +
+              '<div class="col-md-1 d-flex align-items-end">' +
+                '<button type="button" class="btn btn-sm btn-danger" onclick="removeAction(' + id + ')">×</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+        
+        $('#actionsContainer').append(actionHtml);
+        
+        var $select = $('[data-action-id="' + id + '"] .action-device-select');
+        $.each(devices, function(ieee, deviceData) {
+          if (deviceData.INFO && hasCluster0006(deviceData)) {
+            var model = deviceData.INFO.model || 'Unknown';
+            var alias = deviceData.INFO.alias || '';
+            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee.substring(0, 8) + '...)';
+            $select.append('<option value="' + ieee + '">' + label + '</option>');
+          }
+        });
+      }
+
+      function onActionTypeChange(id) {
+        var $card = $('[data-action-id="' + id + '"]');
+        var type = $card.find('.action-type-select').val();
+        
+        if (type === 'onoff') {
+          $card.find('.action-onoff-fields').show();
+          $card.find('.action-notification-fields').hide();
+          // Rendre les champs onoff requis
+          $card.find('.action-device-select').prop('required', true);
+          $card.find('.action-endpoint-input').prop('required', true);
+          $card.find('.action-value-select').prop('required', true);
+          // Rendre les champs notification non requis
+          $card.find('.action-title-input').prop('required', false);
+          $card.find('.action-message-input').prop('required', false);
+        } else if (type === 'notification') {
+          $card.find('.action-onoff-fields').hide();
+          $card.find('.action-notification-fields').show();
+          // Rendre les champs notification requis
+          $card.find('.action-title-input').prop('required', true);
+          $card.find('.action-message-input').prop('required', true);
+          // Rendre les champs onoff non requis
+          $card.find('.action-device-select').prop('required', false);
+          $card.find('.action-endpoint-input').prop('required', false);
+          $card.find('.action-value-select').prop('required', false);
+        }
+      }
+
+      function onActionDeviceChange(id) {
+        var $card = $('[data-action-id="' + id + '"]');
+        var ieee = $card.find('.action-device-select').val();
+        var $endpointInput = $card.find('.action-endpoint-input');
+        
+        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
+        
+        var endpoint = devices[ieee].INFO.endpoint || '1';
+        $endpointInput.val(endpoint);
+      }
+
+      function removeAction(id) {
+        $('[data-action-id="' + id + '"]').remove();
+      }
+
+      function addTimeRange() {
+        var id = timeRangeCount++;
+        
+        var timeRangeHtml = '<div class="card mb-2 timerange-item" data-timerange-id="' + id + '">' +
+          '<div class="card-body">' +
+            '<div class="row g-2">' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Heure début</label>' +
+                '<input type="time" class="form-control form-control-sm timerange-start" value="08:00" required>' +
+              '</div>' +
+              '<div class="col-md-3">' +
+                '<label class="form-label small">Heure fin</label>' +
+                '<input type="time" class="form-control form-control-sm timerange-end" value="18:00" required>' +
+              '</div>' +
+              '<div class="col-md-5">' +
+                '<label class="form-label small">Jours</label>' +
+                '<div class="btn-group btn-group-sm d-flex" role="group">' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-1" value="1" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-1">L</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-2" value="2" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-2">M</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-3" value="3" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-3">M</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-4" value="4" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-4">J</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-5" value="5" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-5">V</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-6" value="6" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-6">S</label>' +
+                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-7" value="7" autocomplete="off">' +
+                  '<label class="btn btn-outline-primary" for="day-' + id + '-7">D</label>' +
+                '</div>' +
+              '</div>' +
+              '<div class="col-md-1 d-flex align-items-end">' +
+                '<button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange(' + id + ')">×</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+        
+        $('#timeRangesContainer').append(timeRangeHtml);
+      }
+
+      function removeTimeRange(id) {
+        $('[data-timerange-id="' + id + '"]').remove();
+      }
+
+      $('#ruleForm').on('submit', function(e) {
+        e.preventDefault();
+        
+        var rule = {
+          name: $('#ruleName').val(),
+          timeRanges: [],  
+          conditions: [],
+          actions: []
+        };
+        
+        // Collecter les plages horaires
+        $('.timerange-item').each(function() {
+          var $card = $(this);
+          var startTime = $card.find('.timerange-start').val();
+          var endTime = $card.find('.timerange-end').val();
+          var days = [];
+          
+          $card.find('.day-check:checked').each(function() {
+            days.push(parseInt($(this).val()));
+          });
+          
+          // Ajouter seulement si au moins un jour est coché
+          if (days.length > 0) {
+            rule.timeRanges.push({
+              startTime: startTime,
+              endTime: endTime,
+              days: days
+            });
+          }
+        });
+
+        $('.condition-item').each(function() {
+          var $card = $(this);
+          var valueRaw = $card.find('.value-input').val();
+          var operator = $card.find('.operator-select').val();
+          var conditionValue;
+          
+          if (operator === '==' || operator === '!=') {
+            conditionValue = isNaN(valueRaw) ? valueRaw : parseInt(valueRaw);
+          } else {
+            conditionValue = parseInt(valueRaw);
+          }
+          
+          var condition = {
+            type: 'device',
+            IEEE: $card.find('.device-select').val(),
+            cluster: parseInt($card.find('.cluster-select').val()),
+            attribute: parseInt($card.find('.attribute-select').val()),
+            operator: operator,
+            value: conditionValue,
+            logic: $card.find('.logic-select').val()
+          };
+          rule.conditions.push(condition);
+        });
+
+        if (rule.conditions.length === 0) {
+          alert('Erreur : Vous devez ajouter au moins une condition à la règle.');
+          return false;  // Empêche la soumission
+        }
+        
+        $('.action-item').each(function() {
+          var $card = $(this);
+          var type = $card.find('.action-type-select').val();
+          
+          var action = {
+            type: type
+          };
+          
+          if (type === 'onoff') {
+            action.IEEE = $card.find('.action-device-select').val();
+            action.endpoint = parseInt($card.find('.action-endpoint-input').val());
+            action.value = $card.find('.action-value-select').val();
+            action.title = '';    // Vide pour onoff
+            action.message = '';  // Vide pour onoff
+          } else if (type === 'notification') {
+            action.IEEE = '';     // Vide pour notification
+            action.endpoint = 0;  // Vide pour notification
+            action.value = '';    // Vide pour notification
+            action.title = $card.find('.action-title-input').val();
+            action.message = $card.find('.action-message-input').val();
+          }
+          
+          rule.actions.push(action);
+        });
+        
+        $.ajax({
+          url: '/api/rules/add',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify(rule),
+          success: function() {
+            alert('Règle ajoutée avec succès !');
+            window.location.href = '/configRules';
+          },
+          error: function(xhr) {
+            alert('Erreur lors de l\'ajout de la règle: ' + xhr.responseText);
+          }
+        });
+      });
+    </script>
+)rawstring";
 
  const char HTTP_CONFIG_MQTT[] PROGMEM = R"(
     <div class='container p-4'>
@@ -2012,7 +3263,7 @@ const char HTTP_ENERGY[] PROGMEM = R"(
 /*<script>
       function wait(div){ document.getElementById(div).innerHTML = "<img src='web/img/wait.gif' />";}
     </script>*/
-const char HTTP_ENERGY_LINKY[] PROGMEM = R"(
+const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
 <div class='col-sm-12'>
   {{LinkyStatus}}
 </div>
@@ -2431,7 +3682,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"(
     });
 
   </script>
-      )";
+      )rawstring";
 
 const char HTTP_NOTIFICATION[] PROGMEM = 
 R"HTML(
@@ -4205,6 +5456,11 @@ String createPowerGraph(String IEEE)
   result += F(" options: {");
   result += F("  responsive: true,");
   result += F("  maintainAspectRatio: false,");
+  result += F("  animation: false,");
+  result += F("  interaction: {");
+  result += F("   mode: 'index',"); // ← MODE INDEX pour grouper
+  result += F("   intersect: false");
+  result += F("  },");
   result += F("  scales: {");
   result += F("   x: {");
   result += F("    stacked: true,");
@@ -4218,15 +5474,48 @@ String createPowerGraph(String IEEE)
   result += F("  },");
   result += F("  barPercentage: 0.9,");
   result += F("  categoryPercentage: 0.95,");
+
   result += F("  plugins: {");
+  result += F("   zoom: {");
+  result += F("    limits: {");
+  result += F("     x: { min: 'original', max: 'original' }"); // Limites de zoom
+  result += F("    },");
+  result += F("    pan: {");
+  result += F("     enabled: true,");
+  result += F("     mode: 'x',");
+  result += F("     modifierKey: 'ctrl'"); // Pan avec Ctrl + glisser
+  result += F("    },");
+  result += F("    zoom: {");
+  result += F("     wheel: {");
+  result += F("      enabled: true,");
+  result += F("      speed: 0.1"); // Vitesse du zoom
+  result += F("     },");
+  result += F("     pinch: {");
+  result += F("      enabled: true");
+  result += F("     },");
+  result += F("     mode: 'x',");
+  result += F("     drag: {");
+  result += F("      enabled: true,"); // Zoom par sélection rectangle
+  result += F("      backgroundColor: 'rgba(30, 136, 229, 0.3)'");
+  result += F("     }");
+  result += F("    }");
+  result += F("   },");
+
   result += F("   tooltip: {");
+  result += F("    backgroundColor: 'rgba(133, 133, 133, 0.65)',");
   result += F("    callbacks: {");
+  result += F("     title: function(tooltipItems) {");
+  result += F("      return tooltipItems.length > 0 ? tooltipItems[0].label : '';");
+  result += F("     },");
+
+  // LABEL de chaque ligne
   result += F("     label: function(context) {");
-  result += F("      var label = context.dataset.label || '';");
-  result += F("      if (context.parsed.y !== 0) {");
-  result += F("       label += ': ' + context.parsed.y + ' VA';");
-  result += F("      }");
-  result += F("      return label;");
+  result += F("      return getPowerTooltipLabel(context);");
+  result += F("     },");
+  
+  // FOOTER avec les totaux
+  result += F("     footer: function(tooltipItems) {");
+  result += F("      return getPowerTooltipFooter(tooltipItems);");
   result += F("     }");
   result += F("    }");
   result += F("   },");
@@ -4415,6 +5704,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
         JsonEuros += "\"price\":" + String(getTarif(String(section[cntsection]).toInt(), "energy")) + ",";
         JsonEuros += "\"abo\":" + String(ConfigGeneral.tarifAbo) + ",";
         JsonEuros += "\"taxe\":" + String(ConfigGeneral.tarifCSPE) + ",";
+        JsonEuros += "\"taxe2\":" + String(ConfigGeneral.tarifCTA) + ",";
         JsonEuros += "\"unit\":\"Wh\"}";
         
         ykeys += sep + "'" + String(section[cntsection]) + "'";
@@ -4494,6 +5784,10 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += String(budget);
   result += F(";");
   
+  result += F("window.");
+  result += Type;
+  result += F("Period = 'hour';");
+
   // Créer le graphique Chart.js
   result += F("window.");
   result += Type;
@@ -4509,6 +5803,10 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += F("  responsive: true,");
   result += F("  maintainAspectRatio: false,");
   result += F("  animation: false,");
+  result += F("  interaction: {");
+  result += F("   mode: 'index',"); // ← MODE INDEX pour grouper
+  result += F("   intersect: false"); // ← Afficher même si pas exactement sur la barre
+  result += F("  },");
   result += F("  scales: {");
   result += F("   x: {");
   result += F("    stacked: true,");
@@ -4517,6 +5815,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += F("   y: {");
   result += F("    stacked: true,");
   result += F("    beginAtZero: true,");
+  result += F("    grace: '10%',");
   result += F("    ticks: { callback: function(value) { return value + ' ");
   result += unit;
   result += F("'; } }");
@@ -4526,7 +5825,11 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += F("  categoryPercentage: 0.95,");
   result += F("  plugins: {");
   result += F("   tooltip: {");
+  result += F("    backgroundColor: 'rgba(133, 133, 133, 0.65)',");
   result += F("    callbacks: {");
+  result += F("     title: function(tooltipItems) {");
+  result += F("      return tooltipItems.length > 0 ? tooltipItems[0].label : '';");
+  result += F("     },");
   result += F("     label: function(context) {");
   result += F("      return getEnergyTooltipLabel(context, '");
   result += Type;
@@ -6492,7 +7795,6 @@ void handleConfigRules(AsyncWebServerRequest *request)
   size_t rulesCount = rulesManager.size();
   for (size_t i = 0; i < rulesCount; i++) 
   {
-    // Utiliser getRuleAt pour éviter les problèmes de type
     const Rule* rule = rulesManager.getRuleByIndex(i);
     if (!rule) continue;
     exist++;
@@ -6528,18 +7830,24 @@ void handleConfigRules(AsyncWebServerRequest *request)
       rulesList+=F("</span>");
       rulesList+=F("</td>");
       rulesList+=F("<td>");
-        /*rulesList+="<button type='button' class='btn btn-warning'>";
-          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-pencil-square' viewBox='0 0 16 16'>";
-            rulesList+="<path d='M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z'/>";
-            rulesList+="<path fill-rule='evenodd' d='M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z'/>";
-          rulesList+="</svg>";
-        rulesList+="</button>";
-        rulesList+="<button type='button' class='btn btn-danger'>";
-          rulesList+="<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-x-square' viewBox='0 0 16 16'>";
-            rulesList+="<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>";
-            rulesList+="<path d='M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708'/>";
-          rulesList+="</svg>";
-        rulesList+="</button>";*/
+        // Bouton Editer
+        rulesList+=F("<a href='/editRule?name=");
+        rulesList+=rule->name.c_str();
+        rulesList+=F("' class='btn btn-sm btn-warning me-1'>");
+          rulesList+=F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-pencil-square' viewBox='0 0 16 16'>");
+            rulesList+=F("<path d='M15.502 1.94a.5.5 0 0 1 0 .706L14.459 3.69l-2-2L13.502.646a.5.5 0 0 1 .707 0l1.293 1.293zm-1.75 2.456-2-2L4.939 9.21a.5.5 0 0 0-.121.196l-.805 2.414a.25.25 0 0 0 .316.316l2.414-.805a.5.5 0 0 0 .196-.12l6.813-6.814z'/>");
+            rulesList+=F("<path fill-rule='evenodd' d='M1 13.5A1.5 1.5 0 0 0 2.5 15h11a1.5 1.5 0 0 0 1.5-1.5v-6a.5.5 0 0 0-1 0v6a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-11a.5.5 0 0 1 .5-.5H9a.5.5 0 0 0 0-1H2.5A1.5 1.5 0 0 0 1 2.5z'/>");
+          rulesList+=F("</svg>");
+        rulesList+=F("</a>");
+        // Bouton Supprimer
+        rulesList+=F("<button type='button' class='btn btn-sm btn-danger' onclick='deleteRule(\"");
+        rulesList+=rule->name.c_str();
+        rulesList+=F("\")'>");
+          rulesList+=F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-x-square' viewBox='0 0 16 16'>");
+            rulesList+=F("<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>");
+            rulesList+=F("<path d='M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708'/>");
+          rulesList+=F("</svg>");
+        rulesList+=F("</button>");
       rulesList+=F("</td>");
     rulesList+=F("</tr>");
   }
@@ -6556,6 +7864,391 @@ void handleConfigRules(AsyncWebServerRequest *request)
   result += F("</html>");
 
   request->send(200, "text/html", result);
+}
+
+void handleEditRule(AsyncWebServerRequest *request)
+{
+  String ruleName = "";
+  if (request->hasArg("name")) {
+    ruleName = request->arg("name");
+  }
+  
+  if (ruleName.length() == 0) {
+    request->send(400, "text/plain", "Nom de règle manquant");
+    return;
+  }
+
+  // ✅ CORRECTION : Utiliser /config/rules.json au lieu de /rules.json
+  File file = LittleFS.open("/config/rules.json", FILE_READ);
+  if (!file) {
+    request->send(500, "text/plain", "Impossible d'ouvrir rules.json");
+    return;
+  }
+
+  SpiRamJsonDocument doc(100000);
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+  
+  if (error) {
+    request->send(500, "text/plain", "Erreur de lecture JSON");
+    return;
+  }
+
+  // Trouver la règle
+  JsonArray rules = doc["rules"];
+  JsonObject ruleToEdit;
+  
+  for (JsonObject rule : rules) {
+    if (rule["name"].as<String>() == ruleName) {
+      ruleToEdit = rule;
+      break;
+    }
+  }
+  
+  if (ruleToEdit.isNull()) {
+    request->send(404, "text/plain", "Règle non trouvée");
+    return;
+  }
+
+  // Convertir la règle en JSON pour JavaScript
+  String ruleJson;
+  serializeJson(ruleToEdit, ruleJson);
+
+  // Générer la page HTML avec le formulaire pré-rempli
+  String result;
+  result = F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_EDIT_RULE);
+  result += F("<script>var ruleToEdit = ");
+  result += ruleJson;
+  result += F(";</script>");
+  result += footer();
+  result += F("</html>");
+
+  request->send(200, "text/html", result);
+}
+
+void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+{
+  SpiRamJsonDocument doc(100000);
+  DeserializationError error = deserializeJson(doc, (const char*)data);
+  
+  if (error) {
+    request->send(400, "text/plain", "JSON invalide");
+    return;
+  }
+
+  String oldName = doc["oldName"].as<String>();
+  String newName = doc["name"].as<String>();
+  
+  if (oldName.length() == 0) {
+    request->send(400, "text/plain", "Ancien nom manquant");
+    return;
+  }
+
+  if (newName.length() == 0) {
+    request->send(400, "text/plain", "Le nom de la règle ne peut pas être vide");
+    return;
+  }
+
+  // ✅ VALIDATION : Nom de règle valide (caractères alphanumériques, underscore, tiret)
+  bool validName = true;
+  for (size_t i = 0; i < newName.length(); i++) {
+    char c = newName.charAt(i);
+    if (!isAlphaNumeric(c) && c != '_' && c != '-') {
+      validName = false;
+      break;
+    }
+  }
+  
+  if (!validName) {
+    request->send(400, "text/plain", "Le nom de règle ne peut contenir que des lettres, chiffres, _ et -");
+    return;
+  }
+
+  // Lire le fichier rules.json
+  File file = LittleFS.open("/config/rules.json", FILE_READ);
+  SpiRamJsonDocument rulesDoc(100000);
+  
+  if (file) {
+    deserializeJson(rulesDoc, file);
+    file.close();
+  } else {
+    request->send(500, "text/plain", "Impossible d'ouvrir rules.json");
+    return;
+  }
+
+  JsonArray rules = rulesDoc["rules"];
+  
+  // ✅ VALIDATION D'UNICITÉ : Vérifier si le nouveau nom existe déjà
+  if (oldName != newName) {
+    for (JsonObject rule : rules) {
+      String existingName = rule["name"].as<String>();
+      // Si un autre règle a déjà ce nom
+      if (existingName == newName && existingName != oldName) {
+        request->send(409, "text/plain", "Une règle avec ce nom existe déjà");
+        return;
+      }
+    }
+  }
+
+  // Trouver et remplacer la règle
+  bool found = false;
+  
+  for (size_t i = 0; i < rules.size(); i++) {
+    if (rules[i]["name"].as<String>() == oldName) {
+      found = true;
+      
+      // Remplacer la règle
+      JsonObject rule = rules[i];
+      rule["name"] = newName;
+      
+      //Remplacer les plages horaires
+      rule.remove("timeRanges");
+      JsonArray timeRanges = rule.createNestedArray("timeRanges");
+      for (JsonObject tr : doc["timeRanges"].as<JsonArray>()) {
+        JsonObject t = timeRanges.createNestedObject();
+        t["startTime"] = tr["startTime"];
+        t["endTime"] = tr["endTime"];
+        JsonArray days = t.createNestedArray("days");
+        for (JsonVariant d : tr["days"].as<JsonArray>()) {
+          days.add(d);
+        }
+      }
+
+      // Remplacer les conditions
+      rule.remove("conditions");
+      JsonArray conditions = rule.createNestedArray("conditions");
+      for (JsonObject cond : doc["conditions"].as<JsonArray>()) {
+        JsonObject c = conditions.createNestedObject();
+        c["type"] = cond["type"];
+        c["IEEE"] = cond["IEEE"];
+        c["cluster"] = cond["cluster"];
+        c["attribute"] = cond["attribute"];
+        c["operator"] = cond["operator"];
+        c["value"] = cond["value"];
+        c["logic"] = cond["logic"];
+      }
+      
+      // Remplacer les actions
+      rule.remove("actions");
+      JsonArray actions = rule.createNestedArray("actions");
+      for (JsonObject act : doc["actions"].as<JsonArray>()) {
+        JsonObject a = actions.createNestedObject();
+        a["type"] = act["type"];
+        a["IEEE"] = act["IEEE"];
+        a["endpoint"] = act["endpoint"];
+        a["value"] = act["value"];
+        a["title"] = act["title"]; 
+        a["message"] = act["message"];
+      }
+      
+      break;
+    }
+  }
+  
+  if (!found) {
+    request->send(404, "text/plain", "Règle non trouvée");
+    return;
+  }
+
+  // Sauvegarder le fichier
+  file = LittleFS.open("/config/rules.json", FILE_WRITE);
+  if (!file) {
+    request->send(500, "text/plain", "Erreur d'écriture");
+    return;
+  }
+  
+  serializeJson(rulesDoc, file);
+  file.close();
+
+  // Recharger les règles
+  rulesManager.loadFromFile("/config/rules.json");
+
+  request->send(200, "text/plain", "Règle modifiée");
+}
+
+void APIDeleteRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+{
+  SpiRamJsonDocument doc(100000);
+  DeserializationError error = deserializeJson(doc, (const char*)data);
+  
+  if (error) {
+    request->send(400, "text/plain", "JSON invalide");
+    return;
+  }
+
+  String ruleName = doc["name"].as<String>();
+  
+  if (ruleName.length() == 0) {
+    request->send(400, "text/plain", "Nom de règle manquant");
+    return;
+  }
+
+  // Lire le fichier rules.json
+  File file = LittleFS.open("/config/rules.json", FILE_READ);
+  SpiRamJsonDocument rulesDoc(100000);
+  
+  if (file) {
+    deserializeJson(rulesDoc, file);
+    file.close();
+  } else {
+    request->send(500, "text/plain", "Impossible d'ouvrir rules.json");
+    return;
+  }
+
+  // Supprimer la règle
+  JsonArray rules = rulesDoc["rules"];
+  for (size_t i = 0; i < rules.size(); i++) {
+    if (rules[i]["name"].as<String>() == ruleName) {
+      rules.remove(i);
+      break;
+    }
+  }
+
+  // Sauvegarder le fichier
+  file = LittleFS.open("/config/rules.json", FILE_WRITE);
+  if (!file) {
+    request->send(500, "text/plain", "Erreur d'écriture");
+    return;
+  }
+  
+  serializeJson(rulesDoc, file);
+  file.close();
+
+  // Recharger les règles
+  rulesManager.loadFromFile("/config/rules.json");
+
+  request->send(200, "text/plain", "Règle supprimée");
+}
+
+// Handler pour afficher la page
+void handleAddRule(AsyncWebServerRequest *request)
+{
+  String result;
+  result = F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_ADD_RULE);
+  result += footer();
+  result += F("</html>");
+
+  request->send(200, "text/html", result);
+}
+
+// API pour ajouter une règle
+void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+{
+  // Parser le JSON reçu
+  SpiRamJsonDocument doc(100000);
+  DeserializationError error = deserializeJson(doc, (const char*)data);
+  
+  if (error) {
+    request->send(400, "text/plain", "JSON invalide");
+    return;
+  }
+
+  String ruleName = doc["name"].as<String>();
+  
+  // ✅ VALIDATION : Nom non vide
+  if (ruleName.length() == 0) {
+    request->send(400, "text/plain", "Le nom de la règle ne peut pas être vide");
+    return;
+  }
+
+  // ✅ VALIDATION : Nom valide (caractères alphanumériques, underscore, tiret)
+  bool validName = true;
+  for (size_t i = 0; i < ruleName.length(); i++) {
+    char c = ruleName.charAt(i);
+    if (!isAlphaNumeric(c) && c != '_' && c != '-') {
+      validName = false;
+      break;
+    }
+  }
+  
+  if (!validName) {
+    request->send(400, "text/plain", "Le nom de règle ne peut contenir que des lettres, chiffres, _ et -");
+    return;
+  }
+
+  // Lire le fichier rules.json existant
+  File file = LittleFS.open("/config/rules.json", FILE_READ);
+  SpiRamJsonDocument rulesDoc(100000);
+  
+  if (file) {
+    deserializeJson(rulesDoc, file);
+    file.close();
+  } else {
+    // Créer la structure de base si le fichier n'existe pas
+    rulesDoc["rules"] = rulesDoc.createNestedArray();
+  }
+
+  // ✅ VALIDATION D'UNICITÉ : Vérifier si le nom existe déjà
+  JsonArray rules = rulesDoc["rules"];
+  for (JsonObject rule : rules) {
+    if (rule["name"].as<String>() == ruleName) {
+      request->send(409, "text/plain", "Une règle avec ce nom existe déjà");
+      return;
+    }
+  }
+
+  // Ajouter la nouvelle règle
+  JsonObject newRule = rules.createNestedObject();
+  
+  newRule["name"] = ruleName;
+  
+  //Copier les plages horaires
+  JsonArray timeRanges = newRule.createNestedArray("timeRanges");
+  for (JsonObject tr : doc["timeRanges"].as<JsonArray>()) {
+    JsonObject t = timeRanges.createNestedObject();
+    t["startTime"] = tr["startTime"];
+    t["endTime"] = tr["endTime"];
+    JsonArray days = t.createNestedArray("days");
+    for (JsonVariant d : tr["days"].as<JsonArray>()) {
+      days.add(d);
+    }
+  }
+
+  // Copier les conditions
+  JsonArray conditions = newRule.createNestedArray("conditions");
+  for (JsonObject cond : doc["conditions"].as<JsonArray>()) {
+    JsonObject c = conditions.createNestedObject();
+    c["type"] = cond["type"];
+    c["IEEE"] = cond["IEEE"];
+    c["cluster"] = cond["cluster"];
+    c["attribute"] = cond["attribute"];
+    c["operator"] = cond["operator"];
+    c["value"] = cond["value"];
+    c["logic"] = cond["logic"];
+  }
+  
+  // Copier les actions
+  JsonArray actions = newRule.createNestedArray("actions");
+  for (JsonObject act : doc["actions"].as<JsonArray>()) {
+    JsonObject a = actions.createNestedObject();
+    a["type"] = act["type"];
+    a["IEEE"] = act["IEEE"];
+    a["endpoint"] = act["endpoint"];
+    a["value"] = act["value"];
+    a["title"] = act["title"];  
+    a["message"] = act["message"];
+  }
+
+  // Sauvegarder le fichier
+  file = LittleFS.open("/config/rules.json", FILE_WRITE);
+  if (!file) {
+    request->send(500, "text/plain", "Erreur d'écriture");
+    return;
+  }
+  
+  serializeJson(rulesDoc, file);
+  file.close();
+
+  // Recharger les règles
+  rulesManager.loadFromFile("/config/rules.json");
+
+  request->send(200, "text/plain", "Règle ajoutée");
 }
 
 void handleConfigEnergy(AsyncWebServerRequest *request)
@@ -7522,7 +9215,7 @@ static void untarApplyAndRestore(const char *tarPath) {
       mtar_next(&tar);
       continue;
     }
-
+    esp_task_wdt_reset();
     // fichier
     if (name == "firmware.bin") {
       // démarrage de l'OTA
@@ -7545,6 +9238,7 @@ static void untarApplyAndRestore(const char *tarPath) {
         }
         rem -= n;
       }
+      esp_task_wdt_reset();
       // fin de l’image
       if (!Update.end(true)) {
         Update.printError(Serial);
@@ -7584,21 +9278,39 @@ static void untarApplyAndRestore(const char *tarPath) {
 void handleDoRestore(AsyncWebServerRequest *request,
                          const String& filename, size_t index,
                          uint8_t *data, size_t len, bool final) {
+  size_t content_len;
   static const char *tmpPath = "/rt/upload.tar";
   if (!index) {
     // premier chunk : créer le fichier temporaire
     if (LittleFS.exists(tmpPath)) LittleFS.remove(tmpPath);
     request->_tempFile = LittleFS.open(tmpPath, "w+");
     log_i("Upload start");
-    events.send("Téléchargement ...", "updateStatusManuel");
+    updateStatus.statusManuel = "Téléchargement ...";
+    updateStatus.progressManuel = 10;
+  }
+  esp_task_wdt_reset();
+  // Pendant l'upload, calculer le pourcentage
+  static size_t totalReceived = 0;
+  if (!index) totalReceived = 0;
+  totalReceived += len;
+
+  if (content_len > 0) {
+    int uploadPct = (totalReceived * 40) / content_len; // 0-40%
+    updateStatus.progressManuel = uploadPct;
   }
   // écrire chunk dans le .tar temporaire
   request->_tempFile.write(data, len);
   if (final) {
+    esp_task_wdt_reset();
     request->_tempFile.close();
-    events.send("Installation ...", "updateStatusManuel");
+    updateStatus.statusManuel = "Installation ...";
+    updateStatus.progressManuel = 60;
+
     untarApplyAndRestore(tmpPath);
-    events.send("Redémarrage ...", "updateStatusManuel");
+    esp_task_wdt_reset();
+    updateStatus.statusManuel = "Redémarrage ...";
+    updateStatus.progressManuel = 100;
+    updateStatus.rebootRequested = true;
 
     executeReboot=true;
     
@@ -8063,7 +9775,7 @@ bool checkUpdateFirmware()
         bytesRead += c;
         // Progress event (optionnel)
         int pct = (bytesRead * 100) / contentLength;
-        events.send(String(pct), "updateProgress");
+        updateStatus.progressAuto = pct;
       } 
     }
     heap_caps_free(buff);
@@ -8073,7 +9785,6 @@ bool checkUpdateFirmware()
     log_e("Cannot download firmware file. Only HTTP response 200: OK is supported. Double check firmware location #defined in UPD_FILE.");
     return false;
   }
-  events.send("100", "updateProgress");
   clientWeb.end();
   return true;
 }
@@ -11954,17 +13665,42 @@ void APIgetTemplates(AsyncWebServerRequest *request)
 void launchUpdateTask() {
   // Désactive le watchdog si besoin
   esp_task_wdt_reset();
-  events.send("Starting update ...", "updateStatusAuto");
+  updateStatus.statusAuto = "Téléchargement ...";
+  updateStatus.progressAuto = 0;
   if (checkUpdateFirmware())
   {
-    events.send("Download complete ...", "updateStatusAuto");
+    updateStatus.statusAuto = "Installation ...";
+    esp_task_wdt_reset();
     untarApplyAndRestore("/bk/update.tar");
     executeReboot=true;
-    events.send("Update complete, rebooting …", "updateStatusAuto");
-    events.send("", "reboot");
+    updateStatus.statusAuto = "Mise à jour terminée ...";
+    updateStatus.progressAuto = 100;
+    updateStatus.rebootRequested = true;
   }else{
-    events.send("Download error", "updateStatusAuto");
+    updateStatus.statusAuto = "Problème de téléchargement ...";
   }
+}
+
+void handleGetUpdateStatusManuel(AsyncWebServerRequest *request) {
+    
+  String response = "{";
+  response += "\"status\":\"" + updateStatus.statusManuel + "\",";
+  response += "\"progress\":" + String(updateStatus.progressManuel) + ","; 
+  response += "\"reboot\":" + String(updateStatus.rebootRequested ? "true" : "false");
+  response += "}";
+  
+  request->send(200, "application/json", response);
+}
+
+void handleGetUpdateStatusAuto(AsyncWebServerRequest *request) {
+  
+  String response = "{";
+  response += "\"status\":\"" + updateStatus.statusAuto + "\",";
+  response += "\"progress\":" + String(updateStatus.progressAuto) + ",";
+  response += "\"reboot\":" + String(updateStatus.rebootRequested ? "true" : "false");
+  response += "}";
+  
+  request->send(200, "application/json", response);
 }
 
 
@@ -12109,6 +13845,66 @@ void initWebServer()
     }
     handleConfigRules(request); 
   });
+  serverWeb.on("/editRule", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    handleEditRule(request); 
+  });
+  serverWeb.on("/api/rules/delete", HTTP_POST, 
+    [](AsyncWebServerRequest *request){},
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+    { 
+      if (ConfigSettings.enableSecureHttp)
+      {
+        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+          return request->requestAuthentication();
+      }
+      APIDeleteRule(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/api/rules/edit", HTTP_POST, 
+    [](AsyncWebServerRequest *request){},
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+    { 
+      if (ConfigSettings.enableSecureHttp)
+      {
+        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+          return request->requestAuthentication();
+      }
+      APIEditRule(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/addRule", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    handleAddRule(request); 
+  });
+
+  serverWeb.on("/api/rules/add", HTTP_POST, 
+    [](AsyncWebServerRequest *request){},
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+    { 
+      if (ConfigSettings.enableSecureHttp)
+      {
+        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+          return request->requestAuthentication();
+      }
+      APIAddRule(request, data, len, index, total);
+    }
+  );
+
+
   serverWeb.on("/configWebPush", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -12447,7 +14243,7 @@ void initWebServer()
   // API: Ajouter une notification
   serverWeb.on("/api/notifications", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
-      DynamicJsonDocument doc(1024);
+      SpiRamJsonDocument doc(1024);
       DeserializationError error = deserializeJson(doc, (char*)data);
       
       if (error) {
@@ -12536,7 +14332,7 @@ void initWebServer()
   
   // API: Debug - Lister les notifications avec leurs index
   serverWeb.on("/api/debug", HTTP_GET, [](AsyncWebServerRequest *request){
-    DynamicJsonDocument doc(2048);
+    SpiRamJsonDocument doc(2048);
     JsonArray array = doc.createNestedArray("notifications");
     
     for (size_t i = 0; i < notificationManager.getCount(); i++) {
@@ -13300,8 +15096,38 @@ void initWebServer()
     
   });
 
+  serverWeb.on("/getUpdateStatusManuel", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetUpdateStatusManuel(request);
+  });
+  
+  serverWeb.on("/getUpdateStatusAuto", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetUpdateStatusAuto(request);
+  });
+
+  serverWeb.on("/resetUpdateStatus", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp) {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    updateStatus.statusManuel = "";
+    updateStatus.statusAuto = "";
+    updateStatus.progressAuto = -1;
+    updateStatus.rebootRequested = false;
+    request->send(200, "text/plain", "OK");
+  });
+
   serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/js/functions.js", LittleFS, "/web/js/functions.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/functions.min.js", LittleFS, "/web/js/functions.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/raphael-min.js", LittleFS, "/web/js/raphael-min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/morris.min.js", LittleFS, "/web/js/morris.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/justgage.min.js", LittleFS, "/web/js/justgage.min.js").setCacheControl("max-age=600");
@@ -13310,6 +15136,7 @@ void initWebServer()
   serverWeb.serveStatic("/web/js/masonry.pkgd.min.js", LittleFS, "/web/js/masonry.pkgd.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/chart.umd.min.js", LittleFS, "/web/js/chart.umd.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/annotation.min.js", LittleFS, "/web/js/annotation.min.js").setCacheControl("max-age=600");
+  serverWeb.serveStatic("/web/js/chart-zoom.min.js", LittleFS, "/web/js/chart-zoom.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/bootstrap.min.css", LittleFS, "/web/css/bootstrap.min.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/style.css", LittleFS, "/web/css/style.css").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/css/energy.css", LittleFS, "/web/css/energy.css").setCacheControl("max-age=600");
@@ -13320,8 +15147,6 @@ void initWebServer()
   serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");
   serverWeb.onNotFound(handleNotFound);
-
-  serverWeb.addHandler(&events);
 
   serverWeb.begin();
 
