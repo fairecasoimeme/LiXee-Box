@@ -46,3 +46,5 @@ bool parsePowerHistory(const String IEEE, PowerHistory &history);
 bool savePowerHistory(String IEEE, const PowerHistory &hist);
 String toJson(const PowerHistory&  history,   const String&  hourFilter);
 void addMeasurement(PowerHistory &history, int attrId,long newValue);
+
+void resetMeasurements(PowerHistory &history, const String &timeStamp);

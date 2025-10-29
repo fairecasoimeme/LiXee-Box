@@ -359,8 +359,16 @@ bool ScanDevicesToRAZ() {
       // On ne gère que ZLinky_TIC et ZiPulses
       if (model != "ZLinky_TIC" && model != "ZiPulses") 
           continue;
+
+      //POWER (RAZ de la minute suivante)
+      String currentTime = Hour + ":" + String(Minute.toInt()+1);
+      resetMeasurements(device->powerHistory, currentTime);
+
       // RAZ périodiques
-      if (Minute == "00") {
+      if (Minute == "00") 
+      {
+
+        //ENERGY
         for (const auto &graphEntry : device->energyHistory.hours.graph) {
           const PsString &Key = graphEntry.first;
           const ValueMap &valMap   = graphEntry.second;

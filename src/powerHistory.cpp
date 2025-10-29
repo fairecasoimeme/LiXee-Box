@@ -462,3 +462,25 @@ void addMeasurement(PowerHistory &history, int attrId,long newValue) {
         st.last  = newValue;
     }
 }
+
+/**
+ * Remet à zéro toutes les valeurs pour un timestamp spécifique
+ * @param timeStamp Le timestamp au format "HH:MM" (ex: "15:32")
+ */
+void resetMeasurements(PowerHistory &history, const String &timeStamp) {
+    PsString targetTime(timeStamp.c_str(), PsramAllocator<char>());
+    
+    // Chercher l'enregistrement avec le timestamp donné
+    for (auto &rec : history.datas) {
+        if (rec.timeStamp == targetTime) {
+            // Remettre toutes les valeurs à zéro
+            for (auto &kv : rec.values) {
+                kv.second = 0;
+            }
+            log_d("Reset des valeurs pour le timestamp: %s", timeStamp.c_str());
+            return;
+        }
+    }
+    
+    log_w("Timestamp %s non trouvé dans l'historique", timeStamp.c_str());
+}
