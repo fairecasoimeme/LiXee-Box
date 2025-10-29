@@ -121,7 +121,130 @@ Si ce cas arrive, vous aurez sur le graphique de puissance les données d'inject
 
 ![Injection](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Injection_autoconsommation.PNG)
 
+## Les règles (automatismes)
 
+Pour accéder à toutes les règles, il faut suivre **Config** --> **Règles**  
+La page permet de suivre la liste des règles avec leur état et la date de dernière exécution.  
+Vous pourrez **créer**, **modifier** ou **supprimer** une règle.  
+
+![Liste des règles](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Rules_status.png)
+
+### Comment créer des règles
+
+* Les règles sont stockées dans un fichier JSON. 
+* Une règle peut contenir une ou plusieurs conditions.  
+* Une règle peut contenir une ou plusieurs actions.
+* Une règle peut intégrer une plage horaire (Optionnel)
+
+![Ajouter/modifier une règles](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_add_rules.png)
+
+### Structure
+Voici la structure :  
+
+    ├── Rule     
+    │   ├── name   
+	|   ├── TimeRanges
+	│   │   ├── startTime   
+    │   │   ├── endTime   
+    │   │   ├── days[...]  //1,2,3,4,5,6,7
+    │   ├── conditions   
+    │   │   ├── type   
+    │   │   ├── IEEE   
+    │   │   ├── cluster  
+    │   │   ├── attribut  
+    │   │   ├── operator   
+    │   │   ├── value  
+    │   │   ├── logic  
+    │   ├── actions   
+    │   │   ├── type   
+    │   │   ├── IEEE  
+    │   │   ├── endpoint  
+    │   │   ├── value    
+
+
+### Paramètres de Condition
+
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|-------------|------|--------|-------------|
+| `type` | ✓ | String | "device" | |
+| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
+| `cluster` | ✓ | Decimal | ID du cluster en décimal | |
+| `attribut` | ✓ | Decimal | Numéro d'attribut | |
+| `operator` | ✓ | String | "<", ">", "==", "!=", ">=", "<=" | |
+| `value` | ✓ | Decimal/String | Valeur de comparaison | Peut être un String sur les opérateurs == ou != uniquement |
+| `logic` | | String | "AND", "OR" | Uniquement pour conditions multiples |
+
+### Paramètres d'Action
+
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|-------------|------|--------|-------------|
+| `type` | ✓ | String | "onoff" / "notification" | |
+| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
+| `endpoint` | ✓ | Decimal | ID du point de terminaison | |
+| `value` | ✓ | String | Valeur de l'action | |
+
+### Paramètres plage horaire (Optionnel)
+
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|-------------|------|--------|-------------|
+| `startTime` | ✓ | String | "HH:mm" | |
+| `endTime` | ✓ | String | "HH:mm" | |
+| `days` | ✓ | Array | [1,2,3,4,5,6,7] | Chaque chiffre correspond au numéro du jour|
+
+
+Par exemple :  
+
+```json 
+{
+   "rules":[
+    {
+        "name":"rule_1",
+        "conditions" : [
+		{
+		   "type" : "device",
+		   "IEEE" : "00158d0006204fcf",
+		   "cluster" : 2820,
+		   "attribute" : 1295,
+		   "operator" : "<",
+		   "value" : 1000,
+		   "logic" : "AND"
+		}
+        ],
+        "actions" : [
+		{
+		   "type" : "onoff",
+		   "IEEE" : "a4c138bb23185d2c",
+                   "endpoint":1,
+		   "value": "1"
+		}
+        ]
+    }, {
+        "name":"rule_2",
+        "conditions" : [
+		{
+		   "type" : "device",
+		   "IEEE" : "00158d0006204fcf",
+		   "cluster" : 2820,
+		   "attribute" : 1295,
+		   "operator" : ">",
+		   "value" : 1000,
+		   "logic" : "AND"
+		}
+        ],
+        "actions" : [
+		{
+		   "type":"notification",
+           "IEEE":"",
+           "endpoint":0,
+           "value":"",
+           "title":"🚨⚡puissance > 1000",
+           "message":"🚨⚡puissance > 1000"
+		}
+        ]
+    }
+   ]
+}
+```
 
 ### Notifications
 
@@ -293,107 +416,6 @@ exemple : `bind : "1026;1029;1794"`
 | `max` | ✓ | Decimal | | Temps maximum (en secondes) pour envoyer un rapport | 
 | `timeout` | | Decimal | | En millisecondes | 
 | `change` | | Decimal | | Valeur de changement pour envoyer un rapport | 
-
-
-## Comment créer des règles
-
-Pour le moment, vous devez éditer un fichier JSON pour créer / modifier / supprimer une règle.  
-Pour le moment, vous ne pouvez créer que 10 règles.  
-Une règle peut contenir une ou plusieurs conditions.  
-Une règle peut contenir une ou plusieurs actions.  
-
-### Structure
-Voici la structure :  
-
-    ├── Rule     
-    │   ├── name   
-    │   ├── conditions   
-    │   │   ├── type   
-    │   │   ├── IEEE   
-    │   │   ├── cluster  
-    │   │   ├── attribut  
-    │   │   ├── operator   
-    │   │   ├── value  
-    │   │   ├── logic  
-    │   ├── actions   
-    │   │   ├── type   
-    │   │   ├── IEEE  
-    │   │   ├── endpoint  
-    │   │   ├── value    
-
-
-### Paramètres de Condition
-
-| Paramètre | Obligatoire | Type | Valeur | Commentaire |
-|-----------|-------------|------|--------|-------------|
-| `type` | ✓ | String | "device" | |
-| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
-| `cluster` | ✓ | Decimal | ID du cluster en décimal | |
-| `attribut` | ✓ | Decimal | Numéro d'attribut | |
-| `operator` | ✓ | String | "<", ">", "==", "!=", ">=", "<=" | |
-| `value` | ✓ | Decimal | Valeur de comparaison | |
-| `logic` | | String | "AND", "OR" | Uniquement pour conditions multiples |
-
-### Paramètres d'Action
-
-| Paramètre | Obligatoire | Type | Valeur | Commentaire |
-|-----------|-------------|------|--------|-------------|
-| `type` | ✓ | String | "onoff" | |
-| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
-| `endpoint` | ✓ | Decimal | ID du point de terminaison | |
-| `value` | ✓ | String | Valeur de l'action | |
-
-Par exemple :  
-
-```json 
-{
-   "rules":[
-    {
-        "name":"rule_1",
-        "conditions" : [
-		{
-		   "type" : "device",
-		   "IEEE" : "00158d0006204fcf",
-		   "cluster" : 2820,
-		   "attribute" : 1295,
-		   "operator" : "<",
-		   "value" : 1000,
-		   "logic" : "AND"
-		}
-        ],
-        "actions" : [
-		{
-		   "type" : "onoff",
-		   "IEEE" : "a4c138bb23185d2c",
-                   "endpoint":1,
-		   "value": "1"
-		}
-        ]
-    }, {
-        "name":"rule_2",
-        "conditions" : [
-		{
-		   "type" : "device",
-		   "IEEE" : "00158d0006204fcf",
-		   "cluster" : 2820,
-		   "attribute" : 1295,
-		   "operator" : ">",
-		   "value" : 1000,
-		   "logic" : "AND"
-		}
-        ],
-        "actions" : [
-		{
-		   "type" : "onoff",
-		   "IEEE" : "a4c138bb23185d2c",
-                   "endpoint":1,
-		   "value": "1"
-		}
-        ]
-    }
-   ]
-}
-```
 
 ## 🔌 API WEB
 Pour accéder aux commandes de l'API, allez sur http://<HOST>/<commande>
