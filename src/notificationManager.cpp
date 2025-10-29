@@ -146,7 +146,7 @@ void NotificationManager::clearAll() {
 }
 
 bool NotificationManager::saveToFile() {
-  DynamicJsonDocument doc(8192);
+  SpiRamJsonDocument doc(8192);
   JsonArray array = doc.createNestedArray("notifications");
   
   for (const Notification* notif : notifications) {
@@ -179,7 +179,7 @@ bool NotificationManager::loadFromFile() {
     return true; // Pas d'erreur, juste pas de fichier existant
   }
   
-  DynamicJsonDocument doc(8192);
+  SpiRamJsonDocument doc(8192);
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   
@@ -209,7 +209,7 @@ bool NotificationManager::loadFromFile() {
 }
 
 String NotificationManager::toJson(size_t offset, size_t limit) const {
-  DynamicJsonDocument doc(4096);
+  SpiRamJsonDocument doc(4096);
   
   size_t total = getCount();
   doc["total"] = total;
@@ -258,7 +258,7 @@ String NotificationManager::toJson(size_t offset, size_t limit) const {
 }
 
 String NotificationManager::getStatsJson() const {
-  DynamicJsonDocument doc(512);
+  SpiRamJsonDocument doc(512);
   
   int unreadCount = 0;
   for (const Notification* notif : notifications) {
