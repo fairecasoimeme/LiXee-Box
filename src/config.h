@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.8"
+#define VERSION "v2.9"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -288,6 +288,14 @@ struct SpiRamAllocator {
     return realloc(pointer, new_size);  // Réallouer si nécessaire
   }
 };
+
+struct UpdateStatus {
+      String statusManuel = "";
+      String statusAuto = "";
+      int progressAuto = -1;  // -1 = pas de MAJ, 0-100 = progression
+      int progressManuel = -1;
+      bool rebootRequested = false;
+    };
 
 // Définir un type de document JSON qui utilise la PSRAM
 using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;
