@@ -789,8 +789,9 @@ function loadPowerChart(IEEE, attribute) {
 	xhr.send();
 }*/
 
-function loadEnergyChart(IEEE, time,type) {
-    // DEBUG - vérifier l'existence du chart       
+function loadEnergyChart(IEEE, time, type) {
+    window[type + 'Period'] = time;
+    
     var xhr = getXhr();
     xhr.onreadystatechange = function() {
         if(xhr.readyState == 4) {
@@ -869,45 +870,63 @@ function loadEnergyChart(IEEE, time,type) {
             energyChart.data.labels = labels;
             energyChart.data.datasets = datasets;
             
-            // Calculer l'échelle dynamiquement
-            var allValues = [];
-            datas.forEach(function(d) {
-                keys.forEach(function(key) {
-                    var keyStr = key.replace(/'/g, '');
-                    var value = d[keyStr];
-                    if (value !== undefined && value !== null) {
-                        var info = tarifInfo[keyStr] || {};
-                        if (info.coeff && info.coeff != 1) {
-                            value = value * parseFloat(info.coeff);
-                        }
-                        allValues.push(value);
+            var minStacked = 0;  // Minimum des valeurs empilées (production)
+            var maxStacked = 0;  // Maximum des valeurs empilées (consommation)
+            
+            // Pour chaque point sur l'axe X (chaque label)
+            labels.forEach(function(label, index) {
+                var sumPositive = 0;  // Somme des valeurs positives (consommation)
+                var sumNegative = 0;  // Somme des valeurs négatives (production)
+                
+                // Parcourir tous les datasets
+                datasets.forEach(function(dataset) {
+                    var value = dataset.data[index] || 0;
+                    
+                    if (value > 0) {
+                        sumPositive += value;
+                    } else if (value < 0) {
+                        sumNegative += value;
                     }
                 });
+                
+                // Mettre à jour les min/max empilés
+                if (sumPositive > maxStacked) {
+                    maxStacked = sumPositive;
+                }
+                if (sumNegative < minStacked) {
+                    minStacked = sumNegative;
+                }
             });
-            
-            var minValue = allValues.length > 0 ? Math.min(...allValues) : 0;
-            var maxValue = allValues.length > 0 ? Math.max(...allValues) : 100;
             
             // Inclure le budget dans le calcul si défini
             var budget = window[type + 'Budget'] || 0;
             if (budget > 0) {
-                maxValue = Math.max(maxValue, budget);
+                maxStacked = Math.max(maxStacked, budget);
             }
             
-            // Calculer les limites avec marges
-            var yMin = minValue < 0 ? Math.floor(minValue * 1.2) : 0;
-            var yMax = Math.ceil(maxValue * 1.2);
+            // Calculer la plage totale
+            var range = maxStacked - minStacked;
             
-            if (yMax < 100) yMax = 100;
+            // Ajouter une marge de 10% en haut et en bas
+            var margin = range > 0 ? range * 0.1 : 10;
             
+            var yMin = minStacked < 0 ? Math.floor(minStacked - margin) : 0;
+            var yMax = Math.ceil(maxStacked + margin);
+            
+            // Assurer un minimum de 100 pour l'échelle si trop petit
+            if (yMax < 100) {
+                yMax = 100;
+            }
+                        
+            // Appliquer les limites à l'échelle Y
             energyChart.options.scales.y.min = yMin;
             energyChart.options.scales.y.max = yMax;
             
+            // Mettre à jour le graphique
             energyChart.update('active');
         }
     }
     
-    // L'URL doit correspondre à votre endpoint
     xhr.open("GET", "loadEnergyChart?IEEE=" + escape(IEEE) + "&time=" + escape(time), true);
     xhr.setRequestHeader('Content-Type', 'application/json');
     xhr.send();
@@ -931,13 +950,57 @@ function getBarColors(type, count) {
     return colors.slice(0, count);
 }
 
+// Fonction pour calculer les coûts détaillés
+function calculateDetailedCost(kwh, info, period, isProduction) {
+    var result = {
+        energy: 0,
+        subscription: 0,
+        tax: 0,
+        total: 0
+    };
+    
+    if (info.price && info.price > 0) {
+        result.energy = kwh * parseFloat(info.price);
+    }
+    
+    if (!isProduction) {
+        if (info.abo && info.abo > 0) {
+            var abonnement = parseFloat(info.abo);
+            
+            switch(period) {
+                case 'hour':
+                    result.subscription = abonnement / (30 * 24);
+                    break;
+                case 'day':
+                    result.subscription = abonnement / 30;
+                    break;
+                case 'month':
+                    result.subscription = abonnement;
+                    break;
+                case 'year':
+                    result.subscription = abonnement * 12;
+                    break;
+            }
+        }
+        
+        if (info.taxe && info.taxe > 0 && kwh > 0) {
+            result.tax = kwh * parseFloat(info.taxe);
+        }
+    }
+    
+    result.total = result.energy + result.subscription + result.tax;
+    return result;
+}
+
 // Fonction pour le tooltip personnalisé
 function getEnergyTooltipLabel(context, type) {
     var tarifInfo = window[type + 'TarifInfo'] || {};
     var keys = window[type + 'Keys'] || [];
+    var period = window[type + 'Period'] || 'hour';
     var value = context.parsed.y;
     
-    // Extraire le label pour trouver la clé
+    if (value === 0) return null;
+    
     var datasetLabel = context.dataset.label || '';
     var isProduction = datasetLabel.includes('(Prod)');
     
@@ -946,7 +1009,9 @@ function getEnergyTooltipLabel(context, type) {
     for (var i = 0; i < keys.length; i++) {
         var k = keys[i].replace(/'/g, '');
         var info = tarifInfo[k] || {};
-        var labelToMatch = isProduction ? (info.name || 'Section ' + k) + ' (Prod)' : (info.name || 'Section ' + k);
+        var labelToMatch = isProduction ? 
+            (info.name || 'Section ' + k) + ' (Prod)' : 
+            (info.name || 'Section ' + k);
         if (labelToMatch === datasetLabel) {
             keyStr = k;
             break;
@@ -955,19 +1020,22 @@ function getEnergyTooltipLabel(context, type) {
     
     var info = tarifInfo[keyStr] || {};
     var unit = info.unit || 'Wh';
+    var absValue = Math.abs(value);
+    var valueInKwh = unit === 'Wh' ? absValue / 1000 : absValue;
     
-    var label = datasetLabel + ': ' + Math.abs(value).toFixed(0) + ' ' + unit;
+    // Formater la ligne de base
+    var label = datasetLabel + ': ' + absValue.toLocaleString('fr-FR') + ' ' + unit;
     
-    // Calculer le coût si prix défini
+    // Calculer SEULEMENT énergie (+ taxes pour consommation)
     if (info.price && info.price > 0) {
-        var valueInKwh = unit === 'Wh' ? Math.abs(value) / 1000 : Math.abs(value);
         var cost = valueInKwh * parseFloat(info.price);
         
-        if (info.taxe && info.taxe > 0) {
+        // Ajouter les taxes uniquement pour la consommation
+        if (!isProduction && info.taxe && info.taxe > 0) {
             cost += valueInKwh * parseFloat(info.taxe);
         }
         
-        label += ' ≈ ' + cost.toFixed(3) + ' €';
+        label += ' (' + cost.toFixed(2) + ' €)';
     }
     
     return label;
@@ -979,15 +1047,28 @@ function getEnergyTooltipFooter(tooltipItems, type) {
     
     var tarifInfo = window[type + 'TarifInfo'] || {};
     var keys = window[type + 'Keys'] || [];
+    var period = window[type + 'Period'] || 'hour';
     
     var totalProduction = 0;
     var totalConsommation = 0;
-    var totalCostProd = 0;
-    var totalCostConso = 0;
+    
+    // Coûts pour la production (seulement énergie)
+    var prodEnergy = 0;
+    
+    // Coûts détaillés pour la consommation
+    var consoEnergy = 0, consoTax = 0;
+    
     var unit = 'Wh';
     
+    // ← NOUVEAU : Variable pour stocker l'abonnement (une seule fois)
+    var subscriptionAmount = 0;
+    var subscriptionFound = false;
+    
+    // Parcourir tous les items du tooltip
     tooltipItems.forEach(function(item) {
         var value = item.parsed.y;
+        if (value === 0) return;
+        
         var datasetLabel = item.dataset.label || '';
         var isProduction = datasetLabel.includes('(Prod)');
         
@@ -996,7 +1077,9 @@ function getEnergyTooltipFooter(tooltipItems, type) {
         for (var i = 0; i < keys.length; i++) {
             var k = keys[i].replace(/'/g, '');
             var info = tarifInfo[k] || {};
-            var labelToMatch = isProduction ? (info.name || 'Section ' + k) + ' (Prod)' : (info.name || 'Section ' + k);
+            var labelToMatch = isProduction ? 
+                (info.name || 'Section ' + k) + ' (Prod)' : 
+                (info.name || 'Section ' + k);
             if (labelToMatch === datasetLabel) {
                 keyStr = k;
                 break;
@@ -1006,52 +1089,145 @@ function getEnergyTooltipFooter(tooltipItems, type) {
         var info = tarifInfo[keyStr] || {};
         if (info.unit) unit = info.unit;
         
+        var absValue = Math.abs(value);
+        var valueInKwh = unit === 'Wh' ? absValue / 1000 : absValue;
+        
         if (value < 0) {
-            totalProduction += Math.abs(value);
+            // Production - seulement énergie
+            totalProduction += absValue;
             if (info.price && info.price > 0) {
-                var valueInKwh = unit === 'Wh' ? Math.abs(value) / 1000 : Math.abs(value);
-                totalCostProd += valueInKwh * parseFloat(info.price);
+                prodEnergy += valueInKwh * parseFloat(info.price);
             }
         } else {
-            totalConsommation += value;
+            // Consommation
+            totalConsommation += absValue;
+            
+            // Énergie
             if (info.price && info.price > 0) {
-                var valueInKwh = unit === 'Wh' ? value / 1000 : value;
-                var cost = valueInKwh * parseFloat(info.price);
-                if (info.taxe && info.taxe > 0) {
-                    cost += valueInKwh * parseFloat(info.taxe);
+                consoEnergy += valueInKwh * parseFloat(info.price);
+            }
+            
+            // Taxes (par kWh, donc additionnées)
+            if (info.taxe && info.taxe > 0) {
+                consoTax += valueInKwh * parseFloat(info.taxe);
+            }
+
+            // ← ABONNEMENT : compté UNE SEULE FOIS pour toute la période
+            if (!subscriptionFound && info.abo && info.abo > 0) {
+                var abonnement = parseFloat(info.abo);
+                
+                switch(period) {
+                    case 'hour':
+                        subscriptionAmount = abonnement / (30 * 24);
+						if (info.taxe2 && info.taxe2 > 0) {
+							consoTax += parseFloat(info.taxe2) / (30 * 24);
+						}
+                        break;
+                    case 'day':
+                        subscriptionAmount = abonnement / 30;
+						if (info.taxe2 && info.taxe2 > 0) {
+							consoTax += parseFloat(info.taxe2) / 30;
+						}
+                        break;
+                    case 'month':
+                        subscriptionAmount = abonnement;
+						if (info.taxe2 && info.taxe2 > 0) {
+							consoTax += parseFloat(info.taxe2);
+						}
+                        break;
+                    case 'year':
+                        subscriptionAmount = abonnement * 12;
+						if (info.taxe2 && info.taxe2 > 0) {
+							consoTax += parseFloat(info.taxe2) *12 ;
+						}
+                        break;
                 }
-                totalCostConso += cost;
+                
+                subscriptionFound = true; // Ne plus le compter
             }
         }
     });
     
-    var footer = '─────────────';
+    // Construire le footer
+    var footer = '\n━━━━━━━━━━━━━━━━━━━━';
     
+    // PRODUCTION (seulement revenu énergie)
     if (totalProduction > 0) {
-        footer += '\nProduction: ' + totalProduction.toFixed(0) + ' ' + unit;
-        if (totalCostProd > 0) {
-            footer += ' ≈ ' + totalCostProd.toFixed(3) + ' €';
+        footer += '\n☀️ Production: ' + totalProduction.toLocaleString('fr-FR') + ' ' + unit;
+        
+        if (prodEnergy > 0) {
+            footer += '\n   💵 Revenu: ' + prodEnergy.toFixed(2) + ' €';
+            footer += '\n   • Énergie vendue: ' + prodEnergy.toFixed(2) + ' €';
         }
     }
     
+    // CONSOMMATION (énergie + abonnement + taxes)
     if (totalConsommation > 0) {
-        footer += '\nConsommation: ' + totalConsommation.toFixed(0) + ' ' + unit;
-        if (totalCostConso > 0) {
-            footer += ' ≈ ' + totalCostConso.toFixed(3) + ' €';
+        var totalConso = consoEnergy + subscriptionAmount + consoTax;
+        
+        footer += '\n⚡Consommation: ' + totalConsommation.toLocaleString('fr-FR') + ' ' + unit;
+        
+        if (totalConso > 0) {
+            footer += '\n   💵 Coût: ' + totalConso.toFixed(2) + ' €';
+            if (consoEnergy > 0) {
+                footer += '\n   • Énergie: ' + consoEnergy.toFixed(2) + ' €';
+            }
+            if (subscriptionAmount > 0) {
+                footer += '\n   • Abonnement: ' + subscriptionAmount.toFixed(2) + ' €';
+            }
+            if (consoTax > 0) {
+                footer += '\n   • Taxes: ' + consoTax.toFixed(2) + ' €';
+            }
         }
     }
     
+    // NET (différence entre consommation et production)
     if (totalProduction > 0 && totalConsommation > 0) {
-        var net = totalConsommation - totalProduction;
-        var netCost = totalCostConso - totalCostProd;
-        footer += '\nNet: ' + net.toFixed(0) + ' ' + unit;
-        if (netCost != 0) {
-            footer += ' ≈ ' + netCost.toFixed(3) + ' €';
+        var netEnergy = totalConsommation - totalProduction;
+        var netCost = (consoEnergy + subscriptionAmount + consoTax) - prodEnergy;
+        
+        footer += '\n━━━━━━━━━━━━━━━━━━━━';
+        footer += '\n📊 Net: ' + netEnergy.toLocaleString('fr-FR') + ' ' + unit;
+        
+        footer += '\n   💵 Facture nette: ' + netCost.toFixed(2) + ' €';
+        footer += '\n   • Énergie nette: ' + (consoEnergy - prodEnergy).toFixed(2) + ' €';
+        if (subscriptionAmount > 0) {
+            footer += '\n   • Abonnement: ' + subscriptionAmount.toFixed(2) + ' €';
+        }
+        if (consoTax > 0) {
+            footer += '\n   • Taxes: ' + consoTax.toFixed(2) + ' €';
+        }
+    } else if (totalProduction === 0 || totalConsommation === 0) {
+        // Total simple
+        var total = totalProduction + totalConsommation;
+        
+        if (totalProduction === 0) {
+            // Que de la consommation
+            var totalCostAll = consoEnergy + subscriptionAmount + consoTax;
+            
+            footer += '\n━━━━━━━━━━━━━━━━━━━━';
+            footer += '\n⚡TOTAL: ' + total.toLocaleString('fr-FR') + ' ' + unit;
+            footer += '\n  💵 Coût total: ' + totalCostAll.toFixed(2) + ' €';
+            if (consoEnergy > 0) {
+                footer += '\n   • Énergie: ' + consoEnergy.toFixed(2) + ' €';
+            }
+            if (subscriptionAmount > 0) {
+                footer += '\n   • Abonnement: ' + subscriptionAmount.toFixed(2) + ' €';
+            }
+            if (consoTax > 0) {
+                footer += '\n   • Taxes: ' + consoTax.toFixed(2) + ' €';
+            }
+        } else {
+            // Que de la production
+            footer += '\n━━━━━━━━━━━━━━━━━━━━';
+            footer += '\n💵 TOTAL: ' + total.toLocaleString('fr-FR') + ' ' + unit;
+            footer += '\n   Revenu total: ' + prodEnergy.toFixed(2) + ' €';
         }
     }
     
     return footer;
 }
+
 
 function loadDistributionChart(time,type)
 {
@@ -1067,6 +1243,109 @@ function loadDistributionChart(time,type)
 	xhr.send();
 }
 
+// Fonction pour formater chaque ligne du tooltip
+function getPowerTooltipLabel(context) {
+    var value = context.parsed.y;
+    
+    // Si la valeur est 0, ne pas afficher
+    if (value === 0) return null;
+    
+    var label = context.dataset.label || '';
+    var absValue = Math.abs(value);
+    
+    // Formater : "Conso Ph1: 1 250 VA"
+    return label + ': ' + absValue.toLocaleString('fr-FR') + ' VA';
+}
+
+// Fonction pour le footer avec totaux
+function getPowerTooltipFooter(tooltipItems) {
+    if (tooltipItems.length === 0) return '';
+    
+    var totalInjection = 0;
+    var totalConsommation = 0;
+    var isTriphasé = window.powerIsTriphasé || false;
+    
+    var injectionDetails = [];
+    var consoDetails = [];
+    
+    // Parcourir tous les items du tooltip
+    tooltipItems.forEach(function(item) {
+        var value = item.parsed.y;
+        if (value === 0) return; // Ignorer les valeurs nulles
+        
+        var label = item.dataset.label || '';
+        var absValue = Math.abs(value);
+        
+        if (label.includes('Injection')) {
+            totalInjection += absValue;
+            if (isTriphasé) {
+                injectionDetails.push({
+                    phase: label.replace('Injection ', ''),
+                    value: absValue
+                });
+            }
+        } else {
+            totalConsommation += absValue;
+            if (isTriphasé) {
+                consoDetails.push({
+                    phase: label.replace('Conso ', ''),
+                    value: absValue
+                });
+            }
+        }
+    });
+    
+    var footer = '\n━━━━━━━━━━━━━━━━━━━━';
+    
+    // Injection
+    if (totalInjection > 0) {
+        footer += '\n🟢 Injection: ' + totalInjection.toLocaleString('fr-FR') + ' VA';
+        if (isTriphasé && injectionDetails.length > 0) {
+            injectionDetails.forEach(function(detail) {
+                footer += '\n   • ' + detail.phase + ': ' + detail.value.toLocaleString('fr-FR') + ' VA';
+            });
+        }
+    }
+    
+    // Consommation
+    if (totalConsommation > 0) {
+        footer += '\n🔴 Consommation: ' + totalConsommation.toLocaleString('fr-FR') + ' VA';
+        if (isTriphasé && consoDetails.length > 0) {
+            consoDetails.forEach(function(detail) {
+                footer += '\n   • ' + detail.phase + ': ' + detail.value.toLocaleString('fr-FR') + ' VA';
+            });
+        }
+    }
+    
+    // Net (soutirée - injectée)
+    if (totalInjection > 0 && totalConsommation > 0) {
+        var net = totalConsommation - totalInjection;
+        footer += '\n━━━━━━━━━━━━━━━━━━━━';
+        footer += '\n📊 Puissance nette: ' + net.toLocaleString('fr-FR') + ' VA';
+    } else if (totalInjection === 0 || totalConsommation === 0) {
+        // Total simple
+        var total = totalInjection + totalConsommation;
+        footer += '\n━━━━━━━━━━━━━━━━━━━━';
+        footer += '\n💡 TOTAL: ' + total.toLocaleString('fr-FR') + ' VA';
+    }
+    
+    // Comparaison avec la limite (goal)
+    var goal = window.powerGoal || 0;
+    if (goal > 0 && totalConsommation > 0) {
+        var percentOfGoal = (totalConsommation / goal * 100).toFixed(1);
+        footer += '\n⚡ Utilisation: ' + percentOfGoal + '% de la limite';
+        
+        if (totalConsommation > goal) {
+            var excess = totalConsommation - goal;
+            footer += '\n⚠️  Dépassement: +' + excess.toLocaleString('fr-FR') + ' VA';
+        } else {
+            var remaining = goal - totalConsommation;
+            footer += '\n✓ Marge: ' + remaining.toLocaleString('fr-FR') + ' VA';
+        }
+    }
+    
+    return footer;
+}
 
 function getFormattedDate()
 {
