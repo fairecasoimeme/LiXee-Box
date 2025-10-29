@@ -709,6 +709,29 @@ Merci à tous les auteurs des bibliothèques tierces utilisées dans ce projet :
 Merci à [ZigStar](https://github.com/mercenaruss) pour la mise à jour OTA
 
 ## Journal des modifications
+### V2.9
+
+* Intégration graphique des règles
+  * Liste et statut des règles
+  * Ajout / modification / suppression
+* Correction sur la RAZ des données de puissances temps réels
+* Ajout de la gestion de tous les tarifs (abonnement + taxes) dans les graphes
+* Optimisation des fichiers de fonctions javascript
+* Correction de la progressBar pour une meilleure compatibilité mobile
+* Correction du menu. Informations systèmes dans le menu A propos
+* Correction divers bugs
+
+### V2.8
+
+* Ajout de la gestion de l'injection avec panneaux photovoltaïques en mode autoconsommation
+  * Si la production > Consommation, l'injection apparaitra dans le graphe de puissance et la jauge
+  * Notification paramétrage pour être averti
+* Mise à jour de la librairie graphique pour plus de fonction et stabilité
+* Ajout de notifications manquantes
+* Correction sur la reconnexion WiFi
+* Correction bug sur le budget
+* Correction RAZ de l'injection
+* Correction bugs mineurs
 
 ### V2.7
 
