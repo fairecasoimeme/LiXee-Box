@@ -10,6 +10,14 @@
 #include "SPIFFS_ini.h"
 #include "zigbee.h"
 #include "onoff.h"
+#include "notificationManager.h"
+#include <TimeLib.h>
+
+extern String Hour;
+extern String Minute;
+
+extern NotificationManager notificationManager;
+extern CircularBuffer<Notification, 10> *notifList;
 
 // Charge le JSON en PSRAM et construit le vector<Rule>
 bool RulesManager::loadFromFile(const char* path) {
@@ -37,6 +45,24 @@ bool RulesManager::loadFromFile(const char* path) {
         // Nom
         rule.name = PsString(r["name"] | "", PsramAllocator<char>());
 
+        // ← NOUVEAU: Plages horaires
+        JsonArray timeRangesArr = r["timeRanges"].as<JsonArray>();
+        rule.timeRanges.clear();
+        rule.timeRanges.reserve(timeRangesArr.size());
+        for (JsonObject tr : timeRangesArr) {
+            TimeRange timeRange;
+            timeRange.startTime = PsString(tr["startTime"] | "", PsramAllocator<char>());
+            timeRange.endTime   = PsString(tr["endTime"]   | "", PsramAllocator<char>());
+            
+            JsonArray daysArr = tr["days"].as<JsonArray>();
+            timeRange.days.clear();
+            timeRange.days.reserve(daysArr.size());
+            for (JsonVariant d : daysArr) {
+                timeRange.days.push_back(d.as<int>());
+            }
+            rule.timeRanges.push_back(std::move(timeRange));
+        }
+
         // Conditions
         JsonArray condArr = r["conditions"].as<JsonArray>();
         rule.conditions.clear();
@@ -63,6 +89,8 @@ bool RulesManager::loadFromFile(const char* path) {
             act.IEEE     = PsString(a["IEEE"]    | "", PsramAllocator<char>());
             act.endpoint = a["endpoint"] | 0;
             act.value    = PsString(a["value"]   | "", PsramAllocator<char>());
+            act.title    = PsString(a["title"]   | "", PsramAllocator<char>());
+            act.message  = PsString(a["message"] | "", PsramAllocator<char>());
             rule.actions.push_back(std::move(act));
         }
 
@@ -101,10 +129,65 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
     return false;
 }
 
+// Vérifie si l'heure actuelle est dans une des plages horaires définies
+bool RulesManager::isInTimeRange(const Rule& rule) const {
+    // Si pas de plages horaires définies, la règle est toujours valide
+    if (rule.timeRanges.size() == 0) {
+        return true;
+    }
+    
+    // Obtenir l'heure actuelle
+    int currentHour = Hour.toInt();
+    int currentMinute = Minute.toInt();
+    int currentTimeMinutes = currentHour * 60 + currentMinute;
+    
+    // Obtenir le jour de la semaine (1=Lun, 2=Mar, ..., 7=Dim)
+    int currentDay = weekday();  // 1-7 (1=Dimanche selon TimeLib)
+    // Conversion: TimeLib (Dim=1) → ISO (Lun=1, Dim=7)
+    int dayISO = (currentDay == 1) ? 7 : (currentDay - 1);
+    
+    // Vérifier chaque plage
+    for (const auto& timeRange : rule.timeRanges) {
+        // Vérifier si le jour actuel est dans la plage
+        bool dayMatch = false;
+        for (int day : timeRange.days) {
+            if (day == dayISO) {
+                dayMatch = true;
+                break;
+            }
+        }
+        
+        if (!dayMatch) continue;  // Jour non valide pour cette plage
+        
+        // Parser startTime et endTime
+        String startStr = String(timeRange.startTime.c_str());
+        String endStr = String(timeRange.endTime.c_str());
+        
+        int startHour = startStr.substring(0, 2).toInt();
+        int startMin = startStr.substring(3, 5).toInt();
+        int startMinutes = startHour * 60 + startMin;
+        
+        int endHour = endStr.substring(0, 2).toInt();
+        int endMin = endStr.substring(3, 5).toInt();
+        int endMinutes = endHour * 60 + endMin;
+        
+        // Vérifier si l'heure actuelle est dans la plage
+        if (currentTimeMinutes >= startMinutes && currentTimeMinutes <= endMinutes) {
+            return true;  // On est dans une plage valide
+        }
+    }
+    
+    return false;  // Aucune plage valide
+}
+
 // Applique toutes les règles et exécute les actions si besoin
 void RulesManager::applyRules() {
     for (const auto& rule : rules_) {
+        if (!isInTimeRange(rule)) {
+            continue;
+        }
         bool result = (rule.conditions.size() > 0);
+        
         for (const auto& cond : rule.conditions) {
             bool ok = evaluateCondition(cond);
             if (cond.logic == "AND") result &= ok;
@@ -134,6 +217,14 @@ void RulesManager::applyRules() {
                     SendOnOffAction(shortAddr.toInt(), act.endpoint, act.value.c_str());
                     log_w("Action exec: %s ep=%d val=%s",
                           act.type.c_str(), act.endpoint, act.value.c_str());
+                }else if (act.type == "notification") {
+                    notifList->push(Notification{act.title.c_str(),act.message.c_str(),FormattedDate,0,0});
+                    notificationManager.addNotification(
+                        String(act.title.c_str()), 
+                        String(act.message.c_str()), 
+                        0 
+                    );
+                    log_w("Action exec: notification - title='%s'", act.title.c_str());
                 }
             }
         }
@@ -141,6 +232,9 @@ void RulesManager::applyRules() {
             String newVal = "0|" + FormattedDate;
             config_write("statusRules.json", rule.name.c_str(), newVal);
         }
+
+
+
     }
 }
 

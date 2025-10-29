@@ -20,17 +20,26 @@ struct Condition {
     PsString logic;
 };
 
+struct TimeRange {
+    PsString startTime;  // Format "HH:MM"
+    PsString endTime;    // Format "HH:MM"
+    std::vector<int, PsramAllocator<int>> days;  // 1=Lun, 2=Mar, ..., 7=Dim
+};
+
 // Action de règle, tout en PSRAM
 struct ActionRule {
     PsString type;
     PsString IEEE;
     int      endpoint;
     PsString value;
+    PsString title;   
+    PsString message;
 };
 
 // Règle complète stockée en PSRAM
 struct Rule {
     PsString                                        name;
+    std::vector<TimeRange,   PsramAllocator<TimeRange>>   timeRanges; 
     std::vector<Condition,   PsramAllocator<Condition>>   conditions;
     std::vector<ActionRule,  PsramAllocator<ActionRule>>  actions;
 };
@@ -65,7 +74,8 @@ private:
     // Extraction et évaluation
     double getCurrentValue(const char* type, int cluster, int attribute, const char* IEEE) const;
     bool   evaluateCondition(const Condition& cond) const;
-
+    bool   isInTimeRange(const Rule& rule) const;
+    
     // Toutes les règles stockées en PSRAM
     std::vector<Rule, PsramAllocator<Rule>> rules_;
 };
