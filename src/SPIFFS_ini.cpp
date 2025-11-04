@@ -1208,7 +1208,7 @@ String config_read(String path,String key)
   char name_with_extension[64];
   strcpy(name_with_extension,prefix);
   strcat(name_with_extension,path.c_str());
-  File file = LittleFS.open(name_with_extension, "r");
+  File file = LittleFS.open(name_with_extension, "r+");
   if (!file)
   {
     DEBUG_PRINTLN(F("Impossible de lire le fichier (config_read) "));
