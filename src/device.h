@@ -9,6 +9,7 @@
 #include "powerHistory.h"
 #include "energyHistory.h"
 #include "PsramAllocator.h"
+#include "TemplateData.h" 
 
 using PsString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
 
@@ -124,12 +125,26 @@ public:
     String getPowerW();
     float getAveragePower() const;
 
+    TemplateData* getTemplate();
+    float GetAttributeCoefficient(int cluster, int attribute);
+    // Recharger le template (si modifié)
+    bool reloadTemplate();
+    
+    // Vérifier si le template est chargé
+    bool hasTemplate() const { return _template != nullptr; }
+    
+    // Libérer le template (si besoin de RAM)
+    void clearTemplate();
+
 private:
     // Parse un contenu JSON pour remplir _info et _values
     bool parseJsonToDevice(const String &jsonString);
 
     // Construit un JSON (sous forme de String) depuis _info et _values
     String buildJsonFromDevice();
+
+    bool loadTemplate();
+
     // Infos "INFO"
     Info _info;
     IndexData _indexMem[11];
@@ -143,4 +158,6 @@ private:
 
     // Identifiant du device (nom de fichier sans extension, ex: "123")
     String _deviceID;
+
+    TemplateData* _template = nullptr;
 };

@@ -3,6 +3,9 @@
 #include <LittleFS.h>       // ou #include <SPIFFS.h>, à adapter
 #include <ArduinoJson.h>
 #include "SPIFFS_ini.h"
+#include "TemplateCache.h" 
+
+extern TemplateCache templateCache;
 
 //-------------------------------------
 // Constructeur / Destructeur
@@ -15,6 +18,7 @@ DeviceData::DeviceData(const String &filename, const String &deviceID)
 
 DeviceData::~DeviceData() {
     // Rien à libérer (PSRAM free via delete)
+    clearTemplate();
 }
 
 time_t DeviceData::getLastSeenEpoch() const {
@@ -43,10 +47,14 @@ bool DeviceData::loadFromFile() {
     }
 
     String jsonContent = file.readString();
-
     file.close();
 
-    return parseJsonToDevice(jsonContent);
+    bool success = parseJsonToDevice(jsonContent);
+    if (success) {
+        loadTemplate();  // Charge le template (lazy)
+    }
+
+    return success;
 }
 
 //-------------------------------------
@@ -296,4 +304,85 @@ void DeviceData::setInfoLinkyMode(const String &val) {
 
 void DeviceData::setInfoPowerSocket(const String &val) {
     _info.powerSocket = val;
+}
+
+bool DeviceData::loadTemplate() {
+    // Si déjà chargé, ne rien faire
+    if (_template != nullptr) {
+        return true;
+    }
+    
+    // Vérifier que device_id et model sont remplis
+    if (_info.device_id.isEmpty()) {
+        log_w("Device ID vide, impossible de charger le template");
+        return false;
+    }
+    
+    // Nom du fichier template: device_id.json
+    String filename = _info.device_id + ".json";
+    
+    // Model pour sélection dans le JSON multi-modèles
+    String model = _info.model;
+    if (model.isEmpty()) {
+        model = "default";
+    }
+    
+    // Obtenir depuis le cache global
+    _template = templateCache.get(filename, model);
+    
+    if (_template) {
+        log_d("Template chargé pour device %s (model: %s): %d states, %d actions",
+              _info.device_id.c_str(), 
+              model.c_str(),
+              _template->StateSize(),
+              _template->ActionSize());
+        return true;
+    } else {
+        log_w("Template introuvable pour device %s (fichier: %s, model: %s)",
+              _info.device_id.c_str(),
+              filename.c_str(),
+              model.c_str());
+        return false;
+    }
+}
+
+TemplateData* DeviceData::getTemplate() {
+    // Si pas encore chargé, charger maintenant
+    if (_template == nullptr) {
+        loadTemplate();
+    }
+    
+    return _template;
+}
+
+bool DeviceData::reloadTemplate() {
+    // Libérer l'ancien
+    _template = nullptr;  // Le cache gère la mémoire
+    
+    // Recharger
+    return loadTemplate();
+}
+
+void DeviceData::clearTemplate() {
+    // Note: Le template est géré par le cache global,
+    // on se contente de retirer notre référence
+    _template = nullptr;
+}
+
+float DeviceData::GetAttributeCoefficient(int cluster, int attribute)
+{
+  float coefficient = 1.0; // Valeur par défaut
+  if (_template != nullptr)
+  {
+    for (int i = 0; i < _template->StateSize(); i++)
+    {
+      if (_template->states[i].cluster == cluster && _template->states[i].attribute == attribute)
+      {
+        coefficient = _template->states[i].coefficient;
+        break;
+      }
+    }
+
+  }
+  return coefficient;
 }
