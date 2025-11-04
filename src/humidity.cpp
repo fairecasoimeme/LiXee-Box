@@ -38,22 +38,16 @@ void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char*
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"0405",String(attribute),"numeric",String(tmp));
+            mqttPublish(inifile.substring(0,16),"1029",String(attribute),"numeric",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0405",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"1029",(String)attribute,tmpvalue.c_str());
           }
 
-          // Device update value;
-          if (!deviceList->isFull())
-          {
-            int shortaddr = GetShortAddr(inifile);
-            deviceList->push(Device{shortaddr,1029,attribute,String(strtol(tmp.c_str(), NULL, 16))});
-          }
         }
         for (size_t i = 0; i < devices.size(); i++) 
         {
@@ -61,6 +55,14 @@ void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char*
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
             device->setValue(std::string("0405"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+
+            if (!deviceList->isFull())
+            {
+              float adjustedValue = strtol(tmp.c_str(), NULL, 16) * device->GetAttributeCoefficient(1029,attribute);
+              deviceList->push(Device{device->getInfo().shortAddr.toInt(),1029,attribute,String(adjustedValue)});
+            }
+
+
             break;
           }
         }
@@ -79,14 +81,14 @@ void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char*
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"0405",String(attribute),"string",String(tmp));
+            mqttPublish(inifile.substring(0,16),"1029",String(attribute),"string",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0405",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"1029",(String)attribute,tmpvalue.c_str());
           }
 
           // Device update value;

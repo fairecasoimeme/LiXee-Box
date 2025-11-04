@@ -38,7 +38,7 @@ void DoorlockManage(String inifile,int attribute,uint8_t datatype,int len, char*
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"0101",String(attribute),"string",String(tmp));
+            mqttPublish(inifile.substring(0,16),"257",String(attribute),"string",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)

@@ -73,14 +73,14 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(manufacturer));
+            mqttPublish(inifile.substring(0,16),"0",String(attribute),"string",String(manufacturer));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"0",(String)attribute,tmpvalue.c_str());
           }
 
          
@@ -110,14 +110,14 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(model));
+            mqttPublish(inifile.substring(0,16),"0",String(attribute),"string",String(model));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"0",(String)attribute,tmpvalue.c_str());
           }
         }
         for (size_t i = 0; i < devices.size(); i++) 
@@ -166,14 +166,14 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(soft));
+            mqttPublish(inifile.substring(0,16),"0",String(attribute),"string",String(soft));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"0",(String)attribute,tmpvalue.c_str());
           }
         }
         for (size_t i = 0; i < devices.size(); i++) 
@@ -199,14 +199,14 @@ void BasicManage(String inifile,int attribute,uint8_t datatype,int len, char* da
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            mqttPublish(inifile.substring(0,16),"0000",String(attribute),"string",String(tmp));
+            mqttPublish(inifile.substring(0,16),"0",String(attribute),"string",String(tmp));
           }
           //WebPush
           if (ConfigSettings.enableWebPush)
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0000",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"0",(String)attribute,tmpvalue.c_str());
           }
         }
         for (size_t i = 0; i < devices.size(); i++) 
