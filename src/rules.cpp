@@ -74,7 +74,15 @@ bool RulesManager::loadFromFile(const char* path) {
             cond.cluster   = c["cluster"]   | 0;
             cond.attribute = c["attribute"] | 0;
             cond.op        = PsString(c["operator"]  | "", PsramAllocator<char>());
-            cond.value     = c["value"]     | 0;
+            if (c["value"].is<const char*>()) {
+                cond.value = PsString(c["value"].as<const char*>(), PsramAllocator<char>());
+            } else if (c["value"].is<int>()) {
+                char buf[32];
+                sprintf(buf, "%d", c["value"].as<int>());
+                cond.value = PsString(buf, PsramAllocator<char>());
+            } else {
+                cond.value = PsString("", PsramAllocator<char>());
+            }
             cond.logic     = PsString(c["logic"]     | "", PsramAllocator<char>());
             rule.conditions.push_back(std::move(cond));
         }
@@ -115,17 +123,122 @@ double RulesManager::getCurrentValue(const char* type, int cluster, int attribut
     return -1;
 }
 
+String RulesManager::getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE) const {
+    if (strcmp(type, "device") == 0) {
+        char tmpKey[5];
+        sprintf(tmpKey, "%04X", cluster);
+        String path = String(IEEE) + ".json";
+        String tmp = getZigbeeValue(path, tmpKey, String(attribute));
+        if (tmp != nullptr && tmp.length()) {
+            return tmp;  // ← Retourne directement la valeur texte
+        }
+    }
+    return "";  // Retourne string vide si pas trouvé
+}
+
+// Vérifie si une string contient un nombre valide
+bool RulesManager::isNumeric(const String& str) const {
+    if (str.length() == 0) return false;
+    
+    // Si commence par "0x" ou "0X", c'est un hex
+    if (str.startsWith("0x") || str.startsWith("0X")) return true;
+    
+    // Vérifier si tous les caractères sont des chiffres (éventuellement avec -)
+    for (size_t i = 0; i < str.length(); i++) {
+        char c = str.charAt(i);
+        if (i == 0 && c == '-') continue;  // Signe négatif au début OK
+        if (!isDigit(c) && !isHexadecimalDigit(c)) return false;
+    }
+    return true;
+}
+
+// Parse un nombre (décimal ou hexadécimal)
+double RulesManager::parseNumber(const String& str) const {
+    // Si commence par "0x", c'est de l'hexadécimal
+    if (str.startsWith("0x") || str.startsWith("0X")) {
+        return (double)strtol(str.c_str(), nullptr, 16);
+    }
+    
+    // Sinon, vérifier si c'est de l'hex sans préfixe (tous les caractères sont hex)
+    bool allHex = true;
+    for (size_t i = 0; i < str.length(); i++) {
+        if (!isHexadecimalDigit(str.charAt(i))) {
+            allHex = false;
+            break;
+        }
+    }
+    
+    if (allHex && str.length() <= 4) {
+        // Probablement de l'hex sans préfixe (comme "0019")
+        return (double)strtol(str.c_str(), nullptr, 16);
+    }
+    
+    // Sinon, c'est du décimal
+    return str.toDouble();
+}
+
 // Évalue une condition
 bool RulesManager::evaluateCondition(const Condition& cond) const {
-    double cur = getCurrentValue(cond.type.c_str(), cond.cluster, cond.attribute, cond.IEEE.c_str());
-    if (cur == -9999999) return false;
-
-    if (cond.op == "==") return cur == cond.value;
-    if (cond.op == "!=") return cur != cond.value;
-    if (cond.op == "<")  return cur <  cond.value;
-    if (cond.op == "<=") return cur <= cond.value;
-    if (cond.op == ">")  return cur >  cond.value;
-    if (cond.op == ">=") return cur >= cond.value;
+    String curStr = getCurrentValueAsString(cond.type.c_str(), cond.cluster, cond.attribute, cond.IEEE.c_str());
+    
+    if (curStr == "") return false;  // Valeur non trouvée
+    
+    String condValueStr = String(cond.value.c_str());
+    
+    // Détecter si on a affaire à des NOMBRES ou du TEXTE
+    bool currentIsNumber = isNumeric(curStr);
+    bool condIsNumber = isNumeric(condValueStr);
+    
+    // Pour == et !=, on peut comparer texte OU nombres
+    if (cond.op == "==") {
+        // Si les deux sont du texte, comparaison textuelle
+        if (!currentIsNumber || !condIsNumber) {
+            String curTrimmed = curStr;
+            String condTrimmed = condValueStr;
+            curTrimmed.trim();
+            condTrimmed.trim();
+            Serial.printf("Comparaison texte : cur='%s' vs cond='%s'\n", 
+                     curStr.c_str(), condValueStr.c_str());
+            return curTrimmed.equalsIgnoreCase(condTrimmed);
+        }
+        // Si les deux sont des nombres, comparaison numérique
+        double curNum = parseNumber(curStr);
+        double condValueNum = parseNumber(condValueStr);
+        return curNum == condValueNum;
+    }
+    
+    if (cond.op == "!=") {
+        // Si les deux sont du texte, comparaison textuelle
+        if (!currentIsNumber || !condIsNumber) {
+            String curTrimmed = curStr;
+            String condTrimmed = condValueStr;
+            curTrimmed.trim();
+            condTrimmed.trim();
+            Serial.printf("Comparaison texte : cur='%s' vs cond='%s'\n", 
+                     curStr.c_str(), condValueStr.c_str());
+            return curTrimmed.equalsIgnoreCase(condTrimmed);
+        }
+        // Si les deux sont des nombres, comparaison numérique
+        double curNum = parseNumber(curStr);
+        double condValueNum = parseNumber(condValueStr);
+        return curNum != condValueNum;
+    }
+    
+    // Pour <, <=, >, >= : UNIQUEMENT numérique (pas de sens avec du texte)
+    if (!currentIsNumber || !condIsNumber) {
+        log_w("Comparaison numérique impossible avec du texte : cur='%s' cond='%s'", 
+              curStr.c_str(), condValueStr.c_str());
+        return false;  // Impossible de comparer du texte avec <, >, etc.
+    }
+    
+    double curNum = parseNumber(curStr);
+    double condValueNum = parseNumber(condValueStr);
+    
+    if (cond.op == "<")  return curNum <  condValueNum;
+    if (cond.op == "<=") return curNum <= condValueNum;
+    if (cond.op == ">")  return curNum >  condValueNum;
+    if (cond.op == ">=") return curNum >= condValueNum;
+    
     return false;
 }
 

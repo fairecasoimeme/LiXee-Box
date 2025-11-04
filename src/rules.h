@@ -16,7 +16,7 @@ struct Condition {
     int      cluster;
     int      attribute;
     PsString op;
-    int      value;
+    PsString value;  
     PsString logic;
 };
 
@@ -73,8 +73,12 @@ public:
 private:
     // Extraction et évaluation
     double getCurrentValue(const char* type, int cluster, int attribute, const char* IEEE) const;
+    String getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE) const;
     bool   evaluateCondition(const Condition& cond) const;
     bool   isInTimeRange(const Rule& rule) const;
+
+    bool   isNumeric(const String& str) const;
+    double parseNumber(const String& str) const;
     
     // Toutes les règles stockées en PSRAM
     std::vector<Rule, PsramAllocator<Rule>> rules_;
