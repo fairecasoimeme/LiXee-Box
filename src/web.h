@@ -1,4 +1,4 @@
-Template * GetTemplate(int deviceId, String model);
+/*Template * GetTemplate(int deviceId, String model);*/
 bool TemplateExist(int deviceId);
 
 String createEnergyGraph(String IEEE, String Type, int budget);

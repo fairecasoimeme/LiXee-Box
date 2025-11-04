@@ -33,6 +33,8 @@
 #include "microtar.h"
 #include "device.h"
 #include "notificationManager.h"
+#include "TemplateData.h"
+#include "TemplateCache.h"
 
 extern std::vector<DeviceData*> devices;
 
@@ -73,6 +75,8 @@ UpdateStatus updateStatus;
 HTTPClient clientWeb;
 
 AsyncWebServer serverWeb(80);
+
+TemplateCache templateCache(true);
 
 #define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/update.tar"
 
@@ -135,7 +139,7 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/energy.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes'>"
     "<style>"
       "body {"
         "background-color: #f7f9fc;"
@@ -160,6 +164,12 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
         "height: auto !important;"
       "}"
       "#donut-chart svg{text-align:center;width:100%;margin-top:-50px;height:250px;}"
+      "#power-chart, #energy-chart, #gaz-chart, #water-chart {"
+      "     touch-action: none !important;"
+      "    -webkit-user-select: none;"
+      "    user-select: none;"
+      "}"
+
     "</style>"
     "</head>";
 
@@ -3386,6 +3396,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
       <div class='card-body'>
           <canvas id='power-chart' height="342"></canvas>
       </div>
+
       <a href='javascript:void(0)' onclick='showPopup("popupHelpApparentPower")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
         <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
           <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
@@ -4809,7 +4820,7 @@ bool TemplateExist(int deviceId)
   }
 }
 
-void setTemplateElement(State &e, JsonVariant v) 
+/*void setTemplateElement(State &e, JsonVariant v) 
 {
     strlcpy(e.name, v[F("name")], sizeof(e.name));
     e.cluster = (int)strtol(v[F("cluster")], nullptr, 16);
@@ -4859,8 +4870,6 @@ void parseActionArray(JsonArray actionArray, Template* t)
     t->ActionSize = i;
 }
 
-
-
 Template* GetTemplate(int deviceId, String model) 
 {
     Template *t = (Template *) ps_malloc(sizeof(Template));
@@ -4887,11 +4896,6 @@ Template* GetTemplate(int deviceId, String model)
 
     // Déterminer le modèle à utiliser
     const char* modelKey = doc.containsKey(model) ? model.c_str() : "default";
-    /*JsonArray statusArray = doc[modelKey][0][F("status")].as<JsonArray>();
-    JsonArray actionArray = doc[modelKey][0][F("action")].as<JsonArray>();
-
-    parseStatusArray(statusArray, t);
-    parseActionArray(actionArray, t);*/
     JsonObject modelObj = doc[modelKey][0];
     if (modelObj) {
         JsonArray statusArray = modelObj["status"].as<JsonArray>();
@@ -4904,7 +4908,7 @@ Template* GetTemplate(int deviceId, String model)
     
 
     return t;
-}
+}*/
 
 /*Template * GetTemplate(int deviceId, String model)
 {
@@ -5172,6 +5176,18 @@ Template* GetTemplate(int deviceId, String model)
   return t;
 }*/
 
+TemplateData* getTemplateForDevice(DeviceData* device) {
+    if (!device) return nullptr;
+    String deviceId = device->getInfo().device_id;
+    String model = device->getInfo().model;
+    if (deviceId.isEmpty()) return nullptr;
+    if (model.isEmpty()) model = "default";
+    return templateCache.get(deviceId + ".json", model);
+}
+
+
+
+
 bool existDashboard(String inifile)
 {
   String tmp = ini_read(inifile, "dashboard", "enable");
@@ -5427,6 +5443,8 @@ String createPowerGraph(String IEEE)
   result += F("window.powerIsTriphasé = ");
   result += isTriphase ? F("true") : F("false");
   result += F(";");
+
+  result += F("const isMobile = isMobileDevice();");
   
   result += F("window.powerChart = new Chart(ctx, {");
   result += F(" type: 'bar',");
@@ -5458,18 +5476,29 @@ String createPowerGraph(String IEEE)
   result += F("  maintainAspectRatio: false,");
   result += F("  animation: false,");
   result += F("  interaction: {");
-  result += F("   mode: 'index',"); // ← MODE INDEX pour grouper
-  result += F("   intersect: false");
+  result += F("   mode: 'index',"); 
+  result += F("   intersect: false,"); 
+  result += F("   events: isMobile ? ['click', 'touchstart'] : ['mousemove', 'mouseout', 'click']"); 
   result += F("  },");
+
   result += F("  scales: {");
   result += F("   x: {");
   result += F("    stacked: true,");
-  result += F("    ticks: { maxRotation: 70, minRotation: 70, autoSkip: true, maxTicksLimit: 20 }");
+  result += F("    ticks: {");
+  result += F("     maxRotation: isMobile ? 90 : 70,"); // ← Plus vertical sur mobile
+  result += F("     minRotation: isMobile ? 90 : 70,");
+  result += F("     autoSkip: true,");
+  result += F("     maxTicksLimit: isMobile ? 12 : 20,"); // ← Moins de labels sur mobile
+  result += F("     font: { size: isMobile ? 10 : 12 }"); // ← Texte plus petit sur mobile
+  result += F("    }");
   result += F("   },");
   result += F("   y: {");
   result += F("    stacked: true,");
   result += F("    beginAtZero: false,");
-  result += F("    ticks: { callback: function(value) { return value + ' VA'; } }");
+ result += F("    ticks: {");
+  result += F("     callback: function(value) { return value + ' VA'; },");
+  result += F("     font: { size: isMobile ? 10 : 12 }"); // ← Texte plus petit sur mobile
+  result += F("    }");
   result += F("   }");
   result += F("  },");
   result += F("  barPercentage: 0.9,");
@@ -5477,31 +5506,36 @@ String createPowerGraph(String IEEE)
 
   result += F("  plugins: {");
   result += F("   zoom: {");
-  result += F("    limits: {");
-  result += F("     x: { min: 'original', max: 'original' }"); // Limites de zoom
-  result += F("    },");
-  result += F("    pan: {");
-  result += F("     enabled: true,");
-  result += F("     mode: 'x',");
-  result += F("     modifierKey: 'ctrl'"); // Pan avec Ctrl + glisser
-  result += F("    },");
-  result += F("    zoom: {");
-  result += F("     wheel: {");
-  result += F("      enabled: true,");
-  result += F("      speed: 0.1"); // Vitesse du zoom
-  result += F("     },");
-  result += F("     pinch: {");
-  result += F("      enabled: true");
-  result += F("     },");
-  result += F("     mode: 'x',");
-  result += F("     drag: {");
-  result += F("      enabled: true,"); // Zoom par sélection rectangle
-  result += F("      backgroundColor: 'rgba(30, 136, 229, 0.3)'");
-  result += F("     }");
-  result += F("    }");
-  result += F("   },");
+result += F("    limits: {");
+result += F("     x: { min: 'original', max: 'original', minRange: isMobile ? 5 : 3 }"); // ← Zoom minimum
+result += F("    },");
+result += F("    pan: {");
+result += F("     enabled: true,");
+result += F("     mode: 'x',");
+result += F("     modifierKey: isMobile ? null : 'ctrl',");
+result += F("     threshold: isMobile ? 20 : 0"); // ← Seuil plus élevé sur mobile
+result += F("    },");
+result += F("    zoom: {");
+result += F("     wheel: {");
+result += F("      enabled: !isMobile,");
+result += F("      speed: 0.1");
+result += F("     },");
+result += F("     pinch: {");
+result += F("      enabled: isMobile,");
+result += F("      threshold: 15,"); // ← Seuil de détection
+result += F("      sensitivity: 1"); // ← Sensibilité du pinch
+result += F("     },");
+result += F("     mode: 'x',");
+result += F("     drag: {");
+result += F("      enabled: !isMobile"); // ← Pas de drag sur mobile
+result += F("     }");
+result += F("    }");
+result += F("   },");
 
   result += F("   tooltip: {");
+  result += F("    enabled: false,");
+  result += F("    mode: 'index',");
+  result += F("    intersect: false,");
   result += F("    backgroundColor: 'rgba(133, 133, 133, 0.65)',");
   result += F("    callbacks: {");
   result += F("     title: function(tooltipItems) {");
@@ -5519,14 +5553,20 @@ String createPowerGraph(String IEEE)
   result += F("     }");
   result += F("    }");
   result += F("   },");
-  result += F("   legend: { display: true, position: 'top' }");
+  result += F("   legend: {");
+  result += F("    display: true,");
+  result += F("    position: 'top',");
+  result += F("    labels: {");
+  result += F("     font: { size: isMobile ? 11 : 12 },"); // ← Légende plus petite sur mobile
+  result += F("     padding: isMobile ? 8 : 10,");
+  result += F("     boxWidth: isMobile ? 30 : 40"); // ← Box plus petite sur mobile
+  result += F("    }");
+  result += F("   },");
   
-  // Ajouter l'annotation si goal > 0
+  result += F("   annotation: {");
+  result += F("    annotations: {");
   if (goal > 0)
   {
-    result += F(",");
-    result += F("   annotation: {");
-    result += F("    annotations: {");
     result += F("     goalLine: {");
     result += F("      type: 'line',");
     result += F("      yMin: ");
@@ -5548,13 +5588,130 @@ String createPowerGraph(String IEEE)
     result += F("       color: 'white'");
     result += F("      }");
     result += F("     }");
-    result += F("    }");
-    result += F("   }");
+
   }
+  result += F("    }");
+  result += F("   }");
+  result += F("  },"); // Fermeture plugins
+
+  result += F("  onHover: function(event, activeElements) {");
+  result += F("   if (isMobile) return;"); // ← Pas de hover sur mobile
   
-  result += F("  }"); // Fermeture plugins
+  result += F("   const chart = this;");
+  result += F("   event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';");
+
+  result += F("   chart.data.datasets.forEach(function(dataset) {");
+  result += F("    dataset.borderWidth = dataset.data.map(function() { return 0; });");
+  result += F("   });");
+
+  result += F("   if (activeElements.length > 0) {");
+  result += F("    const index = activeElements[0].index;");
+  result += F("    const label = chart.data.labels[index];");
+
+  result += F("    chart.data.datasets.forEach(function(dataset) {");
+  result += F("     dataset.borderWidth = dataset.data.map(function(d, i) {");
+  result += F("      return i === index ? 3 : 0;");
+  result += F("     });");
+  result += F("    });");
+
+  result += F("    let totalHeight = 0;");
+  result += F("    chart.data.datasets.forEach(function(dataset) {");
+  result += F("     const value = dataset.data[index] || 0;");
+  result += F("     if (value > 0) totalHeight += value;");
+  result += F("    });");
+
+  result += F("    chart.options.plugins.annotation.annotations.hoverArrow = {");
+  result += F("     type: 'label',");
+  result += F("     xValue: label,");
+  result += F("     yValue: totalHeight,");
+  result += F("     content: '▼',");
+  result += F("     color: '#525252ff',");
+  result += F("     font: { size: 16, weight: 'bold' },");
+  result += F("     yAdjust: -15");
+  result += F("    };");
+
+  result += F("   } else {");
+  result += F("    delete chart.options.plugins.annotation.annotations.hoverArrow;");
+  result += F("   }");
+
+  result += F("   chart.update('none');");
+  result += F("  },");
+
+  // ← CLIC : Fonctionne pour desktop ET mobile
+  result += F("  onClick: function(evt, activeElements) {");
+  result += F("   const chart = this;");
+  
+  // ← Sur mobile : gérer aussi la mise en évidence de la barre
+  result += F("   if (isMobile) {");
+  result += F("    chart.data.datasets.forEach(function(dataset) {");
+  result += F("     dataset.borderWidth = dataset.data.map(function() { return 0; });");
+  result += F("    });");
+  result += F("    if (activeElements.length > 0) {");
+  result += F("     const index = activeElements[0].index;");
+  result += F("     const label = chart.data.labels[index];");
+  result += F("     chart.data.datasets.forEach(function(dataset) {");
+  result += F("      dataset.borderWidth = dataset.data.map(function(d, i) {");
+  result += F("       return i === index ? 4 : 0;"); // ← Bordure plus épaisse sur mobile
+  result += F("      });");
+  result += F("     });");
+  
+  // ← Ajouter la flèche aussi sur mobile au clic
+  result += F("     let totalHeight = 0;");
+  result += F("     chart.data.datasets.forEach(function(dataset) {");
+  result += F("      const value = dataset.data[index] || 0;");
+  result += F("      if (value > 0) totalHeight += value;");
+  result += F("     });");
+  result += F("    }");
+  result += F("   }");
+  
+  // ← Gestion du tooltip (identique pour mobile et desktop)
+  result += F("   if (chart.tooltipTimeout) {");
+  result += F("    clearTimeout(chart.tooltipTimeout);");
+  result += F("   }");
+
+  result += F("   if (activeElements.length > 0) {");
+  result += F("    chart.options.plugins.tooltip.enabled = true;");
+  result += F("    chart.tooltip.setActiveElements(activeElements, {x: evt.x, y: evt.y});");
+  result += F("    chart.update();");
+
+  result += F("    chart.tooltipTimeout = setTimeout(function() {");
+  result += F("     chart.options.plugins.tooltip.enabled = false;");
+  result += F("     chart.tooltip.setActiveElements([], {x: 0, y: 0});");
+  
+  // ← Retirer aussi la bordure et la flèche sur mobile
+  result += F("     if (isMobile) {");
+  result += F("      chart.data.datasets.forEach(function(dataset) {");
+  result += F("       dataset.borderWidth = dataset.data.map(function() { return 0; });");
+  result += F("      });");
+  result += F("      delete chart.options.plugins.annotation.annotations.hoverArrow;");
+  result += F("     }");
+  
+  result += F("     chart.update();");
+  result += F("    }, isMobile ? 5000 : 3000);"); // ← Tooltip plus long sur mobile (7 sec)
+
+  result += F("   } else {");
+  result += F("    chart.options.plugins.tooltip.enabled = false;");
+  result += F("    chart.tooltip.setActiveElements([], {x: 0, y: 0});");
+  
+  result += F("    if (isMobile) {");
+  result += F("     chart.data.datasets.forEach(function(dataset) {");
+  result += F("      dataset.borderWidth = dataset.data.map(function() { return 0; });");
+  result += F("     });");
+  result += F("     delete chart.options.plugins.annotation.annotations.hoverArrow;");
+  result += F("    }");
+  
+  result += F("    chart.update();");
+  result += F("   }");
+  result += F("  }");
+
   result += F(" }"); // Fermeture options
   result += F("});");
+
+  result += F("if (isMobile) {");
+  result += F(" setTimeout(function() {"); // Petit délai pour s'assurer que le canvas est rendu
+  result += F("  preventCanvasZoom('power-chart');");
+  result += F(" }, 100);");
+  result += F("}");
 
   return result;
 }
@@ -5804,8 +5961,9 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += F("  maintainAspectRatio: false,");
   result += F("  animation: false,");
   result += F("  interaction: {");
-  result += F("   mode: 'index',"); // ← MODE INDEX pour grouper
-  result += F("   intersect: false"); // ← Afficher même si pas exactement sur la barre
+  result += F("   mode: 'index',"); 
+  result += F("   intersect: false,"); 
+  result += F("   events: ['mousemove', 'mouseout', 'click']");
   result += F("  },");
   result += F("  scales: {");
   result += F("   x: {");
@@ -5825,6 +5983,9 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += F("  categoryPercentage: 0.95,");
   result += F("  plugins: {");
   result += F("   tooltip: {");
+  result += F("    enabled: false,"); // ← Garder enabled
+  result += F("    mode: 'index',");
+  result += F("    intersect: false,");
   result += F("    backgroundColor: 'rgba(133, 133, 133, 0.65)',");
   result += F("    callbacks: {");
   result += F("     title: function(tooltipItems) {");
@@ -5876,8 +6037,54 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
     result += F("    }");
     result += F("   }");
   }
-  
-  result += F("  }"); // Fermeture plugins
+  result += F("  },"); // Fermeture plugins
+
+  // ← HOVER : Bordure sur barre survolée
+  result += F("  onHover: function(event, activeElements) {");
+  result += F("   const chart = this;");
+  result += F("   event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';");
+
+  result += F("   chart.data.datasets.forEach(function(dataset) {");
+  result += F("    dataset.borderWidth = dataset.data.map(function() { return 0; });");
+  result += F("   });");
+
+  result += F("   if (activeElements.length > 0) {");
+  result += F("    const index = activeElements[0].index;");
+  result += F("    chart.data.datasets.forEach(function(dataset) {");
+  result += F("     dataset.borderWidth = dataset.data.map(function(d, i) {");
+  result += F("      return i === index ? 3 : 0;");
+  result += F("     });");
+  result += F("    });");
+  result += F("   }");
+
+  result += F("   chart.update('none');");
+  result += F("  },");
+
+  // ← CLIC : Tooltip 5 secondes
+  result += F("  onClick: function(evt, activeElements) {");
+  result += F("   const chart = this;");
+  result += F("   if (chart.tooltipTimeout) {");
+  result += F("    clearTimeout(chart.tooltipTimeout);");
+  result += F("   }");
+
+  result += F("   if (activeElements.length > 0) {");
+  result += F("    chart.options.plugins.tooltip.enabled = true;");
+  result += F("    chart.tooltip.setActiveElements(activeElements, {x: evt.x, y: evt.y});");
+  result += F("    chart.update();");
+
+  result += F("    chart.tooltipTimeout = setTimeout(function() {");
+  result += F("     chart.options.plugins.tooltip.enabled = false;");
+  result += F("     chart.tooltip.setActiveElements([], {x: 0, y: 0});");
+  result += F("     chart.update();");
+  result += F("    }, 5000);");
+
+  result += F("   } else {");
+  result += F("    chart.options.plugins.tooltip.enabled = false;");
+  result += F("    chart.tooltip.setActiveElements([], {x: 0, y: 0});");
+  result += F("    chart.update();");
+  result += F("   }");
+  result += F("  }");
+
   result += F(" }"); // Fermeture options
   result += F("});");
 
@@ -6174,66 +6381,72 @@ void handleDashboard(AsyncWebServerRequest *request)
 
       if (TemplateExist(DeviceId))
       {
-        Template *t;
-        t = GetTemplate(DeviceId, model);
+        /*Template *t;
+        t = GetTemplate(DeviceId, model);*/
+        TemplateData* t = device->getTemplate();
+        if (!t) {
+            // Template introuvable - logger pour debug
+            Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
+            continue; // ou return, selon votre logique
+        }
         // toutes les propiétés
         dashboard += F("<div id='status_");
         dashboard += (String)ShortAddr;
         dashboard += F("'>");
 
-        for (int i = 0; i < t->StateSize; i++)
+        for (int i = 0; i < t->StateSize(); i++)
         {
-          if (t->e[i].visible)
+          if (t->states[i].visible)
           {
 
-            if (String(t->e[i].typeJauge) == "gauge")
+            if (String(t->states[i].typeJauge) == "gauge")
             {
               exist++;
               dashboard += "<div id='gauge_";
               dashboard += (String)ShortAddr+String(i);
               dashboard += F("' style='height:150px;'>");
               dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
-              dashboard += String(t->e[i].name);
+              dashboard += String(t->states[i].name);
               dashboard += F("</div>");
               dashboard += F("</div>");
-              js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+              js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->states[i].jaugeMin), String(t->states[i].jaugeMax), t->states[i].unit);
               js += CreateTimeGauge((String)ShortAddr + (String)i);
-              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
+              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->states[i].cluster + "," + t->states[i].attribute + ",'" + t->states[i].type + "'," + t->states[i].coefficient + ");";
             }
-            else if(String(t->e[i].typeJauge) == "battery")
+            else if(String(t->states[i].typeJauge) == "battery")
             {
               exist++;
               dashboard += "<div id='gauge_";
               dashboard += (String)ShortAddr+String(i);
               dashboard += F("' style='height:150px;'>");
               dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
-              dashboard += String(t->e[i].name);
+              dashboard += String(t->states[i].name);
               dashboard += F("</div>");
               dashboard += F("</div>");
-              js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->e[i].jaugeMin), String(t->e[i].jaugeMax), t->e[i].unit);
+              js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->states[i].jaugeMin), String(t->states[i].jaugeMax), t->states[i].unit);
               js += CreateTimeGauge((String)ShortAddr + (String)i);
-              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->e[i].cluster + "," + t->e[i].attribute + ",'" + t->e[i].type + "'," + t->e[i].coefficient + ");";
-            }else if(String(t->e[i].typeJauge) == "text")
+              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->states[i].cluster + "," + t->states[i].attribute + ",'" + t->states[i].type + "'," + t->states[i].coefficient + ");";
+            }else if(String(t->states[i].typeJauge) == "text")
             {
               exist++;
               dashboard +=F("<div id='text_");
               dashboard += (String)ShortAddr+String(i);
               dashboard += F("' style='text-align:center;font-size:12px;'>");
-              dashboard += t->e[i].name;
+              dashboard += t->states[i].name;
               dashboard += F("<br>");
               dashboard += "<span id='";
               dashboard += F("label_");
               dashboard += (String)ShortAddr;
               dashboard += F("_");
-              dashboard += t->e[i].cluster;
+              dashboard += t->states[i].cluster;
               dashboard += F("_");
-              dashboard += t->e[i].attribute;
+              dashboard += t->states[i].attribute;
               dashboard += F("' style='font-size:24px;font-family :\"Courier New\", Courier, monospace;'>");
-              dashboard += GetValueStatus(device->getDeviceID(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);             
+              dashboard += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);             
               dashboard += F("</span>&nbsp;");
-              dashboard += String(t->e[i].unit);
+              dashboard += String(t->states[i].unit);
               dashboard += F("</div><br>");
-              js += "refreshLabel('"+String(device->getDeviceID())+"','"+(String)ShortAddr+"',"+t->e[i].cluster+","+t->e[i].attribute+",'"+(String)t->e[i].type+"',"+t->e[i].coefficient+",'"+(String)t->e[i].unit+"');";
+              js += "refreshLabel('"+String(device->getDeviceID())+"','"+(String)ShortAddr+"',"+t->states[i].cluster+","+t->states[i].attribute+",'"+(String)t->states[i].type+"',"+t->states[i].coefficient+",'"+(String)t->states[i].unit+"');";
 
             }
           }
@@ -6244,26 +6457,26 @@ void handleDashboard(AsyncWebServerRequest *request)
         dashboard += F("'>");
         // toutes les actions
 
-        for (int i = 0; i < t->ActionSize; i++)
+        for (int i = 0; i < t->ActionSize(); i++)
         {
-          if (t->a[i].visible)
+          if (t->actions[i].visible)
           {
             exist++;
             dashboard += F("<button onclick=\"ZigbeeAction(");
             dashboard += ShortAddr;
             dashboard += ",";
-            dashboard += t->a[i].command;
+            dashboard += t->actions[i].command;
             dashboard += ",";
-            dashboard += t->a[i].endpoint;
+            dashboard += t->actions[i].endpoint;
             dashboard += ",";
-            dashboard += t->a[i].value;
+            dashboard += t->actions[i].value;
             dashboard += ");\" class='btn btn-primary mb-2'>";
-            dashboard += t->a[i].name;
+            dashboard += t->actions[i].name;
             dashboard += F("</button>&nbsp;");
           }
         }
         dashboard += F("</div>");
-        free(t);
+        //free(t);
       }
       dashboard += F("</div></div></div>");
 
@@ -6952,7 +7165,6 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
      result += FPSTR(HTTP_ENERGY_WATER);
   }
   result +=F("</div>");
-  result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
   result +=  R"(<script>
             document.addEventListener('DOMContentLoaded', () => {
               const params  = new URLSearchParams(window.location.search);
@@ -6968,7 +7180,47 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
               });
             });
 
+            function isMobileDevice() {
+                return (typeof window.orientation !== "undefined") || 
+                      (navigator.userAgent.indexOf('IEMobile') !== -1) ||
+                      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            }
+
+            function preventCanvasZoom(canvasId) {
+              const canvas = document.getElementById(canvasId);
+              if (!canvas) return;
+              
+              // Style CSS direct
+              canvas.style.touchAction = 'none';
+              
+              // Empêcher le zoom du navigateur
+              canvas.addEventListener('touchstart', function(e) {
+                  if (e.touches.length > 1) {
+                      e.preventDefault();
+                  }
+              }, { passive: false });
+              
+              canvas.addEventListener('touchmove', function(e) {
+                  if (e.touches.length > 1) {
+                      e.preventDefault();
+                  }
+              }, { passive: false });
+              
+              // Empêcher le double-tap zoom
+              let lastTouchEnd = 0;
+              canvas.addEventListener('touchend', function(e) {
+                  const now = Date.now();
+                  if (now - lastTouchEnd <= 300) {
+                      e.preventDefault();
+                  }
+                  lastTouchEnd = now;
+              }, { passive: false });
+              
+              console.log('Canvas zoom prevention enabled for:', canvasId);
+          }
+
           </script>)";
+      result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
   result+=footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -7415,26 +7667,36 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     // Get status and action from json    
     if (TemplateExist(DeviceId))
     {
-      Template *t;
-      t = GetTemplate(DeviceId, device->getInfo().model);
+      /*Template *t;
+      t = GetTemplate(DeviceId, device->getInfo().model);*/
+      TemplateData* t = device->getTemplate();
+      if (!t) {
+          // Template introuvable - logger pour debug
+          Serial.printf("WARNING: Template introuvable pour model: %s\n", device->getInfo().model.c_str());
+          continue; // ou return, selon votre logique
+      }
       // toutes les propiétés
       result += F("<div id='status_");
       result += (String)device->getInfo().shortAddr;
       result += F("'>");
       result += F("<table width='100%' style='font-size:12px;'>");
-      for (int i = 0; i < t->StateSize; i++)
+      for (int i = 0; i < t->StateSize(); i++)
       {
-        if (t->e[i].visible)
+        if (t->states[i].visible)
         {
           if (device->getInfo().model == "ZLinky_TIC")
           {
-            const char *tmp;
             bool afficheOK = false;
-            tmp = t->e[i].mode;
+            const char *tmp = t->states[i].mode;
+
             if ((tmp != NULL) && (tmp[0] != '\0')) 
             {
-              char * pch;
-              pch = strtok ((char*)tmp,";");
+              char modeCopy[50];
+              strncpy(modeCopy, tmp, sizeof(modeCopy) - 1);
+              modeCopy[sizeof(modeCopy) - 1] = '\0';
+              
+              // Parser
+              char *pch = strtok(modeCopy, ";"); 
               while (pch != NULL)
               {
                 if (atoi(pch) == device->getInfo().linkyMode.toInt())
@@ -7442,7 +7704,7 @@ void handleStatusDevices(AsyncWebServerRequest *request)
                   afficheOK=true;
                   break;
                 }
-                pch = strtok (NULL, " ;");
+                pch = strtok (NULL, ";");
               }
             }else{
               afficheOK=true;
@@ -7450,26 +7712,26 @@ void handleStatusDevices(AsyncWebServerRequest *request)
 
             if (afficheOK){
               result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
-              result += t->e[i].name;
+              result += t->states[i].name;
               result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
               result += "<span id='";
-              result += String(ShortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
+              result += String(ShortAddr)+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute);
               result +="'>";
-              result += GetValueStatus(device->getDeviceID(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+              result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
               result += "</span></td>";
-              result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
+              result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->states[i].unit;
               result += F("</td>");
               result +="</td></tr>";
             }
           }else{
             result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
-            result += t->e[i].name;
+            result += t->states[i].name;
             result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
             result += "<span id='";
-            result += String(device->getInfo().shortAddr)+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute);
+            result += String(device->getInfo().shortAddr)+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute);
             result +="'>";
-            result +=GetValueStatus(device->getDeviceID(), t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
-            result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->e[i].unit;
+            result +=GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
+            result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->states[i].unit;
             result += F("</td>");
             result +="</td></tr>";
           }
@@ -7480,23 +7742,23 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       result += (String)device->getInfo().shortAddr;
       result += F("'>");
       // toutes les actions
-      for (int i = 0; i < t->ActionSize; i++)
+      for (int i = 0; i < t->ActionSize(); i++)
       {
         esp_task_wdt_reset();
         result += F("<button onclick=\"ZigbeeAction(");
         result += device->getInfo().shortAddr;
         result += ",";
-        result += String(t->a[i].command);
+        result += String(t->actions[i].command);
         result += ",";
-         result += String(t->a[i].endpoint);
+         result += String(t->actions[i].endpoint);
         result += ",";
-        result += String(t->a[i].value);
+        result += String(t->actions[i].value);
         result += ");\" class='btn btn-primary mb-2'>";
-        result += t->a[i].name;
+        result += t->actions[i].name;
         result += F("</button>");
       }
       result += F("</div>");
-      free(t);
+     // free(t);
     }
     result += F("</div></div></div>");
     
@@ -9286,7 +9548,7 @@ void handleDoRestore(AsyncWebServerRequest *request,
     request->_tempFile = LittleFS.open(tmpPath, "w+");
     log_i("Upload start");
     updateStatus.statusManuel = "Téléchargement ...";
-    updateStatus.progressManuel = 10;
+    //updateStatus.progressManuel = 10;
   }
   esp_task_wdt_reset();
   // Pendant l'upload, calculer le pourcentage
@@ -10450,6 +10712,14 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
     {
       LittleFS.remove(filename);
     }
+
+    //update all devices template
+    for (size_t i = 0; i < devices.size(); i++) 
+    {
+      DeviceData* device = devices[i];
+      device->reloadTemplate();
+    }
+
     AsyncWebServerResponse *response = request->beginResponse(303);
     response->addHeader(F("Location"), F("/tp"));
     request->send(response);
@@ -13142,11 +13412,27 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
     int DeviceId = GetDeviceId(IEEE+".json");
     if (TemplateExist(DeviceId))
     {
-      Template *t;
-      t = GetTemplate(DeviceId, model);
-      for (int i = 0; i < t->StateSize; i++)
+      /*Template *t;
+      t = GetTemplate(DeviceId, model);*/
+
+      DeviceData* device;
+      for (size_t i = 0; i < devices.size(); i++) 
       {
-        if (strlen(t->e[i].mqtt_icon)>0)
+        device = devices[i];
+        if (device->getDeviceID() == IEEE)
+        {
+          break;
+        }
+      }
+      TemplateData* t = device->getTemplate();
+      if (!t) {
+          // Template introuvable - logger pour debug
+          Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
+          return; // ou return, selon votre logique
+      }
+      for (int i = 0; i < t->StateSize(); i++)
+      {
+        if (strlen(t->states[i].mqtt_icon)>0)
         {
           const char* PROGMEM HA_discovery_msg = "{"
               "\"name\":\"{{name_prop}}\","
@@ -13168,50 +13454,50 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
 
           datas = FPSTR(HA_discovery_msg);
           
-          datas.replace("{{name_prop}}", t->e[i].name);
-          datas.replace("{{unique_id}}", IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
-          if (memcmp(t->e[i].mqtt_device_class,"null",4)==0)
+          datas.replace("{{name_prop}}", t->states[i].name);
+          datas.replace("{{unique_id}}", IEEE+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute));
+          if (memcmp(t->states[i].mqtt_device_class,"null",4)==0)
           {
-            datas.replace("{{device_class}}", t->e[i].mqtt_device_class);
+            datas.replace("{{device_class}}", t->states[i].mqtt_device_class);
           }else{
-            String tmp="\""+String(t->e[i].mqtt_device_class)+"\"";
+            String tmp="\""+String(t->states[i].mqtt_device_class)+"\"";
             datas.replace("{{device_class}}", tmp); 
           }
-          if (memcmp(t->e[i].mqtt_state_class,"null",4)==0)
+          if (memcmp(t->states[i].mqtt_state_class,"null",4)==0)
           {
-            datas.replace("{{state_class}}", t->e[i].mqtt_state_class);
+            datas.replace("{{state_class}}", t->states[i].mqtt_state_class);
           }else{
-            String tmp="\""+String(t->e[i].mqtt_state_class)+"\"";
+            String tmp="\""+String(t->states[i].mqtt_state_class)+"\"";
             datas.replace("{{state_class}}", tmp); 
           }
-          datas.replace("{{mqtt_icon}}", t->e[i].mqtt_icon);
-          if (strlen(t->e[i].unit)>0)
+          datas.replace("{{mqtt_icon}}", t->states[i].mqtt_icon);
+          if (strlen(t->states[i].unit)>0)
           {
-            String tmp = "\"unit_of_measurement\":\""+String(t->e[i].unit)+"\",";
+            String tmp = "\"unit_of_measurement\":\""+String(t->states[i].unit)+"\",";
             datas.replace("{{unit}}", tmp);
           }else{
             datas.replace("{{unit}}", "");
           }
           
-          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute));
-          if ((String(t->e[i].type)=="numeric") || (String(t->e[i].type)=="float"))
+          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute));
+          if ((String(t->states[i].type)=="numeric") || (String(t->states[i].type)=="float"))
           {
-            if (t->e[i].coefficient!=1)
+            if (t->states[i].coefficient!=1)
             {
-              datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+" | float * "+String(t->e[i].coefficient)+"}}");
+              datas.replace("{{value}}", "{{value_json.value_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+" | float * "+String(t->states[i].coefficient)+"}}");
             }else{
-              datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
+              datas.replace("{{value}}", "{{value_json.value_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+"}}");
             }
           }else{
-            datas.replace("{{value}}", "{{value_json.value_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"}}");
+            datas.replace("{{value}}", "{{value_json.value_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+"}}");
           }
           datas.replace("{{device_name}}", model+"_"+IEEE);
-          String topic = ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->e[i].cluster)+"_"+String(t->e[i].attribute)+"/config";
+          String topic = ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+"/config";
           if (model=="ZLinky_TIC")
           {
             const char *tmp;
             bool discoverOk = false;
-            tmp = t->e[i].mode;
+            tmp = t->states[i].mode;
             if ((tmp != NULL) && (tmp[0] != '\0')) 
             {
               char * pch;
@@ -13488,13 +13774,29 @@ void APIgetLinky(AsyncWebServerRequest *request)
     result ="{";
     if (TemplateExist(DeviceId))
     {
-      Template *t;
-      t = GetTemplate(DeviceId, model);
-      for (int i = 0; i < t->StateSize; i++)
+      /*Template *t;
+      t = GetTemplate(DeviceId, model);*/
+      DeviceData* device;
+      for (size_t i = 0; i < devices.size(); i++) 
+      {
+        device = devices[i];
+        if (device->getDeviceID() == IEEE)
+        {
+          break;
+        }
+      }
+      TemplateData* t = device->getTemplate();  
+
+      if (!t) {
+          // Template introuvable - logger pour debug
+          Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
+          return; // ou return, selon votre logique
+      }
+      for (int i = 0; i < t->StateSize(); i++)
       {      
         const char *tmp;
         bool discoverOk = false;
-        tmp = t->e[i].mode;
+        tmp = t->states[i].mode;
         if ((tmp != NULL) && (tmp[0] != '\0')) 
         {
           char * pch;
@@ -13516,15 +13818,15 @@ void APIgetLinky(AsyncWebServerRequest *request)
         {
           if (i>0){result+=",";}
           result += "\"";
-          result += (String)t->e[i].cluster+"_"+(String)t->e[i].attribute;
+          result += (String)t->states[i].cluster+"_"+(String)t->states[i].attribute;
           result += "\" :";
           String inifile =IEEE+".json";
-          if ((memcmp(t->e[i].type,"numeric",7)==0) || (memcmp(t->e[i].type,"float",5)==0) )
+          if ((memcmp(t->states[i].type,"numeric",7)==0) || (memcmp(t->states[i].type,"float",5)==0) )
           {
-            result +=  GetValueStatus(inifile, t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+            result +=  GetValueStatus(inifile, t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
           }else{
             result +="\"";
-            result +=  GetValueStatus(inifile, t->e[i].cluster, t->e[i].attribute, (String)t->e[i].type, t->e[i].coefficient);
+            result +=  GetValueStatus(inifile, t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
             result +="\"";
           }
           
@@ -13617,49 +13919,12 @@ void APIgetPowerDevice(AsyncWebServerRequest *request)
 void APIgetTemplates(AsyncWebServerRequest *request)
 {
   
-  String result;
-
-  File root = LittleFS.open("/tp");
-  File filedevice = root.openNextFile();
-  result = "{";
-  int i = 0;
-  while (filedevice)
-  {
-
-    String inifile = filedevice.name();
-    File file = LittleFS.open("/tp/" + inifile, FILE_READ);
-    if (!file || file.isDirectory())
-    {
-      DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
-      DEBUG_PRINTLN(inifile);
-      file.close();
-    }
-    size_t filesize = file.size();
-
-    if (filesize > 0)
-    {
-      if (i > 0)
-      {
-        result += ",";
-      }
-      result += "\""+inifile+"\" : ";
-      while (file.available())
-      {
-        result += (char)file.read();
-      }
-      i++;
-    }
-    
-    file.close();
-    filedevice.close();
-    vTaskDelay(1);
-    filedevice = root.openNextFile();
+  const char* json = templateCache.getJson();
+  if (json) {
+      request->send(200, F("application/json"), json);
+  } else {
+      request->send(500, F("application/json"), "{}");
   }
-  result += "}";
-  filedevice.close();
-  root.close();
-
-  request->send(200, F("application/json"), result);
 }
 
 void launchUpdateTask() {
@@ -15149,6 +15414,9 @@ void initWebServer()
   serverWeb.onNotFound(handleNotFound);
 
   serverWeb.begin();
+
+  templateCache.indexTemplates();
+  templateCache.printStats();
 
   //Update.onProgress(printProgress);
 }
