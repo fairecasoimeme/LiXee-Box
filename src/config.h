@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.9"
+#define VERSION "v2.10"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -186,7 +186,7 @@ typedef struct {
 }WriteIni;
 
 
-typedef struct {
+/*typedef struct {
     char name[50];
     unsigned int cluster;
     unsigned int attribute;
@@ -217,7 +217,7 @@ typedef struct {
   int ActionSize;
   State e[100];
   Action a[10];
-}Template;
+}Template;*/
 
 typedef struct {
   String message;
