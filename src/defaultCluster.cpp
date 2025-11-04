@@ -58,13 +58,6 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
             WebPush(inifile.substring(0,16),String(cluster),(String)attribute,tmpvalue.c_str());
           }
-
-          // Device update value;
-          if (!deviceList->isFull())
-          {
-            int shortaddr = GetShortAddr(inifile);
-            deviceList->push(Device{shortaddr,cluster,attribute,tmp});
-          }
           
         }
         for (size_t i = 0; i < devices.size(); i++) 
@@ -73,6 +66,13 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
             device->setValue(std::string(clusterHex),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+
+            if (!deviceList->isFull())
+            {
+              float adjustedValue = strtol(tmp.c_str(), NULL, 16) * device->GetAttributeCoefficient(cluster,attribute);
+              deviceList->push(Device{device->getInfo().shortAddr.toInt(),cluster,attribute,String(adjustedValue)});
+            }
+
             break;
           }
         }
