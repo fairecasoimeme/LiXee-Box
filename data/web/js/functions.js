@@ -427,6 +427,19 @@ function refreshDashboard(IEEE,attribute,time)
 
 function loadGazChart(IEEE,time)
 {
+	// ✅ Réutiliser loadEnergyChart qui gère déjà Chart.js
+	loadEnergyChart(IEEE, time, 'gaz');
+}
+
+function loadWaterChart(IEEE,time)
+{
+	// ✅ Réutiliser loadEnergyChart qui gère déjà Chart.js
+	loadEnergyChart(IEEE, time, 'water');
+}
+
+
+/*function loadGazChart(IEEE,time)
+{
 	var xhr = getXhr();
 	xhr.onreadystatechange = function(){
 		if(xhr.readyState == 4 ){
@@ -451,7 +464,7 @@ function loadWaterChart(IEEE,time)
 	xhr.open("GET","loadEnergyChart?IEEE="+escape(IEEE)+"&time="+escape(time),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
-}
+}*/
 
 function loadProductionChart(IEEE,time)
 {
@@ -790,7 +803,7 @@ function loadPowerChart(IEEE, attribute) {
 }*/
 
 function loadEnergyChart(IEEE, time, type) {
-    window[type + 'Period'] = time;
+	window[type + 'Period'] = time;
     
     var xhr = getXhr();
     xhr.onreadystatechange = function() {
@@ -867,8 +880,20 @@ function loadEnergyChart(IEEE, time, type) {
             var datasets = datasetsProduction.concat(datasetsConsommation);
             
             // Mettre à jour le graphique
-            energyChart.data.labels = labels;
-            energyChart.data.datasets = datasets;
+			if (type=="energy")
+			{
+				energyChart.data.labels = labels;
+            	energyChart.data.datasets = datasets;
+			}else if(type=="gaz")
+			{
+				gazChart.data.labels = labels;
+            	gazChart.data.datasets = datasets;
+			}else if(type=="water")
+			{
+				waterChart.data.labels = labels;
+            	waterChart.data.datasets = datasets;
+			}
+            
             
             var minStacked = 0;  // Minimum des valeurs empilées (production)
             var maxStacked = 0;  // Maximum des valeurs empilées (consommation)
@@ -918,12 +943,25 @@ function loadEnergyChart(IEEE, time, type) {
                 yMax = 100;
             }
                         
-            // Appliquer les limites à l'échelle Y
-            energyChart.options.scales.y.min = yMin;
-            energyChart.options.scales.y.max = yMax;
-            
-            // Mettre à jour le graphique
-            energyChart.update('active');
+           
+
+			if (type=="energy")
+			{
+				energyChart.options.scales.y.min = yMin;
+				energyChart.options.scales.y.max = yMax;
+				energyChart.update('active');
+				
+			}else if(type=="gaz")
+			{
+            	gazChart.options.scales.y.min = yMin;
+				gazChart.options.scales.y.max = yMax;
+				gazChart.update('active');
+			}else if(type=="water")
+			{
+            	waterChart.options.scales.y.min = yMin;
+				waterChart.options.scales.y.max = yMax;
+				waterChart.update('active');
+			}
         }
     }
     
