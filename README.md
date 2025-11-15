@@ -31,6 +31,11 @@ Cette application fonctionne avec :
 - **Passerelle cloud** : Relayer les données des appareils Zigbee vers des services web via API
 - **Gestion énergétique avancée** : Surveillance, délestage de charge, routage énergétique
 
+### Pour aller plus loin
+-  [🏠 LiXee-Box : Mesurer, analyser, économiser … pour une bonne gestion énergétique](https://faire-ca-soi-meme.fr/domotique/2025/08/18/lixee-box-mesurer-analyser-economiser-pour-une-bonne-gestion-energetique/)
+-  [⚡️ Optimiser la recharge de son véhicule électrique avec la LiXee-Box](https://faire-ca-soi-meme.fr/domotique/2025/11/13/optimiser-la-recharge-de-son-vehicule-electrique-avec-la-lixee-box/)
+-  [📡 Augmenter la portée du ZLinky_TIC v2](https://faire-ca-soi-meme.fr/domotique/2025/03/29/augmenter-la-portee-du-zlinky_tic-v2/)
+
 ## ✨ Fonctionnalités Principales
 La fonctionnalité principale est de relayer les données des appareils Zigbee vers un site web ou un service MQTT
 
