@@ -7,6 +7,7 @@
 #include "config.h"
 
 extern ConfigSettingsStruct ConfigSettings;
+extern ConfigGeneralStruct ConfigGeneral;
 extern bool executeReboot;
 // Instance statique pour callbacks WiFi
 SmartWiFiManager* SmartWiFiManager::_instance = nullptr;
@@ -16,7 +17,7 @@ SmartWiFiManager::SmartWiFiManager()
     : _currentState(WIFI_STATE_DISCONNECTED)
     , _configPath("/config/configWifi.json")
     , _lastConnectionAttempt(0)
-    , _connectionTimeout(30000)
+    , _connectionTimeout(10000)
     , _reconnectDelay(5000)
     , _connectionAttempts(0)
     , _maxConnectionAttempts(3)
@@ -529,6 +530,10 @@ void SmartWiFiManager::staticWiFiEventHandler(WiFiEvent_t event, WiFiEventInfo_t
 // Gestionnaire événements WiFi
 void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     switch (event) {
+        case ARDUINO_EVENT_WIFI_SCAN_DONE:
+            ConfigGeneral.scanNumber = info.wifi_scan_done.number;
+            notifyEvent("WiFi scan done: " + String(info.wifi_scan_done.number) + " networks");
+            break;
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
             notifyEvent("WiFi connected");
             _reconnectAttempts = 0;  
