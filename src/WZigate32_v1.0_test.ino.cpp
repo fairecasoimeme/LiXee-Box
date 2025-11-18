@@ -1544,6 +1544,7 @@ void initWiFiServices() {
   if (!MDNS.begin(localdns.c_str())) {
     Serial.println("Error starting mDNS");
   }
+  Serial.printf("📡mDNS : %s\n",localdns.c_str());
   
   // MQTT si activé
   if (ConfigSettings.enableMqtt) {
