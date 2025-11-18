@@ -121,7 +121,7 @@ void handleDelestage() {
     config_write("delestage.json", "dateOn", FormattedDate);
     
     String delestage = config_read("configGeneral.json", "delestage");
-    if (delestage.length() == 0) return;
+    if (delestage.length() > 0 && delestage == "null")  return;
     
     char* pch = strtok((char*)delestage.c_str(), ",");
     while (pch != NULL) {
