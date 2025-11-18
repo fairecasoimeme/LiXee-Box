@@ -22,11 +22,14 @@
 #include "web.h"
 #include "device.h"
 #include "powerHistory.h"
+#include "rules.h"
 
 extern std::vector<DeviceData*> devices;
 
 extern struct ZigbeeConfig ZConfig;
 extern struct ConfigGeneralStruct ConfigGeneral;
+
+extern RulesManager rulesManager;
 
 
 extern CircularBuffer<Packet, 100> *commandList;
@@ -2865,4 +2868,8 @@ void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], ui
       break;
   
   }
+
+  //Déclenchement des règles
+  rulesManager.applyRulesOnEvent(filename.substring(0,16).c_str(),cluster,attribute);
+
 }
