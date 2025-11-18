@@ -45,6 +45,12 @@ bool RulesManager::loadFromFile(const char* path) {
         // Nom
         rule.name = PsString(r["name"] | "", PsramAllocator<char>());
 
+        JsonObject triggerObj = r["trigger"].as<JsonObject>();
+        rule.trigger.mode = PsString(triggerObj["mode"] | "timer", PsramAllocator<char>());
+        rule.trigger.IEEE = PsString(triggerObj["IEEE"] | "", PsramAllocator<char>());
+        rule.trigger.cluster = triggerObj["cluster"] | 0;
+        rule.trigger.attribute = triggerObj["attribute"] | 0;
+
         // ← NOUVEAU: Plages horaires
         JsonArray timeRangesArr = r["timeRanges"].as<JsonArray>();
         rule.timeRanges.clear();
@@ -102,6 +108,21 @@ bool RulesManager::loadFromFile(const char* path) {
             rule.actions.push_back(std::move(act));
         }
 
+
+        // ← NOUVEAU: Actions ELSE (SINON)
+        JsonArray elseActArr = r["elseActions"].as<JsonArray>();
+        rule.elseActions.clear();
+        rule.elseActions.reserve(elseActArr.size());
+        for (JsonObject a : elseActArr) {
+            ActionRule act;
+            act.type     = PsString(a["type"]    | "", PsramAllocator<char>());
+            act.IEEE     = PsString(a["IEEE"]    | "", PsramAllocator<char>());
+            act.endpoint = a["endpoint"] | 0;
+            act.value    = PsString(a["value"]   | "", PsramAllocator<char>());
+            act.title    = PsString(a["title"]   | "", PsramAllocator<char>());
+            act.message  = PsString(a["message"] | "", PsramAllocator<char>());
+            rule.elseActions.push_back(std::move(act));
+        }
         rules_.push_back(std::move(rule));
     }
 
@@ -197,8 +218,6 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
             String condTrimmed = condValueStr;
             curTrimmed.trim();
             condTrimmed.trim();
-            Serial.printf("Comparaison texte : cur='%s' vs cond='%s'\n", 
-                     curStr.c_str(), condValueStr.c_str());
             return curTrimmed.equalsIgnoreCase(condTrimmed);
         }
         // Si les deux sont des nombres, comparaison numérique
@@ -293,78 +312,216 @@ bool RulesManager::isInTimeRange(const Rule& rule) const {
     return false;  // Aucune plage valide
 }
 
+// Construit le texte des conditions avec les valeurs des capteurs
+String RulesManager::buildConditionsText(const Rule& rule) const {
+    String conditionsText = "";
+    
+    for (size_t i = 0; i < rule.conditions.size(); i++) {
+        const auto& cond = rule.conditions[i];
+        
+        // Chercher le device par IEEE
+        DeviceData* device = nullptr;
+        String ieeeStr = String(cond.IEEE.c_str());
+        
+        for (size_t j = 0; j < devices.size(); j++) {
+            if (devices[j]->getDeviceID() == ieeeStr) {
+                device = devices[j];
+                break;
+            }
+        }
+
+        if (device) {
+            // Convertir cluster en string hexa (ex: "0402")
+            char clusterStr[10];
+            sprintf(clusterStr, "%04X", cond.cluster);
+            
+            // Convertir attribute en string decimal (ex: "0")
+            char attributeStr[10];
+            sprintf(attributeStr, "%d", cond.attribute);
+            
+            // Récupérer la valeur
+            String value = device->getValue(std::string(clusterStr), std::string(attributeStr));
+            
+            // Si pas de valeur, passer à la condition suivante
+            if (value.length() == 0) {
+                continue;
+            }
+            
+            // Récupérer le nom du device (alias ou model)
+            String deviceName = device->getInfo().alias;
+            if (deviceName.length() == 0 || deviceName == "null") {
+                deviceName = device->getInfo().model;
+            }
+            if (deviceName.length() == 0 || deviceName == "null") {
+                deviceName = ieeeStr.substring(0, 10);  // Afficher début de l'IEEE
+            }
+            
+            // Récupérer l'unité depuis le template (si disponible)
+            String attributeName = "";
+            String unit = "";
+            TemplateData* tpl = device->getTemplate();
+            if (tpl != nullptr) {
+                for (int k = 0; k < tpl->StateSize(); k++) {
+                    if (tpl->states[k].cluster == cond.cluster && 
+                        tpl->states[k].attribute == cond.attribute) {
+                        attributeName = String(tpl->states[k].name);
+                        unit = String(tpl->states[k].unit);
+                        break;
+                    }
+                }
+            }
+            
+            // Construire la ligne
+            if (i > 0) {
+                conditionsText += "\n";
+            }
+            conditionsText += deviceName;
+            if (attributeName.length() > 0 && attributeName != "null") {
+                conditionsText += " - " + attributeName;
+            }
+            conditionsText += ": " + value;
+
+            if (unit.length() > 0 && unit != "null") {
+                conditionsText += " "+unit;
+            }
+        }
+    }
+    
+    return conditionsText;
+}
+
+
+void RulesManager::evaluateRule(const Rule& rule) {
+
+    bool result = (rule.conditions.size() > 0);
+    
+    for (const auto& cond : rule.conditions) {
+        bool ok = evaluateCondition(cond);
+        if (cond.logic == "AND") result &= ok;
+        else if (cond.logic == "OR") result |= ok;
+        // optimisation: sortie anticipée
+        if ((cond.logic == "AND" && !result) || (cond.logic == "OR" && result)) break;
+    }
+
+    // État précédent de la règle
+    // oldSt = -1 : règle jamais évaluée (première exécution)
+    // oldSt = 0  : dernière évaluation était FALSE
+    // oldSt = 1  : dernière évaluation était TRUE
+    // état précédent
+    String hist = config_read("statusRules.json", rule.name.c_str());
+    int    oldSt = -1;
+    String oldDt;
+    if (hist.length() > 0 && hist != "null")  {
+        char *pch = strtok((char*)hist.c_str(), "|");
+        oldSt = pch ? atoi(pch) : -1;
+        pch = strtok(nullptr, "|");
+        oldDt = pch ? String(pch) : String();
+    }
+    // changement d’état
+    if (result && oldSt != 1) {
+        String newVal = "1|" + FormattedDate;
+        config_write("statusRules.json", rule.name.c_str(), newVal);
+        for (auto& act : rule.actions) {
+            if (act.type == "onoff") {
+                String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
+                SendOnOffAction(shortAddr.toInt(), act.endpoint, act.value.c_str());
+                log_w("Action exec: %s ep=%d val=%s",
+                        act.type.c_str(), act.endpoint, act.value.c_str());
+            }else if (act.type == "notification") {
+                String baseMessage = String(act.message.c_str());
+                String conditionsText = buildConditionsText(rule);
+                String fullMessage = baseMessage;
+                
+                if (conditionsText.length() > 0) {
+                    if (baseMessage.length() > 0) {
+                        fullMessage += "\n\n";  // Double saut de ligne pour séparer
+                    }
+                    fullMessage += conditionsText;
+                }
+                notifList->push(Notification{act.title.c_str(),fullMessage.c_str(),FormattedDate,0,0});
+                notificationManager.addNotification(
+                    String(act.title.c_str()), 
+                    String(fullMessage.c_str()), 
+                    0 
+                );
+                log_w("Action exec: notification - title='%s'", act.title.c_str());
+            }
+        }
+    }
+    else if (!result && oldSt != 0) {
+        String newVal = "0|" + FormattedDate;
+        config_write("statusRules.json", rule.name.c_str(), newVal);
+        // ← NOUVEAU: Exécuter les actions SINON
+        for (auto& act : rule.elseActions) {
+            if (act.type == "onoff") {
+                String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
+                SendOnOffAction(shortAddr.toInt(), act.endpoint, act.value.c_str());
+                log_w("ElseAction exec: %s ep=%d val=%s",
+                        act.type.c_str(), act.endpoint, act.value.c_str());
+            }else if (act.type == "notification") {
+                String baseMessage = String(act.message.c_str());
+                String conditionsText = buildConditionsText(rule);
+                String fullMessage = baseMessage;
+                
+                if (conditionsText.length() > 0) {
+                    if (baseMessage.length() > 0) {
+                        fullMessage += "\n\n";  // Double saut de ligne pour séparer
+                    }
+                    fullMessage += conditionsText;
+                }
+                notifList->push(Notification{act.title.c_str(),fullMessage.c_str(),FormattedDate,0,0});
+                notificationManager.addNotification(
+                    String(act.title.c_str()), 
+                    String(fullMessage.c_str()), 
+                    0 
+                );
+                log_w("ElseAction exec: notification - title='%s'", act.title.c_str());
+            }
+        }
+    }    
+}
+
 // Applique toutes les règles et exécute les actions si besoin
 void RulesManager::applyRules() {
     for (const auto& rule : rules_) {
+        if (rule.trigger.mode != "timer" && rule.trigger.mode.length() > 0) {
+            continue; // Ignorer EVENT
+        }
         if (!isInTimeRange(rule)) {
             continue;
         }
-        bool result = (rule.conditions.size() > 0);
-        
-        for (const auto& cond : rule.conditions) {
-            bool ok = evaluateCondition(cond);
-            if (cond.logic == "AND") result &= ok;
-            else if (cond.logic == "OR") result |= ok;
-            // optimisation: sortie anticipée
-            if ((cond.logic == "AND" && !result) || (cond.logic == "OR" && result)) break;
-        }
-
-        // état précédent
-        String hist = config_read("statusRules.json", rule.name.c_str());
-        int    oldSt = 0;
-        String oldDt;
-        if (hist.length()) {
-            char *pch = strtok((char*)hist.c_str(), "|");
-            oldSt = pch ? atoi(pch) : 0;
-            pch = strtok(nullptr, "|");
-            oldDt = pch ? String(pch) : String();
-        }
-
-        // changement d’état
-        if (result && oldSt != 1) {
-            String newVal = "1|" + FormattedDate;
-            config_write("statusRules.json", rule.name.c_str(), newVal);
-            for (auto& act : rule.actions) {
-                if (act.type == "onoff") {
-                    String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
-                    SendOnOffAction(shortAddr.toInt(), act.endpoint, act.value.c_str());
-                    log_w("Action exec: %s ep=%d val=%s",
-                          act.type.c_str(), act.endpoint, act.value.c_str());
-                }else if (act.type == "notification") {
-                    notifList->push(Notification{act.title.c_str(),act.message.c_str(),FormattedDate,0,0});
-                    notificationManager.addNotification(
-                        String(act.title.c_str()), 
-                        String(act.message.c_str()), 
-                        0 
-                    );
-                    log_w("Action exec: notification - title='%s'", act.title.c_str());
-                }
-            }
-        }
-        else if (!result && oldSt != 0) {
-            String newVal = "0|" + FormattedDate;
-            config_write("statusRules.json", rule.name.c_str(), newVal);
-        }
-
-
-
+        evaluateRule(rule);
     }
 }
 
 // Récupère le statut (0 ou 1) d’une règle nommée
 int RulesManager::getStatusRule(const char* name) const {
     String hist = config_read("statusRules.json", String(name));
-    if (hist.length()) {
+    if (hist.length() > 0 && hist != "null")  {
         char* p = strtok((char*)hist.c_str(), "|");
         return p ? atoi(p) : 0;
     }
     return 0;
 }
 
+void RulesManager::applyRulesOnEvent(const char* IEEE, int cluster, int attribute) {
+    for (const auto& rule : rules_) {
+        if (rule.trigger.mode != "event") continue;
+        
+        if (rule.trigger.IEEE == IEEE &&
+            rule.trigger.cluster == cluster &&
+            rule.trigger.attribute == attribute) {
+            
+            log_d("Règle '%s' déclenchée par EVENT", rule.name.c_str());
+            evaluateRule(rule);
+        }
+    }
+}
+
 // Récupère la date de la dernière exécution
 String RulesManager::getLastDateRule(const char* name) const {
     String hist = config_read("statusRules.json", String(name));
-    if (hist.length()) {
+    if (hist.length() > 0 && hist != "null")  {
         strtok((char*)hist.c_str(), "|");       // saute le status
         char* p = strtok(nullptr, "|");         // date
         return p ? String(p) : String();

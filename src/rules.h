@@ -6,6 +6,9 @@
 #include <vector>
 #include <ArduinoJson.h>
 #include "PsramAllocator.h"
+#include "device.h"
+
+extern std::vector<DeviceData*> devices;
 
 using PsString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
 
@@ -26,6 +29,13 @@ struct TimeRange {
     std::vector<int, PsramAllocator<int>> days;  // 1=Lun, 2=Mar, ..., 7=Dim
 };
 
+struct TriggerConfig {
+    PsString mode;       // "timer" ou "event"
+    PsString IEEE;       // Device à surveiller (pour event)
+    int      cluster;    // Cluster à surveiller
+    int      attribute;  // Attribut à surveiller
+};
+
 // Action de règle, tout en PSRAM
 struct ActionRule {
     PsString type;
@@ -38,10 +48,12 @@ struct ActionRule {
 
 // Règle complète stockée en PSRAM
 struct Rule {
-    PsString                                        name;
+    PsString      name;
+    TriggerConfig trigger; 
     std::vector<TimeRange,   PsramAllocator<TimeRange>>   timeRanges; 
     std::vector<Condition,   PsramAllocator<Condition>>   conditions;
     std::vector<ActionRule,  PsramAllocator<ActionRule>>  actions;
+    std::vector<ActionRule,  PsramAllocator<ActionRule>>  elseActions;
 };
 
 // Manager de règles, stocke toutes les règles en PSRAM
@@ -52,6 +64,7 @@ public:
 
     // Applique toutes les règles chargées
     void applyRules();
+    void applyRulesOnEvent(const char* IEEE, int cluster, int attribute);
 
     // Statut et date de la dernière exécution d’une règle
     int    getStatusRule(const char* name) const;
@@ -79,6 +92,9 @@ private:
 
     bool   isNumeric(const String& str) const;
     double parseNumber(const String& str) const;
+
+    void evaluateRule(const Rule& rule); 
+    String buildConditionsText(const Rule& rule) const;
     
     // Toutes les règles stockées en PSRAM
     std::vector<Rule, PsramAllocator<Rule>> rules_;
