@@ -53,7 +53,7 @@ extern CircularBuffer<Alert, 10> *alertList;
 extern CircularBuffer<Device, 50> *deviceList;
 extern CircularBuffer<Notification, 10> *notifList;
 
-extern RulesManager rulesManager;;
+extern RulesManager rulesManager;
 
 extern bool executeReboot;
 extern bool updatePending ;
@@ -75,6 +75,7 @@ UpdateStatus updateStatus;
 HTTPClient clientWeb;
 
 AsyncWebServer serverWeb(80);
+AsyncWebSocket ws("/ws");
 
 TemplateCache templateCache(true);
 
@@ -1778,1124 +1779,211 @@ const char HTTP_CONFIG_RULES[] PROGMEM = R"rawstring(
 // ============================================
 // HTTP_EDIT_RULE - Page d'édition de règle
 // ============================================
-
-const char HTTP_EDIT_RULE[] PROGMEM = R"rawstring(
-    <div class='container p-4'>
-      <h4 class='card-title mb-4'>Éditer une règle</h4>
-      <div class='card mx-auto shadow-sm'>
-        <div class="card-body">
-          <form id="ruleForm">
-            
-            <input type="hidden" id="oldRuleName" value="">
-            
-            <!-- Nom de la règle -->
-            <div class="mb-4">
-              <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
-              <input class='form-control' id='ruleName' type='text' name='ruleName' placeholder='rule_name' required>
-            </div>
-
-            <!-- Conditions -->
-            <div class="mb-4">
-              <label class="form-label fw-bold">Conditions</label>
-              <div id="conditionsContainer">
-                ⏳ Chargement...
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Ajouter une condition</button>
-            </div>
-
-            <!-- Plages horaires -->
-            <div class="mb-4">
-              <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
-              <div id="timeRangesContainer">
-                ⏳ Chargement...
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Ajouter une plage horaire</button>
-            </div>
-
-            <!-- Actions -->
-            <div class="mb-4">
-              <label class="form-label fw-bold">Actions</label>
-              <div id="actionsContainer">
-                ⏳ Chargement...
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addAction()">+ Ajouter une action</button>
-            </div>
-
-            <!-- Boutons -->
-            <div class="d-flex justify-content-between mt-4">
-              <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
-              <button type="submit" class="btn btn-warning btn-lg">Modifier</button>
-            </div>
-          </form>
+const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
+<div class='container p-4'>
+  <h4 class='card-title mb-4'>Éditer une règle</h4>
+  <div class='card mx-auto shadow-sm'>
+    <div class="card-body">
+      <form id="ruleForm">
+        <input type="hidden" id="oldRuleName">
+        
+        <div class="mb-4">
+          <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
+          <input class='form-control' id='ruleName' type='text' required>
         </div>
-      </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">Déclenchement</label>
+          <div class="card"><div class="card-body">
+            <div class="row g-2">
+              <div class="col-md-2">
+                <label class="form-label small">Mode</label>
+                <select class="form-select form-select-sm" id="triggerMode" onchange="onTriggerModeChange()">
+                  <option value="timer">Timer (60s)</option>
+                  <option value="event">Event</option>
+                </select>
+              </div>
+              <div class="col-md-3 trigger-event-fields" style="display:none;">
+                <label class="form-label small">Device</label>
+                <select class="form-select form-select-sm" id="triggerDevice" onchange="onTriggerDeviceChange()"><option value="">-- Choisir --</option></select>
+              </div>
+              <div class="col-md-3 trigger-event-fields" style="display:none;">
+                <label class="form-label small">Cluster</label>
+                <select class="form-select form-select-sm" id="triggerCluster" onchange="onTriggerClusterChange()"><option value="">-- Cluster --</option></select>
+              </div>
+              <div class="col-md-3 trigger-event-fields" style="display:none;">
+                <label class="form-label small">Attribut</label>
+                <select class="form-select form-select-sm" id="triggerAttribute"><option value="">-- Attribut --</option></select>
+              </div>
+            </div>
+          </div></div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
+          <div id="timeRangesContainer">⏳</div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Plage</button>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">SI ... (Conditions)</label>
+          <div id="conditionsContainer">⏳</div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Condition</button>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">ALORS ... (Actions)</label>
+          <div id="actionsContainer">⏳</div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addAction()">+ Action</button>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">SINON ... (Actions)</label>
+          <div id="elseActionsContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addElseAction()">+ Action</button>
+        </div>
+
+        <div class="d-flex justify-content-between mt-4">
+          <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
+          <button type="submit" class="btn btn-warning btn-lg">Modifier</button>
+        </div>
+      </form>
     </div>
-
-    <script>
-      var devices = {};
-      var templates = {};
-      var conditionCount = 0;
-      var actionCount = 0;
-      var timeRangeCount = 0; 
-      var devicesLoaded = false;
-      var templatesLoaded = false;
-
-      $(document).ready(function() {
-        $.get('/getDevices', function(data) {
-          devices = data;
-          devicesLoaded = true;
-          checkDataLoadedAndInit();
-        });
-        
-        $.get('/getTemplates', function(data) {
-          templates = data;
-          templatesLoaded = true;
-          checkDataLoadedAndInit();
-        });
-      });
-
-      function checkDataLoadedAndInit() {
-        if (devicesLoaded && templatesLoaded) {
-          $('#conditionsContainer').text("");
-          $('#actionsContainer').text("");
-          $('#timeRangesContainer').text("");
-          loadExistingRule();
-        }
-      }
-
-      function loadExistingRule() {
-        if (typeof ruleToEdit === 'undefined') {
-          alert('Erreur : règle non trouvée');
-          window.location.href = '/configRules';
-          return;
-        }
-
-        $('#oldRuleName').val(ruleToEdit.name);
-        $('#ruleName').val(ruleToEdit.name);
-
-        for (var i = 0; i < ruleToEdit.conditions.length; i++) {
-          var cond = ruleToEdit.conditions[i];
-          addCondition(cond);
-        }
-
-        //Charger les plages horaires
-        if (ruleToEdit.timeRanges && ruleToEdit.timeRanges.length > 0) {
-          for (var i = 0; i < ruleToEdit.timeRanges.length; i++) {
-            var tr = ruleToEdit.timeRanges[i];
-            addTimeRange(tr);
-          }
-        }
-
-        for (var i = 0; i < ruleToEdit.actions.length; i++) {
-          var act = ruleToEdit.actions[i];
-          addAction(act);
-        }
-      }
-
-      function hasCluster0006(deviceData) {
-        if (!deviceData || !deviceData.INFO) return false;
-        
-        var deviceId = deviceData.INFO.device_id;
-        var model = deviceData.INFO.model || 'default';
-        
-        var templateKey = deviceId + '.json';
-        var templateFile = templates[templateKey];
-        
-        if (!templateFile) return false;
-        
-        var templateData = templateFile[model] || templateFile['default'];
-        
-        if (!templateData || !templateData[0] || !templateData[0].status) return false;
-        
-        var statusItems = templateData[0].status;
-        
-        for (var i = 0; i < statusItems.length; i++) {
-          if (statusItems[i].cluster.toUpperCase() === '0006') {
-            return true;
-          }
-        }
-        
-        return false;
-      }
-
-      function addCondition(existingData) {
-        var id = conditionCount++;
-        
-        var conditionHtml = '<div class="card mb-2 condition-item" data-id="' + id + '">' +
-          '<div class="card-body">' +
-            '<div class="row g-2">' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Device</label>' +
-                '<select class="form-select form-select-sm device-select" onchange="onDeviceChange(' + id + ')" required>' +
-                  '<option value="">-- Choisir --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2">' +
-                '<label class="form-label small">Cluster</label>' +
-                '<select class="form-select form-select-sm cluster-select" onchange="onClusterChange(' + id + ')" required>' +
-                  '<option value="">-- Cluster --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2">' +
-                '<label class="form-label small">Attribut</label>' +
-                '<select class="form-select form-select-sm attribute-select" required>' +
-                  '<option value="">-- Attribut --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-1">' +
-                '<label class="form-label small">Op.</label>' +
-                '<select class="form-select form-select-sm operator-select" onchange="onOperatorChange(' + id + ')" required>' +
-                  '<option value="==">==</option>' +
-                  '<option value="!=">!=</option>' +
-                  '<option value="<">&lt;</option>' +
-                  '<option value="<=">&lt;=</option>' +
-                  '<option value=">">&gt;</option>' +
-                  '<option value=">=">&gt;=</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2">' +
-                '<label class="form-label small">Valeur</label>' +
-                '<input type="text" class="form-control form-control-sm value-input" required>' +
-              '</div>' +
-              '<div class="col-md-1">' +
-                '<label class="form-label small">Logic</label>' +
-                '<select class="form-select form-select-sm logic-select">' +
-                  '<option value="AND">AND</option>' +
-                  '<option value="OR">OR</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-1 d-flex align-items-end">' +
-                '<button type="button" class="btn btn-sm btn-danger" onclick="removeCondition(' + id + ')">×</button>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-       
-        $('#conditionsContainer').append(conditionHtml);
-        
-        var $card = $('[data-id="' + id + '"]');
-        var $select = $card.find('.device-select');
-        
-        $.each(devices, function(ieee, deviceData) {
-          if (deviceData.INFO) {
-            var model = deviceData.INFO.model || 'Unknown';
-            var alias = deviceData.INFO.alias || '';
-            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee+ ')';
-            $select.append('<option value="' + ieee + '">' + label + '</option>');
-          }
-        });
-
-        if (existingData) {
-          $select.val(existingData.IEEE);
-          onDeviceChange(id);
-          
-          setTimeout(function() {
-            $card.find('.cluster-select').val(existingData.cluster);
-            onClusterChange(id);
-            
-            setTimeout(function() {
-              $card.find('.attribute-select').val(existingData.attribute);
-              $card.find('.operator-select').val(existingData.operator);
-              $card.find('.value-input').val(existingData.value);
-              $card.find('.logic-select').val(existingData.logic);
-              onOperatorChange(id);
-            }, 100);
-          }, 100);
-        }
-      }
-
-      function onOperatorChange(id) {
-        var $card = $('[data-id="' + id + '"]');
-        var operator = $card.find('.operator-select').val();
-        var $valueInput = $card.find('.value-input');
-        
-        if (operator === '==' || operator === '!=') {
-          $valueInput.attr('type', 'text');
-          $valueInput.attr('placeholder', 'Texte ou nombre');
-        } else {
-          $valueInput.attr('type', 'number');
-          $valueInput.attr('placeholder', '');
-          if ($valueInput.val() && isNaN($valueInput.val())) {
-            $valueInput.val('');
-          }
-        }
-      }
-
-      function onDeviceChange(id) {
-        var $card = $('[data-id="' + id + '"]');
-        var ieee = $card.find('.device-select').val();
-        var $clusterSelect = $card.find('.cluster-select');
-        
-        $clusterSelect.html('<option value="">-- Cluster --</option>');
-        $card.find('.attribute-select').html('<option value="">-- Attribut --</option>');
-        
-        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
-        
-        var deviceData = devices[ieee];
-        var deviceId = deviceData.INFO.device_id;
-        var model = deviceData.INFO.model || 'default';
-        
-        var templateKey = deviceId + '.json';
-        var templateFile = templates[templateKey];
-        
-        if (!templateFile) return;
-        
-        var templateData = templateFile[model] || templateFile['default'];
-        
-        if (!templateData || !templateData[0] || !templateData[0].status) return;
-        
-        var statusItems = templateData[0].status;
-        var clustersAdded = {};
-        
-        for (var i = 0; i < statusItems.length; i++) {
-          var item = statusItems[i];
-          var cluster = item.cluster;
-          if (!clustersAdded[cluster]) {
-            clustersAdded[cluster] = true;
-            var clusterDec = parseInt(cluster, 16);
-            $clusterSelect.append('<option value="' + clusterDec + '">0x' + cluster + '</option>');
-          }
-        }
-      }
-
-      function onClusterChange(id) {
-        var $card = $('[data-id="' + id + '"]');
-        var ieee = $card.find('.device-select').val();
-        var clusterDec = parseInt($card.find('.cluster-select').val());
-        var $attributeSelect = $card.find('.attribute-select');
-        
-        $attributeSelect.html('<option value="">-- Attribut --</option>');
-        
-        if (!ieee || !devices[ieee] || !devices[ieee].INFO || !clusterDec) return;
-        
-        var deviceData = devices[ieee];
-        var deviceId = deviceData.INFO.device_id;
-        var model = deviceData.INFO.model || 'default';
-        var clusterHex = clusterDec.toString(16).toUpperCase();
-        while (clusterHex.length < 4) clusterHex = '0' + clusterHex;
-        
-        var templateKey = deviceId + '.json';
-        var templateFile = templates[templateKey];
-        
-        if (!templateFile) return;
-        
-        var templateData = templateFile[model] || templateFile['default'];
-        
-        if (!templateData || !templateData[0] || !templateData[0].status) return;
-        
-        var statusItems = templateData[0].status;
-        
-        for (var i = 0; i < statusItems.length; i++) {
-          var item = statusItems[i];
-          if (item.cluster.toUpperCase() === clusterHex) {
-            $attributeSelect.append('<option value="' + item.attribut + '">' + item.name + ' (' + item.attribut + ')</option>');
-          }
-        }
-      }
-
-      function removeCondition(id) {
-        $('[data-id="' + id + '"]').remove();
-      }
-
-      function addAction(existingData) {
-        var id = actionCount++;
-        
-        var actionHtml = '<div class="card mb-2 action-item" data-action-id="' + id + '">' +
-          '<div class="card-body">' +
-            '<div class="row g-2">' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Type</label>' +
-                '<select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange(' + id + ')" required>' +
-                  '<option value="onoff">ON/OFF</option>' +
-                  '<option value="notification">Notification</option>' +  // ← NOUVEAU
-                '</select>' +
-              '</div>' +
-              // Champs pour ONOFF (visibles par défaut)
-              '<div class="col-md-4 action-onoff-fields">' +
-                '<label class="form-label small">Device</label>' +
-                '<select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange(' + id + ')" required>' +
-                  '<option value="">-- Choisir --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2 action-onoff-fields">' +
-                '<label class="form-label small">Endpoint</label>' +
-                '<input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required>' +
-              '</div>' +
-              '<div class="col-md-2 action-onoff-fields">' +
-                '<label class="form-label small">Valeur</label>' +
-                '<select class="form-select form-select-sm action-value-select" required>' +
-                  '<option value="1">ON (1)</option>' +
-                  '<option value="0">OFF (0)</option>' +
-                  '<option value="2">TOGGLE (2)</option>' +
-                '</select>' +
-              '</div>' +
-              // Champs pour NOTIFICATION (cachés par défaut)
-              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
-                '<label class="form-label small">Titre</label>' +
-                '<input type="text" class="form-control form-control-sm action-title-input" placeholder="Titre de la notification">' +
-              '</div>' +
-              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
-                '<label class="form-label small">Message</label>' +
-                '<input type="text" class="form-control form-control-sm action-message-input" placeholder="Message de la notification">' +
-              '</div>' +
-              '<div class="col-md-1 d-flex align-items-end">' +
-                '<button type="button" class="btn btn-sm btn-danger" onclick="removeAction(' + id + ')">×</button>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-        
-        $('#actionsContainer').append(actionHtml);
-        
-        var $card = $('[data-action-id="' + id + '"]');
-        var $select = $card.find('.action-device-select');
-        
-        $.each(devices, function(ieee, deviceData) {
-          if (deviceData.INFO && hasCluster0006(deviceData)) {
-            var model = deviceData.INFO.model || 'Unknown';
-            var alias = deviceData.INFO.alias || '';
-            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee.substring(0, 8) + '...)';
-            $select.append('<option value="' + ieee + '">' + label + '</option>');
-          }
-        });
-
-        if (existingData) {
-          $card.find('.action-type-select').val(existingData.type);
-          onActionTypeChange(id); // Afficher les bons champs
-          
-          if (existingData.type === 'onoff') {
-            $select.val(existingData.IEEE);
-            $card.find('.action-endpoint-input').val(existingData.endpoint);
-            $card.find('.action-value-select').val(existingData.value);
-          } else if (existingData.type === 'notification') {
-            $card.find('.action-title-input').val(existingData.title || '');
-            $card.find('.action-message-input').val(existingData.message || '');
-          }
-        }
-      }
-
-      function onActionTypeChange(id) {
-        var $card = $('[data-action-id="' + id + '"]');
-        var type = $card.find('.action-type-select').val();
-        
-        if (type === 'onoff') {
-          $card.find('.action-onoff-fields').show();
-          $card.find('.action-notification-fields').hide();
-          // Rendre les champs onoff requis
-          $card.find('.action-device-select').prop('required', true);
-          $card.find('.action-endpoint-input').prop('required', true);
-          $card.find('.action-value-select').prop('required', true);
-          // Rendre les champs notification non requis
-          $card.find('.action-title-input').prop('required', false);
-          $card.find('.action-message-input').prop('required', false);
-        } else if (type === 'notification') {
-          $card.find('.action-onoff-fields').hide();
-          $card.find('.action-notification-fields').show();
-          // Rendre les champs notification requis
-          $card.find('.action-title-input').prop('required', true);
-          $card.find('.action-message-input').prop('required', true);
-          // Rendre les champs onoff non requis
-          $card.find('.action-device-select').prop('required', false);
-          $card.find('.action-endpoint-input').prop('required', false);
-          $card.find('.action-value-select').prop('required', false);
-        }
-      }
-
-      function onActionDeviceChange(id) {
-        var $card = $('[data-action-id="' + id + '"]');
-        var ieee = $card.find('.action-device-select').val();
-        var $endpointInput = $card.find('.action-endpoint-input');
-        
-        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
-        
-        var endpoint = devices[ieee].INFO.endpoint || '1';
-        $endpointInput.val(endpoint);
-      }
-
-      function removeAction(id) {
-        $('[data-action-id="' + id + '"]').remove();
-      }
-
-      function addTimeRange(existingData) {
-        var id = timeRangeCount++;
-        
-        var timeRangeHtml = '<div class="card mb-2 timerange-item" data-timerange-id="' + id + '">' +
-          '<div class="card-body">' +
-            '<div class="row g-2">' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Heure début</label>' +
-                '<input type="time" class="form-control form-control-sm timerange-start" value="08:00" required>' +
-              '</div>' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Heure fin</label>' +
-                '<input type="time" class="form-control form-control-sm timerange-end" value="18:00" required>' +
-              '</div>' +
-              '<div class="col-md-5">' +
-                '<label class="form-label small">Jours</label>' +
-                '<div class="btn-group btn-group-sm d-flex" role="group">' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-1" value="1" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-1">L</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-2" value="2" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-2">M</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-3" value="3" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-3">M</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-4" value="4" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-4">J</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-5" value="5" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-5">V</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-6" value="6" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-6">S</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-7" value="7" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-7">D</label>' +
-                '</div>' +
-              '</div>' +
-              '<div class="col-md-1 d-flex align-items-end">' +
-                '<button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange(' + id + ')">×</button>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-        
-        $('#timeRangesContainer').append(timeRangeHtml);
-        
-        // Remplir avec les données existantes si présentes
-        if (existingData) {
-          var $card = $('[data-timerange-id="' + id + '"]');
-          $card.find('.timerange-start').val(existingData.startTime);
-          $card.find('.timerange-end').val(existingData.endTime);
-          
-          if (existingData.days) {
-            for (var i = 0; i < existingData.days.length; i++) {
-              var dayNum = existingData.days[i];
-              $('#day-' + id + '-' + dayNum).prop('checked', true);
-            }
-          }
-        }
-      }
-
-      function removeTimeRange(id) {
-        $('[data-timerange-id="' + id + '"]').remove();
-      }
-
-      $('#ruleForm').on('submit', function(e) {
-        e.preventDefault();
-        
-        var rule = {
-          oldName: $('#oldRuleName').val(),
-          name: $('#ruleName').val(),
-          timeRanges: [],  
-          conditions: [],
-          actions: []
-        };
-
-        //Collecter les plages horaires
-        $('.timerange-item').each(function() {
-          var $card = $(this);
-          var startTime = $card.find('.timerange-start').val();
-          var endTime = $card.find('.timerange-end').val();
-          var days = [];
-          
-          $card.find('.day-check:checked').each(function() {
-            days.push(parseInt($(this).val()));
-          });
-          
-          // Ajouter seulement si au moins un jour est coché
-          if (days.length > 0) {
-            rule.timeRanges.push({
-              startTime: startTime,
-              endTime: endTime,
-              days: days
-            });
-          }
-        });
-        
-        $('.condition-item').each(function() {
-          var $card = $(this);
-          var valueRaw = $card.find('.value-input').val();
-          var operator = $card.find('.operator-select').val();
-          var conditionValue;
-          
-          if (operator === '==' || operator === '!=') {
-            conditionValue = isNaN(valueRaw) ? valueRaw : parseInt(valueRaw);
-          } else {
-            conditionValue = parseInt(valueRaw);
-          }
-          
-          var condition = {
-            type: 'device',
-            IEEE: $card.find('.device-select').val(),
-            cluster: parseInt($card.find('.cluster-select').val()),
-            attribute: parseInt($card.find('.attribute-select').val()),
-            operator: operator,
-            value: conditionValue,
-            logic: $card.find('.logic-select').val()
-          };
-          rule.conditions.push(condition);
-        });
-
-        if (rule.conditions.length === 0) {
-          alert('Erreur : Vous devez ajouter au moins une condition à la règle.');
-          return false;  // Empêche la soumission
-        }
-        
-        $('.action-item').each(function() {
-          var $card = $(this);
-          var type = $card.find('.action-type-select').val();
-          
-          var action = {
-            type: type
-          };
-          
-          if (type === 'onoff') {
-            action.IEEE = $card.find('.action-device-select').val();
-            action.endpoint = parseInt($card.find('.action-endpoint-input').val());
-            action.value = $card.find('.action-value-select').val();
-            action.title = '';    // Vide pour onoff
-            action.message = '';  // Vide pour onoff
-          } else if (type === 'notification') {
-            action.IEEE = '';     // Vide pour notification
-            action.endpoint = 0;  // Vide pour notification
-            action.value = '';    // Vide pour notification
-            action.title = $card.find('.action-title-input').val();
-            action.message = $card.find('.action-message-input').val();
-          }
-          
-          rule.actions.push(action);
-        });
-        
-        $.ajax({
-          url: '/api/rules/edit',
-          type: 'POST',
-          contentType: 'application/json',
-          data: JSON.stringify(rule),
-          success: function() {
-            alert('Règle modifiée avec succès !');
-            window.location.href = '/configRules';
-          },
-          error: function(xhr) {
-            alert('Erreur lors de la modification : ' + xhr.responseText);
-          }
-        });
-      });
-    </script>
+  </div>
+</div>
 )rawstring";
 
-const char HTTP_ADD_RULE[] PROGMEM = R"rawstring(
-    <div class='container p-4'>
-      <h4 class='card-title mb-4'>Ajouter une règle</h4>
-      <div class='card mx-auto shadow-sm'>
-        <div class="card-body">
-          <form id="ruleForm">
-            
-            <!-- Nom de la règle -->
-            <div class="mb-4">
-              <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
-              <input class='form-control' id='ruleName' type='text' name='ruleName' placeholder='rule_name' required>
-            </div>
+const char HTTP_EDIT_RULE_JS[] PROGMEM = R"rawstring(
+<script>
+var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
+$(document).ready(function(){$.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});$.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})});
+function checkDataLoadedAndInit(){if(devicesLoaded&&templatesLoaded){$('#conditionsContainer,#actionsContainer,#elseActionsContainer,#timeRangesContainer').text("");populateTriggerDeviceSelect();loadExistingRule()}}
+function populateTriggerDeviceSelect(){var s=$('#triggerDevice').html('<option value="">-- Choisir --</option>');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';s.append('<option value="'+ieee+'">'+l+'</option>')}})}
+function loadExistingRule(){if(typeof ruleToEdit==='undefined'){alert('Erreur');window.location.href='/configRules';return}$('#oldRuleName,#ruleName').val(ruleToEdit.name);if(ruleToEdit.trigger)loadTrigger(ruleToEdit.trigger);if(ruleToEdit.timeRanges)ruleToEdit.timeRanges.forEach(addTimeRange);if(ruleToEdit.conditions)ruleToEdit.conditions.forEach(addCondition);if(ruleToEdit.actions)ruleToEdit.actions.forEach(addAction);if(ruleToEdit.elseActions)ruleToEdit.elseActions.forEach(addElseAction)}
+function hasCluster0006(dev){if(!dev||!dev.INFO)return!1;var tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return!1;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return!1;return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})}
+function onTriggerModeChange(){var mode=$('#triggerMode').val();if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}}
+function onTriggerDeviceChange(){var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onTriggerClusterChange(){var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
+function loadTrigger(t){var mode=t.mode||'timer';$('#triggerMode').val(mode);onTriggerModeChange();if(mode==='event'){$('#triggerDevice').val(t.IEEE||'');onTriggerDeviceChange();setTimeout(function(){$('#triggerCluster').val(t.cluster||0);onTriggerClusterChange();setTimeout(function(){$('#triggerAttribute').val(t.attribute||0)},100)},100)}}
+function addTimeRange(data){var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';$('#timeRangesContainer').append(html);if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}}
+function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
+function addCondition(data){var id=conditionCount++,html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Device</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">-- Cluster --</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">-- Attribut --</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&lt;=</option><option value=">">&gt;</option><option value=">=">&gt;=</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div><div class="col-md-1"><label class="form-label small">Logic</label><select class="form-select form-select-sm logic-select"><option value="AND">AND</option><option value="OR">OR</option></select></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div></div></div></div>';$('#conditionsContainer').append(html);var c=$('[data-id="'+id+'"]'),sel=c.find('.device-select');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){sel.val(data.IEEE);onDeviceChange(id);setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(id);setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.operator-select').val(data.operator);c.find('.value-input').val(data.value);c.find('.logic-select').val(data.logic);onOperatorChange(id)},100)},100)}}
+function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
+function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">-- Cluster --</option>');c.find('.attribute-select').html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
+function removeCondition(id){$('[data-id="'+id+'"]').remove()}
+function addAction(data){var id=actionCount++,html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';$('#actionsContainer').append(html);var c=$('[data-action-id="'+id+'"]'),sel=c.find('.action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){c.find('.action-type-select').val(data.type);onActionTypeChange(id);if(data.type==='onoff'){sel.val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint);c.find('.action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}}}
+function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();if(t==='onoff'){c.find('.action-onoff-fields').show();c.find('.action-notification-fields').hide();c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!0);c.find('.action-title-input,.action-message-input').prop('required',!1)}else{c.find('.action-onoff-fields').hide();c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0);c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!1)}}
+function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
+function addElseAction(data){var id=elseActionCount++,html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 else-action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" required></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';$('#elseActionsContainer').append(html);var sel=$('[data-else-action-id="'+id+'"] .else-action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){var c=$('[data-else-action-id="'+id+'"]');c.find('.else-action-type-select').val(data.type);onElseActionTypeChange(id);if(data.type==='onoff'){c.find('.else-action-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint);c.find('.else-action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.else-action-title-input').val(data.title);c.find('.else-action-message-input').val(data.message)}}}
+function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();if(t==='onoff'){c.find('.else-action-onoff-fields').show();c.find('.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0);c.find('.else-action-title-input,.else-action-message-input').prop('required',!1)}else{c.find('.else-action-onoff-fields').hide();c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0);c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!1)}}
+function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
+$('#ruleForm').on('submit',function(e){e.preventDefault();var rule={oldName:$('#oldRuleName').val(),name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};$('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});$('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}$('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.action-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val());a.value=c.find('.action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});$('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.else-action-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val());a.value=c.find('.else-action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});$.ajax({url:'/api/rules/edit',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle modifiée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})});
+</script>
+)rawstring";
 
-            <!-- Conditions -->
-            <div class="mb-4">
-              <label class="form-label fw-bold">Conditions</label>
-              <div id="conditionsContainer">
-                ⏳ Chargement...
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Ajouter une condition</button>
-            </div>
-
-             <!-- ← NOUVEAU: Plages horaires -->
-            <div class="mb-4">
-              <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
-              <div id="timeRangesContainer">
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Ajouter une plage horaire</button>
-            </div>
-
-            <!-- Actions -->
-            <div class="mb-4">
-              <label class="form-label fw-bold">Actions</label>
-              <div id="actionsContainer">
-                ⏳ Chargement...
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-primary" onclick="addAction()">+ Ajouter une action</button>
-            </div>
-
-            <!-- Boutons -->
-            <div class="d-flex justify-content-between mt-4">
-              <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
-              <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
-            </div>
-          </form>
+const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
+<div class='container p-4'>
+  <h4 class='card-title mb-4'>Ajouter une règle</h4>
+  <div class='card mx-auto shadow-sm'>
+    <div class="card-body">
+      <form id="ruleForm">
+        
+        <div class="mb-4">
+          <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
+          <input class='form-control' id='ruleName' type='text' required>
         </div>
-      </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">Déclenchement</label>
+          <div class="card"><div class="card-body">
+            <div class="row g-2">
+              <div class="col-md-2">
+                <label class="form-label small">Mode</label>
+                <select class="form-select form-select-sm" id="triggerMode" onchange="onTriggerModeChange()">
+                  <option value="timer">Timer (60s)</option>
+                  <option value="event">Event</option>
+                </select>
+              </div>
+              <div class="col-md-3 trigger-event-fields" style="display:none;">
+                <label class="form-label small">Device</label>
+                <select class="form-select form-select-sm" id="triggerDevice" onchange="onTriggerDeviceChange()"><option value="">-- Choisir --</option></select>
+              </div>
+              <div class="col-md-3 trigger-event-fields" style="display:none;">
+                <label class="form-label small">Cluster</label>
+                <select class="form-select form-select-sm" id="triggerCluster" onchange="onTriggerClusterChange()"><option value="">-- Cluster --</option></select>
+              </div>
+              <div class="col-md-3 trigger-event-fields" style="display:none;">
+                <label class="form-label small">Attribut</label>
+                <select class="form-select form-select-sm" id="triggerAttribute"><option value="">-- Attribut --</option></select>
+              </div>
+            </div>
+          </div></div>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
+          <div id="timeRangesContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Plage</button>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">SI ... (Conditions)</label>
+          <div id="conditionsContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Condition</button>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">ALORS ... (Actions)</label>
+          <div id="actionsContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addAction()">+ Action</button>
+        </div>
+
+        <div class="mb-4">
+          <label class="form-label fw-bold">SINON ... (Actions)</label>
+          <div id="elseActionsContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addElseAction()">+ Action</button>
+        </div>
+
+        <div class="d-flex justify-content-between mt-4">
+          <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
+          <button type="submit" class="btn btn-primary btn-lg">Créer</button>
+        </div>
+      </form>
     </div>
+  </div>
+</div>
+)rawstring";
 
-    <script>
-      var devices = {};
-      var templates = {};
-      var conditionCount = 0;
-      var actionCount = 0;
-      var timeRangeCount = 0;
-      var devicesLoaded = false;
-      var templatesLoaded = false;
-
-      $(document).ready(function() {
-        $.get('/getDevices', function(data) {
-          devices = data;
-          devicesLoaded = true;
-          checkDataLoadedAndInit();
-        });
-        
-        $.get('/getTemplates', function(data) {
-          templates = data;
-          templatesLoaded = true;
-          checkDataLoadedAndInit();
-        });
-      });
-
-      function checkDataLoadedAndInit() {
-        if (devicesLoaded && templatesLoaded) {
-          $('#conditionsContainer').text("");
-          $('#actionsContainer').text("");
-          addCondition();
-          addAction();
-        }
-      }
-
-      function hasCluster0006(deviceData) {
-        if (!deviceData || !deviceData.INFO) return false;
-        
-        var deviceId = deviceData.INFO.device_id;
-        var model = deviceData.INFO.model || 'default';
-        
-        var templateKey = deviceId + '.json';
-        var templateFile = templates[templateKey];
-        
-        if (!templateFile) return false;
-        
-        var templateData = templateFile[model] || templateFile['default'];
-        
-        if (!templateData || !templateData[0] || !templateData[0].status) return false;
-        
-        var statusItems = templateData[0].status;
-        
-        for (var i = 0; i < statusItems.length; i++) {
-          if (statusItems[i].cluster.toUpperCase() === '0006') {
-            return true;
-          }
-        }
-        
-        return false;
-      }
-
-      function addCondition() {
-        var id = conditionCount++;
-        
-        var conditionHtml = '<div class="card mb-2 condition-item" data-id="' + id + '">' +
-          '<div class="card-body">' +
-            '<div class="row g-2">' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Device</label>' +
-                '<select class="form-select form-select-sm device-select" onchange="onDeviceChange(' + id + ')" required>' +
-                  '<option value="">-- Choisir --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2">' +
-                '<label class="form-label small">Cluster</label>' +
-                '<select class="form-select form-select-sm cluster-select" onchange="onClusterChange(' + id + ')" required>' +
-                  '<option value="">-- Cluster --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2">' +
-                '<label class="form-label small">Attribut</label>' +
-                '<select class="form-select form-select-sm attribute-select" required>' +
-                  '<option value="">-- Attribut --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-1">' +
-                '<label class="form-label small">Op.</label>' +
-                '<select class="form-select form-select-sm operator-select" onchange="onOperatorChange(' + id + ')" required>' +
-                  '<option value="==">==</option>' +
-                  '<option value="!=">!=</option>' +
-                  '<option value="<">&lt;</option>' +
-                  '<option value="<=">&lt;=</option>' +
-                  '<option value=">">&gt;</option>' +
-                  '<option value=">=">&gt;=</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2">' +
-                '<label class="form-label small">Valeur</label>' +
-                '<input type="text" class="form-control form-control-sm value-input" required>' +
-              '</div>' +
-              '<div class="col-md-1">' +
-                '<label class="form-label small">Logic</label>' +
-                '<select class="form-select form-select-sm logic-select">' +
-                  '<option value="AND">AND</option>' +
-                  '<option value="OR">OR</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-1 d-flex align-items-end">' +
-                '<button type="button" class="btn btn-sm btn-danger" onclick="removeCondition(' + id + ')">×</button>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-        
-        $('#conditionsContainer').append(conditionHtml);
-        
-        var $select = $('[data-id="' + id + '"] .device-select');
-        $.each(devices, function(ieee, deviceData) {
-          if (deviceData.INFO) {
-            var model = deviceData.INFO.model || 'Unknown';
-            var alias = deviceData.INFO.alias || '';
-            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee + ')';
-            $select.append('<option value="' + ieee + '">' + label + '</option>');
-          }
-        });
-      }
-
-      function onOperatorChange(id) {
-        var $card = $('[data-id="' + id + '"]');
-        var operator = $card.find('.operator-select').val();
-        var $valueInput = $card.find('.value-input');
-        
-        if (operator === '==' || operator === '!=') {
-          $valueInput.attr('type', 'text');
-          $valueInput.attr('placeholder', 'Texte ou nombre');
-        } else {
-          $valueInput.attr('type', 'number');
-          $valueInput.attr('placeholder', '');
-          if ($valueInput.val() && isNaN($valueInput.val())) {
-            $valueInput.val('');
-          }
-        }
-      }
-
-      function onDeviceChange(id) {
-        var $card = $('[data-id="' + id + '"]');
-        var ieee = $card.find('.device-select').val();
-        var $clusterSelect = $card.find('.cluster-select');
-        
-        $clusterSelect.html('<option value="">-- Cluster --</option>');
-        $card.find('.attribute-select').html('<option value="">-- Attribut --</option>');
-        
-        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
-        
-        var deviceData = devices[ieee];
-        var deviceId = deviceData.INFO.device_id;
-        var model = deviceData.INFO.model || 'default';
-        
-        var templateKey = deviceId + '.json';
-        var templateFile = templates[templateKey];
-        
-        if (!templateFile) return;
-        
-        var templateData = templateFile[model] || templateFile['default'];
-        
-        if (!templateData || !templateData[0] || !templateData[0].status) return;
-        
-        var statusItems = templateData[0].status;
-        var clustersAdded = {};
-        
-        for (var i = 0; i < statusItems.length; i++) {
-          var item = statusItems[i];
-          var cluster = item.cluster;
-          if (!clustersAdded[cluster]) {
-            clustersAdded[cluster] = true;
-            var clusterDec = parseInt(cluster, 16);
-            $clusterSelect.append('<option value="' + clusterDec + '">0x' + cluster + '</option>');
-          }
-        }
-      }
-
-      function onClusterChange(id) {
-        var $card = $('[data-id="' + id + '"]');
-        var ieee = $card.find('.device-select').val();
-        var clusterDec = parseInt($card.find('.cluster-select').val());
-        var $attributeSelect = $card.find('.attribute-select');
-        
-        $attributeSelect.html('<option value="">-- Attribut --</option>');
-        
-        if (!ieee || !devices[ieee] || !devices[ieee].INFO || !clusterDec) return;
-        
-        var deviceData = devices[ieee];
-        var deviceId = deviceData.INFO.device_id;
-        var model = deviceData.INFO.model || 'default';
-        var clusterHex = clusterDec.toString(16).toUpperCase();
-        while (clusterHex.length < 4) clusterHex = '0' + clusterHex;
-        
-        var templateKey = deviceId + '.json';
-        var templateFile = templates[templateKey];
-        
-        if (!templateFile) return;
-        
-        var templateData = templateFile[model] || templateFile['default'];
-        
-        if (!templateData || !templateData[0] || !templateData[0].status) return;
-        
-        var statusItems = templateData[0].status;
-        
-        for (var i = 0; i < statusItems.length; i++) {
-          var item = statusItems[i];
-          if (item.cluster.toUpperCase() === clusterHex) {
-            $attributeSelect.append('<option value="' + item.attribut + '">' + item.name + ' (' + item.attribut + ')</option>');
-          }
-        }
-      }
-
-      function removeCondition(id) {
-        $('[data-id="' + id + '"]').remove();
-      }
-
-      function addAction() {
-        var id = actionCount++;
-        
-        var actionHtml = '<div class="card mb-2 action-item" data-action-id="' + id + '">' +
-          '<div class="card-body">' +
-            '<div class="row g-2">' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Type</label>' +
-                '<select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange(' + id + ')" required>' +
-                  '<option value="onoff">ON/OFF</option>' +
-                  '<option value="notification">Notification</option>' +  // ← NOUVEAU
-                '</select>' +
-              '</div>' +
-              // Champs pour ONOFF (visibles par défaut)
-              '<div class="col-md-4 action-onoff-fields">' +
-                '<label class="form-label small">Device</label>' +
-                '<select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange(' + id + ')" required>' +
-                  '<option value="">-- Choisir --</option>' +
-                '</select>' +
-              '</div>' +
-              '<div class="col-md-2 action-onoff-fields">' +
-                '<label class="form-label small">Endpoint</label>' +
-                '<input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required>' +
-              '</div>' +
-              '<div class="col-md-2 action-onoff-fields">' +
-                '<label class="form-label small">Valeur</label>' +
-                '<select class="form-select form-select-sm action-value-select" required>' +
-                  '<option value="1">ON (1)</option>' +
-                  '<option value="0">OFF (0)</option>' +
-                  '<option value="2">TOGGLE (2)</option>' +
-                '</select>' +
-              '</div>' +
-              // Champs pour NOTIFICATION (cachés par défaut)
-              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
-                '<label class="form-label small">Titre</label>' +
-                '<input type="text" class="form-control form-control-sm action-title-input" placeholder="Titre de la notification">' +
-              '</div>' +
-              '<div class="col-md-4 action-notification-fields" style="display:none;">' +
-                '<label class="form-label small">Message</label>' +
-                '<input type="text" class="form-control form-control-sm action-message-input" placeholder="Message de la notification">' +
-              '</div>' +
-              '<div class="col-md-1 d-flex align-items-end">' +
-                '<button type="button" class="btn btn-sm btn-danger" onclick="removeAction(' + id + ')">×</button>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-        
-        $('#actionsContainer').append(actionHtml);
-        
-        var $select = $('[data-action-id="' + id + '"] .action-device-select');
-        $.each(devices, function(ieee, deviceData) {
-          if (deviceData.INFO && hasCluster0006(deviceData)) {
-            var model = deviceData.INFO.model || 'Unknown';
-            var alias = deviceData.INFO.alias || '';
-            var label = alias ? alias + ' (' + model + ')' : model + ' (' + ieee.substring(0, 8) + '...)';
-            $select.append('<option value="' + ieee + '">' + label + '</option>');
-          }
-        });
-      }
-
-      function onActionTypeChange(id) {
-        var $card = $('[data-action-id="' + id + '"]');
-        var type = $card.find('.action-type-select').val();
-        
-        if (type === 'onoff') {
-          $card.find('.action-onoff-fields').show();
-          $card.find('.action-notification-fields').hide();
-          // Rendre les champs onoff requis
-          $card.find('.action-device-select').prop('required', true);
-          $card.find('.action-endpoint-input').prop('required', true);
-          $card.find('.action-value-select').prop('required', true);
-          // Rendre les champs notification non requis
-          $card.find('.action-title-input').prop('required', false);
-          $card.find('.action-message-input').prop('required', false);
-        } else if (type === 'notification') {
-          $card.find('.action-onoff-fields').hide();
-          $card.find('.action-notification-fields').show();
-          // Rendre les champs notification requis
-          $card.find('.action-title-input').prop('required', true);
-          $card.find('.action-message-input').prop('required', true);
-          // Rendre les champs onoff non requis
-          $card.find('.action-device-select').prop('required', false);
-          $card.find('.action-endpoint-input').prop('required', false);
-          $card.find('.action-value-select').prop('required', false);
-        }
-      }
-
-      function onActionDeviceChange(id) {
-        var $card = $('[data-action-id="' + id + '"]');
-        var ieee = $card.find('.action-device-select').val();
-        var $endpointInput = $card.find('.action-endpoint-input');
-        
-        if (!ieee || !devices[ieee] || !devices[ieee].INFO) return;
-        
-        var endpoint = devices[ieee].INFO.endpoint || '1';
-        $endpointInput.val(endpoint);
-      }
-
-      function removeAction(id) {
-        $('[data-action-id="' + id + '"]').remove();
-      }
-
-      function addTimeRange() {
-        var id = timeRangeCount++;
-        
-        var timeRangeHtml = '<div class="card mb-2 timerange-item" data-timerange-id="' + id + '">' +
-          '<div class="card-body">' +
-            '<div class="row g-2">' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Heure début</label>' +
-                '<input type="time" class="form-control form-control-sm timerange-start" value="08:00" required>' +
-              '</div>' +
-              '<div class="col-md-3">' +
-                '<label class="form-label small">Heure fin</label>' +
-                '<input type="time" class="form-control form-control-sm timerange-end" value="18:00" required>' +
-              '</div>' +
-              '<div class="col-md-5">' +
-                '<label class="form-label small">Jours</label>' +
-                '<div class="btn-group btn-group-sm d-flex" role="group">' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-1" value="1" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-1">L</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-2" value="2" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-2">M</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-3" value="3" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-3">M</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-4" value="4" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-4">J</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-5" value="5" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-5">V</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-6" value="6" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-6">S</label>' +
-                  '<input type="checkbox" class="btn-check day-check" id="day-' + id + '-7" value="7" autocomplete="off">' +
-                  '<label class="btn btn-outline-primary" for="day-' + id + '-7">D</label>' +
-                '</div>' +
-              '</div>' +
-              '<div class="col-md-1 d-flex align-items-end">' +
-                '<button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange(' + id + ')">×</button>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
-        
-        $('#timeRangesContainer').append(timeRangeHtml);
-      }
-
-      function removeTimeRange(id) {
-        $('[data-timerange-id="' + id + '"]').remove();
-      }
-
-      $('#ruleForm').on('submit', function(e) {
-        e.preventDefault();
-        
-        var rule = {
-          name: $('#ruleName').val(),
-          timeRanges: [],  
-          conditions: [],
-          actions: []
-        };
-        
-        // Collecter les plages horaires
-        $('.timerange-item').each(function() {
-          var $card = $(this);
-          var startTime = $card.find('.timerange-start').val();
-          var endTime = $card.find('.timerange-end').val();
-          var days = [];
-          
-          $card.find('.day-check:checked').each(function() {
-            days.push(parseInt($(this).val()));
-          });
-          
-          // Ajouter seulement si au moins un jour est coché
-          if (days.length > 0) {
-            rule.timeRanges.push({
-              startTime: startTime,
-              endTime: endTime,
-              days: days
-            });
-          }
-        });
-
-        $('.condition-item').each(function() {
-          var $card = $(this);
-          var valueRaw = $card.find('.value-input').val();
-          var operator = $card.find('.operator-select').val();
-          var conditionValue;
-          
-          if (operator === '==' || operator === '!=') {
-            conditionValue = isNaN(valueRaw) ? valueRaw : parseInt(valueRaw);
-          } else {
-            conditionValue = parseInt(valueRaw);
-          }
-          
-          var condition = {
-            type: 'device',
-            IEEE: $card.find('.device-select').val(),
-            cluster: parseInt($card.find('.cluster-select').val()),
-            attribute: parseInt($card.find('.attribute-select').val()),
-            operator: operator,
-            value: conditionValue,
-            logic: $card.find('.logic-select').val()
-          };
-          rule.conditions.push(condition);
-        });
-
-        if (rule.conditions.length === 0) {
-          alert('Erreur : Vous devez ajouter au moins une condition à la règle.');
-          return false;  // Empêche la soumission
-        }
-        
-        $('.action-item').each(function() {
-          var $card = $(this);
-          var type = $card.find('.action-type-select').val();
-          
-          var action = {
-            type: type
-          };
-          
-          if (type === 'onoff') {
-            action.IEEE = $card.find('.action-device-select').val();
-            action.endpoint = parseInt($card.find('.action-endpoint-input').val());
-            action.value = $card.find('.action-value-select').val();
-            action.title = '';    // Vide pour onoff
-            action.message = '';  // Vide pour onoff
-          } else if (type === 'notification') {
-            action.IEEE = '';     // Vide pour notification
-            action.endpoint = 0;  // Vide pour notification
-            action.value = '';    // Vide pour notification
-            action.title = $card.find('.action-title-input').val();
-            action.message = $card.find('.action-message-input').val();
-          }
-          
-          rule.actions.push(action);
-        });
-        
-        $.ajax({
-          url: '/api/rules/add',
-          type: 'POST',
-          contentType: 'application/json',
-          data: JSON.stringify(rule),
-          success: function() {
-            alert('Règle ajoutée avec succès !');
-            window.location.href = '/configRules';
-          },
-          error: function(xhr) {
-            alert('Erreur lors de l\'ajout de la règle: ' + xhr.responseText);
-          }
-        });
-      });
-    </script>
+const char HTTP_ADD_RULE_JS[] PROGMEM = R"rawstring(
+<script>
+var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
+$(document).ready(function(){$.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});$.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})});
+function checkDataLoadedAndInit(){if(devicesLoaded&&templatesLoaded){populateTriggerDeviceSelect();addCondition();addAction()}}
+function populateTriggerDeviceSelect(){var s=$('#triggerDevice').html('<option value="">-- Choisir --</option>');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';s.append('<option value="'+ieee+'">'+l+'</option>')}})}
+function hasCluster0006(dev){if(!dev||!dev.INFO)return!1;var tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return!1;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return!1;return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})}
+function onTriggerModeChange(){var mode=$('#triggerMode').val();if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}}
+function onTriggerDeviceChange(){var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onTriggerClusterChange(){var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
+function addTimeRange(data){var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';$('#timeRangesContainer').append(html);if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}}
+function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
+function addCondition(data){var id=conditionCount++,html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Device</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">-- Cluster --</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">-- Attribut --</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&lt;=</option><option value=">">&gt;</option><option value=">=">&gt;=</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div><div class="col-md-1"><label class="form-label small">Logic</label><select class="form-select form-select-sm logic-select"><option value="AND">AND</option><option value="OR">OR</option></select></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div></div></div></div>';$('#conditionsContainer').append(html);var c=$('[data-id="'+id+'"]'),sel=c.find('.device-select');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){sel.val(data.IEEE);onDeviceChange(id);setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(id);setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.operator-select').val(data.operator);c.find('.value-input').val(data.value);c.find('.logic-select').val(data.logic);onOperatorChange(id)},100)},100)}}
+function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
+function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">-- Cluster --</option>');c.find('.attribute-select').html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
+function removeCondition(id){$('[data-id="'+id+'"]').remove()}
+function addAction(data){var id=actionCount++,html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';$('#actionsContainer').append(html);var c=$('[data-action-id="'+id+'"]'),sel=c.find('.action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){c.find('.action-type-select').val(data.type);onActionTypeChange(id);if(data.type==='onoff'){sel.val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint);c.find('.action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}}}
+function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();if(t==='onoff'){c.find('.action-onoff-fields').show();c.find('.action-notification-fields').hide();c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!0);c.find('.action-title-input,.action-message-input').prop('required',!1)}else{c.find('.action-onoff-fields').hide();c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0);c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!1)}}
+function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
+function addElseAction(data){var id=elseActionCount++,html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 else-action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" required></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';$('#elseActionsContainer').append(html);var sel=$('[data-else-action-id="'+id+'"] .else-action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){var c=$('[data-else-action-id="'+id+'"]');c.find('.else-action-type-select').val(data.type);onElseActionTypeChange(id);if(data.type==='onoff'){c.find('.else-action-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint);c.find('.else-action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.else-action-title-input').val(data.title);c.find('.else-action-message-input').val(data.message)}}}
+function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();if(t==='onoff'){c.find('.else-action-onoff-fields').show();c.find('.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0);c.find('.else-action-title-input,.else-action-message-input').prop('required',!1)}else{c.find('.else-action-onoff-fields').hide();c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0);c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!1)}}
+function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
+$('#ruleForm').on('submit',function(e){e.preventDefault();var rule={name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};$('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});$('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}$('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.action-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val());a.value=c.find('.action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});$('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.else-action-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val());a.value=c.find('.else-action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});$.ajax({url:'/api/rules/add',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle créée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})});
+</script>
 )rawstring";
 
  const char HTTP_CONFIG_MQTT[] PROGMEM = R"(
@@ -5428,7 +4516,13 @@ String createPowerGraph(String IEEE)
     DeviceData* device = devices[i];
     if (device->getDeviceID() == IEEE)
     {
-      goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 230;
+      if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
+      {
+        goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 230;
+      }else{
+        goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 1000;
+      }
+       
       break;
     }
   }
@@ -8181,7 +7275,8 @@ void handleEditRule(AsyncWebServerRequest *request)
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_EDIT_RULE);
+  result += FPSTR(HTTP_EDIT_RULE_HTML);
+  result += FPSTR(HTTP_EDIT_RULE_JS);
   result += F("<script>var ruleToEdit = ");
   result += ruleJson;
   result += F(";</script>");
@@ -8197,7 +7292,9 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
   DeserializationError error = deserializeJson(doc, (const char*)data);
   
   if (error) {
-    request->send(400, "text/plain", "JSON invalide");
+    char errMess[1024];
+    sprintf(errMess,"JSON invalide : %d - %s\n Datas : %s",error.code(),error.c_str(),(const char*)data);
+    request->send(400, "text/plain", errMess );
     return;
   }
 
@@ -8265,6 +7362,15 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
       // Remplacer la règle
       JsonObject rule = rules[i];
       rule["name"] = newName;
+
+      //Remplacer le trigger
+      rule.remove("trigger");
+      JsonObject trigger = rule.createNestedObject("trigger");
+      JsonObject triggerDoc = doc["trigger"].as<JsonObject>();
+      trigger["mode"] = triggerDoc["mode"] | "timer";
+      trigger["IEEE"] = triggerDoc["IEEE"] | "";
+      trigger["cluster"] = triggerDoc["cluster"] | 0;
+      trigger["attribute"] = triggerDoc["attribute"] | 0;
       
       //Remplacer les plages horaires
       rule.remove("timeRanges");
@@ -8298,6 +7404,18 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
       JsonArray actions = rule.createNestedArray("actions");
       for (JsonObject act : doc["actions"].as<JsonArray>()) {
         JsonObject a = actions.createNestedObject();
+        a["type"] = act["type"];
+        a["IEEE"] = act["IEEE"];
+        a["endpoint"] = act["endpoint"];
+        a["value"] = act["value"];
+        a["title"] = act["title"]; 
+        a["message"] = act["message"];
+      }
+
+      rule.remove("elseActions");
+      JsonArray elseActions = rule.createNestedArray("elseActions");
+      for (JsonObject act : doc["elseActions"].as<JsonArray>()) {
+        JsonObject a = elseActions.createNestedObject();
         a["type"] = act["type"];
         a["IEEE"] = act["IEEE"];
         a["endpoint"] = act["endpoint"];
@@ -8392,7 +7510,8 @@ void handleAddRule(AsyncWebServerRequest *request)
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_ADD_RULE);
+  result += HTTP_ADD_RULE_HTML;
+  result += HTTP_ADD_RULE_JS;
   result += footer();
   result += F("</html>");
 
@@ -8460,6 +7579,14 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
   
   newRule["name"] = ruleName;
   
+  //ajouter un trigger
+  JsonObject trigger = newRule.createNestedObject("trigger");
+  JsonObject triggerDoc = doc["trigger"].as<JsonObject>();
+  trigger["mode"] = triggerDoc["mode"] | "timer";  // Par défaut: timer
+  trigger["IEEE"] = triggerDoc["IEEE"] | "";
+  trigger["cluster"] = triggerDoc["cluster"] | 0;
+  trigger["attribute"] = triggerDoc["attribute"] | 0;
+
   //Copier les plages horaires
   JsonArray timeRanges = newRule.createNestedArray("timeRanges");
   for (JsonObject tr : doc["timeRanges"].as<JsonArray>()) {
@@ -8489,6 +7616,17 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
   JsonArray actions = newRule.createNestedArray("actions");
   for (JsonObject act : doc["actions"].as<JsonArray>()) {
     JsonObject a = actions.createNestedObject();
+    a["type"] = act["type"];
+    a["IEEE"] = act["IEEE"];
+    a["endpoint"] = act["endpoint"];
+    a["value"] = act["value"];
+    a["title"] = act["title"];  
+    a["message"] = act["message"];
+  }
+
+  JsonArray elseActions = newRule.createNestedArray("elseActions");
+  for (JsonObject act : doc["elseActions"].as<JsonArray>()) {
+    JsonObject a = elseActions.createNestedObject();
     a["type"] = act["type"];
     a["IEEE"] = act["IEEE"];
     a["endpoint"] = act["endpoint"];
@@ -11065,8 +10203,7 @@ void handleLogBuffer(AsyncWebServerRequest *request)
 
 void handleScanNetwork(AsyncWebServerRequest * request)
 {
-  int i = 0;
-  String ret = request->arg(i);
+  String ret = request->arg("ret");
   String result=""; 
   if (ret == "-1")
   {
