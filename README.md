@@ -136,12 +136,16 @@ Vous pourrez **créer**, **modifier** ou **supprimer** une règle.
 
 ### Comment créer des règles
 
-* Les règles sont stockées dans un fichier JSON. 
+* Les règles sont stockées dans un fichier JSON.
+* Une règle peut être déclenchée :
+  * toutes les 60 secondes
+  * dès que le couple cluster/attribut choisi est mis à jour  
 * Une règle peut contenir une ou plusieurs conditions.  
-* Une règle peut contenir une ou plusieurs actions.
+* Une règle peut contenir une ou plusieurs actions si les conditions sont réunis.
+* Une règle peut contenir une ou plusieurs actions si les conditions ne sont pas réunis
 * Une règle peut intégrer une plage horaire (Optionnel)
 
-![Ajouter/modifier une règles](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_add_rules.png)
+![Ajouter/modifier une règles](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-box-regle-v2.11.PNG)
 
 ### Structure
 Voici la structure :  
@@ -152,6 +156,11 @@ Voici la structure :
 	│   │   ├── startTime   
     │   │   ├── endTime   
     │   │   ├── days[...]  //1,2,3,4,5,6,7
+	|   ├── trigger
+	│   │   ├── mode   
+    │   │   ├── IEEE   
+    │   │   ├── cluster
+	│   │   ├── attribut
     │   ├── conditions   
     │   │   ├── type   
     │   │   ├── IEEE   
@@ -166,6 +175,16 @@ Voici la structure :
     │   │   ├── endpoint  
     │   │   ├── value    
 
+### Paramètres des trigger
+
+par défaut mode = timer
+
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|-------------|------|--------|-------------|
+| `mode` | ✓ | String | "event" ou "timer" | |
+| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
+| `cluster` | ✓ | Decimal | ID du cluster en décimal | |
+| `attribut` | ✓ | Decimal | Numéro d'attribut | |
 
 ### Paramètres de Condition
 
