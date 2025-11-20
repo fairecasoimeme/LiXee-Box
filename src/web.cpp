@@ -36,6 +36,11 @@
 #include "TemplateData.h"
 #include "TemplateCache.h"
 
+#define MINIZ_HEADER_FILE_ONLY
+#define MINIZ_NO_STDIO
+#define MINIZ_NO_TIME
+#include "rom/miniz.h"
+
 extern std::vector<DeviceData*> devices;
 
 extern SemaphoreHandle_t file_Mutex;
@@ -598,7 +603,7 @@ const char HTTP_BACKUP[] PROGMEM =
     "   <form id='frm' class='mb-4'>"
     "     <div class='mb-3'>"
     "       <label for='f' class='form-label'>Sélection le fichier tar</label>"
-    "       <input class='form-control' type='file' id='f' name='archive' accept='.tar'>"
+    "       <input class='form-control' type='file' id='f' name='archive' accept='.tar,.tar.gz,.gz'>"
     "     </div>"
     "     <button type='submit' class='btn btn-primary'>Start</button>"
     "   </form>"
@@ -1278,13 +1283,13 @@ const char HTTP_UPDATE[] PROGMEM = R"(
         <div align='center'>
         <form id="frm">
           <div class="mb-3">
-            <label for="f" class="form-label">Sélectionner le Fichier Tar</label>
+            <label for="f" class="form-label">Sélectionner le Fichier de mise à jour</label>
             <input
               class="form-control"
               type="file"
               id="f"
               name="archive"
-              accept=".tar">
+              accept=".tar,.tar.gz,.gz">
           </div>
           <button id="btnUpdateMan" type="submit" style="width:100%" class="btn btn-primary mb-3">Mettre à jour</button>
         </form>
@@ -1465,13 +1470,6 @@ const char HTTP_UPDATE[] PROGMEM = R"(
         const xhr = new XMLHttpRequest();
         xhr.open('POST','/doRestore');
 
-        xhr.upload.onprogress = ev => {
-          if (ev.lengthComputable) {
-            const pct = Math.round(ev.loaded/ev.total*100);
-            bar.style.width = pct + '%';
-            bar.textContent = pct + '%';
-          }
-        };
         xhr.onload = () => {
           if (xhr.status === 200) {
             setTimeout(() => {
@@ -8586,6 +8584,169 @@ void handleDoRestore(AsyncWebServerRequest *request, const String& filename, siz
 
 */
 
+// Configuration des buffers - OPTIMISÉ POUR PSRAM
+#define GZIP_CHUNK_SIZE     (32 * 1024)   // 32KB - buffer lecture gzip
+#define TAR_BUFFER_SIZE     (128 * 1024)  // 128KB - buffer tar décompressé  
+#define WRITE_BUFFER_SIZE   (8 * 1024)    // 8KB - buffer écriture fichiers
+#define UPLOAD_BUFFER_SIZE  (32 * 1024)   // 32KB - buffer upload HTTP
+
+struct GzipTarContext {
+    File gzFile;                  // Fichier .tar.gz source
+    tinfl_decompressor inflator;  // Décompresseur miniz intégré ESP32
+    uint8_t* inBuf;               // Buffer d'entrée compressé (PSRAM)
+    uint8_t* outBuf;              // Buffer de sortie décompressé (PSRAM)
+    size_t inBufUsed;             // Bytes utilisés dans inBuf
+    size_t inBufAvail;            // Bytes disponibles dans inBuf
+    size_t outBufPos;             // Position actuelle dans outBuf
+    size_t outBufLen;             // Longueur de données valides dans outBuf
+    bool streamEnded;             // Flag de fin de stream
+    bool initialized;             // Flag d'initialisation
+    size_t totalBytesRead;        // Total bytes lus (pour stats)
+    size_t totalBytesDecompressed;// Total bytes décompressés (pour stats)
+};
+
+static GzipTarContext* gzCtxPtr = nullptr;
+
+static uint8_t* allocPSRAM(size_t size, const char* name) {
+    uint8_t* ptr = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
+    if (!ptr) {
+        log_e("Échec allocation PSRAM %s (%d bytes)", name, size);
+        log_e("PSRAM libre: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+        return nullptr;
+    }
+    log_i("Buffer %s alloué en PSRAM: %d bytes", name, size);
+    return ptr;
+}
+
+static void freePSRAM(void* ptr) {
+    if (ptr) {
+        heap_caps_free(ptr);
+    }
+}
+
+static void printMemoryStats() {
+    log_i("=== Stats Mémoire ===");
+    log_i("RAM interne libre: %d bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    log_i("PSRAM libre: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+    log_i("Heap total libre: %d bytes", ESP.getFreeHeap());
+}
+
+// ============================================================================
+// CALLBACKS POUR MICROTAR
+// ============================================================================
+
+/**
+ * Callback de lecture pour microtar depuis le buffer décompressé
+ */
+static int gztar_read(mtar_t *tar, void *data, unsigned size) {
+    if (!gzCtxPtr) return MTAR_EREADFAIL;
+    
+    GzipTarContext *ctx = gzCtxPtr;
+    uint8_t *dest = (uint8_t*)data;
+    unsigned totalRead = 0;
+
+    while (totalRead < size && !ctx->streamEnded) {
+        esp_task_wdt_reset();
+        
+        // Si on a des données dans le buffer de sortie, les copier
+        if (ctx->outBufPos < ctx->outBufLen) {
+            size_t available = ctx->outBufLen - ctx->outBufPos;
+            size_t toCopy = (size - totalRead < available) ? (size - totalRead) : available;
+            
+            memcpy(dest + totalRead, ctx->outBuf + ctx->outBufPos, toCopy);
+            ctx->outBufPos += toCopy;
+            totalRead += toCopy;
+            continue;
+        }
+
+        // Buffer de sortie vide, décompresser le prochain chunk
+        ctx->outBufPos = 0;
+        ctx->outBufLen = 0;
+
+        // Lire plus de données compressées si nécessaire
+        if (ctx->inBufUsed >= ctx->inBufAvail) {
+            size_t bytesRead = ctx->gzFile.read(ctx->inBuf, GZIP_CHUNK_SIZE);
+            if (bytesRead == 0) {
+                ctx->streamEnded = true;
+                break;
+            }
+            ctx->inBufUsed = 0;
+            ctx->inBufAvail = bytesRead;
+            ctx->totalBytesRead += bytesRead;
+        }
+
+        // Décompresser dans le gros buffer PSRAM
+        size_t in_bytes = ctx->inBufAvail - ctx->inBufUsed;
+        size_t out_bytes = TAR_BUFFER_SIZE;
+        
+        int status = tinfl_decompress(
+            &ctx->inflator,
+            ctx->inBuf + ctx->inBufUsed,
+            &in_bytes,
+            ctx->outBuf,
+            ctx->outBuf,
+            &out_bytes,
+            TINFL_FLAG_PARSE_ZLIB_HEADER
+        );
+        
+        ctx->inBufUsed += in_bytes;
+        ctx->outBufLen = out_bytes;
+        ctx->totalBytesDecompressed += out_bytes;
+        
+        if (status < 0) {
+            log_e("Erreur décompression: %d", status);
+            return MTAR_EREADFAIL;
+        }
+        
+        if (status == TINFL_STATUS_DONE) {
+            ctx->streamEnded = true;
+        }
+    }
+
+    return (totalRead == size) ? MTAR_ESUCCESS : MTAR_EREADFAIL;
+}
+
+/**
+ * Callback seek - non supporté pour stream
+ */
+static int gztar_seek(mtar_t *tar, unsigned pos) {
+    return MTAR_ESUCCESS;
+}
+
+/**
+ * Callback close
+ */
+static int gztar_close(mtar_t *tar) {
+    if (!gzCtxPtr) return MTAR_ESUCCESS;
+    
+    GzipTarContext *ctx = gzCtxPtr;
+    
+    // Afficher les stats finales
+    log_i("Stats décompression:");
+    log_i("  Bytes lus (compressé): %d", ctx->totalBytesRead);
+    log_i("  Bytes décompressés: %d", ctx->totalBytesDecompressed);
+    if (ctx->totalBytesRead > 0) {
+        float ratio = (float)ctx->totalBytesDecompressed / ctx->totalBytesRead;
+        log_i("  Ratio de compression: %.2f:1", ratio);
+    }
+    
+    if (ctx->gzFile) {
+        ctx->gzFile.close();
+    }
+    
+    // Libérer les buffers PSRAM
+    if (ctx->inBuf) {
+        freePSRAM(ctx->inBuf);
+        ctx->inBuf = nullptr;
+    }
+    if (ctx->outBuf) {
+        freePSRAM(ctx->outBuf);
+        ctx->outBuf = nullptr;
+    }
+    
+    return MTAR_ESUCCESS;
+}
+
 static void ensureDirs(const String &fullPath) {
   size_t pos = 1;
   while ((pos = fullPath.indexOf('/', pos)) != -1) {
@@ -8674,51 +8835,326 @@ static void untarApplyAndRestore(const char *tarPath) {
 
 }
 
-// handler unique pour l’upload .tar
-void handleDoRestore(AsyncWebServerRequest *request,
-                         const String& filename, size_t index,
-                         uint8_t *data, size_t len, bool final) {
-  size_t content_len;
-  static const char *tmpPath = "/rt/upload.tar";
-  if (!index) {
-    // premier chunk : créer le fichier temporaire
-    if (LittleFS.exists(tmpPath)) LittleFS.remove(tmpPath);
-    request->_tempFile = LittleFS.open(tmpPath, "w+");
-    log_i("Upload start");
-    updateStatus.statusManuel = "Téléchargement ...";
-    //updateStatus.progressManuel = 10;
-  }
-  esp_task_wdt_reset();
-  // Pendant l'upload, calculer le pourcentage
-  static size_t totalReceived = 0;
-  if (!index) totalReceived = 0;
-  totalReceived += len;
-
-  if (content_len > 0) {
-    int uploadPct = (totalReceived * 40) / content_len; // 0-40%
-    updateStatus.progressManuel = uploadPct;
-  }
-  // écrire chunk dans le .tar temporaire
-  request->_tempFile.write(data, len);
-  if (final) {
-    esp_task_wdt_reset();
-    request->_tempFile.close();
-    updateStatus.statusManuel = "Installation ...";
-    updateStatus.progressManuel = 60;
-
-    untarApplyAndRestore(tmpPath);
-    esp_task_wdt_reset();
-    updateStatus.statusManuel = "Redémarrage ...";
-    updateStatus.progressManuel = 100;
-    updateStatus.rebootRequested = true;
-
-    executeReboot=true;
+static bool untarGzApplyAndRestore(const char *tarGzPath) {
+    log_i("=== Début extraction optimisée PSRAM ===");
+    log_i("Fichier: %s", tarGzPath);
     
-    request->send(200, "text/plain", "Mise à jour terminée");
+    printMemoryStats();
+    
+    // Allouer le contexte
+    GzipTarContext gzCtx;
+    memset(&gzCtx, 0, sizeof(GzipTarContext));
+    gzCtxPtr = &gzCtx;
+    
+    // Allouer les gros buffers en PSRAM
+    gzCtx.inBuf = allocPSRAM(GZIP_CHUNK_SIZE, "inBuf");
+    if (!gzCtx.inBuf) {
+        gzCtxPtr = nullptr;
+        return false;
+    }
+    
+    gzCtx.outBuf = allocPSRAM(TAR_BUFFER_SIZE, "outBuf");
+    if (!gzCtx.outBuf) {
+        freePSRAM(gzCtx.inBuf);
+        gzCtxPtr = nullptr;
+        return false;
+    }
+    
+    printMemoryStats();
+    
+    // Ouvrir le fichier .tar.gz
+    gzCtx.gzFile = LittleFS.open(tarGzPath, "r");
+    if (!gzCtx.gzFile) {
+        log_e("Impossible d'ouvrir %s", tarGzPath);
+        freePSRAM(gzCtx.inBuf);
+        freePSRAM(gzCtx.outBuf);
+        gzCtxPtr = nullptr;
+        return false;
+    }
+    
+    size_t fileSize = gzCtx.gzFile.size();
+    log_i("Taille fichier compressé: %d bytes (%.2f KB)", fileSize, fileSize / 1024.0);
 
+    // Initialiser le décompresseur miniz intégré
+    tinfl_init(&gzCtx.inflator);
+    gzCtx.initialized = true;
 
+    // Ouvrir le tar avec callbacks personnalisés
+    mtar_t tar;
+    tar.read = gztar_read;
+    tar.seek = gztar_seek;
+    tar.close = gztar_close;
 
-  }
+    bool fwStarted = false;
+    bool success = true;
+    mtar_header_t h;
+    
+    // Allouer le buffer d'écriture en PSRAM
+    uint8_t* writeBuf = allocPSRAM(WRITE_BUFFER_SIZE, "writeBuf");
+    if (!writeBuf) {
+        gztar_close(&tar);
+        gzCtxPtr = nullptr;
+        return false;
+    }
+
+    // Parcourir tous les fichiers du tar
+    int fileCount = 0;
+    unsigned long startTime = millis();
+    
+    while (mtar_read_header(&tar, &h) == MTAR_ESUCCESS) {
+        esp_task_wdt_reset();
+        String name = String(h.name);
+        fileCount++;
+        
+        log_i("[%d] Fichier: %s (%d bytes)", fileCount, name.c_str(), h.size);
+
+        // Gérer les dossiers
+        if (h.type == '5' || name.endsWith("/")) {
+            String dir = "/" + name;
+            if (dir.endsWith("/")) dir.remove(dir.length() - 1);
+            if (!LittleFS.exists(dir)) {
+                LittleFS.mkdir(dir);
+            }
+            mtar_next(&tar);
+            continue;
+        }
+
+        // Gérer le firmware
+        if (name == "firmware.bin") {
+            log_i("=== Flashage du firmware (%d bytes) ===", h.size);
+            
+            if (!fwStarted) {
+                if (!Update.begin(h.size, U_FLASH)) {
+                    Update.printError(Serial);
+                    success = false;
+                    break;
+                }
+                fwStarted = true;
+            }
+
+            // Streamer le firmware vers le flash avec gros buffer
+            uint32_t remaining = h.size;
+            uint32_t written = 0;
+            unsigned long fwStartTime = millis();
+            
+            while (remaining > 0) {
+                esp_task_wdt_reset();
+                uint32_t toRead = (remaining < WRITE_BUFFER_SIZE) ? remaining : WRITE_BUFFER_SIZE;
+                
+                if (gztar_read(&tar, writeBuf, toRead) != MTAR_ESUCCESS) {
+                    log_e("Erreur lecture firmware");
+                    success = false;
+                    break;
+                }
+                
+                if (Update.write(writeBuf, toRead) != toRead) {
+                    Update.printError(Serial);
+                    success = false;
+                    break;
+                }
+                
+                written += toRead;
+                remaining -= toRead;
+                
+                // Afficher progression tous les 10%
+                if (h.size > 100000 && written % (h.size / 10) < toRead) {
+                    int pct = (written * 100) / h.size;
+                    log_i("Firmware: %d%%", pct);
+                }
+            }
+
+            if (!success) break;
+
+            unsigned long fwTime = millis() - fwStartTime;
+            if (fwTime > 0) {
+                float fwSpeed = (h.size / 1024.0) / (fwTime / 1000.0);
+                log_i("Firmware flashé: %.2f KB/s", fwSpeed);
+            }
+
+            // Finaliser le firmware
+            if (!Update.end(true)) {
+                Update.printError(Serial);
+                success = false;
+                break;
+            } else {
+                log_i("✓ Firmware flashé avec succès");
+            }
+        } 
+        // Gérer les autres fichiers
+        else {
+            String path = "/" + name;
+            ensureDirs(path);
+            
+            File f = LittleFS.open(path, FILE_WRITE);
+            if (!f) {
+                log_e("Impossible d'ouvrir %s en écriture", path.c_str());
+                success = false;
+                break;
+            }
+
+            // Écrire le fichier par gros chunks pour performance maximale
+            uint32_t remaining = h.size;
+            unsigned long fileStartTime = millis();
+            
+            while (remaining > 0) {
+                esp_task_wdt_reset();
+                uint32_t toRead = (remaining < WRITE_BUFFER_SIZE) ? remaining : WRITE_BUFFER_SIZE;
+                
+                if (gztar_read(&tar, writeBuf, toRead) != MTAR_ESUCCESS) {
+                    log_e("Erreur lecture fichier %s", path.c_str());
+                    success = false;
+                    break;
+                }
+                
+                f.write(writeBuf, toRead);
+                remaining -= toRead;
+            }
+            
+            f.close();
+            
+            if (!success) break;
+            
+            unsigned long fileTime = millis() - fileStartTime;
+            if (fileTime > 100) { // Seulement si > 100ms
+                float fileSpeed = (h.size / 1024.0) / (fileTime / 1000.0);
+                log_i("  ✓ Écrit: %.2f KB/s", fileSpeed);
+            } else {
+                log_i("  ✓ Écrit");
+            }
+        }
+
+        mtar_next(&tar);
+    }
+
+    unsigned long totalTime = millis() - startTime;
+    
+    // Libérer le buffer d'écriture
+    freePSRAM(writeBuf);
+    
+    // Nettoyer
+    gztar_close(&tar);
+    gzCtxPtr = nullptr;
+    
+    // Stats finales
+    log_i("=== Extraction terminée ===");
+    log_i("Fichiers traités: %d", fileCount);
+    log_i("Temps total: %.2f secondes", totalTime / 1000.0);
+    log_i("Succès: %s", success ? "OUI" : "NON");
+    
+    printMemoryStats();
+    
+    // Supprimer le fichier tar.gz
+    if (success) {
+        LittleFS.remove(tarGzPath);
+    }
+
+    return success;
+}
+
+void handleDoRestore(AsyncWebServerRequest *request,
+                     const String& filename, size_t index,
+                     uint8_t *data, size_t len, bool final) {
+    
+    static const char *tmpPath = "/rt/upload.tar.gz";
+    static size_t totalReceived = 0;
+    static unsigned long uploadStartTime = 0;
+    
+    // Premier chunk : créer le fichier temporaire
+    if (!index) {
+        uploadStartTime = millis();
+        
+        if (LittleFS.exists(tmpPath)) {
+            LittleFS.remove(tmpPath);
+        }
+        
+        // Créer le dossier /rt s'il n'existe pas
+        if (!LittleFS.exists("/rt")) {
+            LittleFS.mkdir("/rt");
+        }
+        
+        request->_tempFile = LittleFS.open(tmpPath, "w+");
+        if (!request->_tempFile) {
+            log_e("Impossible de créer %s", tmpPath);
+            request->send(500, "text/plain", "Erreur création fichier");
+            return;
+        }
+        
+        totalReceived = 0;
+        log_i("=== Début upload ===");
+        
+        printMemoryStats();
+        
+        // Mettre à jour le status
+        updateStatus.statusManuel = "Téléchargement...";
+        updateStatus.progressManuel = 0;
+    }
+    
+    esp_task_wdt_reset();
+    
+    // Écrire le chunk dans le fichier temporaire
+    if (len > 0) {
+        request->_tempFile.write(data, len);
+        totalReceived += len;
+        
+        // Log progression tous les 10% (pour debug uniquement)
+        size_t contentLength = request->contentLength();
+        if (contentLength > 0) {
+            int uploadPct = (totalReceived * 50) / contentLength; // 0-50% pour l'upload
+            updateStatus.progressManuel = uploadPct;
+            
+            // Log tous les 10%
+            static int lastPct = -1;
+            int pct = (totalReceived * 100) / contentLength;
+            if (pct / 10 != lastPct / 10) {
+                log_i("Upload: %d%% (%d / %d bytes) - Progress: %d%%", 
+                      pct, totalReceived, contentLength, uploadPct);
+                lastPct = pct;
+            }
+        }
+    }
+    
+    // Dernier chunk : décompresser et installer
+    if (final) {
+        esp_task_wdt_reset();
+        request->_tempFile.close();
+        
+        unsigned long uploadTime = millis() - uploadStartTime;
+        float uploadSpeed = (totalReceived / 1024.0) / (uploadTime / 1000.0);
+        
+        log_i("=== Upload terminé ===");
+        log_i("Taille: %d bytes (%.2f KB)", totalReceived, totalReceived / 1024.0);
+        log_i("Temps: %.2f secondes", uploadTime / 1000.0);
+        log_i("Vitesse: %.2f KB/s", uploadSpeed);
+        
+        // Passer à l'installation
+        updateStatus.statusManuel = "Installation...";
+        updateStatus.progressManuel = 50;
+
+        delay(100);  // 100ms pour que l'interface affiche "Installation... 60%"
+        esp_task_wdt_reset();
+        
+        // Extraire le tar.gz et appliquer les mises à jour
+        bool success = untarGzApplyAndRestore(tmpPath);
+        
+        esp_task_wdt_reset();
+        
+        if (success) {
+            updateStatus.statusManuel = "Redémarrage...";
+            updateStatus.progressManuel = 100;
+            updateStatus.rebootRequested = true;
+            
+            executeReboot = true;
+            request->send(200, "text/plain", "Mise à jour terminée avec succès");
+            
+            log_i("✓ Mise à jour complète - Redémarrage imminent");
+        } else {
+            updateStatus.statusManuel = "Erreur installation";
+            updateStatus.progressManuel = -1;
+            request->send(500, "text/plain", "Erreur lors de l'installation");
+            
+            log_e("✗ Erreur lors de l'installation");
+        }
+    }
 }
 
 
