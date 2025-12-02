@@ -85,14 +85,13 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 ### Avec un ordinateur
 
 1. Tout d'abord il faut sortir la carte électronique du boitier. Dévisser les 2 vis.
-![Dévisser le boitier](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/devisser_boitier.jpg)
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/devisser_boitier.jpg" width="480"/>
 2. Brancher la carte sur le port USB d'un ordinateur en appuyant sur le bouton flash.
-![Dévisser le boitier](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg)
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg" width="480" />
+
 4. Télécharger le fichier firmware (fichier **firmware.bin**) dans la section release
 5. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
-6. Taper la commande suivante :
-```esptool.py.exe --chip esp32s3 --port "COMXX" --baud 460800 0x10000 firmware.bin``` 
-
+6. Taper la commande suivante :  ```esptool.py.exe --chip esp32s3 --port "COMXX" --baud 460800 0x10000 firmware.bin```
 
 ## 📱 Interface Utilisateur
 
