@@ -88,7 +88,8 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/devisser_boitier.jpg" width="480"/>
 2. Brancher la carte sur le port USB d'un ordinateur en appuyant sur le bouton flash.
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg" width="480" />
-4. Télécharger le fichier firmware (fichier **firmware.bin**) dans la section release
+4. Télécharger le fichier firmware (fichier firmware.bin) dans la section release
+   
 
 #### En mode GUI
 
