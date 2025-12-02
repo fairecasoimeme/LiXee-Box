@@ -88,10 +88,22 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/devisser_boitier.jpg" width="480"/>
 2. Brancher la carte sur le port USB d'un ordinateur en appuyant sur le bouton flash.
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg" width="480" />
-
 4. Télécharger le fichier firmware (fichier **firmware.bin**) dans la section release
-5. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
-6. Taper la commande suivante :
+
+#### En mode GUI
+
+6. Télécharger l'utilitaire de flash : ![Flash download tool](https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32/production_stage/tools/flash_download_tool.html)
+7. Décompresser et lancer l'exéctutable : flash_download_tool_x.x.x.exe
+8. Suivez les même paramètres que les captures d'écran
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash tools.png"/>
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware.png"/>
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware_loading.png" />
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware_finish.png"/>
+
+#### En mode console
+
+9. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
+10. Taper la commande suivante :
 
    ```esptool.exe --chip esp32s3 --port "COMXX" --baud 921600 write_flash -z --flash_mode dio --flash_freq 40m --flash_size 16MB 0x10000 firmware.bin```
 
@@ -889,6 +901,16 @@ Attendez un moment et allez dans vos périphériques MQTT HA :
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_Create_MQTT_device.png" width="1024">  
 
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_MQTT_device_entities.png" width="800">
+
+## DEBUG
+
+Il est possible de débugger l'application en branchant le matériel sur le port USB d'un ordinateur
+**Utilisez putty.exe**
+<img width="452" height="442" alt="image" src="https://github.com/user-attachments/assets/2b7fef49-60f3-4f9d-b3b0-39c3b53dff40" />
+* Entrer le port "Serial line" : COMXX
+* Entrer la vitesse "Speed" : 115200
+* Sélectionner "Serial"
+* Appuyer sur "Open"
 
 ## Crédits
 
