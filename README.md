@@ -91,7 +91,7 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 
 4. Télécharger le fichier firmware (fichier **firmware.bin**) dans la section release
 5. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
-6. Taper la commande suivante :  ```esptool.py.exe --chip esp32s3 --port "COMXX" --baud 460800 0x10000 firmware.bin```
+6. Taper la commande suivante :  ```esptool.py.exe --chip esp32s3 --port "COMXX" --baud 921600 write_flash -z --flash_mode dio --flash_freq 40m --flash_size 16MB 0x10000 firmware.bin```
 
 ## 📱 Interface Utilisateur
 
