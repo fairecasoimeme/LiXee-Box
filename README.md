@@ -70,14 +70,33 @@ L'appareil peut être configuré via un site web local
 - Sauvegarde/restauration de configuration
 - Mode développeur pour le débogage
 
-## 📱 Interface Utilisateur
+## Mise à Jour du Firmware
 
-### Mise à Jour du Firmware
+### A partir de l'interface Web
+
+Cliquer sur "A propos" puis "Mise à jour"
+
 ![Mise à Jour du Firmware](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Update.png)
 
 L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour avec les dernières fonctionnalités.
 
-### Appairage d'Appareils
+⚠️ **Si la mise à jour ne fonctionne pas, veuillez passer avec la méthode suivante (avec un ordinateur)**
+
+### Avec un ordinateur
+
+1. Tout d'abord il faut sortir la carte électronique du boitier. Dévisser les 2 vis.
+![Dévisser le boitier](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/devisser_boitier.jpg)
+2. Brancher la carte sur le port USB d'un ordinateur en appuyant sur le bouton flash.
+![Dévisser le boitier](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg)
+4. Télécharger le fichier firmware (fichier **firmware.bin**) dans la section release
+5. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
+6. Taper la commande suivante :
+```esptool.py.exe --chip esp32s3 --port "COMXX" --baud 460800 0x10000 firmware.bin``` 
+
+
+## 📱 Interface Utilisateur
+
+### Jumelage d'Appareils
 ![Appairage d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p1.png)
 ![Appairage LiXee-Box](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p2.png)
 ![Recherche d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p3.png)
@@ -317,8 +336,161 @@ Avec un navigateur web
 4. Exécutez la procédure d'appairage sur votre appareil Zigbee
    
 ⚠️ **Si un appareil est appairé, une alerte verte apparaît. Vous pouvez rafraîchir pour voir les propriétés de l'appareil.**  
-  
-## Comment créer un modèle pour un nouvel appareil Zigbee
+
+## 📦 Appareils Compatibles (à partir de la v2.12)
+
+La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâce à sa prise en charge des clusters standards. Voici la liste détaillée du matériel compatible.
+
+### Clusters Zigbee Supportés
+
+| Cluster | Nom | Description |
+|---------|-----|-------------|
+| 0x0000 | Basic | Informations de base de l'appareil |
+| 0x0001 | Power Configuration | Gestion batterie |
+| 0x0006 | On/Off | Commandes marche/arrêt |
+| 0x0102 | Window Covering | Contrôle volets/stores |
+| 0x0402 | Temperature Measurement | Mesure de température |
+| 0x0405 | Relative Humidity | Mesure d'humidité |
+| 0x0406 | Occupancy Sensing | Détection de présence |
+| 0x0702 | Simple Metering | Comptage d'énergie |
+| 0x0B04 | Electrical Measurement | Mesures électriques |
+| 0xFF66 | LiXee | Cluster propriétaire LiXee |
+
+---
+
+### ⚡ Appareils LiXee (Compatibilité Complète)
+
+| Appareil | Device Type | Description | Testé |
+|----------|-------------|-------------|:-----:|
+| **ZLinky_TIC** | 0x0061 | Téléinformation Linky | ✅ |
+| **ZiPulses** | 0x0107 | Compteur d'impulsions (eau, gaz) | ✅ |
+
+---
+
+### 🔌 Prises Connectées
+**Device Type : 0x0107, 0x0101, 0x0061**
+
+#### Marques testées et compatibles
+
+| Marque | Modèles | Mesure énergie | Notes | Testé |
+|--------|---------|----------------|-------|:-----:|
+| **Aqara** | SP-EUC01, ZNCZ12LM | ✅ | 10A max, capteur température intégré | |
+| **Sonoff** | S31 Lite ZB, S40 Lite | ✅ | 15-16A, bon rapport qualité/prix | |
+| **IKEA** | TRÅDFRI, Grillplats | ❌ | Répéteur Zigbee | |
+| **Tuya/Moes** | Diverses prises Smart Life | ✅ | 16A, économique | |
+| **Neo Coolcam** | Plug-007SPB2 | ✅ | Basé Tuya | |
+| **Nous** | Smart Zigbee Socket A1Z | ✅ | Version EU | ✅ |
+| **Lidl** | SilverCrest Smart Plug | ✅ | Basé Tuya | |
+| **BlitzWolf** | BW-SHP13 | ✅ | 16A, bon routeur Zigbee | |
+| **Innr** | SP 120, SP 220, SP 222 | ✅ | Compatible Hue | |
+| **Osram** | Smart+ | ✅ | |✅ |
+| **Philips** | LOM001 | ✅ |  |✅ |
+
+#### Autres prises compatibles (clusters standards)
+Tout appareil Zigbee avec Device Type 0x0107, 0x0101 ou 0x0061 utilisant les clusters On/Off (0x0006) et Electrical Measurement (0x0B04) devrait fonctionner.
+
+---
+
+### 🪟 Volets Roulants / Stores
+**Device Type : 0x0202**
+
+#### Marques testées et compatibles
+
+| Marque | Modèles | Notes | Testé |
+|--------|---------|-------|:-----:|
+| **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | |
+| **Tuya/Moes** | Curtain Switch, Roller Shutter Module | Nombreux modèles disponibles | ✅ |
+| **LoraTap** | SC500ZB, divers modèles | Compatible Zigbee2MQTT | |
+| **Legrand** | Céliane/Mosaic Zigbee | Volet roulant connecté | |
+| **Aqara** | Curtain Driver E1 | Moteur pour rideaux | |
+| **Zemismart** | Roller Shade Motor | Moteur tubulaire | |
+
+#### Autres volets compatibles (clusters standards)
+Tout appareil avec Device Type 0x0202 utilisant le cluster Window Covering (0x0102) avec les commandes Up/Down/Stop.
+
+---
+
+### 🌡️ Capteurs Température / Humidité
+**Device Type : 0x0302**
+
+#### Marques testées et compatibles
+
+| Marque | Modèles | Pression | Écran | Notes | Testé |
+|--------|---------|----------|-------|-------|:-----:|
+| **Aqara** | WSDCGQ11LM, T1 (TH-S02D) | ✅ | ❌ | Capteur Sensirion, très précis | |
+| **Sonoff** | SNZB-02, SNZB-02D, SNZB-02P | ❌ | ✅ (02D) | Économique, écran LCD sur 02D | ✅ |
+| **IKEA** | VINDSTYRKA, Timmerflotte | ❌ | ✅ | Qualité de l'air sur VINDSTYRKA | |
+| **iHorn** | 113D | ❌ |  ✅ |  | ✅ |
+| **Tuya/Moes** | ZSS-ZK-THL, TS0201, divers | Variable | Variable | Large choix de modèles | |
+| **Nous** | E5 | ❌ | ❌ | Compact | |
+| **OWON** | THS317-ET | ❌ | ❌ | Sonde externe sur câble | |
+| **Xiaomi/Mijia** | WSDCGQ01LM | ❌ | ❌ | ⚠️ Non Zigbee 3.0 | |
+
+#### Autres capteurs compatibles (clusters standards)
+Tout appareil avec Device Type 0x0302 utilisant les clusters Temperature Measurement (0x0402) et Relative Humidity (0x0405).
+
+---
+
+### 👁️ Capteurs de Présence / Mouvement
+**Device Type : 0x0107**
+
+#### Marques testées et compatibles
+
+| Marque | Modèles | Luminosité | Type | Notes | Testé |
+|--------|---------|------------|------|-------|:-----:|
+| **Aqara** | RTCGQ11LM, P1 | ✅ | PIR | Délai 60-90s | |
+| **Aqara** | FP1, FP2 | ✅ | mmWave | Détection présence statique, zones | |
+| **Sonoff** | SNZB-03 | ❌ | PIR | Délai 60s | |
+| **Sonoff** | SNZB-06P | ✅ | Radar 5.8GHz | Présence statique | ✅ |
+| **Philips Hue** | Indoor/Outdoor Motion | ✅ | PIR | Température intégrée | |
+| **IKEA** | TRÅDFRI E1745, Myggspray | ❌ | PIR | IP44 (extérieur) | |
+| **Tuya/Moes** | ZY-M100, MTG075-ZB | Variable | mmWave | Présence statique | |
+
+#### Autres capteurs compatibles (clusters standards)
+Tout appareil avec Device Type 0x0107 utilisant le cluster Occupancy Sensing (0x0406).
+
+---
+
+### 🔥 Vannes Thermostatiques (TRV)
+**Compatibilité via clusters standards**
+
+| Marque | Modèles | Notes | Testé |
+|--------|---------|-------|:-----:|
+| **Moes/Tuya** | BRT-100, TV01, TRV601 | Programmable, détection fenêtre ouverte | ✅ |
+| **Danfoss** | Ally | Haute qualité | |
+| **Eurotronic** | Spirit Zigbee | | |
+| **Popp** | POPZ701721 | | |
+
+> ⚠️ **Note** : Les TRV utilisent souvent des clusters propriétaires Tuya (TS0601). La compatibilité peut varier selon les modèles.
+
+---
+
+### 💡 Ampoules et Éclairage
+**Compatibilité partielle via cluster On/Off**
+
+| Marque | Notes | Testé |
+|--------|-------|:-----:|
+| **IKEA** | TRÅDFRI / Kajplats - On/Off et dimming | |
+| **Philips Hue** | Compatible clusters standards | |
+| **Innr** | Compatible Hue et Zigbee standards | |
+| **Tuya/Moes** | Nombreux modèles | |
+
+> ℹ️ La LiXee-Box supporte le cluster On/Off (0x0006). Le contrôle des couleurs (cluster 0x0300) n'est pas ecnore implémenté.
+
+
+### ❓ Vérifier la Compatibilité
+
+Pour vérifier si un appareil Zigbee est compatible :
+
+1. **Identifiez le Device Type** de votre appareil (disponible dans la documentation)
+2. **Vérifiez les clusters** utilisés par l'appareil
+3. Un appareil est compatible si :
+   - Son Device Type correspond à ceux listés ci-dessus
+   - Il utilise les clusters standards supportés
+
+## 📝 Créer un Template Personnalisé
+
+Si votre appareil n'est pas reconnu automatiquement, vous pouvez créer un template personnalisé. 
 
 Un fichier modèle est une structure JSON qui définit les états et actions d'un type d'appareil. Le nom du fichier modèle correspond à l'identification de l'appareil (en décimal).
 Lorsqu'un appareil Zigbee rejoint le réseau, **LiXee-Box** crée un objet suivant le modèle correspondant avec les états et actions, effectue les liaisons et configure les rapports si nécessaire.
