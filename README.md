@@ -119,10 +119,14 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 Le processus d'appairage est simplifié avec un assistant pas à pas pour connecter vos appareils Zigbee.
 
 ### Gestion des Appareils
-![Configuration des Appareils Zigbee](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_config_zigbee.png)
-![État des Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_DeviceStatus.png)
 
-Interface complète pour configurer et surveiller tous vos appareils Zigbee connectés.
+Interface complète pour configurer et surveiller tous vos appareils Zigbee connectés.  
+
+![Configuration des Appareils Zigbee](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_devices_v2.12.png)
+![État des Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_StatusDevices_complete_v2.12.png)
+![Propriété d'un appareil](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_device.png)
+
+
 
 ### Tableau de Bord Énergétique
 ![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/screenshot_lixee-box-v2.8.PNG)
