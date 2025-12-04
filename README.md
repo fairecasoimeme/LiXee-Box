@@ -64,6 +64,7 @@ L'appareil peut être configuré via un site web local
 - Seuils configurables avec actions automatiques
 - Gestion de la production et distribution d'énergie
 - Gestion tarifaire pour l'énergie, la production, le gaz et l'eau
+- Gestion avancée chauffage / froid (en cours)
 
 ### 🔄 Mises à Jour et Maintenance
 
@@ -235,10 +236,14 @@ par défaut mode = timer
 
 | Paramètre | Obligatoire | Type | Valeur | Commentaire |
 |-----------|-------------|------|--------|-------------|
-| `type` | ✓ | String | "onoff" / "notification" | |
+| `type` | ✓ | String | "device" / "onoff (à disparaitre)" / "notification" | |
 | `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
+| `actionName` | ✓ | String | Nom de l'action | |
+| `command` | ✓ | Decimal | -1 = utilisation du template sinon override | |
 | `endpoint` | ✓ | Decimal | ID du point de terminaison | |
 | `value` | ✓ | String | Valeur de l'action | |
+| `title` | ✓ | String | pour type "notification" | |
+| `message` | ✓ | String |  pour type "notification" | |
 
 ### Paramètres plage horaire (Optionnel)
 
@@ -388,13 +393,13 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 
 | Marque | Modèles | Mesure énergie | Notes | Testé |
 |--------|---------|----------------|-------|:-----:|
-| **Aqara** | SP-EUC01, ZNCZ12LM | ✅ | 10A max, capteur température intégré | |
+| **Aqara** | SP-EUC01, ZNCZ12LM | ✅ | 10A max, capteur température intégré | ✅ |
 | **Sonoff** | S31 Lite ZB, S40 Lite | ✅ | 15-16A, bon rapport qualité/prix | |
 | **IKEA** | TRÅDFRI, Grillplats | ❌ | Répéteur Zigbee | |
 | **Tuya/Moes** | Diverses prises Smart Life | ✅ | 16A, économique | |
 | **Neo Coolcam** | Plug-007SPB2 | ✅ | Basé Tuya | |
 | **Nous** | Smart Zigbee Socket A1Z | ✅ | Version EU | ✅ |
-| **Lidl** | SilverCrest Smart Plug | ✅ | Basé Tuya | |
+| **Lidl** | SilverCrest Smart Plug | ✅ | Basé Tuya | ✅ |
 | **BlitzWolf** | BW-SHP13 | ✅ | 16A, bon routeur Zigbee | |
 | **Innr** | SP 120, SP 220, SP 222 | ✅ | Compatible Hue | |
 | **Osram** | Smart+ | ✅ | |✅ |
