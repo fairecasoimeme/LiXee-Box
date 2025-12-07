@@ -1,0 +1,298 @@
+{
+  "TS0601": {
+    "bind": "",
+    "report": [],
+    "status": [
+      {
+        "name": "Température locale",
+        "cluster": "EF00",
+        "attribut": 5,
+        "type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.1,
+        "jauge": "Gauge",
+        "visible": 1,
+        "poll": 300,
+        "mqtt_device_class": "temperature",
+        "mqtt_state_class": "measurement",
+        "mqtt_icon": "mdi:thermometer"
+      },
+      {
+        "name": "Consigne",
+        "cluster": "EF00",
+        "attribut": 4,
+        "type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.1,
+        "jauge": "Gauge",
+        "visible": 1,
+        "mqtt_device_class": "temperature",
+        "mqtt_state_class": "measurement",
+        "mqtt_icon": "mdi:thermometer-lines"
+      },
+      {
+        "name": "Mode système",
+        "cluster": "EF00",
+        "attribut": 3,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:hvac"
+      },
+      {
+        "name": "Preset",
+        "cluster": "EF00",
+        "attribut": 2,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:tune"
+      },
+      {
+        "name": "Verrouillage enfant",
+        "cluster": "EF00",
+        "attribut": 7,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:lock"
+      },
+      {
+        "name": "Fenêtre ouverte",
+        "cluster": "EF00",
+        "attribut": 8,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:window-open"
+      },
+      {
+        "name": "Temp fenêtre ouverte",
+        "cluster": "EF00",
+        "attribut": 27,
+        "type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.1,
+        "jauge": "Gauge",
+        "visible": 1,
+        "mqtt_device_class": "temperature",
+        "mqtt_icon": "mdi:window-open-variant"
+      },
+      {
+        "name": "Protection gel",
+        "cluster": "EF00",
+        "attribut": 10,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:snowflake-alert"
+      },
+      {
+        "name": "Batterie faible",
+        "cluster": "EF00",
+        "attribut": 14,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "Battery",
+        "visible": 1,
+        "mqtt_device_class": "battery",
+        "mqtt_icon": "mdi:battery-alert"
+      },
+      {
+        "name": "Calibration température",
+        "cluster": "EF00",
+        "attribut": 21,
+        "type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.1,
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:thermometer-check"
+      },
+      {
+        "name": "Erreur",
+        "cluster": "EF00",
+        "attribut": 23,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:alert-circle"
+      },
+      {
+        "name": "Temp vacances",
+        "cluster": "EF00",
+        "attribut": 24,
+        "type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.1,
+        "jauge": "Gauge",
+        "visible": 0,
+        "mqtt_device_class": "temperature",
+        "mqtt_icon": "mdi:beach"
+      },
+      {
+        "name": "Boost countdown",
+        "cluster": "EF00",
+        "attribut": 26,
+        "type": "numeric",
+        "unit": "s",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:rocket-launch"
+      },
+      {
+        "name": "Temp confort",
+        "cluster": "EF00",
+        "attribut": 36,
+        "type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.1,
+        "jauge": "Gauge",
+        "visible": 1,
+        "mqtt_device_class": "temperature",
+        "mqtt_icon": "mdi:sofa"
+      },
+      {
+        "name": "Temp eco",
+        "cluster": "EF00",
+        "attribut": 37,
+        "type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.1,
+        "jauge": "Gauge",
+        "visible": 1,
+        "mqtt_device_class": "temperature",
+        "mqtt_icon": "mdi:leaf"
+      },
+      {
+        "name": "Arrêt chauffage",
+        "cluster": "EF00",
+        "attribut": 38,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 1,
+        "mqtt_icon": "mdi:radiator-off"
+      },
+      {
+        "name": "Online",
+        "cluster": "EF00",
+        "attribut": 39,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 0,
+        "mqtt_icon": "mdi:wifi"
+      },
+      {
+        "name": "Jour travail",
+        "cluster": "EF00",
+        "attribut": 40,
+        "type": "numeric",
+        "unit": "",
+        "jauge": "text",
+        "visible": 0,
+        "mqtt_icon": "mdi:calendar-week"
+      }
+    ],
+    "action": [
+      {
+        "name": "Mode OFF",
+        "command": 3,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      },
+      {
+        "name": "Mode HEAT",
+        "command": 3,
+        "endpoint": 1,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Preset Auto",
+        "command": 2,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      },
+      {
+        "name": "Preset Manuel",
+        "command": 2,
+        "endpoint": 1,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Preset Vacances",
+        "command": 2,
+        "endpoint": 1,
+        "value": 2,
+        "visible": 1
+      },
+      {
+        "name": "Verrouiller",
+        "command": 7,
+        "endpoint": 1,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Déverrouiller",
+        "command": 7,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      },
+      {
+        "name": "Protection gel ON",
+        "command": 10,
+        "endpoint": 1,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Protection gel OFF",
+        "command": 10,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      },
+      {
+        "name": "Boost 5min",
+        "command": 26,
+        "endpoint": 1,
+        "value": 300,
+        "visible": 1
+      },
+      {
+        "name": "Arrêt chauffage ON",
+        "command": 38,
+        "endpoint": 1,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Arrêt chauffage OFF",
+        "command": 38,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      },
+      {
+        "name": "Forcer lecture",
+        "command": 39,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,177 @@
+{
+  "AC201A": [{
+    "status": [
+    {
+		"name" : "Temperature",
+		"cluster" : "0201",
+		"attribut" : 0,
+		"type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.01
+	},
+	{
+		"name" : "Consigne Froid",
+		"cluster" : "0201",
+		"attribut" : 17,
+		"type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.01,
+		"writable": true,
+        "typewritable":41
+	},
+	{
+		"name" : "Consigne Chaud",
+		"cluster" : "0201",
+		"attribut" : 18,
+		"type": "numeric",
+        "unit": "°C",
+        "coefficient": 0.01,
+		"writable": true,
+        "typewritable":41
+	},
+	{
+		"name" : "Mode",
+		"cluster" : "0201",
+		"attribut" : 28,
+		"type": "numeric",
+		"writable": true,
+        "typewritable":48
+	},
+	{
+		"name" : "Position Volet",
+		"cluster" : "0201",
+		"attribut" : 66,
+		"type": "numeric",
+		"writable": true,
+        "typewritable":48
+	},
+	{
+		"name" : "Vitesse Ventilo",
+		"cluster" : "0202",
+		"attribut" : 0,
+		"type": "numeric",
+		"writable": true,
+        "typewritable":48
+	}
+	],
+	"bind": "513,514",
+	"report": [
+	{
+		"cluster" : "0201",
+		"attribut": 0,
+		"type":41,
+		"min":60,
+		"max":61,
+		"timeout":0,
+		"change":0
+	},
+	{
+		"cluster" : "0201",
+		"attribut": 17,
+		"type":41,
+		"min":60,
+		"max":61,
+		"timeout":0,
+		"change":0
+	},
+	{
+		"cluster" : "0201",
+		"attribut": 18,
+		"type":41,
+		"min":60,
+		"max":61,
+		"timeout":0,
+		"change":0
+	},
+	{
+		"cluster" : "0201",
+		"attribut": 28,
+		"type":48,
+		"min":60,
+		"max":61,
+		"timeout":0,
+		"change":0
+	}
+   ],
+    "action": [
+      {
+        "name": "OFF",
+        "command": 310,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      },
+      {
+        "name": "Auto",
+        "command": 310,
+        "endpoint": 1,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Froid",
+        "command": 310,
+        "endpoint": 1,
+        "value": 3,
+        "visible": 1
+      },
+      {
+        "name": "Chaud",
+        "command": 310,
+        "endpoint": 1,
+        "value": 4,
+        "visible": 1
+      },
+      {
+        "name": "Ventilo",
+        "command": 310,
+        "endpoint": 1,
+        "value": 7,
+        "visible": 1
+      },
+      {
+        "name": "Déshumid",
+        "command": 310,
+        "endpoint": 1,
+        "value": 8,
+        "visible": 1
+      },
+      {
+        "name": "18°C",
+        "command": 311,
+        "endpoint": 1,
+        "value": 1800,
+        "visible": 1
+      },
+      {
+        "name": "20°C",
+        "command": 311,
+        "endpoint": 1,
+        "value": 2000,
+        "visible": 1
+      },
+      {
+        "name": "22°C",
+        "command": 311,
+        "endpoint": 1,
+        "value": 2200,
+        "visible": 1
+      },
+      {
+        "name": "24°C",
+        "command": 311,
+        "endpoint": 1,
+        "value": 2400,
+        "visible": 1
+      },
+      {
+        "name": "26°C",
+        "command": 311,
+        "endpoint": 1,
+        "value": 2600,
+        "visible": 1
+      }
+    ]
+  }
+]
+}

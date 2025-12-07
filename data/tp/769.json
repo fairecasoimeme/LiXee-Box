@@ -1,0 +1,282 @@
+{
+    "TRVZB": [
+    {
+      "status": [
+        {
+          "name": "local_temperature",
+          "cluster": "0201",
+          "attribut": 0,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.01,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "home-thermometer"
+        },
+        {
+          "name": "occupied_heating_setpoint",
+          "cluster": "0201",
+          "attribut": 18,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.01,
+          "jauge": "Gauge",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 41,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "thermometer"
+        },
+        {
+          "name": "local_temperature_calibration",
+          "cluster": "0201",
+          "attribut": 16,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.1,
+          "visible": 0,
+          "writable": true,
+          "typewritable": 40,
+          "mqtt_icon": "tune",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "system_mode",
+          "cluster": "0201",
+          "attribut": 28,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 48,
+          "mqtt_icon": "hvac",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "running_state",
+          "cluster": "0201",
+          "attribut": 41,
+          "type": "numeric",
+          "visible": 1,
+          "mqtt_icon": "radiator",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "battery",
+          "cluster": "0001",
+          "attribut": 33,
+          "type": "numeric",
+          "unit": "%",
+          "coefficient": 0.5,
+          "visible": 1,
+          "mqtt_device_class": "battery",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "battery"
+        },
+        {
+          "name": "child_lock",
+          "cluster": "FC11",
+          "attribut": 0,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 16,
+          "mqtt_icon": "lock",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "open_window",
+          "cluster": "FC11",
+          "attribut": 6,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 16,
+          "mqtt_icon": "window-open",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "frost_protection_temperature",
+          "cluster": "FC11",
+          "attribut": 2,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.01,
+          "visible": 0,
+          "writable": true,
+          "typewritable": 41,
+          "mqtt_icon": "snowflake-alert",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "valve_opening_degree",
+          "cluster": "FC11",
+          "attribut": 13,
+          "type": "numeric",
+          "unit": "%",
+          "visible": 1,
+          "mqtt_icon": "valve",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "temperature_accuracy",
+          "cluster": "FC11",
+          "attribut": 18,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.1,
+          "visible": 0,
+          "writable": true,
+          "typewritable": 40,
+          "mqtt_icon": "target",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        }
+      ],
+      "bind": "0001,0201",
+      "report": [
+        {
+          "cluster": "0201",
+          "attribut": 0,
+          "type": 41,
+          "min": 60,
+          "max": 600,
+          "change": 10
+        },
+        {
+          "cluster": "0201",
+          "attribut": 18,
+          "type": 41,
+          "min": 1,
+          "max": 600,
+          "change": 50
+        },
+        {
+          "cluster": "0001",
+          "attribut": 33,
+          "type": 32,
+          "min": 3600,
+          "max": 43200,
+          "change": 1
+        }
+      ],
+      "action": [
+        {
+          "name": "OFF",
+          "cluster": "0201",
+          "attribut": 28,
+          "type": 48,
+          "value": 0,
+          "visible": 1
+        },
+        {
+          "name": "AUTO",
+          "cluster": "0201",
+          "attribut": 28,
+          "type": 48,
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "HEAT",
+          "cluster": "0201",
+          "attribut": 28,
+          "type": 48,
+          "value": 4,
+          "visible": 1
+        }
+      ]
+    }
+  ],
+  "default": [
+    {
+      "status": [
+        {
+          "name": "system_mode",
+          "cluster": "EF00",
+          "attribut": 1,
+          "type": "numeric",
+          "visible": 1,
+          "mqtt_icon": "power",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "preset",
+          "cluster": "EF00",
+          "attribut": 2,
+          "type": "numeric",
+          "visible": 1,
+          "mqtt_icon": "calendar-clock",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "current_heating_setpoint",
+          "cluster": "EF00",
+          "attribut": 16,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 1,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "thermometer"
+        },
+        {
+          "name": "local_temperature",
+          "cluster": "EF00",
+          "attribut": 24,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.1,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "home-thermometer"
+        },
+        {
+          "name": "child_lock",
+          "cluster": "EF00",
+          "attribut": 40,
+          "type": "numeric",
+          "visible": 1,
+          "mqtt_icon": "lock",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        }
+      ],
+      "bind": "",
+      "report": [],
+      "action": [
+        {
+          "name": "OFF",
+          "cluster": "EF00",
+          "dp": 1,
+          "dptype": 1,
+          "value": 0,
+          "visible": 1
+        },
+        {
+          "name": "HEAT",
+          "cluster": "EF00",
+          "dp": 1,
+          "dptype": 1,
+          "value": 1,
+          "visible": 1
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+	"TS130F" : [
+	{
+		"status" : [
+			{
+				"name" : "current_position",
+				"cluster" : "0102",
+				"attribut" : 8
+			},
+                        {
+				"name" : "moving_state",
+				"cluster" : "0102",
+				"attribut" : 61440
+			},
+			{
+				"name" : "calibration",
+				"cluster" : "0102",
+				"attribut" : 61441,
+				"writable": true,
+                                "typewritable":48
+			},
+			{
+				"name" : "motor_reversal",
+				"cluster" : "0102",
+				"attribut" : 61442,
+				"writable": true,
+                                "typewritable":48
+
+			},
+			{
+				"name" : "calibration_time",
+				"cluster" : "0102",
+				"attribut" : 61443,
+				"writable": true,
+                                "typewritable":33
+			}
+
+
+		],"bind" : "258",
+                "action" : [
+			{
+				"name" : "UP",
+				"command" : 250,
+				"endpoint" : 1,
+				"value" : 1,
+				"visible":1
+			},
+			{
+				"name" : "DOWN",
+				"command" : 250,
+				"endpoint" : 1,
+				"value" : 0,
+				"visible":1
+			},
+			{
+				"name" : "STOP",
+				"command" : 250,
+				"endpoint" : 1,
+				"value" : 2,
+				"visible":1
+			}
+			]
+	}
+       ],
+        "default" : [
+	{
+		"status" : [
+			{
+				"name" : "current_position",
+				"cluster" : "0102",
+				"attribut" : 8
+			},
+			{
+				"name" : "window_covering_type",
+				"cluster" : "0102",
+				"attribut" : 0
+			},
+			{
+				"name" : "config_status",
+				"cluster" : "0102",
+				"attribut" : 7
+			}
+		],"bind" : "258",
+                "action" : [
+			{
+				"name" : "UP",
+				"command" : 250,
+				"endpoint" : 1,
+				"value" : 1,
+				"visible":1
+			},
+			{
+				"name" : "DOWN",
+				"command" : 250,
+				"endpoint" : 1,
+				"value" : 0,
+				"visible":1
+			},
+			{
+				"name" : "STOP",
+				"command" : 250,
+				"endpoint" : 1,
+				"value" : 2,
+				"visible":1
+			}
+			]
+	}
+       ]
+}

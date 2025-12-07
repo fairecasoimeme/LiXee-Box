@@ -88,6 +88,134 @@
 		]
 		
 	}
-	]
+	],
+"SNZB-02D": [
+    {
+      "status": [
+        {
+          "name": "temperature",
+          "cluster": "0402",
+          "attribut": 0,
+         "type" : "float",
+				"coefficient" : 0.01,
+				"unit" : "°C",
+				"visible":1,
+				"jauge":"gauge",
+				"min":-20,
+				"max":50,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "thermometer"
+        },
+        {
+          "name": "humidity",
+          "cluster": "0405",
+          "attribut": 0,
+         "type" : "float",
+				"coefficient" : 0.01,
+				"unit" : "%",
+				"visible":1,
+				"jauge":"gauge",
+				"min":0,
+				"max":100,
+          "mqtt_device_class": "humidity",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "water-percent"
+        },
+        {
+          "name": "battery",
+          "cluster": "0001",
+          "attribut": 33,
+				"type" : "numeric",
+				"unit" : "%",
+                                "coefficient" : 0.5,
+				"visible":1,
+				"jauge":"battery",
+				"min":0,
+				"max":100,
+          "mqtt_device_class": "battery",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "battery"
+        },
+        {
+          "name": "temperature_unit",
+          "cluster": "FC11",
+          "attribut": 7,
+          "writable": true,
+          "typewritable": 33
+        },
+        {
+          "name": "comfort_temperature_min",
+          "cluster": "FC11",
+          "attribut": 8193,
+          "writable": true,
+          "typewritable": 41
+        },
+        {
+          "name": "comfort_temperature_max",
+          "cluster": "FC11",
+          "attribut": 8194,
+          "writable": true,
+          "typewritable": 41
+        },
+        {
+          "name": "temperature_calibration",
+          "cluster": "FC11",
+          "attribut": 8195,
+          "writable": true,
+          "typewritable": 41
+        },
+        {
+          "name": "humidity_calibration",
+          "cluster": "FC11",
+          "attribut": 8196,
+          "writable": true,
+          "typewritable": 41
+        },
+        {
+          "name": "comfort_humidity_min",
+          "cluster": "FC11",
+          "attribut": 8197,
+          "writable": true,
+          "typewritable": 32
+        },
+        {
+          "name": "comfort_humidity_max",
+          "cluster": "FC11",
+          "attribut": 8198,
+          "writable": true,
+          "typewritable": 32
+        }
+      ],
+      "bind": "1026;1029;1",
+      "report": [
+        {
+          "cluster": "0402",
+          "attribut": 0,
+          "type": 41,
+          "min": 30,
+          "max": 3600,
+          "change": 20
+        },
+        {
+          "cluster": "0405",
+          "attribut": 0,
+          "type": 33,
+          "min": 30,
+          "max": 3600,
+          "change": 100
+        },
+        {
+          "cluster": "0001",
+          "attribut": 33,
+          "type": 32,
+          "min": 3600,
+          "max": 43200,
+          "change": 1
+        }
+      ],
+      "action": []
+    }
+  ]
 	
 }

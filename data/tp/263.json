@@ -30,6 +30,48 @@
 		]
 	}
 	],
+	"SNZB-06P" : [
+	{
+		"status" : [
+			{
+				"name" : "occupancy",
+				"cluster" : "0406",
+				"attribut" : 0
+			},
+			{
+				"name" : "occupancy_timeout",
+				"cluster" : "0406",
+				"attribut" : 32,
+				"writable": true,
+				"typewritable": 33
+			},
+			{
+				"name" : "occupancy_sensitivity",
+				"cluster" : "0406",
+				"attribut" : 34,
+				"writable": true,
+				"typewritable": 32
+			},
+			{
+				"name" : "illumination",
+				"cluster" : "FC11",
+				"attribut" : 0
+			}
+		],
+		"bind" : "1030",
+		"report" : [
+			{
+				"cluster": "0406",
+				"attribut": 0,
+				"type": 24,
+				"min": 0,
+				"max": 3600,
+				"change": 1
+			}
+		],
+		"action" : []
+	}
+	],
 	"ZiPulses": [
 	{
 		"status" : [

@@ -284,7 +284,7 @@
 			},
 			{
 				"name" : "Tarif en cours Histo",
-				"cluster" : "702",
+				"cluster" : "0702",
 				"attribut" : 32,
 				"visible":1,
 				"poll" : 10,
@@ -592,6 +592,7 @@
                 "type": "numeric",
                 "visible":1,
                 "unit": "VA",
+                "poll":1,
                 "mode":"5;7"
 			},
 			{
@@ -1041,6 +1042,162 @@
 			]
 	   }
    ],
+     "TS0601": [
+    {
+      "status": [
+        {
+          "name": "Affichage",
+          "cluster": "EF00",
+          "attribut": 1,
+          "type": "numeric",
+          "visible": 1,
+          "mqtt_device_class": "",
+          "mqtt_state_class": "",
+          "mqtt_icon": "power"
+        },
+        {
+          "name": "Mode",
+          "cluster": "EF00",
+          "attribut": 2,
+          "type": "numeric",
+          "visible": 1,
+          "mqtt_device_class": "",
+          "mqtt_state_class": "",
+          "mqtt_icon": "calendar-clock"
+        },
+        {
+          "name": "Temperature",
+          "cluster": "EF00",
+          "attribut": 16,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.1,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "thermometer"
+        },
+       {
+          "name": "Consigne",
+          "cluster": "EF00",
+          "attribut": 50,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 1,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "thermometer"
+        },
+        {
+          "name": "local_temperature",
+          "cluster": "EF00",
+          "attribut": 24,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.1,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "home-thermometer"
+        },
+        {
+          "name": "child_lock",
+          "cluster": "EF00",
+          "attribut": 40,
+          "type": "numeric",
+          "visible": 1,
+          "mqtt_device_class": "",
+          "mqtt_state_class": "",
+          "mqtt_icon": "lock"
+        }
+      ],
+      "bind": "",
+      "report": [],
+    "action": [
+      {
+        "name": "ON",
+        "command": 300,
+        "endpoint": 1,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "OFF",
+        "command": 300,
+        "endpoint": 1,
+        "value": 0,
+        "visible": 1
+      },
+      {
+        "name": "Manuel",
+        "command": 302,
+        "endpoint": 2,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Programme",
+        "command": 302,
+        "endpoint": 2,
+        "value": 0,
+        "visible": 1
+      },
+     {
+        "name": "Force Heat",
+        "command": 301,
+        "endpoint": 50,
+        "value": 35,
+        "visible": 1
+      },
+      {
+        "name": "18°C",
+        "command": 301,
+        "endpoint": 50,
+        "value": 18,
+        "visible": 1
+      },
+      {
+        "name": "19°C",
+        "command": 301,
+        "endpoint": 50,
+        "value": 19,
+        "visible": 1
+      },
+      {
+        "name": "21°C",
+        "command": 301,
+        "endpoint": 50,
+        "value": 21,
+        "visible": 1
+      },
+      {
+        "name": "23°C",
+        "command": 301,
+        "endpoint": 50,
+        "value": 23,
+        "visible": 1
+      },
+      {
+        "name": "Lock ON",
+        "command": 300,
+        "endpoint": 40,
+        "value": 1,
+        "visible": 1
+      },
+      {
+        "name": "Lock OFF",
+        "command": 300,
+        "endpoint": 40,
+        "value": 0,
+        "visible": 1
+      }
+    ]
+}
+],
         "default" : [
 	    {
 			"status" : [
