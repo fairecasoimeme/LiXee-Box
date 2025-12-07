@@ -29,17 +29,14 @@
 #include "protocol.h"
 #include "zigbee.h"
 #include "basic.h"
+#include "thermostat.h"
+
 #include "rules.h"
 #include "microtar.h"
 #include "device.h"
 #include "notificationManager.h"
 #include "TemplateData.h"
 #include "TemplateCache.h"
-
-#define MINIZ_HEADER_FILE_ONLY
-#define MINIZ_NO_STDIO
-#define MINIZ_NO_TIME
-#include "rom/miniz.h"
 
 extern std::vector<DeviceData*> devices;
 
@@ -141,11 +138,12 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<script type='text/javascript' src='web/js/justgage.min.js'></script>"
     "<script type='text/javascript' src='web/js/functions.min.js'></script>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
+    "<script src='https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js'></script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/energy.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
-    "<meta name='viewport' content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes'>"
+    "<meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=yes'>"
     "<style>"
       "body {"
         "background-color: #f7f9fc;"
@@ -636,7 +634,7 @@ const char HTTP_BACKUP[] PROGMEM =
 
        "    xhr.upload.onprogress = ev => {"
        "      if (ev.lengthComputable) {"
-       "        const pct = Math.round(ev.loaded/ev.total*100);"
+       "        const pct = Math.round(ev.loaded/ev.total*40);"
        "        bar.style.width = pct + '%';"
        "        bar.textContent = pct + '%';"
        "      }"
@@ -1464,7 +1462,19 @@ const char HTTP_UPDATE[] PROGMEM = R"(
         const file = f.files[0];
         if (!file) return alert('Choisissez un .tar');
 
-        startUpdatePolling();
+        // Arrêter le polling existant et démarrer un polling rapide
+        if (updatePollingInterval) {
+          clearInterval(updatePollingInterval);
+          updatePollingInterval = null;
+        }
+        
+        // Polling RAPIDE pendant l'upload (500ms au lieu de 2000ms)
+        isUpdating = true;
+        pollUpdateStatusManuel();
+        updatePollingInterval = setInterval(function() {
+          pollUpdateStatusManuel();
+        }, 500);  // ← CHANGÉ : 500ms au lieu de 2000ms
+        
         $("#btnUpdateMan").hide();
 
         const xhr = new XMLHttpRequest();
@@ -1474,10 +1484,15 @@ const char HTTP_UPDATE[] PROGMEM = R"(
           if (xhr.status === 200) {
             setTimeout(() => {
                 window.location.href='/';
-            }, 2000);
+            }, 3000);
           } else {
               st.textContent = 'Erreur: ' + xhr.status;
-              stopUpdatePolling(); 
+              if (updatePollingInterval) {
+                clearInterval(updatePollingInterval);
+              }
+              updatePollingInterval = setInterval(function() {
+                pollUpdateStatusManuel();
+              }, 2000);
           }
         };
         const fd = new FormData();
@@ -1819,19 +1834,19 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
 
         <div class="mb-4">
           <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
-          <div id="timeRangesContainer">⏳</div>
+          <div id="timeRangesContainer"></div>
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Plage</button>
         </div>
 
         <div class="mb-4">
           <label class="form-label fw-bold">SI ... (Conditions)</label>
-          <div id="conditionsContainer">⏳</div>
+          <div id="conditionsContainer"></div>
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Condition</button>
         </div>
 
         <div class="mb-4">
           <label class="form-label fw-bold">ALORS ... (Actions)</label>
-          <div id="actionsContainer">⏳</div>
+          <div id="actionsContainer"></div>
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="addAction()">+ Action</button>
         </div>
 
@@ -1843,7 +1858,7 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
 
         <div class="d-flex justify-content-between mt-4">
           <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
-          <button type="submit" class="btn btn-warning btn-lg">Modifier</button>
+          <button type="submit" class="btn btn-primary btn-lg">Enregistrer</button>
         </div>
       </form>
     </div>
@@ -1854,31 +1869,374 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
 const char HTTP_EDIT_RULE_JS[] PROGMEM = R"rawstring(
 <script>
 var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
-$(document).ready(function(){$.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});$.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})});
-function checkDataLoadedAndInit(){if(devicesLoaded&&templatesLoaded){$('#conditionsContainer,#actionsContainer,#elseActionsContainer,#timeRangesContainer').text("");populateTriggerDeviceSelect();loadExistingRule()}}
-function populateTriggerDeviceSelect(){var s=$('#triggerDevice').html('<option value="">-- Choisir --</option>');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';s.append('<option value="'+ieee+'">'+l+'</option>')}})}
-function loadExistingRule(){if(typeof ruleToEdit==='undefined'){alert('Erreur');window.location.href='/configRules';return}$('#oldRuleName,#ruleName').val(ruleToEdit.name);if(ruleToEdit.trigger)loadTrigger(ruleToEdit.trigger);if(ruleToEdit.timeRanges)ruleToEdit.timeRanges.forEach(addTimeRange);if(ruleToEdit.conditions)ruleToEdit.conditions.forEach(addCondition);if(ruleToEdit.actions)ruleToEdit.actions.forEach(addAction);if(ruleToEdit.elseActions)ruleToEdit.elseActions.forEach(addElseAction)}
-function hasCluster0006(dev){if(!dev||!dev.INFO)return!1;var tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return!1;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return!1;return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})}
-function onTriggerModeChange(){var mode=$('#triggerMode').val();if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}}
-function onTriggerDeviceChange(){var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
-function onTriggerClusterChange(){var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
-function loadTrigger(t){var mode=t.mode||'timer';$('#triggerMode').val(mode);onTriggerModeChange();if(mode==='event'){$('#triggerDevice').val(t.IEEE||'');onTriggerDeviceChange();setTimeout(function(){$('#triggerCluster').val(t.cluster||0);onTriggerClusterChange();setTimeout(function(){$('#triggerAttribute').val(t.attribute||0)},100)},100)}}
-function addTimeRange(data){var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';$('#timeRangesContainer').append(html);if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}}
+
+$(document).ready(function(){
+  $.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});
+  $.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})
+});
+
+function checkDataLoadedAndInit(){
+  if(devicesLoaded&&templatesLoaded){
+    populateTriggerDeviceSelect();
+    if(typeof ruleToEdit!=='undefined'){loadRule(ruleToEdit)}
+  }
+}
+
+function populateTriggerDeviceSelect(){
+  var s=$('#triggerDevice').html('<option value="">-- Choisir --</option>');
+  $.each(devices,function(ieee,dev){
+    if(dev.INFO){
+      var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';
+      s.append('<option value="'+ieee+'">'+l+'</option>')
+    }
+  })
+}
+
+// Récupère les actions du template d'un device
+function getDeviceActions(ieee){
+  if(!ieee||!devices[ieee]||!devices[ieee].INFO)return[];
+  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default';
+  var tk=tid+'.json',tf=templates[tk];
+  if(!tf)return[];
+  var td=tf[m]||tf['default'];
+  if(!td||!td[0]||!td[0].action)return[];
+  return td[0].action
+}
+
+// Vérifie si un device a le cluster 0x0006 (pour legacy onoff)
+function hasCluster0006(ieee){
+  if(!ieee||!devices[ieee]||!devices[ieee].INFO)return false;
+  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default';
+  var tk=tid+'.json',tf=templates[tk];
+  if(!tf)return false;
+  var td=tf[m]||tf['default'];
+  if(!td||!td[0]||!td[0].status)return false;
+  return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})
+}
+
+function onTriggerModeChange(){
+  var mode=$('#triggerMode').val();
+  if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}
+  else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}
+}
+
+function onTriggerDeviceChange(){
+  var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');
+  c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');
+  if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;
+  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];
+  if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;
+  var clAdded={};
+  td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})
+}
+
+function onTriggerClusterChange(){
+  var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');
+  a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;
+  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4);
+  var tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;
+  td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})
+}
+
+function addTimeRange(data){
+  var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';
+  ['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});
+  html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';
+  $('#timeRangesContainer').append(html);
+  if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}
+}
 function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
-function addCondition(data){var id=conditionCount++,html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Device</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">-- Cluster --</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">-- Attribut --</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&lt;=</option><option value=">">&gt;</option><option value=">=">&gt;=</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div><div class="col-md-1"><label class="form-label small">Logic</label><select class="form-select form-select-sm logic-select"><option value="AND">AND</option><option value="OR">OR</option></select></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div></div></div></div>';$('#conditionsContainer').append(html);var c=$('[data-id="'+id+'"]'),sel=c.find('.device-select');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){sel.val(data.IEEE);onDeviceChange(id);setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(id);setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.operator-select').val(data.operator);c.find('.value-input').val(data.value);c.find('.logic-select').val(data.logic);onOperatorChange(id)},100)},100)}}
+
+function addCondition(data){
+  var id=conditionCount++,html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Device</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">-- Cluster --</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">-- Attribut --</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&lt;=</option><option value=">">&gt;</option><option value=">=">&gt;=</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div><div class="col-md-1"><label class="form-label small">Logic</label><select class="form-select form-select-sm logic-select"><option value="AND">AND</option><option value="OR">OR</option></select></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div></div></div></div>';
+  $('#conditionsContainer').append(html);
+  var c=$('[data-id="'+id+'"]'),sel=c.find('.device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});
+  if(data){sel.val(data.IEEE);onDeviceChange(id);setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(id);setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.operator-select').val(data.operator);c.find('.value-input').val(data.value);c.find('.logic-select').val(data.logic);onOperatorChange(id)},100)},100)}
+}
 function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
 function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">-- Cluster --</option>');c.find('.attribute-select').html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
 function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
 function removeCondition(id){$('[data-id="'+id+'"]').remove()}
-function addAction(data){var id=actionCount++,html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';$('#actionsContainer').append(html);var c=$('[data-action-id="'+id+'"]'),sel=c.find('.action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){c.find('.action-type-select').val(data.type);onActionTypeChange(id);if(data.type==='onoff'){sel.val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint);c.find('.action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}}}
-function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();if(t==='onoff'){c.find('.action-onoff-fields').show();c.find('.action-notification-fields').hide();c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!0);c.find('.action-title-input,.action-message-input').prop('required',!1)}else{c.find('.action-onoff-fields').hide();c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0);c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!1)}}
-function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+
+// ========== ACTIONS avec support Device/Legacy/Notification ==========
+
+function addAction(data){
+  var id=actionCount++;
+  var html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
+    '<div class="col-md-2"><label class="form-label small">Type</label>'+
+    '<select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required>'+
+    '<option value="device">Device</option>'+
+    '<option value="onoff">ON/OFF (ancienne méthode)</option>'+
+    '<option value="notification">Notification</option></select></div>'+
+    // Champs Device (template) - required géré par onActionTypeChange
+    '<div class="col-md-3 action-device-fields"><label class="form-label small">Device</label>'+
+    '<select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-3 action-device-fields"><label class="form-label small">Action</label>'+
+    '<select class="form-select form-select-sm action-name-select" onchange="onActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
+    '<div class="col-md-2 action-device-fields"><label class="form-label small">Endpoint</label>'+
+    '<input type="number" class="form-control form-control-sm action-device-endpoint-input" value="1" min="1"></div>'+
+    // Champs Legacy ON/OFF
+    '<div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Device</label>'+
+    '<select class="form-select form-select-sm action-legacy-device-select" onchange="onActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label>'+
+    '<input type="number" class="form-control form-control-sm action-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label>'+
+    '<select class="form-select form-select-sm action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
+    // Champs Notification
+    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label>'+
+    '<input type="text" class="form-control form-control-sm action-title-input"></div>'+
+    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label>'+
+    '<input type="text" class="form-control form-control-sm action-message-input"></div>'+
+    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';
+  $('#actionsContainer').append(html);
+  var c=$('[data-action-id="'+id+'"]');
+  // Peupler device (template) - devices avec actions
+  var sel=c.find('.action-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
+  // Peupler legacy device - devices avec cluster 0006
+  var selLegacy=c.find('.action-legacy-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
+  // Appliquer les required pour le type par défaut (device)
+  onActionTypeChange(id);
+  // Charger données existantes
+  if(data){
+    if(data.type==='notification'){
+      c.find('.action-type-select').val('notification');onActionTypeChange(id);
+      c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')
+    }else if(data.type==='device'&&data.actionName){
+      c.find('.action-type-select').val('device');onActionTypeChange(id);
+      c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);
+      setTimeout(function(){
+        c.find('.action-name-select').val(data.actionName);
+        c.find('.action-device-endpoint-input').val(data.endpoint||1)
+      },100)
+    }else if(data.type==='onoff'){
+      c.find('.action-type-select').val('onoff');onActionTypeChange(id);
+      c.find('.action-legacy-device-select').val(data.IEEE);
+      c.find('.action-endpoint-input').val(data.endpoint||1);
+      c.find('.action-value-select').val(data.value)
+    }
+  }
+}
+
+function onActionTypeChange(id){
+  var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();
+  c.find('.action-device-fields,.action-legacy-fields,.action-notification-fields').hide();
+  c.find('.action-device-select,.action-name-select,.action-device-endpoint-input,.action-legacy-device-select,.action-endpoint-input,.action-value-select,.action-title-input,.action-message-input').prop('required',!1);
+  if(t==='device'){
+    c.find('.action-device-fields').show();
+    c.find('.action-device-select,.action-name-select,.action-device-endpoint-input').prop('required',!0)
+  }else if(t==='onoff'){
+    c.find('.action-legacy-fields').show();
+    c.find('.action-legacy-device-select,.action-endpoint-input,.action-value-select').prop('required',!0)
+  }else{
+    c.find('.action-notification-fields').show();
+    c.find('.action-title-input,.action-message-input').prop('required',!0)
+  }
+}
+
+function onActionDeviceChange(id){
+  var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val();
+  var actionSel=c.find('.action-name-select');
+  actionSel.html('<option value="">-- Action --</option>');
+  // Récupérer l'endpoint par défaut du device
+  var defaultEp = 1;
+  if(ieee && devices[ieee] && devices[ieee].INFO && devices[ieee].INFO.endpoint){
+    defaultEp = devices[ieee].INFO.endpoint;
+  }
+  c.find('.action-device-endpoint-input').val(defaultEp);
+  if(!ieee)return;
+  var actions=getDeviceActions(ieee);
+  actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})
+}
+
+function onActionNameChange(id){
+  var c=$('[data-action-id="'+id+'"]');
+  var selectedOption=c.find('.action-name-select option:selected');
+  var endpoint=selectedOption.data('endpoint');
+  if(endpoint){c.find('.action-device-endpoint-input').val(endpoint)}
+}
+
+function onActionLegacyDeviceChange(id){
+  var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-legacy-device-select').val();
+  if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+}
+
 function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
-function addElseAction(data){var id=elseActionCount++,html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 else-action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" required></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';$('#elseActionsContainer').append(html);var sel=$('[data-else-action-id="'+id+'"] .else-action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){var c=$('[data-else-action-id="'+id+'"]');c.find('.else-action-type-select').val(data.type);onElseActionTypeChange(id);if(data.type==='onoff'){c.find('.else-action-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint);c.find('.else-action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.else-action-title-input').val(data.title);c.find('.else-action-message-input').val(data.message)}}}
-function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();if(t==='onoff'){c.find('.else-action-onoff-fields').show();c.find('.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0);c.find('.else-action-title-input,.else-action-message-input').prop('required',!1)}else{c.find('.else-action-onoff-fields').hide();c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0);c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!1)}}
-function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+
+// ========== ELSE ACTIONS avec support Device/Legacy/Notification ==========
+
+function addElseAction(data){
+  var id=elseActionCount++;
+  var html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
+    '<div class="col-md-2"><label class="form-label small">Type</label>'+
+    '<select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required>'+
+    '<option value="device">Device (template)</option>'+
+    '<option value="onoff">ON/OFF (legacy)</option>'+
+    '<option value="notification">Notification</option></select></div>'+
+    // Champs Device (template) - required géré par onElseActionTypeChange
+    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Device</label>'+
+    '<select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label>'+
+    '<select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
+    '<div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label>'+
+    '<input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div>'+
+    // Champs Legacy ON/OFF
+    '<div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Device</label>'+
+    '<select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label>'+
+    '<input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label>'+
+    '<select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
+    // Champs Notification
+    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label>'+
+    '<input type="text" class="form-control form-control-sm else-action-title-input"></div>'+
+    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label>'+
+    '<input type="text" class="form-control form-control-sm else-action-message-input"></div>'+
+    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';
+  $('#elseActionsContainer').append(html);
+  var c=$('[data-else-action-id="'+id+'"]');
+  // Peupler device (template)
+  var sel=c.find('.else-action-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
+  // Peupler legacy device
+  var selLegacy=c.find('.else-action-legacy-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
+  // Appliquer les required pour le type par défaut (device)
+  onElseActionTypeChange(id);
+  // Charger données
+  if(data){
+    if(data.type==='notification'){
+      c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);
+      c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')
+    }else if(data.type==='device'&&data.actionName){
+      c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);
+      c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);
+      setTimeout(function(){
+        c.find('.else-action-name-select').val(data.actionName);
+        c.find('.else-action-device-endpoint-input').val(data.endpoint||1)
+      },100)
+    }else if(data.type==='onoff'){
+      c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);
+      c.find('.else-action-legacy-device-select').val(data.IEEE);
+      c.find('.else-action-endpoint-input').val(data.endpoint||1);
+      c.find('.else-action-value-select').val(data.value)
+    }
+  }
+}
+
+function onElseActionTypeChange(id){
+  var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();
+  c.find('.else-action-device-fields,.else-action-legacy-fields,.else-action-notification-fields').hide();
+  c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input,.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select,.else-action-title-input,.else-action-message-input').prop('required',!1);
+  if(t==='device'){
+    c.find('.else-action-device-fields').show();
+    c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input').prop('required',!0)
+  }else if(t==='onoff'){
+    c.find('.else-action-legacy-fields').show();
+    c.find('.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0)
+  }else{
+    c.find('.else-action-notification-fields').show();
+    c.find('.else-action-title-input,.else-action-message-input').prop('required',!0)
+  }
+}
+
+function onElseActionDeviceChange(id){
+  var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val();
+  var actionSel=c.find('.else-action-name-select');
+  actionSel.html('<option value="">-- Action --</option>');
+  // Récupérer l'endpoint par défaut du device
+  var defaultEp = 1;
+  if(ieee && devices[ieee] && devices[ieee].INFO && devices[ieee].INFO.endpoint){
+    defaultEp = devices[ieee].INFO.endpoint;
+  }
+  c.find('.else-action-device-endpoint-input').val(defaultEp);
+  if(!ieee)return;
+  var actions=getDeviceActions(ieee);
+  actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})
+}
+
+function onElseActionNameChange(id){
+  var c=$('[data-else-action-id="'+id+'"]');
+  var selectedOption=c.find('.else-action-name-select option:selected');
+  var endpoint=selectedOption.data('endpoint');
+  if(endpoint){c.find('.else-action-device-endpoint-input').val(endpoint)}
+}
+
+function onElseActionLegacyDeviceChange(id){
+  var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-legacy-device-select').val();
+  if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+}
+
 function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
-$('#ruleForm').on('submit',function(e){e.preventDefault();var rule={oldName:$('#oldRuleName').val(),name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};$('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});$('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}$('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.action-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val());a.value=c.find('.action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});$('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.else-action-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val());a.value=c.find('.else-action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});$.ajax({url:'/api/rules/edit',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle modifiée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})});
+
+function loadRule(rule){
+  $('#oldRuleName').val(rule.name);$('#ruleName').val(rule.name);
+  if(rule.trigger){$('#triggerMode').val(rule.trigger.mode||'timer');onTriggerModeChange();if(rule.trigger.mode==='event'){$('#triggerDevice').val(rule.trigger.IEEE);onTriggerDeviceChange();setTimeout(function(){$('#triggerCluster').val(rule.trigger.cluster);onTriggerClusterChange();setTimeout(function(){$('#triggerAttribute').val(rule.trigger.attribute)},100)},100)}}
+  if(rule.timeRanges)rule.timeRanges.forEach(function(tr){addTimeRange(tr)});
+  if(rule.conditions)rule.conditions.forEach(function(c){addCondition(c)});else addCondition();
+  if(rule.actions)rule.actions.forEach(function(a){addAction(a)});else addAction();
+  if(rule.elseActions)rule.elseActions.forEach(function(a){addElseAction(a)})
+}
+
+// ========== SUBMIT avec support des 3 types ==========
+
+$('#ruleForm').on('submit',function(e){
+  e.preventDefault();
+  var rule={oldName:$('#oldRuleName').val(),name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
+  
+  // TimeRanges
+  $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
+  
+  // Conditions
+  $('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});
+  if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}
+  
+  // Actions (3 types supportés)
+  $('.action-item').each(function(){
+    var c=$(this),t=c.find('.action-type-select').val(),a={type:t};
+    if(t==='device'){
+      a.IEEE=c.find('.action-device-select').val();
+      a.actionName=c.find('.action-name-select').val();
+      a.endpoint=parseInt(c.find('.action-device-endpoint-input').val())||1;
+      a.value='';a.title='';a.message=''
+    }else if(t==='onoff'){
+      a.IEEE=c.find('.action-legacy-device-select').val();
+      a.endpoint=parseInt(c.find('.action-endpoint-input').val())||1;
+      a.value=c.find('.action-value-select').val();
+      a.actionName='';a.title='';a.message=''
+    }else{
+      a.IEEE='';a.actionName='';a.endpoint=0;a.value='';
+      a.title=c.find('.action-title-input').val();
+      a.message=c.find('.action-message-input').val()
+    }
+    rule.actions.push(a)
+  });
+  
+  // ElseActions (3 types supportés)
+  $('.else-action-item').each(function(){
+    var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};
+    if(t==='device'){
+      a.IEEE=c.find('.else-action-device-select').val();
+      a.actionName=c.find('.else-action-name-select').val();
+      a.endpoint=parseInt(c.find('.else-action-device-endpoint-input').val())||1;
+      a.value='';a.title='';a.message=''
+    }else if(t==='onoff'){
+      a.IEEE=c.find('.else-action-legacy-device-select').val();
+      a.endpoint=parseInt(c.find('.else-action-endpoint-input').val())||1;
+      a.value=c.find('.else-action-value-select').val();
+      a.actionName='';a.title='';a.message=''
+    }else{
+      a.IEEE='';a.actionName='';a.endpoint=0;a.value='';
+      a.title=c.find('.else-action-title-input').val();
+      a.message=c.find('.else-action-message-input').val()
+    }
+    rule.elseActions.push(a)
+  });
+  
+  $.ajax({url:'/api/rules/edit',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle modifiée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})
+});
 </script>
 )rawstring";
 
@@ -1958,29 +2316,105 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
 const char HTTP_ADD_RULE_JS[] PROGMEM = R"rawstring(
 <script>
 var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
-$(document).ready(function(){$.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});$.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})});
+
+$(document).ready(function(){
+  $.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});
+  $.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})
+});
+
 function checkDataLoadedAndInit(){if(devicesLoaded&&templatesLoaded){populateTriggerDeviceSelect();addCondition();addAction()}}
+
 function populateTriggerDeviceSelect(){var s=$('#triggerDevice').html('<option value="">-- Choisir --</option>');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';s.append('<option value="'+ieee+'">'+l+'</option>')}})}
-function hasCluster0006(dev){if(!dev||!dev.INFO)return!1;var tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return!1;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return!1;return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})}
+
+function getDeviceActions(ieee){if(!ieee||!devices[ieee]||!devices[ieee].INFO)return[];var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return[];var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].action)return[];return td[0].action}
+
+function hasCluster0006(ieee){if(!ieee||!devices[ieee]||!devices[ieee].INFO)return false;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return false;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return false;return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})}
+
 function onTriggerModeChange(){var mode=$('#triggerMode').val();if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}}
 function onTriggerDeviceChange(){var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
 function onTriggerClusterChange(){var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
+
 function addTimeRange(data){var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';$('#timeRangesContainer').append(html);if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}}
 function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
+
 function addCondition(data){var id=conditionCount++,html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Device</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">-- Cluster --</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">-- Attribut --</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&lt;=</option><option value=">">&gt;</option><option value=">=">&gt;=</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div><div class="col-md-1"><label class="form-label small">Logic</label><select class="form-select form-select-sm logic-select"><option value="AND">AND</option><option value="OR">OR</option></select></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div></div></div></div>';$('#conditionsContainer').append(html);var c=$('[data-id="'+id+'"]'),sel=c.find('.device-select');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){sel.val(data.IEEE);onDeviceChange(id);setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(id);setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.operator-select').val(data.operator);c.find('.value-input').val(data.value);c.find('.logic-select').val(data.logic);onOperatorChange(id)},100)},100)}}
 function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
 function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">-- Cluster --</option>');c.find('.attribute-select').html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
 function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
 function removeCondition(id){$('[data-id="'+id+'"]').remove()}
-function addAction(data){var id=actionCount++,html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" required></div><div class="col-md-2 action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';$('#actionsContainer').append(html);var c=$('[data-action-id="'+id+'"]'),sel=c.find('.action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){c.find('.action-type-select').val(data.type);onActionTypeChange(id);if(data.type==='onoff'){sel.val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint);c.find('.action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}}}
-function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();if(t==='onoff'){c.find('.action-onoff-fields').show();c.find('.action-notification-fields').hide();c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!0);c.find('.action-title-input,.action-message-input').prop('required',!1)}else{c.find('.action-onoff-fields').hide();c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0);c.find('.action-device-select,.action-endpoint-input,.action-value-select').prop('required',!1)}}
-function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+
+function addAction(data){
+  var id=actionCount++;
+  var html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
+    '<div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="device">Device (template)</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div>'+
+    '<div class="col-md-3 action-device-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-3 action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm action-name-select" onchange="onActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
+    '<div class="col-md-2 action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-device-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Device</label><select class="form-select form-select-sm action-legacy-device-select" onchange="onActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
+    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div>'+
+    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div>'+
+    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';
+  $('#actionsContainer').append(html);
+  var c=$('[data-action-id="'+id+'"]'),sel=c.find('.action-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
+  var selLegacy=c.find('.action-legacy-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
+  onActionTypeChange(id);
+  if(data){
+    if(data.type==='notification'){c.find('.action-type-select').val('notification');onActionTypeChange(id);c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}
+    else if(data.type==='device'&&data.actionName){c.find('.action-type-select').val('device');onActionTypeChange(id);c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);setTimeout(function(){c.find('.action-name-select').val(data.actionName);c.find('.action-device-endpoint-input').val(data.endpoint||1)},100)}
+    else if(data.type==='onoff'){c.find('.action-type-select').val('onoff');onActionTypeChange(id);c.find('.action-legacy-device-select').val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint||1);c.find('.action-value-select').val(data.value)}
+  }
+}
+function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();c.find('.action-device-fields,.action-legacy-fields,.action-notification-fields').hide();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input,.action-legacy-device-select,.action-endpoint-input,.action-value-select,.action-title-input,.action-message-input').prop('required',!1);if(t==='device'){c.find('.action-device-fields').show();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.action-legacy-fields').show();c.find('.action-legacy-device-select,.action-endpoint-input,.action-value-select').prop('required',!0)}else{c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0)}}
+function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val(),actionSel=c.find('.action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
+function onActionNameChange(id){var c=$('[data-action-id="'+id+'"]'),opt=c.find('.action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.action-device-endpoint-input').val(ep)}}
+function onActionLegacyDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
 function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
-function addElseAction(data){var id=elseActionCount++,html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="onoff">ON/OFF</option><option value="notification">Notification</option></select></div><div class="col-md-4 else-action-onoff-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" required></div><div class="col-md-2 else-action-onoff-fields"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select" required><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';$('#elseActionsContainer').append(html);var sel=$('[data-else-action-id="'+id+'"] .else-action-device-select');$.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(dev)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){var c=$('[data-else-action-id="'+id+'"]');c.find('.else-action-type-select').val(data.type);onElseActionTypeChange(id);if(data.type==='onoff'){c.find('.else-action-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint);c.find('.else-action-value-select').val(data.value)}else if(data.type==='notification'){c.find('.else-action-title-input').val(data.title);c.find('.else-action-message-input').val(data.message)}}}
-function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();if(t==='onoff'){c.find('.else-action-onoff-fields').show();c.find('.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0);c.find('.else-action-title-input,.else-action-message-input').prop('required',!1)}else{c.find('.else-action-onoff-fields').hide();c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0);c.find('.else-action-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!1)}}
-function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO)c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
+
+function addElseAction(data){
+  var id=elseActionCount++;
+  var html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
+    '<div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="device">Device (template)</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div>'+
+    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
+    '<div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
+    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div>'+
+    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div>'+
+    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';
+  $('#elseActionsContainer').append(html);
+  var c=$('[data-else-action-id="'+id+'"]'),sel=c.find('.else-action-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
+  var selLegacy=c.find('.else-action-legacy-device-select');
+  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
+  onElseActionTypeChange(id);
+  if(data){
+    if(data.type==='notification'){c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')}
+    else if(data.type==='device'&&data.actionName){c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);setTimeout(function(){c.find('.else-action-name-select').val(data.actionName);c.find('.else-action-device-endpoint-input').val(data.endpoint||1)},100)}
+    else if(data.type==='onoff'){c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);c.find('.else-action-legacy-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint||1);c.find('.else-action-value-select').val(data.value)}
+  }
+}
+function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();c.find('.else-action-device-fields,.else-action-legacy-fields,.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input,.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select,.else-action-title-input,.else-action-message-input').prop('required',!1);if(t==='device'){c.find('.else-action-device-fields').show();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.else-action-legacy-fields').show();c.find('.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0)}else{c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0)}}
+function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val(),actionSel=c.find('.else-action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.else-action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
+function onElseActionNameChange(id){var c=$('[data-else-action-id="'+id+'"]'),opt=c.find('.else-action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.else-action-device-endpoint-input').val(ep)}}
+function onElseActionLegacyDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
 function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
-$('#ruleForm').on('submit',function(e){e.preventDefault();var rule={name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};$('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});$('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}$('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.action-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val());a.value=c.find('.action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});$('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='onoff'){a.IEEE=c.find('.else-action-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val());a.value=c.find('.else-action-value-select').val();a.title='';a.message=''}else{a.IEEE='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});$.ajax({url:'/api/rules/add',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle créée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})});
+
+$('#ruleForm').on('submit',function(e){
+  e.preventDefault();
+  var rule={name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
+  $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
+  $('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});
+  if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}
+  $('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.action-device-select').val();a.actionName=c.find('.action-name-select').val();a.endpoint=parseInt(c.find('.action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.action-legacy-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val())||1;a.value=c.find('.action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});
+  $('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.else-action-device-select').val();a.actionName=c.find('.else-action-name-select').val();a.endpoint=parseInt(c.find('.else-action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.else-action-legacy-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val())||1;a.value=c.find('.else-action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});
+  $.ajax({url:'/api/rules/add',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle créée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})
+});
 </script>
 )rawstring";
 
@@ -4497,7 +4931,6 @@ String createDistributionGraph(String IEEE)
 
   return result;
 }*/
-
 String createPowerGraph(String IEEE)
 {
   String result = "";
@@ -4507,7 +4940,7 @@ String createPowerGraph(String IEEE)
   result += F("var ctx = canvas.getContext('2d');");
   result += F("if (window.powerChart) window.powerChart.destroy();");
   
-  // Calculer le goal AVANT la création du chart
+  // Calculer le goal
   int goal = 0;
   for (size_t i = 0; i < devices.size(); i++) 
   {
@@ -4516,28 +4949,23 @@ String createPowerGraph(String IEEE)
     {
       if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
       {
-        goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 230;
+        goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
       }else{
         goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 1000;
       }
-       
       break;
     }
   }
   
-  // Exposer le goal comme variable globale
   result += F("window.powerGoal = ");
   result += String(goal);
   result += F(";");
   
-  // Indiquer si c'est triphasé ou non
   bool isTriphase = (ConfigGeneral.LinkyMode == 2) || (ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7);
   result += F("window.powerIsTriphasé = ");
   result += isTriphase ? F("true") : F("false");
   result += F(";");
 
-  result += F("const isMobile = isMobileDevice();");
-  
   result += F("window.powerChart = new Chart(ctx, {");
   result += F(" type: 'bar',");
   result += F(" data: {");
@@ -4546,7 +4974,6 @@ String createPowerGraph(String IEEE)
 
   if (isTriphase)
   {
-    // TRIPHASÉ : 3 injections + 3 consommations
     result += F("   {label: 'Injection Ph1', data: [], backgroundColor: '#27ae60', stack: 'Stack0', hidden: true},");
     result += F("   {label: 'Injection Ph2', data: [], backgroundColor: '#0ed160', stack: 'Stack0', hidden: true},");
     result += F("   {label: 'Injection Ph3', data: [], backgroundColor: '#08612d', stack: 'Stack0', hidden: true},");
@@ -4556,7 +4983,6 @@ String createPowerGraph(String IEEE)
   }
   else
   {
-    // MONOPHASÉ : 1 injection + 1 consommation
     result += F("   {label: 'Injection', data: [], backgroundColor: '#27ae60', stack: 'Stack0', hidden: true},");
     result += F("   {label: 'Puissance', data: [], backgroundColor: '#1e88e5', stack: 'Stack0'}");
   }
@@ -4567,30 +4993,17 @@ String createPowerGraph(String IEEE)
   result += F("  responsive: true,");
   result += F("  maintainAspectRatio: false,");
   result += F("  animation: false,");
-  result += F("  interaction: {");
-  result += F("   mode: 'index',"); 
-  result += F("   intersect: false,"); 
-  result += F("   events: isMobile ? ['click', 'touchstart'] : ['mousemove', 'mouseout', 'click']"); 
-  result += F("  },");
+  result += F("  interaction: { mode: 'index', intersect: false },");
 
   result += F("  scales: {");
   result += F("   x: {");
   result += F("    stacked: true,");
-  result += F("    ticks: {");
-  result += F("     maxRotation: isMobile ? 90 : 70,"); // ← Plus vertical sur mobile
-  result += F("     minRotation: isMobile ? 90 : 70,");
-  result += F("     autoSkip: true,");
-  result += F("     maxTicksLimit: isMobile ? 12 : 20,"); // ← Moins de labels sur mobile
-  result += F("     font: { size: isMobile ? 10 : 12 }"); // ← Texte plus petit sur mobile
-  result += F("    }");
+  result += F("    ticks: { maxRotation: 70, minRotation: 70, autoSkip: true, maxTicksLimit: 20 }");
   result += F("   },");
   result += F("   y: {");
   result += F("    stacked: true,");
   result += F("    beginAtZero: false,");
- result += F("    ticks: {");
-  result += F("     callback: function(value) { return value + ' VA'; },");
-  result += F("     font: { size: isMobile ? 10 : 12 }"); // ← Texte plus petit sur mobile
-  result += F("    }");
+  result += F("    ticks: { callback: function(value) { return value + ' VA'; } }");
   result += F("   }");
   result += F("  },");
   result += F("  barPercentage: 0.9,");
@@ -4598,31 +5011,10 @@ String createPowerGraph(String IEEE)
 
   result += F("  plugins: {");
   result += F("   zoom: {");
-result += F("    limits: {");
-result += F("     x: { min: 'original', max: 'original', minRange: isMobile ? 5 : 3 }"); // ← Zoom minimum
-result += F("    },");
-result += F("    pan: {");
-result += F("     enabled: true,");
-result += F("     mode: 'x',");
-result += F("     modifierKey: isMobile ? null : 'ctrl',");
-result += F("     threshold: isMobile ? 20 : 0"); // ← Seuil plus élevé sur mobile
-result += F("    },");
-result += F("    zoom: {");
-result += F("     wheel: {");
-result += F("      enabled: !isMobile,");
-result += F("      speed: 0.1");
-result += F("     },");
-result += F("     pinch: {");
-result += F("      enabled: isMobile,");
-result += F("      threshold: 15,"); // ← Seuil de détection
-result += F("      sensitivity: 1"); // ← Sensibilité du pinch
-result += F("     },");
-result += F("     mode: 'x',");
-result += F("     drag: {");
-result += F("      enabled: !isMobile"); // ← Pas de drag sur mobile
-result += F("     }");
-result += F("    }");
-result += F("   },");
+  result += F("    limits: { x: { min: 'original', max: 'original', minRange: 3 } },");
+  result += F("    pan: { enabled: true, mode: 'x', modifierKey: 'ctrl' },");
+  result += F("    zoom: { wheel: { enabled: true, speed: 0.1 }, pinch:{enable: true}, mode: 'x', drag: { enabled: true } }");
+  result += F("   },");
 
   result += F("   tooltip: {");
   result += F("    enabled: false,");
@@ -4630,180 +5022,83 @@ result += F("   },");
   result += F("    intersect: false,");
   result += F("    backgroundColor: 'rgba(133, 133, 133, 0.65)',");
   result += F("    callbacks: {");
-  result += F("     title: function(tooltipItems) {");
-  result += F("      return tooltipItems.length > 0 ? tooltipItems[0].label : '';");
-  result += F("     },");
-
-  // LABEL de chaque ligne
-  result += F("     label: function(context) {");
-  result += F("      return getPowerTooltipLabel(context);");
-  result += F("     },");
-  
-  // FOOTER avec les totaux
-  result += F("     footer: function(tooltipItems) {");
-  result += F("      return getPowerTooltipFooter(tooltipItems);");
-  result += F("     }");
+  result += F("     title: function(tooltipItems) { return tooltipItems.length > 0 ? tooltipItems[0].label : ''; },");
+  result += F("     label: function(context) { return getPowerTooltipLabel(context); },");
+  result += F("     footer: function(tooltipItems) { return getPowerTooltipFooter(tooltipItems); }");
   result += F("    }");
   result += F("   },");
-  result += F("   legend: {");
-  result += F("    display: true,");
-  result += F("    position: 'top',");
-  result += F("    labels: {");
-  result += F("     font: { size: isMobile ? 11 : 12 },"); // ← Légende plus petite sur mobile
-  result += F("     padding: isMobile ? 8 : 10,");
-  result += F("     boxWidth: isMobile ? 30 : 40"); // ← Box plus petite sur mobile
-  result += F("    }");
-  result += F("   },");
+  result += F("   legend: { display: true, position: 'top' },");
   
-  result += F("   annotation: {");
-  result += F("    annotations: {");
+  result += F("   annotation: { annotations: {");
   if (goal > 0)
   {
-    result += F("     goalLine: {");
-    result += F("      type: 'line',");
-    result += F("      yMin: ");
+    result += F("    goalLine: {");
+    result += F("     type: 'line',");
+    result += F("     yMin: ");
+    result += String(goal);
+    result += F(", yMax: ");
     result += String(goal);
     result += F(",");
-    result += F("      yMax: ");
+    result += F("     borderColor: 'rgb(255, 0, 0)', borderWidth: 2, borderDash: [5, 5],");
+    result += F("     label: { display: true, content: 'Puiss. souscrite: ");
     result += String(goal);
-    result += F(",");
-    result += F("      borderColor: 'rgb(255, 0, 0)',");
-    result += F("      borderWidth: 2,");
-    result += F("      borderDash: [5, 5],");
-    result += F("      label: {");
-    result += F("       display: true,");
-    result += F("       content: 'Puiss. souscrite: ");
-    result += String(goal);
-    result += F(" VA',");
-    result += F("       position: 'end',");
-    result += F("       backgroundColor: 'rgba(255, 0, 0, 0.8)',");
-    result += F("       color: 'white'");
-    result += F("      }");
-    result += F("     }");
-
+    result += F(" VA', position: 'end', backgroundColor: 'rgba(255, 0, 0, 0.8)', color: 'white' }");
+    result += F("    }");
   }
-  result += F("    }");
-  result += F("   }");
-  result += F("  },"); // Fermeture plugins
+  result += F("   } }");
+  result += F("  },");
 
+  // HOVER
   result += F("  onHover: function(event, activeElements) {");
-  result += F("   if (isMobile) return;"); // ← Pas de hover sur mobile
-  
   result += F("   const chart = this;");
   result += F("   event.native.target.style.cursor = activeElements.length > 0 ? 'pointer' : 'default';");
-
   result += F("   chart.data.datasets.forEach(function(dataset) {");
   result += F("    dataset.borderWidth = dataset.data.map(function() { return 0; });");
   result += F("   });");
-
   result += F("   if (activeElements.length > 0) {");
   result += F("    const index = activeElements[0].index;");
   result += F("    const label = chart.data.labels[index];");
-
   result += F("    chart.data.datasets.forEach(function(dataset) {");
-  result += F("     dataset.borderWidth = dataset.data.map(function(d, i) {");
-  result += F("      return i === index ? 3 : 0;");
-  result += F("     });");
+  result += F("     dataset.borderWidth = dataset.data.map(function(d, i) { return i === index ? 3 : 0; });");
   result += F("    });");
-
   result += F("    let totalHeight = 0;");
   result += F("    chart.data.datasets.forEach(function(dataset) {");
   result += F("     const value = dataset.data[index] || 0;");
   result += F("     if (value > 0) totalHeight += value;");
   result += F("    });");
-
   result += F("    chart.options.plugins.annotation.annotations.hoverArrow = {");
-  result += F("     type: 'label',");
-  result += F("     xValue: label,");
-  result += F("     yValue: totalHeight,");
-  result += F("     content: '▼',");
-  result += F("     color: '#525252ff',");
-  result += F("     font: { size: 16, weight: 'bold' },");
-  result += F("     yAdjust: -15");
+  result += F("     type: 'label', xValue: label, yValue: totalHeight,");
+  result += F("     content: '▼', color: '#525252ff', font: { size: 16, weight: 'bold' }, yAdjust: -15");
   result += F("    };");
-
   result += F("   } else {");
   result += F("    delete chart.options.plugins.annotation.annotations.hoverArrow;");
   result += F("   }");
-
   result += F("   chart.update('none');");
   result += F("  },");
 
-  // ← CLIC : Fonctionne pour desktop ET mobile
+  // CLIC avec annulation du timer
   result += F("  onClick: function(evt, activeElements) {");
   result += F("   const chart = this;");
-  
-  // ← Sur mobile : gérer aussi la mise en évidence de la barre
-  result += F("   if (isMobile) {");
-  result += F("    chart.data.datasets.forEach(function(dataset) {");
-  result += F("     dataset.borderWidth = dataset.data.map(function() { return 0; });");
-  result += F("    });");
-  result += F("    if (activeElements.length > 0) {");
-  result += F("     const index = activeElements[0].index;");
-  result += F("     const label = chart.data.labels[index];");
-  result += F("     chart.data.datasets.forEach(function(dataset) {");
-  result += F("      dataset.borderWidth = dataset.data.map(function(d, i) {");
-  result += F("       return i === index ? 4 : 0;"); // ← Bordure plus épaisse sur mobile
-  result += F("      });");
-  result += F("     });");
-  
-  // ← Ajouter la flèche aussi sur mobile au clic
-  result += F("     let totalHeight = 0;");
-  result += F("     chart.data.datasets.forEach(function(dataset) {");
-  result += F("      const value = dataset.data[index] || 0;");
-  result += F("      if (value > 0) totalHeight += value;");
-  result += F("     });");
-  result += F("    }");
-  result += F("   }");
-  
-  // ← Gestion du tooltip (identique pour mobile et desktop)
-  result += F("   if (chart.tooltipTimeout) {");
-  result += F("    clearTimeout(chart.tooltipTimeout);");
-  result += F("   }");
-
+  result += F("   if (chart.tooltipTimeout) { clearTimeout(chart.tooltipTimeout); chart.tooltipTimeout = null; }");
   result += F("   if (activeElements.length > 0) {");
-  result += F("    chart.options.plugins.tooltip.enabled = true;");
-  result += F("    chart.tooltip.setActiveElements(activeElements, {x: evt.x, y: evt.y});");
-  result += F("    chart.update();");
-
-  result += F("    chart.tooltipTimeout = setTimeout(function() {");
+  result += F("    if (chart.options.plugins.tooltip.enabled) {");
   result += F("     chart.options.plugins.tooltip.enabled = false;");
   result += F("     chart.tooltip.setActiveElements([], {x: 0, y: 0});");
-  
-  // ← Retirer aussi la bordure et la flèche sur mobile
-  result += F("     if (isMobile) {");
-  result += F("      chart.data.datasets.forEach(function(dataset) {");
-  result += F("       dataset.borderWidth = dataset.data.map(function() { return 0; });");
-  result += F("      });");
-  result += F("      delete chart.options.plugins.annotation.annotations.hoverArrow;");
-  result += F("     }");
-  
   result += F("     chart.update();");
-  result += F("    }, isMobile ? 5000 : 3000);"); // ← Tooltip plus long sur mobile (7 sec)
-
+  result += F("    } else {");
+  result += F("     chart.options.plugins.tooltip.enabled = true;");
+  result += F("     chart.tooltip.setActiveElements(activeElements, {x: evt.x, y: evt.y});");
+  result += F("     chart.update();");
+  result += F("    }");
   result += F("   } else {");
   result += F("    chart.options.plugins.tooltip.enabled = false;");
   result += F("    chart.tooltip.setActiveElements([], {x: 0, y: 0});");
-  
-  result += F("    if (isMobile) {");
-  result += F("     chart.data.datasets.forEach(function(dataset) {");
-  result += F("      dataset.borderWidth = dataset.data.map(function() { return 0; });");
-  result += F("     });");
-  result += F("     delete chart.options.plugins.annotation.annotations.hoverArrow;");
-  result += F("    }");
-  
   result += F("    chart.update();");
   result += F("   }");
   result += F("  }");
 
-  result += F(" }"); // Fermeture options
+  result += F(" }");
   result += F("});");
-
-  result += F("if (isMobile) {");
-  result += F(" setTimeout(function() {"); // Petit délai pour s'assurer que le canvas est rendu
-  result += F("  preventCanvasZoom('power-chart');");
-  result += F(" }, 100);");
-  result += F("}");
 
   return result;
 }
@@ -5164,11 +5459,11 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   result += F("    chart.tooltip.setActiveElements(activeElements, {x: evt.x, y: evt.y});");
   result += F("    chart.update();");
 
-  result += F("    chart.tooltipTimeout = setTimeout(function() {");
+  /*result += F("    chart.tooltipTimeout = setTimeout(function() {");
   result += F("     chart.options.plugins.tooltip.enabled = false;");
   result += F("     chart.tooltip.setActiveElements([], {x: 0, y: 0});");
   result += F("     chart.update();");
-  result += F("    }, 5000);");
+  result += F("    }, 5000);");*/
 
   result += F("   } else {");
   result += F("    chart.options.plugins.tooltip.enabled = false;");
@@ -5880,364 +6175,9 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   request->send(200, "text/html", result.c_str());
 }
 
-/*void handleStatusEnergy(AsyncWebServerRequest *request)
-{
-  PSRAMString result(150000);
-  result += F("<html>");
-  result += FPSTR(HTTP_HEADERGRAPH);
-  result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_ENERGY);
-  result +=F("<div class='row'>");
-  if (strcmp(ConfigGeneral.ZLinky,"")!=0)
-  {
-    result += FPSTR(HTTP_ENERGY_LINKY);
-  }
-  if (strcmp(ConfigGeneral.Gaz,"")!=0)
-  {
-     result += FPSTR(HTTP_ENERGY_GAZ);
-  }
-  if (strcmp(ConfigGeneral.Water,"")!=0)
-  {
-     result += FPSTR(HTTP_ENERGY_WATER);
-  }
-  result +=F("</div>");
-  result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
-  result +=  R"(<script>
-            document.addEventListener('DOMContentLoaded', () => {
-              const params  = new URLSearchParams(window.location.search);
-              // Si aucun ?time, on choisit 'hour' par défaut
-              const current = params.has('time') ? params.get('time') : 'hour';
-
-              document.querySelectorAll('.link').forEach(link => {
-                const linkTime = new URL(link.href, window.location.href)
-                                  .searchParams.get('time');
-                if (linkTime === current) {
-                  link.classList.add('active');
-                }
-              });
-            });
-
-          </script>)";
-  result+=footer();
-  result += F("</html>");
-  result.replace("{{FormattedDate}}", FormattedDate);
-  String LinkyStatus;
-  
-  String tmpStatus = getDeviceStatus(String(ConfigGeneral.ZLinky)+".json");
-  if (tmpStatus =="d4")
-  {
-    LinkyStatus="<div class='alert alert-danger' role='alert'>Appareil déconnecté</div>";
-  }else{
-    LinkyStatus="";
-  }
-  result.replace("{{LinkyStatus}}",LinkyStatus);
-
-
-
-  int i = 0;
-  String time;
-
-  int paramsNr = request->params();
-  if (paramsNr > 0)
-  {
-    time = request->arg(i);
-  }
-  else
-  {
-    time = "hour";
-  }
-
-  if (time == "hour")
-  {
-    result.replace("{{stylePowerChart}}", F("block"));
-  }
-  else{
-    result.replace("{{stylePowerChart}}", F("none"));
-  }
-
-  //if (strcmp(ConfigGeneral.Production,"")==0)
-  //{
-  //  result.replace("{{styleProdChart}}", F("none"));
-  //}else{
-  //  result.replace("{{styleProdChart}}", F("block"));
-  //}
-
-  result.replace("{{time}}",time);
-
-  ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
-    // Status STGE
-  bool foundDevice = false;
-  DeviceData* device;
-  for (size_t ident = 0; ident < devices.size(); ident++) 
-  {   
-    if (devices[ident]->getDeviceID() == String(ConfigGeneral.ZLinky))
-    {
-      device = devices[ident];
-      foundDevice=true;
-      break;
-    }   
-  }
-
-  if (foundDevice)
-  {
-    if ((ConfigGeneral.LinkyMode == 0 ) || (ConfigGeneral.LinkyMode == 2 ))
-    {
-      String tmp = device->getValue(std::string("FF66"),std::string(String("5").c_str()));
-
-      if (tmp.toInt()>0)
-      {
-        result.replace("{{styleEnergyAlert}}", F("display:block;"));
-        result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
-      }else{
-        result.replace("{{styleEnergyAlert}}", F("display:none;"));
-      }
-    }else{
-      String tmp = device->getValue(std::string("FF66"),std::string(String("535").c_str()));
-      auto status = parseStatusRegister(tmp);
-
-      if (status.depassement_ref_pow)
-      {
-        result.replace("{{styleEnergyAlert}}", F("display:block;"));
-        result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
-      }else{
-        result.replace("{{styleEnergyAlert}}", F("display:none;"));
-      }
-    }   
-  }
-  
-  //
-  
-  String powerGauge="";
-
-  if (time == "hour")
-  {
-    if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
-    {
-      powerGauge=F("<div class='col-lg-4 col-md-12 col-12'>");
-            powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
-              powerGauge +=F("<h5 class='card-title' >Energie</h5>");
-              powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
-                powerGauge += F("<div class='row'>");
-                  
-                if (strcmp(ConfigGeneral.Production,"") != 0 )
-                {
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
-                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
-                  powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.2</h5>");
-                    powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
-                  powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.3</h5>");
-                    powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
-                  powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                  powerGauge +=F("<h5>Production</h5>");
-                    powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
-                  powerGauge +=F("</div>");
-                }else{
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
-                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>"); //style='width:30%;display:inline-block;'
-                  powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.2</h5>");
-                    powerGauge +=F("<div id='power_gauge_global2' class='w-100'></div>");
-                  powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.3</h5>");
-                    powerGauge +=F("<div id='power_gauge_global3' class='w-100'></div>");
-                  powerGauge +=F("</div>");
-                }
-                powerGauge +=F("</div>");
-              powerGauge +=F("</div>");
-            powerGauge +=F("</div>");
-          powerGauge +=F("</div>");
-    }else{
-      powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
-            powerGauge +=F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
-              powerGauge +=F("<h5 class='card-title'>Energie</h5>");
-              powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
-                powerGauge += F("<div class='row'>");
-                if (strcmp(ConfigGeneral.Production,"") != 0 )
-                {
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
-                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
-                  powerGauge +=F("</div>");
-                  powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Production</h5>");
-                    powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
-                  powerGauge +=F("</div>");
-                }else{
-                  powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
-                    powerGauge +=F("<h5>Puiss. App. P.1</h5>");
-                    powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
-                  powerGauge +=F("</div>");
-                }
-                powerGauge +=F("</div>");
-              powerGauge +=F("</div>");
-              
-            powerGauge +=F("</div>");
-          powerGauge +=F("</div>");
-    }
-  }else{
-    powerGauge =F("<div class='col-lg-4 col-md-12 col-12'>");
-      powerGauge +=F("<div id='energyGauge'  class='card p-4' style='height:100%;min-height:270px;'>");
-        powerGauge +=F("<h5 class='card-title'>Energie</h5>");
-        powerGauge +=F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
-          powerGauge += F("<div class='row'>");
-            if (strcmp(ConfigGeneral.Production,"") != 0 )
-            {
-              powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                powerGauge +=F("<h5>Consommation</h5>");
-                powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
-              powerGauge +=F("</div>");
-              powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>");
-                powerGauge +=F("<h5>Production</h5>");
-                powerGauge +=F("<div id='power_gauge_prod' class='w-100'></div>");
-              powerGauge +=F("</div>");
-            }else{
-              powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>");
-                powerGauge +=F("<h5>Consommation</h5>");
-                powerGauge +=F("<div id='power_gauge_global' class='w-100' ></div>");
-              powerGauge +=F("</div>");
-            }
-          powerGauge +=F("</div>");
-        powerGauge +=F("</div>");
-        
-      powerGauge +=F("</div>");
-    powerGauge +=F("</div>");
-  }
-  result.replace("{{power_gauge}}",powerGauge);
-
-  String javascript = "";
-
-  javascript = F("<script language='javascript'>");
-  javascript += F("$(document).ready(function() {");
-  if (strcmp(ConfigGeneral.ZLinky,"")!=0)
-  {
-    if (time == "hour")
-    {
-      
-      javascript += createPowerGraph(ConfigGeneral.ZLinky);
-      if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
-      {
-        javascript += F("loadPowerGaugeAbo(2");
-        javascript += F(",'");
-        javascript += String(ConfigGeneral.ZLinky);
-        javascript += F("','2319','");
-        javascript += time;
-        javascript += F("');");
-        javascript += F("loadPowerGaugeAbo(3");
-        javascript += F(",'");
-        javascript += String(ConfigGeneral.ZLinky);
-        javascript += F("','2575','");
-        javascript += time;
-        javascript += F("');");
-      }
-
-    }
-    javascript += createDistributionGraph(ConfigGeneral.ZLinky);
-    javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
-    javascript += F("loadPowerGaugeAbo(1");
-    javascript += F(",'");
-    javascript += String(ConfigGeneral.ZLinky);
-    javascript += F("','1295','");
-    javascript += time;
-    javascript += F("');");
-    
-    if (strcmp(ConfigGeneral.Production,"") != 0 )
-    {
-      javascript += F("loadPowerGaugeAbo(4");
-      javascript += F(",'");
-      javascript += String(ConfigGeneral.Production);
-      javascript += F("','519','");
-      javascript += time;
-      javascript += F("');");
-    }
-    
-    javascript += F("refreshStatusEnergy('");
-    javascript += String(ConfigGeneral.ZLinky);
-    javascript += F("','1295','");
-    javascript += time;
-    javascript += F("');");
-
-    if ((ConfigGeneral.LinkyMode == 2 ) || (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ))
-    {
-      javascript += F("refreshGaugeAbo('");
-      javascript += String(ConfigGeneral.ZLinky);
-      javascript += F("','1295','");
-      javascript += time;
-      javascript += F("');");
-      javascript += F("refreshGaugeAbo('");
-      javascript += String(ConfigGeneral.ZLinky);
-      javascript += F("','2319','");
-      javascript += time;
-      javascript += F("');");
-      javascript += F("refreshGaugeAbo('");
-      javascript += String(ConfigGeneral.ZLinky);
-      javascript += F("','2575','");
-      javascript += time;
-      javascript += F("');");
-
-    }else{
-      if (strcmp(ConfigGeneral.Production,"") != 0 )
-      {
-        javascript += F("refreshGaugeAbo('");
-        javascript += String(ConfigGeneral.Production);
-        javascript += F("','519','");
-        javascript += time;
-        javascript += F("');");
-      }
-      javascript += F("refreshGaugeAbo('");
-      javascript += String(ConfigGeneral.ZLinky);
-      javascript += F("','1295','");
-      javascript += time;
-      javascript += F("');");
-    }
-
-  }
-  if (strcmp(ConfigGeneral.Gaz,"")!=0)
-  {
-    javascript += createEnergyGraph(ConfigGeneral.Gaz, "gaz","['#e67e22','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
-    javascript += F("refreshStatusGaz('");
-    javascript += String(ConfigGeneral.Gaz);
-    javascript += F("','");
-    javascript += time;
-    javascript += F("');");
-  }
-  if (strcmp(ConfigGeneral.Water,"")!=0)
-  {
-    javascript += createEnergyGraph(ConfigGeneral.Water, "water","['#2e86c1','#2785c7','#00c967','#c9c600','#c96100', '#c90000','#00c6c9', '#a700c9', '#c90043','#373737']");
-    javascript += F("refreshStatusWater('");
-    javascript += String(ConfigGeneral.Water);
-    javascript += F("','");
-    javascript += time;
-    javascript += F("');");
-  }
-
-  javascript += F("});");
-  javascript += F("var ET = document.getElementById('energyTrend').offsetHeight;");
-  javascript += F("var EG = document.getElementById('energyGauge').offsetHeight;");
-  javascript += F("var cadre = document.getElementById('cadre_energy').clientWidth;");
-  javascript += F("if (cadre>720){");
-  javascript += F("if (EG<ET){");
-    javascript += F("document.getElementById('energyGauge').style.minHeight=`${ET}px`;");
-  javascript +=F("}else{");
-    javascript += F("document.getElementById('energyTrend').style.minHeight=`${EG}px`;");
-  javascript +=F("} }");  
-  javascript += F("</script>");
-
-  result.replace("{{javascript}}", javascript);
-
-  request->send(200, "text/html", result.c_str());
-}*/
-
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
+  
   PSRAMString result(300000);
   result = F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
@@ -6663,15 +6603,6 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += time;
     javascript += F("');");
   }
-  /*if (strcmp(ConfigGeneral.Production,"")!=0)
-  {
-    javascript += createEnergyGraph(ConfigGeneral.Production, "production","['#27ae60','#d35400','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']");
-    javascript += F("refreshStatusProduction('");
-    javascript += String(ConfigGeneral.Production);
-    javascript += F("','");
-    javascript += time;
-    javascript += F("');");
-  }*/
 
   javascript += F("});");
   javascript += F("var ET = document.getElementById('energyTrend').offsetHeight;");
@@ -6690,6 +6621,352 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   request->send(200, "text/html", result.c_str());
 }
 
+/*void writeHelpIcon(AsyncResponseStream* response, const char* popupId) {
+    response->printf(
+        "<a href='javascript:void(0)' onclick='showPopup(\"%s\")' "
+        "class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>"
+        "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' "
+        "fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>"
+        "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+        "<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 "
+        "1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 "
+        "1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486"
+        ".609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 "
+        "5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
+        "</svg></a>",
+        popupId
+    );
+}
+
+// Helper pour écrire l'icône info
+void writeInfoIcon(AsyncResponseStream* response, const char* popupId) {
+    response->printf(
+        "<a href='javascript:void(0)' onclick='showPopup(\"%s\")' "
+        "class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>"
+        "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' "
+        "class='bi bi-info-square' viewBox='0 0 16 16'>"
+        "<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 "
+        "2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>"
+        "<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 "
+        "1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193"
+        "-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>"
+        "</svg></a>",
+        popupId
+    );
+}
+
+void writePowerGauges(AsyncResponseStream* response, bool isTriphase, bool hasProduction, bool isHourMode) {
+    response->print(F("<div class='col-lg-4 col-md-12 col-12'>"));
+    response->print(F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>"));
+    
+    if (isHourMode) {
+        response->print(F("<h5 class='card-title'>Linky : Puissances</h5>"));
+    } else {
+        response->print(F("<h5 class='card-title'>Linky</h5>"));
+    }
+    
+    response->print(F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>"));
+    response->print(F("<div class='row'>"));
+    
+    if (isHourMode) {
+        // Mode heure - affichage des puissances instantanées
+        if (isTriphase) {
+            // Triphasé
+            const char* phases[] = {"Soutirée P.1", "Soutirée P.2", "Soutirée P.3"};
+            const char* gaugeIds[] = {"power_gauge_global", "power_gauge_global2", "power_gauge_global3"};
+            
+            for (int i = 0; i < 3; i++) {
+                response->printf(
+                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
+                    "<h5>%s</h5>"
+                    "<div id='%s' class='w-100'></div>"
+                    "</div>",
+                    phases[i], gaugeIds[i]
+                );
+            }
+            
+            if (hasProduction) {
+                response->print(F(
+                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
+                    "<h5>Injectée</h5>"
+                    "<div id='power_gauge_prod' class='w-100'></div>"
+                    "</div>"
+                ));
+            }
+        } else {
+            // Monophasé
+            if (hasProduction) {
+                response->print(F(
+                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
+                    "<h5>Soutirée</h5>"
+                    "<div id='power_gauge_global' class='w-100'></div>"
+                    "</div>"
+                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
+                    "<h5>Injectée</h5>"
+                    "<div id='power_gauge_prod' class='w-100'></div>"
+                    "</div>"
+                ));
+            } else {
+                response->print(F(
+                    "<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>"
+                    "<h5>Soutirée</h5>"
+                    "<div id='power_gauge_global' class='w-100'></div>"
+                    "</div>"
+                ));
+            }
+        }
+        writeHelpIcon(response, "popupHelpPowerJaugeHour");
+    } else {
+        // Mode jour/mois/année - affichage des consommations
+        if (hasProduction) {
+            response->print(F(
+                "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
+                "<h5>Consommation</h5>"
+                "<div id='power_gauge_global' class='w-100'></div>"
+                "</div>"
+                "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
+                "<h5>Production</h5>"
+                "<div id='power_gauge_prod' class='w-100'></div>"
+                "</div>"
+            ));
+        } else {
+            response->print(F(
+                "<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>"
+                "<h5>Consommation</h5>"
+                "<div id='power_gauge_global' class='w-100'></div>"
+                "</div>"
+            ));
+        }
+        writeHelpIcon(response, "popupHelpPowerJauge");
+    }
+    
+    writeInfoIcon(response, "popupLinkyDatas");
+    
+    response->print(F("</div></div></div></div></div>")); // Fermeture row, card-body, card, col
+}
+
+
+void handleStatusEnergy(AsyncWebServerRequest *request)
+{
+    if (ConfigSettings.enableSecureHttp) {
+        if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP)) {
+            return request->requestAuthentication();
+        }
+    }
+
+    unsigned long startTime = millis();
+    
+    // Créer réponse streamée
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+
+    // Pré-calculer toutes les valeurs nécessaires
+    String time = "hour";
+    if (request->params() > 0) {
+        time = request->arg(0);
+    }
+    
+    bool hasZLinky = (strcmp(ConfigGeneral.ZLinky, "") != 0);
+    bool hasGaz = (strcmp(ConfigGeneral.Gaz, "") != 0);
+    bool hasWater = (strcmp(ConfigGeneral.Water, "") != 0);
+    bool hasProduction = (strcmp(ConfigGeneral.Production, "") != 0);
+    
+    ConfigGeneral.LinkyMode = hasZLinky ? 
+        getZigbeeValue(String(ConfigGeneral.ZLinky) + ".json", "FF66", "768").toInt() : 0;
+    bool isTriphase = (ConfigGeneral.LinkyMode == 2) || (ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7);
+    bool isHourMode = (time == "hour");
+
+    // === Envoyer les parties statiques directement ===
+    response->print(F("<html>"));
+    response->print(FPSTR(HTTP_HEADERGRAPH));
+    
+    // HTTP_MENU - petit, on peut le traiter
+    {
+        String menu = FPSTR(HTTP_MENU);
+        menu.replace("{{FormattedDate}}", FormattedDate);
+        response->print(menu);
+    }
+    
+    // HTTP_ENERGY - traiter les placeholders
+    {
+        String energy = FPSTR(HTTP_ENERGY);
+        energy.replace("{{FormattedDate}}", FormattedDate);
+        energy.replace("{{time}}", time);
+        energy.replace("{{stylePowerChart}}", isHourMode ? "block" : "none");
+        
+        // Alerte énergie
+        bool showAlert = false;
+        String alertMsg = "";
+        if (hasZLinky) {
+            for (size_t i = 0; i < devices.size(); i++) {
+                if (devices[i]->getDeviceID() == String(ConfigGeneral.ZLinky)) {
+                    if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2)) {
+                        if (devices[i]->getValue(std::string("FF66"), std::string("5")).toInt() > 0) {
+                            showAlert = true;
+                            alertMsg = "Dépassement de puissance souscrite";
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        energy.replace("{{styleEnergyAlert}}", showAlert ? "display:block;" : "display:none;");
+        energy.replace("{{energyAlertMessage}}", alertMsg);
+        
+        // LinkyStatus
+        String linkyStatus = "";
+        if (hasZLinky && getDeviceStatus(String(ConfigGeneral.ZLinky) + ".json") == "d4") {
+            linkyStatus = "<div class='alert alert-danger' role='alert'>Appareil déconnecté</div>";
+        }
+        energy.replace("{{LinkyStatus}}", linkyStatus);
+        
+        // Help trend
+        String helpPopup = isHourMode ? "popupHelpEnergyTrendHour" : "popupHelpEnergyTrend";
+        String helpHtml = "<a href='javascript:void(0)' onclick='showPopup(\"" + helpPopup + "\")' "
+            "class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>"
+            "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' "
+            "fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>"
+            "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+            "<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 "
+            "1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 "
+            "1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486"
+            ".609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 "
+            "5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
+            "</svg></a>";
+        energy.replace("{{helpTrend}}", helpHtml);
+        
+        response->print(energy);
+    }
+
+    // Sections conditionnelles
+    response->print(F("<div class='row'>"));
+    if (hasZLinky) response->print(FPSTR(HTTP_ENERGY_LINKY));
+    if (hasGaz) response->print(FPSTR(HTTP_ENERGY_GAZ));
+    if (hasWater) response->print(FPSTR(HTTP_ENERGY_WATER));
+    response->print(F("</div>"));
+
+    // JavaScript inline
+    response->print(F(R"(<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const current = params.has('time') ? params.get('time') : 'hour';
+  document.querySelectorAll('.link').forEach(link => {
+    const linkTime = new URL(link.href, window.location.href).searchParams.get('time');
+    if (linkTime === current) link.classList.add('active');
+  });
+});
+function isMobileDevice() {
+  return (typeof window.orientation !== "undefined") || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+function preventCanvasZoom(canvasId) {
+  const c = document.getElementById(canvasId);
+  if (!c) return;
+  c.style.touchAction = 'none';
+  c.addEventListener('touchstart', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  c.addEventListener('touchmove', e => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+}
+</script>)"));
+
+    response->print(FPSTR(HTTP_ENERGY_JAVASCRIPT));
+
+    // Power gauge (généré directement)
+    writePowerGauges(response, isTriphase, hasProduction, isHourMode);
+
+    // JavaScript des graphiques
+    response->print(F("<script>$(document).ready(function() {"));
+    
+    if (hasZLinky) {
+        response->printf("calculateEnergyClass('%s','%s');", ConfigGeneral.ZLinky, time.c_str());
+        
+        if (isHourMode) {
+            response->print(createPowerGraph(ConfigGeneral.ZLinky));
+            if (isTriphase) {
+                response->printf("loadPowerGaugeAbo(2,'%s','2319','%s');", ConfigGeneral.ZLinky, time.c_str());
+                response->printf("loadPowerGaugeAbo(3,'%s','2575','%s');", ConfigGeneral.ZLinky, time.c_str());
+            }
+        }
+        
+        response->print(createDistributionGraph(ConfigGeneral.ZLinky));
+        
+        int budget = ConfigNotif.OverBudgetThreshold ? 
+            getkWhBudget(String(ConfigGeneral.ZLinky), time, ConfigNotif.OverBudgetThreshold) : 0;
+        
+        response->print(createEnergyGraph(ConfigGeneral.ZLinky, "energy",
+            "['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']", budget));
+        
+        response->printf("loadPowerGaugeAbo(1,'%s','1295','%s');", ConfigGeneral.ZLinky, time.c_str());
+        
+        if (hasProduction) {
+            response->printf("loadPowerGaugeAbo(4,'%s','519','%s');", ConfigGeneral.Production, time.c_str());
+        }
+        
+        response->printf("refreshStatusEnergy('%s','1295','%s','energy');", ConfigGeneral.ZLinky, time.c_str());
+        
+        if (isTriphase) {
+            response->printf("refreshGaugeAbo('%s','1295','%s');", ConfigGeneral.ZLinky, time.c_str());
+            response->printf("refreshGaugeAbo('%s','2319','%s');", ConfigGeneral.ZLinky, time.c_str());
+            response->printf("refreshGaugeAbo('%s','2575','%s');", ConfigGeneral.ZLinky, time.c_str());
+        } else {
+            if (hasProduction) {
+                response->printf("refreshGaugeAbo('%s','519','%s');", ConfigGeneral.Production, time.c_str());
+            }
+            response->printf("refreshGaugeAbo('%s','1295','%s');", ConfigGeneral.ZLinky, time.c_str());
+        }
+    }
+    
+    if (hasGaz) {
+        response->print(createEnergyGraph(ConfigGeneral.Gaz, "gaz",
+            "['#e67e22','#2785c7','#00c967','#c9c600','#c96100','#c90000','#00c6c9','#a700c9','#c90043','#373737']", 0));
+        response->printf("refreshStatusGaz('%s','%s');", ConfigGeneral.Gaz, time.c_str());
+    }
+    
+    if (hasWater) {
+        response->print(createEnergyGraph(ConfigGeneral.Water, "water",
+            "['#2e86c1','#2785c7','#00c967','#c9c600','#c96100','#c90000','#00c6c9','#a700c9','#c90043','#373737']", 0));
+        response->printf("refreshStatusWater('%s','%s');", ConfigGeneral.Water, time.c_str());
+    }
+    
+    response->print(F("});"));
+    
+    // Ajustement hauteur
+    response->print(F(
+        "var ET=document.getElementById('energyTrend').offsetHeight;"
+        "var EG=document.getElementById('energyGauge').offsetHeight;"
+        "var cadre=document.getElementById('cadre_energy').clientWidth;"
+        "if(cadre>720){if(EG<ET){document.getElementById('energyGauge').style.minHeight=`${ET}px`;}"
+        "else{document.getElementById('energyTrend').style.minHeight=`${EG}px`;}}"
+    ));
+    
+    response->print(F("</script>"));
+
+    // Footer
+    response->print(footer());
+    response->print(F("</html>"));
+
+    request->send(response);
+    
+    log_d("handleStatusEnergy took %lu ms", millis() - startTime);
+}*/
+
+// ============================================================
+// JavaScript Masonry - PROGMEM
+// ============================================================
+const char HTTP_SCRIPT_MASONRY[] PROGMEM = R"rawliteral(
+<script>
+$(document).ready(function() {
+  const grid = document.querySelector('#masonry-grid');
+  const msnry = new Masonry(grid, {
+    itemSelector: '.col-12',
+    percentPosition: true
+  });
+  const observer = new ResizeObserver(() => {
+    msnry.layout();
+  });
+  document.querySelectorAll('.col-12').forEach(card => observer.observe(card));
+});
+</script>
+)rawliteral";
+
 void handleStatusDevices(AsyncWebServerRequest *request)
 {
   if(!deviceList->isEmpty())
@@ -6700,14 +6977,44 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   PSRAMString result(150000);
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
+  
+  // Styles personnalisés pour les fiches
+  result += F("<style>");
+  result += F(".status-card { background: #fff; border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; overflow: hidden; }");
+  result += F(".status-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }");
+  result += F(".card-header-custom { background: #fff; padding: 14px 18px; }");
+  result += F(".card-header-custom a { color: #222; text-decoration: none; font-weight: 600; font-size: 15px; display: flex; align-items: center; }");
+  result += F(".card-header-custom a:hover { color: #6c757d; opacity: 0.95; }");
+  result += F(".card-header-custom svg { flex-shrink: 0; margin-right: 10px; width: 18px; height: 18px; }");
+  result += F(".card-body-custom { padding: 12px 18px; }");
+  result += F(".attr-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #e9ecef; }");
+  result += F(".attr-row:last-child { border-bottom: none; }");
+  result += F(".attr-name { color: #6c757d; font-size: 13px; font-weight: 500; }");
+  result += F(".attr-value { font-family: 'Courier New', monospace; font-size: 14px; font-weight: 600; color: #212529; }");
+  result += F(".attr-unit { color: #adb5bd; font-size: 12px; margin-left: 4px; }");
+  result += F(".actions-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px; background: #f8f9fa; border-top: 1px solid #e9ecef; }");
+  result += F(".btn-action { background: #0d6efd; border: none; color: #fff; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.2s; }");
+  result += F(".btn-action:hover { background: #0b5ed7; }");
+  result += F(".btn-action:active { background: #0a58ca; }");
+  result += F("@media (max-width: 576px) {");
+  result += F("  .status-card { border-radius: 10px; }");
+  result += F("  .card-header-custom { padding: 12px 14px; }");
+  result += F("  .card-header-custom a { font-size: 14px; }");
+  result += F("  .card-body-custom { padding: 10px 14px; }");
+  result += F("  .attr-row { padding: 7px 0; }");
+  result += F("  .attr-name { font-size: 12px; }");
+  result += F("  .attr-value { font-size: 13px; }");
+  result += F("  .actions-bar { padding: 10px 14px; }");
+  result += F("  .btn-action { padding: 6px 12px; font-size: 12px; }");
+  result += F("}");
+  result += F("</style>");
+  
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
   
-  //result += F("<h5>List of devices</h5>");
-  
   result += F("<div class='container py-4'>");
-  result += F("<h4>Mesures des appareils</h4>");
-  result += F("<div class='row g-4' id='masonry-grid' style=''>"); // data-masonry='{\"percentPosition\": true }'
+  result += F("<h4 style='color:#212529;font-weight:600;margin-bottom:20px;'>Mesures des appareils</h4>");
+  result += F("<div class='row g-4' id='masonry-grid'>");
   
   String str = "";
   int exist = 0;
@@ -6717,61 +7024,55 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     DeviceData* device = devices[ident];
     
     exist++;
-    result += F("<div class='col-12 col-sm-12 col-md-12 col-lg-5 col-xl-4 d-flex'>");
-    result += F("<div class='card p-4 flex-fill' style='min-width:380px;'>"); //min-width:380px;
-    result += F("<h5 class='card-title'>@Mac : ");
+    result += F("<div class='col-12 col-sm-12 col-md-6 col-lg-4 col-xl-4'>");
+    result += F("<div class='status-card'>");
+    
+    // Header avec icône et titre
+    result += F("<div class='card-header-custom'>");
+    result += F("<a href='/configDevice?id=");
     result += device->getDeviceID();
-    result += F("</h5>");
-    result += F("<div class='card-body'>");
-    result += F("<a data-toggle='collapse' data-target='#infoDevice");
-    result += String(ident);
-    result +=F("' role='button' aria-expanded='true' aria-controls='infoDevice");
-    result += String(ident);
-    result += F("' onclick=\"toggleDiv('infoDevice");
-    result += String(ident);
-    result += F("')\">+ Infos</a>");
-    result += F("<div id='infoDevice");
-    result += String(ident);
-    result += F("' style='display:none;'>");
-    result += "<table width='100%' style='font-size:12px;'><tr>";
-    result += F("<td style='font-weight:bold;color:#555;width:60%;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-    result += device->getInfo().manufacturer;
-    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-    result += device->getInfo().model;
-    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    result += F("'>");
+    // Icône device
+    if (LittleFS.exists("/web/img/icon_" + device->getInfo().model +".png"))
+    {
+      result += F("<img src='web/img/icon_");
+      result += device->getInfo().model;
+      result += F(".png'  height='64px'/>");
+    }else{
+      result += F("<img src='web/img/icon_");
+      result += device->getInfo().device_id;
+      result += F(".png'  height='64px'/>");
+
+    }
+
+    if (device->getInfo().alias.length() > 0) {
+      result += device->getInfo().alias;
+    } else {
+      result += device->getDeviceID();
+    }
+    result += F("</a></div>");
+    
+    // Body avec attributs
+    result += F("<div class='card-body-custom'>");
+    
     char SAddr[5];
-    int ShortAddr =device->getInfo().shortAddr.toInt();
-    snprintf(SAddr,5,"%04X", ShortAddr);
-    result += SAddr;
-    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-    char devId[5];
+    int ShortAddr = device->getInfo().shortAddr.toInt();
+    snprintf(SAddr, 5, "%04X", ShortAddr);
     int DeviceId = device->getInfo().device_id.toInt();
-    snprintf(devId,5, "%04X", DeviceId);
-    result += devId;
-    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-    result += device->getInfo().software_version;
-    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-    result += device->getInfo().lastSeen;
-    result += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:60%;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-    result += device->getInfo().LQI;
-    result += "</td></tr></table></div><hr>";
 
     // Get status and action from json    
     if (TemplateExist(DeviceId))
     {
-      /*Template *t;
-      t = GetTemplate(DeviceId, device->getInfo().model);*/
       TemplateData* t = device->getTemplate();
       if (!t) {
-          // Template introuvable - logger pour debug
           Serial.printf("WARNING: Template introuvable pour model: %s\n", device->getInfo().model.c_str());
-          continue; // ou return, selon votre logique
+          continue;
       }
-      // toutes les propiétés
+      
       result += F("<div id='status_");
       result += (String)device->getInfo().shortAddr;
       result += F("'>");
-      result += F("<table width='100%' style='font-size:12px;'>");
+      
       for (int i = 0; i < t->StateSize(); i++)
       {
         if (t->states[i].visible)
@@ -6787,7 +7088,6 @@ void handleStatusDevices(AsyncWebServerRequest *request)
               strncpy(modeCopy, tmp, sizeof(modeCopy) - 1);
               modeCopy[sizeof(modeCopy) - 1] = '\0';
               
-              // Parser
               char *pch = strtok(modeCopy, ";"); 
               while (pch != NULL)
               {
@@ -6803,56 +7103,63 @@ void handleStatusDevices(AsyncWebServerRequest *request)
             }
 
             if (afficheOK){
-              result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
+              String attrIdLinky = String(ShortAddr)+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute);
+              result += F("<div class='attr-row'>");
+              result += F("<span class='attr-name'>");
               result += t->states[i].name;
-              result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-              result += "<span id='";
-              result += String(ShortAddr)+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute);
-              result +="'>";
+              result += F("</span>");
+              result += F("<span><span class='attr-value' id='");
+              result += attrIdLinky;
+              result += F("'>");
               result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
-              result += "</span></td>";
-              result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->states[i].unit;
-              result += F("</td>");
-              result +="</td></tr>";
+              result += F("</span><span class='attr-unit'>");
+              result += (String)t->states[i].unit;
+              result += F("</span></span></div>");
             }
           }else{
-            result += F("<tr><td style='width:55%;font-weight:bold;color:#555;'>");
+            String attrId = String(ShortAddr) + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute);
+            result += F("<div class='attr-row'>");
+            result += F("<span class='attr-name'>");
             result += t->states[i].name;
-            result += F("</td><td style='width:35%;font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
-            result += "<span id='";
-            result += String(device->getInfo().shortAddr)+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute);
-            result +="'>";
-            result +=GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
-            result +="<td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>"+(String)t->states[i].unit;
-            result += F("</td>");
-            result +="</td></tr>";
+            result += F("</span>");
+            result += F("<span><span class='attr-value' id='");
+            result += attrId;
+            result += F("'>");
+            result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
+            result += F("</span><span class='attr-unit'>");
+            result += (String)t->states[i].unit;
+            result += F("</span></span></div>");
           }
         }
       }
-      result += F("</table></div><br>");
-      result += F("<div id='action_");
-      result += (String)device->getInfo().shortAddr;
-      result += F("'>");
-      // toutes les actions
-      for (int i = 0; i < t->ActionSize(); i++)
-      {
-        esp_task_wdt_reset();
-        result += F("<button onclick=\"ZigbeeAction(");
-        result += device->getInfo().shortAddr;
-        result += ",";
-        result += String(t->actions[i].command);
-        result += ",";
-         result += String(t->actions[i].endpoint);
-        result += ",";
-        result += String(t->actions[i].value);
-        result += ");\" class='btn btn-primary mb-2'>";
-        result += t->actions[i].name;
-        result += F("</button>");
+      result += F("</div>"); // fin status_
+      result += F("</div>"); // fin card-body-custom
+      
+      // Actions bar
+      if (t->ActionSize() > 0) {
+        result += F("<div class='actions-bar'>");
+        for (int i = 0; i < t->ActionSize(); i++)
+        {
+          esp_task_wdt_reset();
+          result += F("<button onclick=\"ZigbeeAction(");
+          result += device->getInfo().shortAddr;
+          result += ",";
+          result += String(t->actions[i].command);
+          result += ",";
+          result += String(t->actions[i].endpoint);
+          result += ",";
+          result += String(t->actions[i].value);
+          result += F(");\" class='btn-action'>");
+          result += t->actions[i].name;
+          result += F("</button>");
+        }
+        result += F("</div>");
       }
-      result += F("</div>");
-     // free(t);
+    } else {
+      result += F("</div>"); // fin card-body-custom si pas de template
     }
-    result += F("</div></div></div>");
+    
+    result += F("</div></div>"); // fin status-card et col
     
     vTaskDelay(1);
   }
@@ -6861,24 +7168,8 @@ void handleStatusDevices(AsyncWebServerRequest *request)
 
   if (exist>0)
   {
-    result +="<script>getDeviceValue();</script>";
-    result += F("<script language='javascript'>");
-    result += F("$(document).ready(function() {");
-    result += "const grid = document.querySelector('#masonry-grid');";
-      result += "const msnry = new Masonry(grid, {";
-      result += "itemSelector: '.col-12',";
-        result += "percentPosition: true";
-        result += "});";
-
-        result += "const observer = new ResizeObserver(() => {";
-        result += "msnry.layout();";
-          result += "});";
-
-          result += "document.querySelectorAll('.col-12').forEach(card => observer.observe(card));";
-
-          result += F("});");
-
-    result += F("</script>");
+    result += F("<script>getDeviceValue();</script>");
+    result += FPSTR(HTTP_SCRIPT_MASONRY);
   }else{
     result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>";
   }
@@ -7404,6 +7695,7 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
         JsonObject a = actions.createNestedObject();
         a["type"] = act["type"];
         a["IEEE"] = act["IEEE"];
+        a["actionName"] = act["actionName"];
         a["endpoint"] = act["endpoint"];
         a["value"] = act["value"];
         a["title"] = act["title"]; 
@@ -7416,6 +7708,7 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
         JsonObject a = elseActions.createNestedObject();
         a["type"] = act["type"];
         a["IEEE"] = act["IEEE"];
+        a["actionName"] = act["actionName"];
         a["endpoint"] = act["endpoint"];
         a["value"] = act["value"];
         a["title"] = act["title"]; 
@@ -7616,6 +7909,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     JsonObject a = actions.createNestedObject();
     a["type"] = act["type"];
     a["IEEE"] = act["IEEE"];
+    a["actionName"] = act["actionName"];
     a["endpoint"] = act["endpoint"];
     a["value"] = act["value"];
     a["title"] = act["title"];  
@@ -7627,6 +7921,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     JsonObject a = elseActions.createNestedObject();
     a["type"] = act["type"];
     a["IEEE"] = act["IEEE"];
+    a["actionName"] = act["actionName"];
     a["endpoint"] = act["endpoint"];
     a["value"] = act["value"];
     a["title"] = act["title"];  
@@ -8584,169 +8879,6 @@ void handleDoRestore(AsyncWebServerRequest *request, const String& filename, siz
 
 */
 
-// Configuration des buffers - OPTIMISÉ POUR PSRAM
-#define GZIP_CHUNK_SIZE     (32 * 1024)   // 32KB - buffer lecture gzip
-#define TAR_BUFFER_SIZE     (128 * 1024)  // 128KB - buffer tar décompressé  
-#define WRITE_BUFFER_SIZE   (8 * 1024)    // 8KB - buffer écriture fichiers
-#define UPLOAD_BUFFER_SIZE  (32 * 1024)   // 32KB - buffer upload HTTP
-
-struct GzipTarContext {
-    File gzFile;                  // Fichier .tar.gz source
-    tinfl_decompressor inflator;  // Décompresseur miniz intégré ESP32
-    uint8_t* inBuf;               // Buffer d'entrée compressé (PSRAM)
-    uint8_t* outBuf;              // Buffer de sortie décompressé (PSRAM)
-    size_t inBufUsed;             // Bytes utilisés dans inBuf
-    size_t inBufAvail;            // Bytes disponibles dans inBuf
-    size_t outBufPos;             // Position actuelle dans outBuf
-    size_t outBufLen;             // Longueur de données valides dans outBuf
-    bool streamEnded;             // Flag de fin de stream
-    bool initialized;             // Flag d'initialisation
-    size_t totalBytesRead;        // Total bytes lus (pour stats)
-    size_t totalBytesDecompressed;// Total bytes décompressés (pour stats)
-};
-
-static GzipTarContext* gzCtxPtr = nullptr;
-
-static uint8_t* allocPSRAM(size_t size, const char* name) {
-    uint8_t* ptr = (uint8_t*)heap_caps_malloc(size, MALLOC_CAP_SPIRAM);
-    if (!ptr) {
-        log_e("Échec allocation PSRAM %s (%d bytes)", name, size);
-        log_e("PSRAM libre: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-        return nullptr;
-    }
-    log_i("Buffer %s alloué en PSRAM: %d bytes", name, size);
-    return ptr;
-}
-
-static void freePSRAM(void* ptr) {
-    if (ptr) {
-        heap_caps_free(ptr);
-    }
-}
-
-static void printMemoryStats() {
-    log_i("=== Stats Mémoire ===");
-    log_i("RAM interne libre: %d bytes", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
-    log_i("PSRAM libre: %d bytes", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
-    log_i("Heap total libre: %d bytes", ESP.getFreeHeap());
-}
-
-// ============================================================================
-// CALLBACKS POUR MICROTAR
-// ============================================================================
-
-/**
- * Callback de lecture pour microtar depuis le buffer décompressé
- */
-static int gztar_read(mtar_t *tar, void *data, unsigned size) {
-    if (!gzCtxPtr) return MTAR_EREADFAIL;
-    
-    GzipTarContext *ctx = gzCtxPtr;
-    uint8_t *dest = (uint8_t*)data;
-    unsigned totalRead = 0;
-
-    while (totalRead < size && !ctx->streamEnded) {
-        esp_task_wdt_reset();
-        
-        // Si on a des données dans le buffer de sortie, les copier
-        if (ctx->outBufPos < ctx->outBufLen) {
-            size_t available = ctx->outBufLen - ctx->outBufPos;
-            size_t toCopy = (size - totalRead < available) ? (size - totalRead) : available;
-            
-            memcpy(dest + totalRead, ctx->outBuf + ctx->outBufPos, toCopy);
-            ctx->outBufPos += toCopy;
-            totalRead += toCopy;
-            continue;
-        }
-
-        // Buffer de sortie vide, décompresser le prochain chunk
-        ctx->outBufPos = 0;
-        ctx->outBufLen = 0;
-
-        // Lire plus de données compressées si nécessaire
-        if (ctx->inBufUsed >= ctx->inBufAvail) {
-            size_t bytesRead = ctx->gzFile.read(ctx->inBuf, GZIP_CHUNK_SIZE);
-            if (bytesRead == 0) {
-                ctx->streamEnded = true;
-                break;
-            }
-            ctx->inBufUsed = 0;
-            ctx->inBufAvail = bytesRead;
-            ctx->totalBytesRead += bytesRead;
-        }
-
-        // Décompresser dans le gros buffer PSRAM
-        size_t in_bytes = ctx->inBufAvail - ctx->inBufUsed;
-        size_t out_bytes = TAR_BUFFER_SIZE;
-        
-        int status = tinfl_decompress(
-            &ctx->inflator,
-            ctx->inBuf + ctx->inBufUsed,
-            &in_bytes,
-            ctx->outBuf,
-            ctx->outBuf,
-            &out_bytes,
-            TINFL_FLAG_PARSE_ZLIB_HEADER
-        );
-        
-        ctx->inBufUsed += in_bytes;
-        ctx->outBufLen = out_bytes;
-        ctx->totalBytesDecompressed += out_bytes;
-        
-        if (status < 0) {
-            log_e("Erreur décompression: %d", status);
-            return MTAR_EREADFAIL;
-        }
-        
-        if (status == TINFL_STATUS_DONE) {
-            ctx->streamEnded = true;
-        }
-    }
-
-    return (totalRead == size) ? MTAR_ESUCCESS : MTAR_EREADFAIL;
-}
-
-/**
- * Callback seek - non supporté pour stream
- */
-static int gztar_seek(mtar_t *tar, unsigned pos) {
-    return MTAR_ESUCCESS;
-}
-
-/**
- * Callback close
- */
-static int gztar_close(mtar_t *tar) {
-    if (!gzCtxPtr) return MTAR_ESUCCESS;
-    
-    GzipTarContext *ctx = gzCtxPtr;
-    
-    // Afficher les stats finales
-    log_i("Stats décompression:");
-    log_i("  Bytes lus (compressé): %d", ctx->totalBytesRead);
-    log_i("  Bytes décompressés: %d", ctx->totalBytesDecompressed);
-    if (ctx->totalBytesRead > 0) {
-        float ratio = (float)ctx->totalBytesDecompressed / ctx->totalBytesRead;
-        log_i("  Ratio de compression: %.2f:1", ratio);
-    }
-    
-    if (ctx->gzFile) {
-        ctx->gzFile.close();
-    }
-    
-    // Libérer les buffers PSRAM
-    if (ctx->inBuf) {
-        freePSRAM(ctx->inBuf);
-        ctx->inBuf = nullptr;
-    }
-    if (ctx->outBuf) {
-        freePSRAM(ctx->outBuf);
-        ctx->outBuf = nullptr;
-    }
-    
-    return MTAR_ESUCCESS;
-}
-
 static void ensureDirs(const String &fullPath) {
   size_t pos = 1;
   while ((pos = fullPath.indexOf('/', pos)) != -1) {
@@ -8835,327 +8967,57 @@ static void untarApplyAndRestore(const char *tarPath) {
 
 }
 
-static bool untarGzApplyAndRestore(const char *tarGzPath) {
-    log_i("=== Début extraction optimisée PSRAM ===");
-    log_i("Fichier: %s", tarGzPath);
-    
-    printMemoryStats();
-    
-    // Allouer le contexte
-    GzipTarContext gzCtx;
-    memset(&gzCtx, 0, sizeof(GzipTarContext));
-    gzCtxPtr = &gzCtx;
-    
-    // Allouer les gros buffers en PSRAM
-    gzCtx.inBuf = allocPSRAM(GZIP_CHUNK_SIZE, "inBuf");
-    if (!gzCtx.inBuf) {
-        gzCtxPtr = nullptr;
-        return false;
-    }
-    
-    gzCtx.outBuf = allocPSRAM(TAR_BUFFER_SIZE, "outBuf");
-    if (!gzCtx.outBuf) {
-        freePSRAM(gzCtx.inBuf);
-        gzCtxPtr = nullptr;
-        return false;
-    }
-    
-    printMemoryStats();
-    
-    // Ouvrir le fichier .tar.gz
-    gzCtx.gzFile = LittleFS.open(tarGzPath, "r");
-    if (!gzCtx.gzFile) {
-        log_e("Impossible d'ouvrir %s", tarGzPath);
-        freePSRAM(gzCtx.inBuf);
-        freePSRAM(gzCtx.outBuf);
-        gzCtxPtr = nullptr;
-        return false;
-    }
-    
-    size_t fileSize = gzCtx.gzFile.size();
-    log_i("Taille fichier compressé: %d bytes (%.2f KB)", fileSize, fileSize / 1024.0);
-
-    // Initialiser le décompresseur miniz intégré
-    tinfl_init(&gzCtx.inflator);
-    gzCtx.initialized = true;
-
-    // Ouvrir le tar avec callbacks personnalisés
-    mtar_t tar;
-    tar.read = gztar_read;
-    tar.seek = gztar_seek;
-    tar.close = gztar_close;
-
-    bool fwStarted = false;
-    bool success = true;
-    mtar_header_t h;
-    
-    // Allouer le buffer d'écriture en PSRAM
-    uint8_t* writeBuf = allocPSRAM(WRITE_BUFFER_SIZE, "writeBuf");
-    if (!writeBuf) {
-        gztar_close(&tar);
-        gzCtxPtr = nullptr;
-        return false;
-    }
-
-    // Parcourir tous les fichiers du tar
-    int fileCount = 0;
-    unsigned long startTime = millis();
-    
-    while (mtar_read_header(&tar, &h) == MTAR_ESUCCESS) {
-        esp_task_wdt_reset();
-        String name = String(h.name);
-        fileCount++;
-        
-        log_i("[%d] Fichier: %s (%d bytes)", fileCount, name.c_str(), h.size);
-
-        // Gérer les dossiers
-        if (h.type == '5' || name.endsWith("/")) {
-            String dir = "/" + name;
-            if (dir.endsWith("/")) dir.remove(dir.length() - 1);
-            if (!LittleFS.exists(dir)) {
-                LittleFS.mkdir(dir);
-            }
-            mtar_next(&tar);
-            continue;
-        }
-
-        // Gérer le firmware
-        if (name == "firmware.bin") {
-            log_i("=== Flashage du firmware (%d bytes) ===", h.size);
-            
-            if (!fwStarted) {
-                if (!Update.begin(h.size, U_FLASH)) {
-                    Update.printError(Serial);
-                    success = false;
-                    break;
-                }
-                fwStarted = true;
-            }
-
-            // Streamer le firmware vers le flash avec gros buffer
-            uint32_t remaining = h.size;
-            uint32_t written = 0;
-            unsigned long fwStartTime = millis();
-            
-            while (remaining > 0) {
-                esp_task_wdt_reset();
-                uint32_t toRead = (remaining < WRITE_BUFFER_SIZE) ? remaining : WRITE_BUFFER_SIZE;
-                
-                if (gztar_read(&tar, writeBuf, toRead) != MTAR_ESUCCESS) {
-                    log_e("Erreur lecture firmware");
-                    success = false;
-                    break;
-                }
-                
-                if (Update.write(writeBuf, toRead) != toRead) {
-                    Update.printError(Serial);
-                    success = false;
-                    break;
-                }
-                
-                written += toRead;
-                remaining -= toRead;
-                
-                // Afficher progression tous les 10%
-                if (h.size > 100000 && written % (h.size / 10) < toRead) {
-                    int pct = (written * 100) / h.size;
-                    log_i("Firmware: %d%%", pct);
-                }
-            }
-
-            if (!success) break;
-
-            unsigned long fwTime = millis() - fwStartTime;
-            if (fwTime > 0) {
-                float fwSpeed = (h.size / 1024.0) / (fwTime / 1000.0);
-                log_i("Firmware flashé: %.2f KB/s", fwSpeed);
-            }
-
-            // Finaliser le firmware
-            if (!Update.end(true)) {
-                Update.printError(Serial);
-                success = false;
-                break;
-            } else {
-                log_i("✓ Firmware flashé avec succès");
-            }
-        } 
-        // Gérer les autres fichiers
-        else {
-            String path = "/" + name;
-            ensureDirs(path);
-            
-            File f = LittleFS.open(path, FILE_WRITE);
-            if (!f) {
-                log_e("Impossible d'ouvrir %s en écriture", path.c_str());
-                success = false;
-                break;
-            }
-
-            // Écrire le fichier par gros chunks pour performance maximale
-            uint32_t remaining = h.size;
-            unsigned long fileStartTime = millis();
-            
-            while (remaining > 0) {
-                esp_task_wdt_reset();
-                uint32_t toRead = (remaining < WRITE_BUFFER_SIZE) ? remaining : WRITE_BUFFER_SIZE;
-                
-                if (gztar_read(&tar, writeBuf, toRead) != MTAR_ESUCCESS) {
-                    log_e("Erreur lecture fichier %s", path.c_str());
-                    success = false;
-                    break;
-                }
-                
-                f.write(writeBuf, toRead);
-                remaining -= toRead;
-            }
-            
-            f.close();
-            
-            if (!success) break;
-            
-            unsigned long fileTime = millis() - fileStartTime;
-            if (fileTime > 100) { // Seulement si > 100ms
-                float fileSpeed = (h.size / 1024.0) / (fileTime / 1000.0);
-                log_i("  ✓ Écrit: %.2f KB/s", fileSpeed);
-            } else {
-                log_i("  ✓ Écrit");
-            }
-        }
-
-        mtar_next(&tar);
-    }
-
-    unsigned long totalTime = millis() - startTime;
-    
-    // Libérer le buffer d'écriture
-    freePSRAM(writeBuf);
-    
-    // Nettoyer
-    gztar_close(&tar);
-    gzCtxPtr = nullptr;
-    
-    // Stats finales
-    log_i("=== Extraction terminée ===");
-    log_i("Fichiers traités: %d", fileCount);
-    log_i("Temps total: %.2f secondes", totalTime / 1000.0);
-    log_i("Succès: %s", success ? "OUI" : "NON");
-    
-    printMemoryStats();
-    
-    // Supprimer le fichier tar.gz
-    if (success) {
-        LittleFS.remove(tarGzPath);
-    }
-
-    return success;
-}
-
+// handler unique pour l’upload .tar
 void handleDoRestore(AsyncWebServerRequest *request,
-                     const String& filename, size_t index,
-                     uint8_t *data, size_t len, bool final) {
-    
-    static const char *tmpPath = "/rt/upload.tar.gz";
-    static size_t totalReceived = 0;
-    static unsigned long uploadStartTime = 0;
-    
-    // Premier chunk : créer le fichier temporaire
-    if (!index) {
-        uploadStartTime = millis();
-        
-        if (LittleFS.exists(tmpPath)) {
-            LittleFS.remove(tmpPath);
-        }
-        
-        // Créer le dossier /rt s'il n'existe pas
-        if (!LittleFS.exists("/rt")) {
-            LittleFS.mkdir("/rt");
-        }
-        
-        request->_tempFile = LittleFS.open(tmpPath, "w+");
-        if (!request->_tempFile) {
-            log_e("Impossible de créer %s", tmpPath);
-            request->send(500, "text/plain", "Erreur création fichier");
-            return;
-        }
-        
-        totalReceived = 0;
-        log_i("=== Début upload ===");
-        
-        printMemoryStats();
-        
-        // Mettre à jour le status
-        updateStatus.statusManuel = "Téléchargement...";
-        updateStatus.progressManuel = 0;
-    }
-    
-    esp_task_wdt_reset();
-    
-    // Écrire le chunk dans le fichier temporaire
-    if (len > 0) {
-        request->_tempFile.write(data, len);
-        totalReceived += len;
-        
-        // Log progression tous les 10% (pour debug uniquement)
-        size_t contentLength = request->contentLength();
-        if (contentLength > 0) {
-            int uploadPct = (totalReceived * 50) / contentLength; // 0-50% pour l'upload
-            updateStatus.progressManuel = uploadPct;
-            
-            // Log tous les 10%
-            static int lastPct = -1;
-            int pct = (totalReceived * 100) / contentLength;
-            if (pct / 10 != lastPct / 10) {
-                log_i("Upload: %d%% (%d / %d bytes) - Progress: %d%%", 
-                      pct, totalReceived, contentLength, uploadPct);
-                lastPct = pct;
-            }
-        }
-    }
-    
-    // Dernier chunk : décompresser et installer
-    if (final) {
-        esp_task_wdt_reset();
-        request->_tempFile.close();
-        
-        unsigned long uploadTime = millis() - uploadStartTime;
-        float uploadSpeed = (totalReceived / 1024.0) / (uploadTime / 1000.0);
-        
-        log_i("=== Upload terminé ===");
-        log_i("Taille: %d bytes (%.2f KB)", totalReceived, totalReceived / 1024.0);
-        log_i("Temps: %.2f secondes", uploadTime / 1000.0);
-        log_i("Vitesse: %.2f KB/s", uploadSpeed);
-        
-        // Passer à l'installation
-        updateStatus.statusManuel = "Installation...";
-        updateStatus.progressManuel = 50;
+                         const String& filename, size_t index,
+                         uint8_t *data, size_t len, bool final) {
+  static size_t content_len = 0;
+  static const char *tmpPath = "/rt/upload.tar";
+  if (!index) {
+    content_len = request->contentLength(); 
+    // premier chunk : créer le fichier temporaire
+    if (LittleFS.exists(tmpPath)) LittleFS.remove(tmpPath);
+    request->_tempFile = LittleFS.open(tmpPath, "w+");
+    log_i("Upload start");
+    updateStatus.statusManuel = "Téléchargement ...";
+    updateStatus.progressManuel = 0;
+  }
+  esp_task_wdt_reset();
+  // Pendant l'upload, calculer le pourcentage
+  static size_t totalReceived = 0;
+  if (!index) totalReceived = 0;
+  totalReceived += len;
 
-        delay(100);  // 100ms pour que l'interface affiche "Installation... 60%"
-        esp_task_wdt_reset();
-        
-        // Extraire le tar.gz et appliquer les mises à jour
-        bool success = untarGzApplyAndRestore(tmpPath);
-        
-        esp_task_wdt_reset();
-        
-        if (success) {
-            updateStatus.statusManuel = "Redémarrage...";
-            updateStatus.progressManuel = 100;
-            updateStatus.rebootRequested = true;
-            
-            executeReboot = true;
-            request->send(200, "text/plain", "Mise à jour terminée avec succès");
-            
-            log_i("✓ Mise à jour complète - Redémarrage imminent");
-        } else {
-            updateStatus.statusManuel = "Erreur installation";
-            updateStatus.progressManuel = -1;
-            request->send(500, "text/plain", "Erreur lors de l'installation");
-            
-            log_e("✗ Erreur lors de l'installation");
-        }
-    }
+  if (content_len > 0) {
+    int uploadPct = (totalReceived * 40) / content_len;
+    updateStatus.progressManuel = 10 + uploadPct;  // ← 10-50%
+    log_d("Upload progress: %d / %d bytes (%d%%)", 
+          totalReceived, content_len, updateStatus.progressManuel);
+  }
+  // écrire chunk dans le .tar temporaire
+  request->_tempFile.write(data, len);
+  if (final) {
+    esp_task_wdt_reset();
+    request->_tempFile.close();
+    updateStatus.statusManuel = "Installation ...";
+    updateStatus.progressManuel = 60;
+
+    delay(500);
+    untarApplyAndRestore(tmpPath);
+    esp_task_wdt_reset();
+    updateStatus.statusManuel = "Redémarrage ...";
+    updateStatus.progressManuel = 100;
+    updateStatus.rebootRequested = true;
+
+    executeReboot=true;
+    
+    request->send(200, "text/plain", "Mise à jour terminée");
+
+
+
+  }
 }
+
 
 
 size_t content_len;
@@ -9575,9 +9437,9 @@ bool checkUpdateFirmware()
 
   if(resp == HTTP_CODE_OK) 
   {   
-    File f = LittleFS.open("/bk/update.tar", "w");
+    File f = LittleFS.open("/bk/update.tar.gz", "w");
     if (!f) {
-      log_e("Impossible d'ouvrir /bk/update.tar en écriture");
+      log_e("Impossible d'ouvrir /bk/update.tar.gz en écriture");
       clientWeb.end();
       return false;
     }
@@ -10004,6 +9866,9 @@ void handleTemplates(AsyncWebServerRequest *request)
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
+  result += F("<style>");
+  result += F(".is-invalid { border-color: #dc3545 !important; background-color: #fff5f5 !important; }");
+  result += F("</style>");
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("<h4>Templates</h4>");
@@ -10038,21 +9903,50 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += F("</ul></nav>");
   result += F("<div class='container-fluid' >");
   result += F("  <div class='app-main-content'>");
-  result += F("<form method='POST' action='saveFileTemplates'>");
   result += F("<div class='form-group'>");
   result += F(" <label for='file'>File : <span id='title'></span></label>");
-  result += F("<input type='hidden' name='filename' id='filename' value=''>");
-  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
-  result += F("</textarea>");
+  result += F("<input type='hidden' id='filename' value=''>");
+  result += F(" <textarea class='form-control' id='file' rows='10'></textarea>");
+  result += F(" <div id='jsonError' class='text-danger mt-2' style='display:none;'></div>");
   result += F("</div>");
   result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
-  result += F("<button type='submit' name='delete' value='delete' class='btn btn-danger mb-2' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
+  result += F("<button type='button' id='btnSave' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
+  result += F("<button type='button' id='btnDelete' class='btn btn-danger mb-2'>Supprimer</button>");
   result += F("</div>");
-  result += F("</Form>");
 
-  result += F("</div>");
-  result += F("</div>");
+  // Script pour gérer la sauvegarde AJAX
+  result += F("<script>");
+  result += F("$('#btnSave').click(function(){");
+  result += F("  var filename = $('#filename').val();");
+  result += F("  var content = $('#file').val();");
+  result += F("  $('#file').removeClass('is-invalid');");
+  result += F("  $('#jsonError').hide();");
+  result += F("  $.ajax({");
+  result += F("    url: 'saveFileTemplates',");
+  result += F("    type: 'POST',");
+  result += F("    data: {0: filename, 1: content, 2: 'save'},");
+  result += F("    dataType: 'json',");
+  result += F("    success: function(data){");
+  result += F("      if(data.success){");
+  result += F("        location.reload();");
+  result += F("      }");
+  result += F("    },");
+  result += F("    error: function(xhr){");
+  result += F("      var resp = xhr.responseJSON || {error:'Erreur inconnue'};");
+  result += F("      $('#file').addClass('is-invalid');");
+  result += F("      $('#jsonError').text('JSON invalide: ' + resp.error).show();");
+  result += F("    }");
+  result += F("  });");
+  result += F("});");
+  result += F("$('#btnDelete').click(function(){");
+  result += F("  if(confirm('Etes-vous sure ?')){");
+  result += F("    var filename = $('#filename').val();");
+  result += F("    $.post('saveFileTemplates', {0: filename, 1: '', 2: 'delete'}, function(){");
+  result += F("      location.reload();");
+  result += F("    });");
+  result += F("  }");
+  result += F("});");
+  result += F("</script>");
   result += F("</body>");
   result+=footer();
   result += F("</html>");
@@ -10249,55 +10143,84 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
   if (request->method() != HTTP_POST)
   {
     request->send(405, F("text/plain"), F("Method Not Allowed"));
+    return;
   }
-  else
+
+  String filename = request->arg(0);  // Juste le nom (ex: "TS130F.json")
+  String filepath = "/tp/" + filename;
+  String content = request->arg(1);
+  String action = request->arg(2);
+
+  if (action == "save")
   {
-    uint8_t i = 0;
-
-    String filename = "/tp/" + request->arg(i);
-    String content = request->arg(1);
-    String action = request->arg(2);
-
-    if (action == "save")
+    // Validation du JSON avant écriture
+    DynamicJsonDocument doc(content.length() + 256);
+    DeserializationError error = deserializeJson(doc, content);
+    
+    if (error)
     {
-      File file = LittleFS.open(filename.c_str(), "w+");
-      if (!file || file.isDirectory())
-      {
-        DEBUG_PRINT(F("Failed to open file for reading\r\n"));
-        file.close();
-        return;
-      }
+      DEBUG_PRINT(F("JSON invalide: "));
+      DEBUG_PRINTLN(error.c_str());
       
-      int bytesWritten = file.print(content);
+      String errorJson = "{\"success\":false,\"error\":\"";
+      errorJson += error.c_str();
+      errorJson += "\"}";
+      request->send(400, F("application/json"), errorJson);
+      return;
+    }
 
-      if (bytesWritten > 0)
-      {
-        DEBUG_PRINTLN(F("File was written"));
-        DEBUG_PRINTLN(bytesWritten);
-      }
-      else
-      {
-        DEBUG_PRINTLN(F("File write failed"));
-      }
-
+    File file = LittleFS.open(filepath.c_str(), "w+");
+    if (!file || file.isDirectory())
+    {
+      DEBUG_PRINT(F("Failed to open file for writing\r\n"));
       file.close();
+      request->send(500, F("application/json"), F("{\"success\":false,\"error\":\"Erreur ouverture fichier\"}"));
+      return;
     }
-    else if (action == "delete")
-    {
-      LittleFS.remove(filename);
-    }
+    
+    int bytesWritten = file.print(content);
+    file.close();
 
-    //update all devices template
-    for (size_t i = 0; i < devices.size(); i++) 
+    if (bytesWritten <= 0)
     {
-      DeviceData* device = devices[i];
-      device->reloadTemplate();
+      DEBUG_PRINTLN(F("File write failed"));
+      request->send(500, F("application/json"), F("{\"success\":false,\"error\":\"Erreur écriture fichier\"}"));
+      return;
     }
+    
+    DEBUG_PRINT(F("Template saved: "));
+    DEBUG_PRINTLN(filepath);
 
-    AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/tp"));
-    request->send(response);
+    // *** CRUCIAL: Recharger le template dans le cache AVANT les devices ***
+    templateCache.reload(filename);
   }
+  else if (action == "delete")
+  {
+    LittleFS.remove(filepath);
+    // Réindexer tout le cache après suppression
+    templateCache.indexTemplates();
+  }
+
+  // Extraire le device_id du nom de fichier (sans .json)
+  String templateId = filename;
+  if (templateId.endsWith(".json")) {
+    templateId = templateId.substring(0, templateId.length() - 5);
+  }
+
+  // Recharger uniquement les devices qui utilisent ce template
+  int reloadCount = 0;
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+    DeviceData* device = devices[i];
+    if (device->getInfo().device_id == templateId) {
+      device->reloadTemplate();
+      reloadCount++;
+      log_e("Reloaded template for device: %s\n", device->getDeviceID().c_str());
+    }
+  }
+  log_e("Templates reloaded for %d devices\n", reloadCount);
+
+  request->send(200, F("application/json"), F("{\"success\":true}"));
 }
 
 void handleSaveRules(AsyncWebServerRequest *request)
@@ -10900,6 +10823,7 @@ void handleSetAlias(AsyncWebServerRequest *request)
     if (device->getDeviceID() == IEEE)
     {
       device->setInfoAlias(alias);
+      device->saveToFile(); 
       result = "OK";
       break;
     }
@@ -11944,6 +11868,30 @@ void handleConfigDevices(AsyncWebServerRequest *request)
 
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
+  
+  result += F("<style>");
+  result += F(".device-card-container { padding: 8px; }");
+  result += F(".config-card { background: #fff; border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; overflow: hidden; }");
+  result += F(".config-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }");
+  result += F(".card-header-cfg { background: #fff; padding: 12px 16px; }");
+  result += F(".card-header-cfg a { color: #222; text-decoration: none; font-weight: 600; font-size: 14px; display: flex; align-items: center; }");
+  result += F(".card-header-cfg a:hover { color: #6c757d; opacity: 0.95; }");
+  result += F(".card-header-cfg svg { flex-shrink: 0; margin-right: 8px; width: 16px; height: 16px; }");
+  result += F(".config-card .card-body { border-top: none; }");
+  result += F(".config-card .card-body table td { padding: 6px 4px; border: none; }");
+  result += F(".config-card .btn-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e9ecef; }");
+  result += F(".config-card .btn { padding: 6px 10px; display: inline-flex; align-items: center; justify-content: center; }");
+  result += F(".config-card .btn svg { width: 16px; height: 16px; flex-shrink: 0; }");
+  result += F("@media (max-width: 576px) {");
+  result += F("  .config-card { border-radius: 10px; }");
+  result += F("  .card-header-cfg { padding: 10px 12px; }");
+  result += F("  .card-header-cfg a { font-size: 13px; }");
+  result += F("  .config-card .btn-actions { justify-content: center; }");
+  result += F("  .config-card .btn { padding: 5px 8px; }");
+  result += F("  .config-card .btn svg { width: 14px; height: 14px; }");
+  result += F("}");
+  result += F("</style>");
+  
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_DEVICES_ZIGBEE);
   result+=footer();
@@ -11960,28 +11908,47 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     DeviceData* device = devices[ident];
 
     exist++;
-    zdevices += F("<div class='col-10 col-sm-auto col-md-auto col-lg-auto col-xl-auto'><div class='card p-4' style='' ><h5 class='card-title' >@Mac : ");
+    zdevices += F("<div class='col-12 col-sm-6 col-md-4 col-lg-3 device-card-container'>");
+    zdevices += F("<div class='config-card'>");
+    zdevices += F("<div class='card-header-cfg'>");
+    zdevices += F("<a href='/configDevice?id=");
     zdevices += device->getDeviceID();
-    zdevices += F("</h5>");
-    zdevices += F("<div class='card-body'>");
-    zdevices += "<table width='100%' style='font-size:12px;'><tr>";
-    zdevices += F("<td style='font-weight:bold;color:#555;width:90px;'>Manufacturer </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += F("'>");
+    if (LittleFS.exists("/web/img/icon_" + device->getInfo().model +".png"))
+    {
+      zdevices += F("<img src='web/img/icon_");
+      zdevices += device->getInfo().model;
+      zdevices += F(".png'  height='64px'/>");
+    }else{
+      zdevices += F("<img src='web/img/icon_");
+      zdevices += device->getInfo().device_id;
+      zdevices += F(".png'  height='64px'/>");
+    }
+    if (device->getInfo().alias.length() > 0) {
+      zdevices += device->getInfo().alias;
+    } else {
+      zdevices += device->getDeviceID();
+    }
+    zdevices += F("</a></div>");
+    zdevices += F("<div class='card-body' style='padding:12px 16px;'>");
+    zdevices += F("<table style='width:100%;font-size:12px;'><tr>");
+    zdevices += F("<td style='color:#6c757d;font-weight:500;'>Manufacturer</td><td style='font-family:Courier New,monospace;text-align:right;'>");
     zdevices += device->getInfo().manufacturer;
-    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Model </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Model</td><td style='font-family:Courier New,monospace;text-align:right;'>");
     zdevices += device->getInfo().model;
-    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Short Address </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Short Addr</td><td style='font-family:Courier New,monospace;text-align:right;'>");
     char SAddr[5];
     int ShortAddr = device->getInfo().shortAddr.toInt();
     snprintf(SAddr,5, "%04X", ShortAddr);
     zdevices += SAddr;
-    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Device Id </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Device Id</td><td style='font-family:Courier New,monospace;text-align:right;'>");
     char devId[5];
     int DeviceId = device->getInfo().device_id.toInt();
     snprintf(devId,5, "%04X", DeviceId);
     zdevices += devId;
-    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Soft Version </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Soft Version</td><td style='font-family:Courier New,monospace;text-align:right;'>");
     zdevices += device->getInfo().software_version;
-    zdevices += F("<a onClick=\"ZigbeeSendRequest(");
+    zdevices += F(" <a onClick=\"ZigbeeSendRequest(");
     zdevices += device->getInfo().shortAddr;
     zdevices += ",";
     zdevices += device->getInfo().endpoint;
@@ -11990,43 +11957,49 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>");
       zdevices += F("<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>");
       zdevices += F("<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>");
-    zdevices += F("</svg><a>");
-    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>Last seen </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += F("</svg></a>");
+    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Last seen</td><td style='font-family:Courier New,monospace;text-align:right;'>");
     zdevices += device->getInfo().lastSeen;
-    zdevices += F("</td></tr><tr><td style='font-weight:bold;color:#555;width:90px;'>LQI </td><td style='font-family :\"Courier New\", Courier, monospace;text-align:right;'>");
+    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>LQI</td><td style='font-family:Courier New,monospace;text-align:right;'>");
     zdevices += device->getInfo().LQI;
-    zdevices += "</td></tr></table>";
+    zdevices += F("</td></tr></table>");
     
     // Paramétrages
-    zdevices += F("<hr>");
-    zdevices += "<div id='uploadOTA"+device->getDeviceID()+"' style='display:none'><div align='center'>Updating ...</div>";
-    zdevices += "<progress value='"+String(device->otaPercentage)+"' max='100' style='width:100%'>"+String(device->otaPercentage)+"%</progress></div><br>";
+    zdevices += "<div id='uploadOTA"+device->getDeviceID()+"' style='display:none;margin-top:10px;'><div align='center'>Updating ...</div>";
+    zdevices += "<progress value='"+String(device->otaPercentage)+"' max='100' style='width:100%'>"+String(device->otaPercentage)+"%</progress></div>";
     zdevices += "<script>";
     zdevices += "OTAUpdateBar('"+device->getDeviceID()+"');";
     zdevices += "</script>";
     
     
-      //modif
-      zdevices +="<div class='d-flex justify-content-end'>";
+      // Boutons d'action
+      zdevices += F("<div class='btn-actions'>");
+      
+      // Bouton fiche détaillée de l'appareil
+      zdevices += F("<a href='/configDevice?id=");
+      zdevices += device->getDeviceID();
+      zdevices += F("' class='btn btn-info' title='Fiche appareil'>");
+      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
+      zdevices += F("<path d='M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2z'/>");
+      zdevices += F("<path d='M5 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 5 8m0-2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m0 5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m-1-5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M4 8a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m0 2.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0'/>");
+      zdevices += F("</svg></a>");
+      
       if (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT )
       {
         zdevices += F("<button onclick=\"sendMqttDiscover('");
         zdevices += device->getInfo().shortAddr;
-        zdevices += "');\" class='btn btn-warning mb-2'>";
-        zdevices +="<svg role='img' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' style='width:24px;' height='24' width='24'>";
-        zdevices +=  "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z' fill='currentColor' stroke-width='1'></path>";
-        zdevices +="</svg>";
-        //devices += "MQTT Discover";
-        zdevices += F("</button>&nbsp;");
+        zdevices += F("');\" class='btn btn-warning' title='MQTT Discover'>");
+        zdevices += F("<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='currentColor'>");
+        zdevices += F("<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z'/>");
+        zdevices += F("</svg></button>");
       }
       zdevices += F("<a href='/ota?id=");
       zdevices += device->getDeviceID();
-      zdevices += F("' class='btn btn-warning mb-2'>");
-      zdevices += "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-cloud-arrow-down' viewBox='0 0 16 16'>";
-      zdevices +=  " <path fill-rule='evenodd' d='M7.646 10.854a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 9.293V5.5a.5.5 0 0 0-1 0v3.793L6.354 8.146a.5.5 0 1 0-.708.708z'/>";
-      zdevices +=  "<path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>";
-      zdevices +="</svg>";
-      zdevices += F("</a>&nbsp;");
+      zdevices += F("' class='btn btn-warning' title='OTA Update'>");
+      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
+      zdevices += F("<path fill-rule='evenodd' d='M7.646 10.854a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 9.293V5.5a.5.5 0 0 0-1 0v3.793L6.354 8.146a.5.5 0 1 0-.708.708z'/>");
+      zdevices += F("<path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>");
+      zdevices += F("</svg></a>");
 
       zdevices += F("<button onclick=\"ZigbeeSendRequest(");
       zdevices += device->getInfo().shortAddr;
@@ -12034,25 +12007,22 @@ void handleConfigDevices(AsyncWebServerRequest *request)
       zdevices += device->getInfo().endpoint;
       zdevices += ",";
       zdevices += "0,5";
-      zdevices += ");\" class='btn btn-warning mb-2'>";
-      zdevices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>";
-      zdevices +=  "<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>";
-      zdevices +=  "<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>";
-      zdevices +="</svg>";
-      zdevices += F("</button>&nbsp;");
+      zdevices += F(");\" class='btn btn-warning' title='Refresh'>");
+      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
+      zdevices += F("<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>");
+      zdevices += F("<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>");
+      zdevices += F("</svg></button>");
     
       zdevices += F("<button onclick=\"deleteDevice('");
       zdevices += device->getDeviceID();
-      zdevices += "');\" class='btn btn-danger mb-2'>";
-      zdevices +="<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-trash' viewBox='0 0 16 16'>";
-      zdevices +=  "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>";
-      zdevices +=  "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>";
-      zdevices +="</svg>";
-      //devices += " Delete";
-      zdevices += F("</button>&nbsp;");
-    zdevices += F("</div>");
-    zdevices += F("</div>");
-    zdevices += F("</div></div><br>");
+      zdevices += F("');\" class='btn btn-danger' title='Supprimer'>");
+      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
+      zdevices += F("<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>");
+      zdevices += F("<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>");
+      zdevices += F("</svg></button>");
+    zdevices += F("</div>"); // fin btn-actions
+    zdevices += F("</div>"); // fin card-body
+    zdevices += F("</div></div>"); // fin card et col
   }
 
   if (exist>0)
@@ -12063,6 +12033,492 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   }
 
   request->send(200, F("text/html"), result);
+}
+
+// ============================================================
+// Page détaillée d'un appareil - configDevice
+// ============================================================
+void handleConfigDevice(AsyncWebServerRequest *request)
+{
+  // Vérifier le paramètre id
+  if (!request->hasParam("id")) {
+    request->redirect("/configDevices");
+    return;
+  }
+  
+  String deviceID = request->getParam("id")->value();
+  
+  // Rechercher le device
+  DeviceData* device = nullptr;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() == deviceID) {
+      device = devices[i];
+      break;
+    }
+  }
+  
+  if (device == nullptr) {
+    request->redirect("/configDevices");
+    return;
+  }
+  
+  PSRAMString result(150000);
+  result = F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  
+  // Styles CSS pour la page
+  result += F("<style>");
+  result += F(".device-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }");
+  result += F(".device-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #e9ecef; }");
+  result += F(".device-title { font-size: 24px; font-weight: bold; color: #333; }");
+  result += F(".device-subtitle { font-size: 14px; color: #6c757d; }");
+  result += F(".info-table { width: 100%; border-collapse: collapse; }");
+  result += F(".info-table td { padding: 8px 12px; border-bottom: 1px solid #e9ecef; }");
+  result += F(".info-table td:first-child { font-weight: bold; color: #555; width: 40%; }");
+  result += F(".info-table td:last-child { font-family: 'Courier New', monospace; text-align: right; word-break: break-all; }");
+  result += F(".section-title { font-size: 18px; font-weight: bold; color: #333; margin: 20px 0 15px 0; padding-bottom: 8px; border-bottom: 1px solid #dee2e6; }");
+  result += F(".attr-table { width: 100%; border-collapse: collapse; font-size: 13px; }");
+  result += F(".attr-table th { background: #f8f9fa; padding: 10px; text-align: left; border-bottom: 2px solid #dee2e6; }");
+  result += F(".attr-table td { padding: 8px 10px; border-bottom: 1px solid #e9ecef; vertical-align: middle; }");
+  result += F(".attr-table tr:hover { background: #f8f9fa; }");
+  result += F(".cluster-badge { background: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace; }");
+  result += F(".attr-badge { background: #6c757d; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace; }");
+  result += F(".value-cell { font-family: 'Courier New', monospace; }");
+  result += F(".btn-read { background: #17a2b8; border: none; color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }");
+  result += F(".btn-read:hover { background: #138496; }");
+  result += F(".btn-write { background: #28a745; border: none; color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }");
+  result += F(".btn-write:hover { background: #218838; }");
+  result += F(".writable-input { width: 80px; padding: 4px 8px; border: 1px solid #ced4da; border-radius: 4px; font-family: monospace; }");
+  result += F(".action-btn { margin: 5px 5px 5px 0; }");
+  result += F(".back-link { display: inline-flex; align-items: center; color: #007bff; text-decoration: none; margin-bottom: 15px; }");
+  result += F(".back-link:hover { text-decoration: underline; }");
+  // Styles pour édition inline du titre
+  result += F(".title-container { display: flex; align-items: center; gap: 10px; }");
+  result += F(".title-text { cursor: pointer; }");
+  result += F(".title-text:hover { color: #007bff; }");
+  result += F(".btn-edit { background: none; border: none; color: #6c757d; cursor: pointer; padding: 4px; border-radius: 4px; }");
+  result += F(".btn-edit:hover { background: #e9ecef; color: #333; }");
+  result += F(".title-input { font-size: 24px; font-weight: bold; border: 2px solid #007bff; border-radius: 6px; padding: 4px 8px; width: 250px; }");
+  result += F(".title-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(0,123,255,0.25); }");
+  result += F(".btn-save { background: #28a745; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; }");
+  result += F(".btn-save:hover { background: #218838; }");
+  result += F(".btn-cancel { background: #6c757d; border: none; color: white; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 14px; }");
+  result += F(".btn-cancel:hover { background: #5a6268; }");
+  result += F(".edit-buttons { display: flex; gap: 5px; }");
+  result += F(".saving-indicator { color: #6c757d; font-style: italic; }");
+  result += F(".pending { opacity: 0.6; }");
+  result += F(".success { background-color: #d4edda !important; }");
+  result += F(".error { background-color: #f8d7da !important; }");
+  // Animation pour changement de valeur
+  result += F("@keyframes valueChanged { 0% { background-color: #fff3cd; } 100% { background-color: transparent; } }");
+  result += F(".value-changed { animation: valueChanged 2s ease-out; }");
+  result += F(".value-cell span, .value-cell input { transition: background-color 0.3s; padding: 2px 4px; border-radius: 3px; }");
+  // Styles responsive mobile
+  result += F("@media (max-width: 576px) {");
+  result += F("  .container { padding: 10px !important; }");
+  result += F("  .device-card { padding: 12px !important; margin-bottom: 15px !important; }");
+  result += F("  .device-header { flex-direction: column; align-items: flex-start !important; }");
+  result += F("  .device-title { font-size: 18px !important; word-break: break-all; }");
+  result += F("  .device-subtitle { font-size: 12px !important; word-break: break-all; }");
+  result += F("  .title-container { flex-wrap: wrap; }");
+  result += F("  .title-input { font-size: 16px !important; width: 100% !important; max-width: 200px; }");
+  result += F("  .edit-buttons { margin-top: 5px; }");
+  result += F("  .section-title { font-size: 16px !important; }");
+  result += F("  .info-table td { padding: 6px 4px !important; font-size: 12px !important; }");
+  result += F("  .info-table td:first-child { width: 45% !important; }");
+  result += F("  .attr-table { display: block; overflow-x: auto; white-space: nowrap; }");
+  result += F("  .attr-table th, .attr-table td { padding: 6px 4px !important; font-size: 11px !important; }");
+  result += F("  .attr-table .cluster-badge, .attr-table .attr-badge { padding: 1px 4px !important; font-size: 10px !important; }");
+  result += F("  .writable-input { width: 60px !important; font-size: 11px !important; }");
+  result += F("  .btn-read, .btn-write { padding: 3px 6px !important; font-size: 11px !important; }");
+  result += F("  .action-btn { padding: 8px 12px !important; font-size: 12px !important; margin: 3px !important; }");
+  result += F("}");
+  // Affichage alternatif en liste pour très petits écrans
+  result += F("@media (max-width: 400px) {");
+  result += F("  .attr-table, .attr-table tbody, .attr-table tr, .attr-table td, .attr-table th { display: block; white-space: normal; }");
+  result += F("  .attr-table thead { display: none; }");
+  result += F("  .attr-table tr { margin-bottom: 12px; border: 1px solid #dee2e6; border-radius: 8px; padding: 8px; }");
+  result += F("  .attr-table td { border: none !important; padding: 4px 0 !important; text-align: left !important; }");
+  result += F("  .attr-table td:before { content: attr(data-label); font-weight: bold; display: inline-block; width: 80px; color: #555; }");
+  result += F("  .attr-table td.actions-cell { text-align: center !important; margin-top: 8px; }");
+  result += F("}");
+  result += F("</style>");
+  
+  // Scripts JavaScript
+  result += F("<script>");
+  // Variable pour stocker l'ID de l'appareil
+  result += F("var deviceId = '");
+  result += device->getDeviceID();
+  result += F("';");
+  result += F("var previousValues = {};");
+  // Fonction pour marquer visuellement un changement
+  result += F("function highlightChange(el) {");
+  result += F("  el.classList.remove('value-changed');");
+  result += F("  void el.offsetWidth;"); // Force reflow pour relancer l'animation
+  result += F("  el.classList.add('value-changed');");
+  result += F("}");
+  // Fonction pour récupérer les valeurs de cet appareil
+  result += F("function refreshDeviceValues() {");
+  result += F("  fetch('/getDeviceAttrValues?id=' + deviceId).then(r => r.json()).then(data => {");
+  result += F("    for(var id in data) {");
+  result += F("      var el = document.getElementById(id);");
+  result += F("      if(el) {");
+  result += F("        var newVal = data[id];");
+  result += F("        var oldVal = previousValues[id];");
+  result += F("        if(el.tagName === 'INPUT') {");
+  result += F("          if(oldVal !== undefined && oldVal !== newVal) { highlightChange(el); }");
+  result += F("          el.value = newVal;");
+  result += F("        } else {");
+  result += F("          if(oldVal !== undefined && oldVal !== newVal) { highlightChange(el); }");
+  result += F("          el.textContent = newVal;");
+  result += F("        }");
+  result += F("        previousValues[id] = newVal;");
+  result += F("      }");
+  result += F("    }");
+  result += F("  }).catch(e => console.error('Refresh error:', e));");
+  result += F("}");
+  // Refresh permanent toutes les 5 secondes
+  result += F("setInterval(refreshDeviceValues, 5000);");
+  // Premier refresh au chargement
+  result += F("refreshDeviceValues();");
+  // Fonction de lecture d'attribut
+  result += F("function readAttribute(shortAddr, endpoint, cluster, attr, spanId) {");
+  result += F("  var btn = event.target; btn.classList.add('pending');");
+  result += F("  fetch('/ZigbeeReadAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr)");
+  result += F("  .then(r => r.json()).then(d => {");
+  result += F("    btn.classList.remove('pending');");
+  result += F("    if(d.success) {");
+  result += F("      btn.classList.add('success');");
+  result += F("      setTimeout(() => btn.classList.remove('success'), 2000);");
+  result += F("    } else {");
+  result += F("      btn.classList.add('error');");
+  result += F("    }");
+  result += F("  }).catch(e => { btn.classList.remove('pending'); btn.classList.add('error'); });");
+  result += F("}");
+  result += F("function writeAttribute(shortAddr, cluster, attr, type, inputId) {");
+  result += F("  var inp = document.getElementById(inputId); var btn = event.target;");
+  result += F("  btn.classList.add('pending');");
+  result += F("  fetch('/ZigbeeWriteAttribut?addr=' + shortAddr + '&cluster=' + cluster + '&attr=' + attr + '&type=' + type + '&value=' + encodeURIComponent(inp.value))");
+  result += F("  .then(r => r.json()).then(d => {");
+  result += F("    btn.classList.remove('pending');");
+  result += F("    if(d.success) { btn.classList.add('success'); setTimeout(() => btn.classList.remove('success'), 2000); }");
+  result += F("    else { btn.classList.add('error'); alert('Erreur: ' + (d.error || 'Echec')); }");
+  result += F("  }).catch(e => { btn.classList.remove('pending'); btn.classList.add('error'); });");
+  result += F("}");
+  // Variables pour l'édition du titre
+  result += F("var currentAlias = '");
+  // Échapper l'alias pour JavaScript
+  String jsAlias = device->getInfo().alias;
+  jsAlias.replace("\\", "\\\\");
+  jsAlias.replace("'", "\\'");
+  result += jsAlias;
+  result += F("';");
+  // Fonction pour démarrer l'édition du titre
+  result += F("function startEditTitle() {");
+  result += F("  var container = document.getElementById('titleContainer');");
+  result += F("  var currentText = currentAlias || deviceId;");
+  result += F("  container.innerHTML = \"<input type='text' id='titleInput' class='title-input' value='\" + currentText.replace(/'/g, '&#39;') + \"' placeholder='Nom du device...'/>\" +");
+  result += F("    \"<div class='edit-buttons'>\" +");
+  result += F("    \"<button class='btn-save' onclick='saveTitle()'>&#10003;</button>\" +");
+  result += F("    \"<button class='btn-cancel' onclick='cancelEditTitle()'>&#10005;</button>\" +");
+  result += F("    \"</div>\";");
+  result += F("  var inp = document.getElementById('titleInput');");
+  result += F("  inp.focus();");
+  result += F("  inp.select();");
+  result += F("  inp.addEventListener('keydown', function(e) {");
+  result += F("    if(e.key === 'Enter') { e.preventDefault(); saveTitle(); }");
+  result += F("    if(e.key === 'Escape') { e.preventDefault(); cancelEditTitle(); }");
+  result += F("  });");
+  result += F("}");
+  // Fonction pour annuler l'édition
+  result += F("function cancelEditTitle() {");
+  result += F("  showTitleDisplay();");
+  result += F("}");
+  // Fonction pour afficher le titre en mode lecture
+  result += F("function showTitleDisplay() {");
+  result += F("  var container = document.getElementById('titleContainer');");
+  result += F("  var displayText = currentAlias || deviceId;");
+  result += F("  container.innerHTML = \"<span class='title-text' onclick='startEditTitle()' title='Cliquer pour modifier'>\" + displayText + \"</span>\" +");
+  result += F("    \"<button class='btn-edit' onclick='startEditTitle()' title='Modifier le nom'>\" +");
+  result += F("    \"<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='currentColor' viewBox='0 0 16 16'>\" +");
+  result += F("    \"<path d='M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z'/>\" +");
+  result += F("    \"</svg></button>\";");
+  result += F("}");
+  // Fonction pour sauvegarder le titre
+  result += F("function saveTitle() {");
+  result += F("  var inp = document.getElementById('titleInput');");
+  result += F("  var newAlias = inp.value.trim();");
+  result += F("  var container = document.getElementById('titleContainer');");
+  result += F("  container.innerHTML = \"<span class='saving-indicator'>Sauvegarde...</span>\";");
+  result += F("  fetch('/setAlias?ieee=' + deviceId + '&alias=' + encodeURIComponent(newAlias))");
+  result += F("  .then(r => r.text()).then(d => {");
+  result += F("    if(d === 'OK') {");
+  result += F("      currentAlias = newAlias;");
+  result += F("      showTitleDisplay();");
+  result += F("    } else {");
+  result += F("      alert('Erreur lors de la sauvegarde');");
+  result += F("      showTitleDisplay();");
+  result += F("    }");
+  result += F("  }).catch(e => {");
+  result += F("    alert('Erreur de connexion');");
+  result += F("    showTitleDisplay();");
+  result += F("  });");
+  result += F("}");
+  result += F("</script>");
+  
+  // Contenu de la page
+  result += F("<div class='container mt-4'>");
+  
+  // Lien retour
+  result += F("<button onclick='history.back()' class='btn btn-primary'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='currentColor' viewBox='0 0 16 16' style='margin-right:5px;'>");
+  result += F("<path fill-rule='evenodd' d='M15 8a.5.5 0 0 0-.5-.5H2.707l3.147-3.146a.5.5 0 1 0-.708-.708l-4 4a.5.5 0 0 0 0 .708l4 4a.5.5 0 0 0 .708-.708L2.707 8.5H14.5A.5.5 0 0 0 15 8'/>");
+  result += F("</svg> Retour</button><br>");
+  
+  // Carte principale
+  result += F("<div class='device-card'>");
+  
+  // Header avec titre
+  result += F("<div class='device-header'><div>");
+  result += F("<div class='device-title title-container' id='titleContainer'>");
+  // Le contenu sera généré par JavaScript
+  result += F("</div>");
+  result += F("<div class='device-subtitle'>MAC: ");
+  result += device->getDeviceID();
+  result += F("</div></div></div>");
+  // Initialiser l'affichage du titre
+  result += F("<script>showTitleDisplay();</script>");
+  
+  // Section Informations générales
+  result += F("<div class='section-title'>Informations générales</div>");
+  result += F("<table class='info-table'>");
+  result += F("<tr><td>Adresse courte</td><td>");
+  char sAddr[5];
+  snprintf(sAddr, 5, "%04X", device->getInfo().shortAddr.toInt());
+  result += sAddr;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>Fabricant</td><td>");
+  result += device->getInfo().manufacturer;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>Modèle</td><td>");
+  result += device->getInfo().model;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>Device ID</td><td>");
+  char devId[5];
+  snprintf(devId, 5, "%04X", device->getInfo().device_id.toInt());
+  result += devId;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>Endpoint</td><td>");
+  result += device->getInfo().endpoint;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>Version logicielle</td><td>");
+  result += device->getInfo().software_version;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>Dernière activité</td><td>");
+  result += device->getInfo().lastSeen;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>LQI</td><td>");
+  result += device->getInfo().LQI;
+  result += F("</td></tr>");
+  
+  result += F("<tr><td>Statut</td><td>");
+  result += device->getInfo().Status;
+  result += F("</td></tr>");
+  
+  result += F("</table>");
+  
+  // Section Attributs du template
+  TemplateData* t = device->getTemplate();
+  int shortAddr = device->getInfo().shortAddr.toInt();
+  int endpoint = device->getInfo().endpoint.toInt();
+  bool isZLinky = (device->getInfo().model == "ZLinky_TIC");
+  int linkyMode = device->getInfo().linkyMode.toInt();
+  
+  if (t != nullptr && t->StateSize() > 0) {
+    // Compter le nombre d'attributs qui seront affichés
+    //int visibleCount = 0;
+    for (int i = 0; i < t->StateSize(); i++) {
+      //if (!t->states[i].visible) continue;
+      if (isZLinky) {
+        const char *tmp = t->states[i].mode;
+        if ((tmp != NULL) && (tmp[0] != '\0')) {
+          char modeCopy[50];
+          strncpy(modeCopy, tmp, sizeof(modeCopy) - 1);
+          modeCopy[sizeof(modeCopy) - 1] = '\0';
+          char *pch = strtok(modeCopy, ";");
+          bool found = false;
+          while (pch != NULL) {
+            if (atoi(pch) == linkyMode) { found = true; break; }
+            pch = strtok(NULL, ";");
+          }
+          if (!found) continue;
+        }
+      }
+      //visibleCount++;
+    }
+    result += F("<div class='section-title'>Attributs (");
+    result += String(t->StateSize());
+    result += F(" états)</div>");
+    
+    result += F("<table class='attr-table'>");
+    result += F("<thead><tr><th>Nom</th><th>Cluster</th><th>Attribut</th><th>Valeur</th><th>Unité</th><th>Actions</th></tr></thead>");
+    result += F("<tbody>");
+    
+    for (int i = 0; i < t->StateSize(); i++) {
+      // Vérifier si visible
+      //if (!t->states[i].visible) continue;
+      
+      // Filtrage par mode Linky pour ZLinky_TIC
+      if (isZLinky) {
+        bool afficheOK = false;
+        const char *tmp = t->states[i].mode;
+        
+        if ((tmp != NULL) && (tmp[0] != '\0')) {
+          char modeCopy[50];
+          strncpy(modeCopy, tmp, sizeof(modeCopy) - 1);
+          modeCopy[sizeof(modeCopy) - 1] = '\0';
+          
+          char *pch = strtok(modeCopy, ";");
+          while (pch != NULL) {
+            if (atoi(pch) == linkyMode) {
+              afficheOK = true;
+              break;
+            }
+            pch = strtok(NULL, ";");
+          }
+        } else {
+          afficheOK = true;
+        }
+        
+        if (!afficheOK) continue;
+      }
+      
+      String attrId = String(shortAddr) + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute);
+      
+      result += F("<tr>");
+      
+      // Nom
+      result += F("<td data-label='Nom'>");
+      result += t->states[i].name;
+      result += F("</td>");
+      
+      // Cluster
+      result += F("<td data-label='Cluster'><span class='cluster-badge'>");
+      char clusterHex[5];
+      snprintf(clusterHex, 5, "%04X", t->states[i].cluster);
+      result += clusterHex;
+      result += F("</span></td>");
+      
+      // Attribut
+      result += F("<td data-label='Attribut'><span class='attr-badge'>");
+      char attrHex[5];
+      snprintf(attrHex, 5, "%04X", t->states[i].attribute);
+      result += attrHex;
+      result += F("</span></td>");
+      
+      // Valeur (avec input si writable)
+      result += F("<td data-label='Valeur' class='value-cell'>");
+      if (t->states[i].writable) {
+        result += F("<input type='text' class='writable-input' id='");
+        result += attrId;
+        result += F("' value='");
+        result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, 
+                                  (String)t->states[i].type, t->states[i].coefficient);
+
+        result += F("' />");
+      } else {
+        result += F("<span id='");
+        result += attrId;
+        result += F("'>");
+        result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, 
+                                  (String)t->states[i].type, t->states[i].coefficient);             
+        result += F("</span>");
+      }
+      result += F("</td>");
+      
+      // Unité
+      result += F("<td data-label='Unité'>");
+      result += t->states[i].unit;
+      result += F("</td>");
+      
+      // Actions
+      result += F("<td data-label='' class='actions-cell'>");
+      // Bouton lecture
+      result += F("<button class='btn-read' onclick=\"readAttribute(");
+      result += String(shortAddr);
+      result += F(", ");
+      result += String(endpoint);
+      result += F(", ");
+      result += String(t->states[i].cluster);
+      result += F(", ");
+      result += String(t->states[i].attribute);
+      result += F(", '");
+      result += attrId;
+      result += F("')\" title='Lire'>&#8635;</button> ");
+      
+      // Bouton écriture si writable
+      if (t->states[i].writable) {
+        result += F("<button class='btn-write' onclick=\"writeAttribute(");
+        result += String(shortAddr);
+        result += F(", ");
+        result += String(t->states[i].cluster);
+        result += F(", ");
+        result += String(t->states[i].attribute);
+        result += F(", ");
+        result += String(t->states[i].typewritable);
+        result += F(", '");
+        result += attrId;
+        result += F("')\" title='Écrire'>&#9998;</button>");
+      }
+      result += F("</td>");
+      
+      result += F("</tr>");
+    }
+    result += F("</tbody></table>");
+  } else {
+    result += F("<div class='section-title'>Attributs</div>");
+    result += F("<p style='color:#6c757d;'>Aucun template disponible pour cet appareil.</p>");
+  }
+  
+  // Section Actions du template
+  if (t != nullptr && t->ActionSize() > 0) {
+    result += F("<div class='section-title'>Actions (");
+    result += String(t->ActionSize());
+    result += F(")</div>");
+    result += F("<div style='display:flex;flex-wrap:wrap;gap:5px;'>");
+    
+    for (int i = 0; i < t->ActionSize(); i++) {
+      result += F("<button onclick=\"ZigbeeAction(");
+      result += String(shortAddr);
+      result += F(",");
+      result += String(t->actions[i].command);
+      result += F(",");
+      result += String(t->actions[i].endpoint);
+      result += F(",");
+      result += String(t->actions[i].value);
+      result += F(");\" class='btn btn-primary action-btn'>");
+      result += t->actions[i].name;
+      result += F("</button>");
+    }
+    result += F("</div>");
+  }
+  
+  result += F("</div>"); // fin device-card
+  result += F("</div>"); // fin container
+  
+  result += footer();
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result += F("</html>");
+  
+  request->send(200, F("text/html"), result.c_str());
 }
 
 void handleAssistDevice(AsyncWebServerRequest *request)
@@ -12108,6 +12564,79 @@ void handleZigbeeAction(AsyncWebServerRequest *request)
   SendAction(command, ShortAddr, endpoint, tmpValue);
 
   request->send(200, F("text/html"), "");
+}
+
+void handleZigbeeWriteattribut(AsyncWebServerRequest *request)
+{
+
+  // Vérifier les paramètres requis
+    if (!request->hasParam(F("addr")) || !request->hasParam(F("cluster")) || 
+        !request->hasParam(F("attr")) || !request->hasParam(F("value"))) {
+        request->send(400, F("application/json"), F("{\"success\":false,\"error\":\"Paramètres manquants\"}"));
+        return;
+    }
+  
+  uint16_t shortAddr = request->getParam(F("addr"))->value().toInt();
+    uint16_t cluster = request->getParam(F("cluster"))->value().toInt();
+    uint16_t attribute = request->getParam(F("attr"))->value().toInt();
+    uint8_t type = request->getParam(F("type"))->value().toInt();
+    String valueStr = request->getParam(F("value"))->value();
+    
+    Serial.printf("ZigbeeWrite: addr=%04X cluster=%04X attr=%04X type=%02X value=%s\n",
+                  shortAddr, cluster, attribute, type, valueStr.c_str());
+  // ====== DÉTECTION TUYA ======
+    if (cluster == 0xEF00) {
+        uint8_t dpId = (uint8_t)attribute;
+        uint8_t dpType = type;
+        uint32_t value = (uint32_t)valueStr.toInt();
+        
+        Serial.printf("Tuya Write: DP%d type=%d value=%lu\n", dpId, dpType, value);
+        sendTuyaDatapointSet(shortAddr, 1, dpId, dpType, value);
+        
+        request->send(200, F("application/json"), F("{\"success\":true,\"tuya\":true}"));
+        return;
+    }
+
+  SendAttributeWrite(shortAddr, 1, cluster, attribute, type, valueStr.toInt());
+
+  bool success = true; // Placeholder
+    
+    if (success) {
+        request->send(200, F("application/json"), F("{\"success\":true}"));
+    } else {
+        request->send(500, F("application/json"), F("{\"success\":false,\"error\":\"Echec écriture Zigbee\"}"));
+    }
+}
+
+void handleZigbeeReadattribut(AsyncWebServerRequest *request)
+{
+  // Vérifier les paramètres requis
+  if (!request->hasParam(F("addr")) || !request->hasParam(F("endpoint")) ||
+      !request->hasParam(F("cluster")) || !request->hasParam(F("attr"))) {
+      request->send(400, F("application/json"), F("{\"success\":false,\"error\":\"Paramètres manquants\"}"));
+      return;
+  }
+
+  uint16_t shortAddr = request->getParam(F("addr"))->value().toInt();
+  uint8_t endpoint = request->getParam(F("endpoint"))->value().toInt();
+  uint16_t cluster = request->getParam(F("cluster"))->value().toInt();
+  uint16_t attribute = request->getParam(F("attr"))->value().toInt();
+  
+  Serial.printf("ZigbeeRead: addr=%04X endpoint=%d cluster=%04X attr=%04X\n",
+                shortAddr, endpoint, cluster, attribute);
+
+  if (cluster == 0xEF00) {
+      Serial.printf("Tuya Query: DP%d\n", attribute);
+      sendTuyaDatapointQuery(shortAddr, endpoint);
+      
+      request->send(200, F("application/json"), 
+          F("{\"success\":true,\"tuya\":true,\"note\":\"Query sent\"}"));
+      return;
+  }
+
+  SendAttributeRead(shortAddr, endpoint, cluster, attribute);
+
+  request->send(200, F("application/json"), F("{\"success\":true}"));
 }
 
 void handleZigbeeSendRequest(AsyncWebServerRequest *request)
@@ -12964,6 +13493,86 @@ void handleGetDeviceValue(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+// ============================================================
+// Récupère les valeurs des attributs d'un appareil spécifique
+// Paramètre: id (MAC address de l'appareil)
+// Retourne: JSON avec shortAddr_cluster_attribute: value
+// ============================================================
+void handleGetDeviceAttrValues(AsyncWebServerRequest *request)
+{
+  if (!request->hasParam("id")) {
+    request->send(400, F("application/json"), F("{\"error\":\"Missing id parameter\"}"));
+    return;
+  }
+  
+  String deviceID = request->getParam("id")->value();
+  
+  // Rechercher le device
+  DeviceData* device = nullptr;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() == deviceID) {
+      device = devices[i];
+      break;
+    }
+  }
+  
+  if (device == nullptr) {
+    request->send(404, F("application/json"), F("{\"error\":\"Device not found\"}"));
+    return;
+  }
+  
+  String result = "{";
+  TemplateData* t = device->getTemplate();
+  int shortAddr = device->getInfo().shortAddr.toInt();
+  bool isZLinky = (device->getInfo().model == "ZLinky_TIC");
+  int linkyMode = device->getInfo().linkyMode.toInt();
+  
+  if (t != nullptr) {
+    bool first = true;
+    for (int i = 0; i < t->StateSize(); i++) {
+      // Vérifier si visible
+      if (!t->states[i].visible) continue;
+      
+      // Filtrage par mode Linky pour ZLinky_TIC
+      if (isZLinky) {
+        bool afficheOK = false;
+        const char *tmp = t->states[i].mode;
+        
+        if ((tmp != NULL) && (tmp[0] != '\0')) {
+          char modeCopy[50];
+          strncpy(modeCopy, tmp, sizeof(modeCopy) - 1);
+          modeCopy[sizeof(modeCopy) - 1] = '\0';
+          
+          char *pch = strtok(modeCopy, ";");
+          while (pch != NULL) {
+            if (atoi(pch) == linkyMode) {
+              afficheOK = true;
+              break;
+            }
+            pch = strtok(NULL, ";");
+          }
+        } else {
+          afficheOK = true;
+        }
+        
+        if (!afficheOK) continue;
+      }
+      
+      String attrId = String(shortAddr) + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute);
+      String value = GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, 
+                                     (String)t->states[i].type, t->states[i].coefficient);
+      
+      if (!first) result += ",";
+      first = false;
+      
+      result += "\"" + attrId + "\":\"" + value + "\"";
+    }
+  }
+  
+  result += "}";
+  request->send(200, F("application/json"), result);
+}
+
 void handleSendMqttDiscover(AsyncWebServerRequest *request)
 {
   String IEEE,ShortAddr, datas, result;
@@ -13132,8 +13741,7 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
   res = LittleFS.remove(filename);
 
   String filenamebk = "/bk/" + tmpMac + ".json";
-  int resbk;
-  resbk = LittleFS.remove(filenamebk);
+  LittleFS.remove(filenamebk);
 
   for (auto it = devices.begin(); it != devices.end(); ++it) 
   {
@@ -13146,7 +13754,7 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
     }
   }
 
-  if ((res == 0) && (resbk == 0))
+  if (res)
   {
     AsyncWebServerResponse *response = request->beginResponse(303);
     response->addHeader(F("Location"), F("/configDevices"));
@@ -13509,7 +14117,7 @@ void launchUpdateTask() {
   {
     updateStatus.statusAuto = "Installation ...";
     esp_task_wdt_reset();
-    untarApplyAndRestore("/bk/update.tar");
+    untarApplyAndRestore("/bk/update.tar.gz");
     executeReboot=true;
     updateStatus.statusAuto = "Mise à jour terminée ...";
     updateStatus.progressAuto = 100;
@@ -13798,6 +14406,15 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleConfigDevices(request); 
+  });
+  serverWeb.on("/configDevice", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigDevice(request); 
   });
   serverWeb.on("/assistDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -14572,6 +15189,24 @@ void initWebServer()
     }
     handleZigbeeAction(request); 
   });
+  serverWeb.on("/ZigbeeWriteAttribut", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleZigbeeWriteattribut(request); 
+  });
+  serverWeb.on("/ZigbeeReadAttribut", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleZigbeeReadattribut(request); 
+  });
   serverWeb.on("/ZigbeeSendRequest", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -14720,6 +15355,15 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleGetDeviceValue(request); 
+  });
+  serverWeb.on("/getDeviceAttrValues", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleGetDeviceAttrValues(request); 
   });
   serverWeb.on("/getRuleStatus", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -14964,7 +15608,7 @@ void initWebServer()
     request->send(200, "text/plain", "OK");
   });
 
-  serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js").setCacheControl("max-age=600");
+  /*serverWeb.serveStatic("/web/js/jquery-min.js", LittleFS, "/web/js/jquery-min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/functions.min.js", LittleFS, "/web/js/functions.min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/raphael-min.js", LittleFS, "/web/js/raphael-min.js").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/js/morris.min.js", LittleFS, "/web/js/morris.min.js").setCacheControl("max-age=600");
@@ -14983,7 +15627,9 @@ void initWebServer()
   serverWeb.serveStatic("/web/img/ziwifi32.gif", LittleFS, "/web/img/ziwifi32.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/zlinky.gif", LittleFS, "/web/img/zlinky.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");
+  serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");*/
+  serverWeb.serveStatic("/web", LittleFS, "/web")
+    .setCacheControl("max-age=604800, immutable");
   serverWeb.onNotFound(handleNotFound);
 
   serverWeb.begin();
