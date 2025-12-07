@@ -37,13 +37,27 @@ struct TriggerConfig {
 };
 
 // Action de règle, tout en PSRAM
+// Format unifié pour supporter:
+// - Les actions définies dans les templates (type="device")
+// - Les actions legacy ON/OFF (type="onoff") 
+// - Les notifications (type="notification")
 struct ActionRule {
-    PsString type;
-    PsString IEEE;
-    int      endpoint;
-    PsString value;
+    PsString type;          // "device", "onoff" ou "notification"
+    
+    // Pour type="device" ou "onoff"
+    PsString IEEE;          // IEEE du device cible
+    PsString actionName;    // Nom de l'action dans le template (ex: "ON", "OFF", "TOGGLE", "UP", "DOWN")
+    int      endpoint;      // Endpoint du device (obligatoire pour device et onoff)
+    
+    // Pour override ou legacy
+    int      command;       // -1 = utiliser le template, sinon override
+    PsString value;         // Pour legacy onoff: "0", "1", "2"
+    
+    // Pour type="notification"
     PsString title;   
     PsString message;
+    
+    ActionRule() : endpoint(1), command(-1) {}
 };
 
 // Règle complète stockée en PSRAM
@@ -91,10 +105,16 @@ private:
     bool   isInTimeRange(const Rule& rule) const;
 
     bool   isNumeric(const String& str) const;
-    double parseNumber(const String& str) const;
+    double parseNumber(const String& str, bool isFromZigbee = false) const;
 
     void evaluateRule(const Rule& rule); 
     String buildConditionsText(const Rule& rule) const;
+    
+    // Exécute une action (device ou notification)
+    void executeAction(const ActionRule& act, const Rule& rule);
+    
+    // Trouve un device par son IEEE
+    DeviceData* findDeviceByIEEE(const char* IEEE) const;
     
     // Toutes les règles stockées en PSRAM
     std::vector<Rule, PsramAllocator<Rule>> rules_;

@@ -10,14 +10,20 @@
 #include "SPIFFS_ini.h"
 #include "zigbee.h"
 #include "onoff.h"
+#include "windowCovering.h"
 #include "notificationManager.h"
+#include "TemplateData.h"
 #include <TimeLib.h>
 
 extern String Hour;
 extern String Minute;
+extern String FormattedDate;
 
 extern NotificationManager notificationManager;
 extern CircularBuffer<Notification, 10> *notifList;
+
+// Déclaration externe de SendAction (définie dans zigbee.cpp)
+extern void SendAction(int command, int ShortAddr, int endpoint, String tmpValue);
 
 // Charge le JSON en PSRAM et construit le vector<Rule>
 bool RulesManager::loadFromFile(const char* path) {
@@ -101,8 +107,20 @@ bool RulesManager::loadFromFile(const char* path) {
             ActionRule act;
             act.type     = PsString(a["type"]    | "", PsramAllocator<char>());
             act.IEEE     = PsString(a["IEEE"]    | "", PsramAllocator<char>());
-            act.endpoint = a["endpoint"] | 0;
+            
+            // actionName pour le nouveau format device
+            act.actionName = PsString(a["actionName"] | "", PsramAllocator<char>());
+            
+            // endpoint obligatoire pour device et onoff
+            act.endpoint = a["endpoint"] | 1;
+            
+            // command pour override (optionnel)
+            act.command  = a.containsKey("command") ? (int)a["command"] : -1;
+            
+            // value pour legacy onoff
             act.value    = PsString(a["value"]   | "", PsramAllocator<char>());
+            
+            // Pour notifications
             act.title    = PsString(a["title"]   | "", PsramAllocator<char>());
             act.message  = PsString(a["message"] | "", PsramAllocator<char>());
             rule.actions.push_back(std::move(act));
@@ -117,8 +135,20 @@ bool RulesManager::loadFromFile(const char* path) {
             ActionRule act;
             act.type     = PsString(a["type"]    | "", PsramAllocator<char>());
             act.IEEE     = PsString(a["IEEE"]    | "", PsramAllocator<char>());
-            act.endpoint = a["endpoint"] | 0;
+            
+            // actionName pour le nouveau format device
+            act.actionName = PsString(a["actionName"] | "", PsramAllocator<char>());
+            
+            // endpoint obligatoire pour device et onoff
+            act.endpoint = a["endpoint"] | 1;
+            
+            // command pour override (optionnel)
+            act.command  = a.containsKey("command") ? (int)a["command"] : -1;
+            
+            // value pour legacy onoff
             act.value    = PsString(a["value"]   | "", PsramAllocator<char>());
+            
+            // Pour notifications
             act.title    = PsString(a["title"]   | "", PsramAllocator<char>());
             act.message  = PsString(a["message"] | "", PsramAllocator<char>());
             rule.elseActions.push_back(std::move(act));
@@ -174,27 +204,20 @@ bool RulesManager::isNumeric(const String& str) const {
 }
 
 // Parse un nombre (décimal ou hexadécimal)
-double RulesManager::parseNumber(const String& str) const {
-    // Si commence par "0x", c'est de l'hexadécimal
+// isFromZigbee = true si c'est une valeur lue depuis Zigbee (toujours en hex)
+// isFromZigbee = false si c'est une valeur de condition (toujours en décimal)
+double RulesManager::parseNumber(const String& str, bool isFromZigbee) const {
+    // Si commence par "0x", c'est explicitement de l'hexadécimal
     if (str.startsWith("0x") || str.startsWith("0X")) {
         return (double)strtol(str.c_str(), nullptr, 16);
     }
     
-    // Sinon, vérifier si c'est de l'hex sans préfixe (tous les caractères sont hex)
-    bool allHex = true;
-    for (size_t i = 0; i < str.length(); i++) {
-        if (!isHexadecimalDigit(str.charAt(i))) {
-            allHex = false;
-            break;
-        }
-    }
-    
-    if (allHex && str.length() <= 4) {
-        // Probablement de l'hex sans préfixe (comme "0019")
+    // Si c'est une valeur Zigbee, c'est toujours en hexadécimal
+    if (isFromZigbee) {
         return (double)strtol(str.c_str(), nullptr, 16);
     }
     
-    // Sinon, c'est du décimal
+    // Sinon c'est une valeur de condition, toujours en décimal
     return str.toDouble();
 }
 
@@ -221,8 +244,8 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
             return curTrimmed.equalsIgnoreCase(condTrimmed);
         }
         // Si les deux sont des nombres, comparaison numérique
-        double curNum = parseNumber(curStr);
-        double condValueNum = parseNumber(condValueStr);
+        double curNum = parseNumber(curStr, true);        // Valeur Zigbee = hex
+        double condValueNum = parseNumber(condValueStr, false);  // Valeur condition = décimal
         return curNum == condValueNum;
     }
     
@@ -238,8 +261,8 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
             return curTrimmed.equalsIgnoreCase(condTrimmed);
         }
         // Si les deux sont des nombres, comparaison numérique
-        double curNum = parseNumber(curStr);
-        double condValueNum = parseNumber(condValueStr);
+        double curNum = parseNumber(curStr, true);        // Valeur Zigbee = hex
+        double condValueNum = parseNumber(condValueStr, false);  // Valeur condition = décimal
         return curNum != condValueNum;
     }
     
@@ -250,8 +273,11 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
         return false;  // Impossible de comparer du texte avec <, >, etc.
     }
     
-    double curNum = parseNumber(curStr);
-    double condValueNum = parseNumber(condValueStr);
+    double curNum = parseNumber(curStr, true);        // Valeur Zigbee = hex
+    double condValueNum = parseNumber(condValueStr, false);  // Valeur condition = décimal
+    
+    log_d("Comparaison: curStr='%s' -> %.0f | condStr='%s' -> %.0f | op='%s'",
+          curStr.c_str(), curNum, condValueStr.c_str(), condValueNum, cond.op.c_str());
     
     if (cond.op == "<")  return curNum <  condValueNum;
     if (cond.op == "<=") return curNum <= condValueNum;
@@ -329,7 +355,7 @@ String RulesManager::buildConditionsText(const Rule& rule) const {
                 break;
             }
         }
-
+        
         if (device) {
             // Convertir cluster en string hexa (ex: "0402")
             char clusterStr[10];
@@ -339,12 +365,42 @@ String RulesManager::buildConditionsText(const Rule& rule) const {
             char attributeStr[10];
             sprintf(attributeStr, "%d", cond.attribute);
             
-            // Récupérer la valeur
-            String value = device->getValue(std::string(clusterStr), std::string(attributeStr));
+            // Récupérer la valeur (en hexadécimal)
+            String valueHex = device->getValue(std::string(clusterStr), std::string(attributeStr));
             
             // Si pas de valeur, passer à la condition suivante
-            if (value.length() == 0) {
+            if (valueHex.length() == 0) {
                 continue;
+            }
+            
+            // Convertir hex vers decimal et appliquer le coefficient
+            String valueStr;
+            float coefficient = device->GetAttributeCoefficient(cond.cluster, cond.attribute);
+            
+            // Vérifier si c'est une valeur numérique (commence par des chiffres hex)
+            bool isNumeric = true;
+            for (size_t k = 0; k < valueHex.length(); k++) {
+                char c = valueHex[k];
+                if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
+                    isNumeric = false;
+                    break;
+                }
+            }
+            
+            if (isNumeric && valueHex.length() > 0) {
+                // Conversion hexadécimal vers décimal
+                long valueDec = strtol(valueHex.c_str(), nullptr, 16);
+                double valueWithCoeff = valueDec * coefficient;
+                
+                // Formater selon le coefficient (entier ou décimal)
+                if (coefficient == 1.0) {
+                    valueStr = String((int)valueWithCoeff);
+                } else {
+                    valueStr = String(valueWithCoeff, 2);  // 2 décimales
+                }
+            } else {
+                // Valeur texte (ex: "ON", "OFF")
+                valueStr = valueHex;
             }
             
             // Récupérer le nom du device (alias ou model)
@@ -353,10 +409,10 @@ String RulesManager::buildConditionsText(const Rule& rule) const {
                 deviceName = device->getInfo().model;
             }
             if (deviceName.length() == 0 || deviceName == "null") {
-                deviceName = ieeeStr.substring(0, 10);  // Afficher début de l'IEEE
+                deviceName = ieeeStr.substring(0, 10);
             }
             
-            // Récupérer l'unité depuis le template (si disponible)
+            // Récupérer le nom de l'attribut et l'unité depuis le template
             String attributeName = "";
             String unit = "";
             TemplateData* tpl = device->getTemplate();
@@ -375,14 +431,15 @@ String RulesManager::buildConditionsText(const Rule& rule) const {
             if (i > 0) {
                 conditionsText += "\n";
             }
+            
+            // Format: "Device - Attribut: valeur unité"
             conditionsText += deviceName;
             if (attributeName.length() > 0 && attributeName != "null") {
                 conditionsText += " - " + attributeName;
             }
-            conditionsText += ": " + value;
-
+            conditionsText += ": " + valueStr;
             if (unit.length() > 0 && unit != "null") {
-                conditionsText += " "+unit;
+                conditionsText += unit;
             }
         }
     }
@@ -404,10 +461,6 @@ void RulesManager::evaluateRule(const Rule& rule) {
     }
 
     // État précédent de la règle
-    // oldSt = -1 : règle jamais évaluée (première exécution)
-    // oldSt = 0  : dernière évaluation était FALSE
-    // oldSt = 1  : dernière évaluation était TRUE
-    // état précédent
     String hist = config_read("statusRules.json", rule.name.c_str());
     int    oldSt = -1;
     String oldDt;
@@ -417,66 +470,20 @@ void RulesManager::evaluateRule(const Rule& rule) {
         pch = strtok(nullptr, "|");
         oldDt = pch ? String(pch) : String();
     }
-    // changement d’état
+    
+    // Changement d'état: exécuter les actions appropriées
     if (result && oldSt != 1) {
         String newVal = "1|" + FormattedDate;
         config_write("statusRules.json", rule.name.c_str(), newVal);
-        for (auto& act : rule.actions) {
-            if (act.type == "onoff") {
-                String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
-                SendOnOffAction(shortAddr.toInt(), act.endpoint, act.value.c_str());
-                log_w("Action exec: %s ep=%d val=%s",
-                        act.type.c_str(), act.endpoint, act.value.c_str());
-            }else if (act.type == "notification") {
-                String baseMessage = String(act.message.c_str());
-                String conditionsText = buildConditionsText(rule);
-                String fullMessage = baseMessage;
-                
-                if (conditionsText.length() > 0) {
-                    if (baseMessage.length() > 0) {
-                        fullMessage += "\n\n";  // Double saut de ligne pour séparer
-                    }
-                    fullMessage += conditionsText;
-                }
-                notifList->push(Notification{act.title.c_str(),fullMessage.c_str(),FormattedDate,0,0});
-                notificationManager.addNotification(
-                    String(act.title.c_str()), 
-                    String(fullMessage.c_str()), 
-                    0 
-                );
-                log_w("Action exec: notification - title='%s'", act.title.c_str());
-            }
+        for (const auto& act : rule.actions) {
+            executeAction(act, rule);
         }
     }
     else if (!result && oldSt != 0) {
         String newVal = "0|" + FormattedDate;
         config_write("statusRules.json", rule.name.c_str(), newVal);
-        // ← NOUVEAU: Exécuter les actions SINON
-        for (auto& act : rule.elseActions) {
-            if (act.type == "onoff") {
-                String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
-                SendOnOffAction(shortAddr.toInt(), act.endpoint, act.value.c_str());
-                log_w("ElseAction exec: %s ep=%d val=%s",
-                        act.type.c_str(), act.endpoint, act.value.c_str());
-            }else if (act.type == "notification") {
-                String baseMessage = String(act.message.c_str());
-                String conditionsText = buildConditionsText(rule);
-                String fullMessage = baseMessage;
-                
-                if (conditionsText.length() > 0) {
-                    if (baseMessage.length() > 0) {
-                        fullMessage += "\n\n";  // Double saut de ligne pour séparer
-                    }
-                    fullMessage += conditionsText;
-                }
-                notifList->push(Notification{act.title.c_str(),fullMessage.c_str(),FormattedDate,0,0});
-                notificationManager.addNotification(
-                    String(act.title.c_str()), 
-                    String(fullMessage.c_str()), 
-                    0 
-                );
-                log_w("ElseAction exec: notification - title='%s'", act.title.c_str());
-            }
+        for (const auto& act : rule.elseActions) {
+            executeAction(act, rule);
         }
     }    
 }
@@ -527,4 +534,105 @@ String RulesManager::getLastDateRule(const char* name) const {
         return p ? String(p) : String();
     }
     return String();
+}
+
+// Trouve un device par son IEEE
+DeviceData* RulesManager::findDeviceByIEEE(const char* IEEE) const {
+    String ieeeStr = String(IEEE);
+    for (size_t i = 0; i < devices.size(); i++) {
+        if (devices[i]->getDeviceID() == ieeeStr) {
+            return devices[i];
+        }
+    }
+    return nullptr;
+}
+
+// Exécute une action (device ou notification)
+void RulesManager::executeAction(const ActionRule& act, const Rule& rule) {
+    
+    // ===== TYPE NOTIFICATION =====
+    if (act.type == "notification") {
+        String baseMessage = String(act.message.c_str());
+        String conditionsText = buildConditionsText(rule);
+        String fullMessage = baseMessage;
+        
+        if (conditionsText.length() > 0) {
+            if (baseMessage.length() > 0) {
+                fullMessage += "\n\n";
+            }
+            fullMessage += conditionsText;
+        }
+        notifList->push(Notification{act.title.c_str(), fullMessage.c_str(), FormattedDate, 0, 0});
+        notificationManager.addNotification(
+            String(act.title.c_str()), 
+            String(fullMessage.c_str()), 
+            0 
+        );
+        log_w("Action exec: notification - title='%s'", act.title.c_str());
+        return;
+    }
+    
+    // ===== TYPE DEVICE (action depuis template) =====
+    if (act.type == "device") {
+        // Trouver le device par son IEEE
+        DeviceData* device = findDeviceByIEEE(act.IEEE.c_str());
+        if (!device) {
+            log_e("Action exec: Device non trouvé IEEE=%s", act.IEEE.c_str());
+            return;
+        }
+        
+        // Récupérer le template du device
+        TemplateData* tpl = device->getTemplate();
+        if (!tpl) {
+            log_e("Action exec: Template non trouvé pour IEEE=%s", act.IEEE.c_str());
+            return;
+        }
+        
+        // Chercher l'action par son nom dans le template
+        String actionNameStr = String(act.actionName.c_str());
+        bool actionFound = false;
+        
+        for (int i = 0; i < tpl->ActionSize(); i++) {
+            if (actionNameStr.equalsIgnoreCase(String(tpl->actions[i].name))) {
+                // Action trouvée dans le template
+                int command  = (act.command >= 0) ? act.command : (int)tpl->actions[i].command;
+                
+                // Utiliser l'endpoint de la règle (prioritaire) ou celui du template
+                int endpoint = (act.endpoint > 0) ? act.endpoint : (int)tpl->actions[i].endpoint;
+                
+                // Utiliser la value du template
+                String value = String(tpl->actions[i].value);
+                
+                // Récupérer l'adresse courte du device
+                String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
+                
+                // Exécuter l'action via SendAction
+                SendAction(command, shortAddr.toInt(), endpoint, value);
+                
+                log_w("Action exec: device=%s action='%s' cmd=%d ep=%d val=%s",
+                      act.IEEE.c_str(), actionNameStr.c_str(), command, endpoint, value.c_str());
+                
+                actionFound = true;
+                break;
+            }
+        }
+        
+        if (!actionFound) {
+            log_e("Action exec: Action '%s' non trouvée dans le template de %s", 
+                  actionNameStr.c_str(), act.IEEE.c_str());
+        }
+        return;
+    }
+    
+    // ===== RÉTROCOMPATIBILITÉ: ancien type "onoff" =====
+    if (act.type == "onoff") {
+        String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
+        int endpoint = (act.endpoint > 0) ? act.endpoint : 1;
+        SendOnOffAction(shortAddr.toInt(), endpoint, act.value.c_str());
+        log_w("Action exec (legacy): onoff IEEE=%s ep=%d val=%s", 
+              act.IEEE.c_str(), endpoint, act.value.c_str());
+        return;
+    }
+    
+    log_w("Action exec: type inconnu '%s'", act.type.c_str());
 }
