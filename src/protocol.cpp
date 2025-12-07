@@ -13,6 +13,9 @@
 #include "log.h"
 #include "zigbee.h"
 #include "basic.h"
+#include "Infrared.h"
+#include "thermostat.h"
+
 #include "device.h"
 
 extern std::vector<DeviceData*> devices;
@@ -1167,6 +1170,65 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
         SetInfoStatus(inifile,String(tmpStatus));
 
+        uint16_t clusterId = (Cluster[0] << 8) | Cluster[1];
+        
+        if (clusterId == 0xE004 || clusterId == 0xED00)
+        {
+          // Clusters IR Zosung - traiter comme commande cluster-specific
+          log_i("IR Cluster 0x%04X - Command 0x%02X from %s", clusterId, Command, inifile.c_str());
+          
+          // Extraire les données de la commande
+          // Format RAW: ... [15]=Command, [16...]=payload de la commande
+          int dataOffset = 16;
+          int dataLen = protocol.ln - dataOffset;
+          
+          if (dataLen > 0 && dataLen < 200)
+          {
+            // Mettre à jour lastSeen
+            SetInfoLastseen(inifile, FormattedDate);
+            
+            // Appeler le gestionnaire IR
+            zosungIRManage(inifile, clusterId, Command, 
+                          (uint8_t*)&protocol.payload[dataOffset], dataLen);
+          }
+          else
+          {
+            log_e("IR command with invalid data length: %d", dataLen);
+          }
+        }else if (clusterId == 0xEF00)
+        {
+            log_i("Tuya cluster 0xEF00 - Command 0x%02X from %s", Command, inifile.c_str());
+            
+            if (Command == 0x24)
+            {
+                // Time Sync Request - Répondre avec l'heure actuelle
+                log_i("Tuya Time Sync Request from %04X", SA);
+                sendTuyaTimeSync(SA, 1);
+            }
+            else if (Command == 0x01 || Command == 0x02)
+            {
+                // Datapoint Report - Extraire les datapoints
+                int dataOffset = 16;
+                int dataLen = protocol.ln - dataOffset;
+                
+                if (dataLen > 0)
+                {
+                    SetInfoLastseen(inifile, FormattedDate);
+                    tuyaThermostatManage(inifile, 0, 0, dataLen, 
+                                        (char*)&protocol.payload[dataOffset]);
+                }
+            }
+            else if (Command == 0x00)
+            {
+                log_d("Tuya Datapoint Set Response from %04X", SA);
+            }
+            else
+            {
+                log_w("Tuya unknown command 0x%02X from %04X", Command, SA);
+            }
+        }
+
+        
         if ((Command == 10) || (Command == 1))
         {
           uint8_t Attribute[2];
@@ -1191,6 +1253,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
           //Traitement données
           readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[offset]);
+        }else{
+          log_e("Cluster-specific command: cluster=0x%04X, cmd=0x%02X", clusterId, Command);
         }
         
 

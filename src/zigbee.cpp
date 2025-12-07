@@ -19,6 +19,11 @@
 #include "temperature.h"
 #include "humidity.h"
 #include "power.h"
+#include "windowCovering.h"
+#include "Infrared.h"
+#include "thermostat.h"
+#include "hvac.h"
+
 #include "web.h"
 #include "device.h"
 #include "powerHistory.h"
@@ -44,6 +49,19 @@ extern String Minute;
 
 extern String section[12];
 
+// Types ZCL courants
+#define ZCL_BOOL     0x10
+#define ZCL_UINT8    0x20
+#define ZCL_UINT16   0x21
+#define ZCL_UINT24   0x22
+#define ZCL_UINT32   0x23
+#define ZCL_INT8     0x28
+#define ZCL_INT16    0x29
+#define ZCL_INT32    0x2B
+#define ZCL_ENUM8    0x30
+#define ZCL_ENUM16   0x31
+
+
 void SendActiveRequest(uint8_t shortAddr[2])
 {
   Packet trame;
@@ -55,13 +73,66 @@ void SendActiveRequest(uint8_t shortAddr[2])
   commandList->push(trame);
 }
 
-void  SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
+void SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
 {
   switch (command)
     {
       case 146 :
         SendOnOffAction(ShortAddr,endpoint,tmpValue);
       break;
+      case 250 :
+        SendWindowCoveringAction(ShortAddr,endpoint,tmpValue);
+      break;
+      case 200:  // IR_ACTION_LEARN - Apprentissage ON/OFF
+      case 201:  // IR_ACTION_SEND - Envoyer code IR
+        SendIRAction(ShortAddr, endpoint, command, tmpValue);
+      break;
+      case 300:  // Tuya Bool (dpType = 1) - ON/OFF
+      {
+        // endpoint = DP ID, tmpValue = valeur (0 ou 1)
+        uint8_t dpId = (uint8_t)endpoint;
+        uint32_t value = (uint32_t)tmpValue.toInt();
+        sendTuyaDatapointSet(ShortAddr, 1, dpId, TUYA_TYPE_BOOL, value);
+        log_i("Tuya Action: DP%d (bool) = %lu to %04X", dpId, value, ShortAddr);
+      }
+      break;
+      
+      case 301:  // Tuya Value (dpType = 2) - températures, compteurs
+      {
+        // endpoint = DP ID, tmpValue = valeur (ex: 200 pour 20.0°C)
+        uint8_t dpId = (uint8_t)endpoint;
+        uint32_t value = (uint32_t)tmpValue.toInt();
+        sendTuyaDatapointSet(ShortAddr, 1, dpId, TUYA_TYPE_VALUE, value);
+        log_i("Tuya Action: DP%d (value) = %lu to %04X", dpId, value, ShortAddr);
+      }
+      break;
+      
+      case 302:  // Tuya Enum (dpType = 4) - modes, presets
+      {
+        // endpoint = DP ID, tmpValue = valeur enum
+        uint8_t dpId = (uint8_t)endpoint;
+        uint32_t value = (uint32_t)tmpValue.toInt();
+        sendTuyaDatapointSet(ShortAddr, 1, dpId, TUYA_TYPE_ENUM, value);
+        log_i("Tuya Action: DP%d (enum) = %lu to %04X", dpId, value, ShortAddr);
+      }
+      break;
+      
+      case 303:  // Tuya Raw (dpType = 0) - données brutes
+      {
+        uint8_t dpId = (uint8_t)endpoint;
+        uint32_t value = (uint32_t)tmpValue.toInt();
+        sendTuyaDatapointSet(ShortAddr, 1, dpId, TUYA_TYPE_RAW, value);
+        log_i("Tuya Action: DP%d (raw) = %lu to %04X", dpId, value, ShortAddr);
+      }
+      // 
+      case 310:  // HVAC System Mode
+      case 311:  // HVAC Setpoint Both
+      case 312:  // HVAC Fan Mode
+      case 313:  // HVAC Louver Position
+      case 314:  // HVAC Cooling Setpoint
+      case 315:  // HVAC Heating Setpoint
+          SendHVACAction(ShortAddr, endpoint, command, tmpValue.toInt());
+          break;
       default:
       break;
     }
@@ -210,6 +281,64 @@ void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type,
     
     memcpy(trame.datas,datas,trame.len);
     PrioritycommandList->push(trame);
+}
+
+uint8_t getZclTypeSize(uint8_t attrType)
+{
+    switch(attrType)
+    {
+        case ZCL_BOOL:
+        case ZCL_UINT8:
+        case ZCL_INT8:
+        case ZCL_ENUM8:
+            return 1;
+        case ZCL_UINT16:
+        case ZCL_INT16:
+        case ZCL_ENUM16:
+            return 2;
+        case ZCL_UINT24:
+            return 3;
+        case ZCL_UINT32:
+        case ZCL_INT32:
+            return 4;
+        default:
+            return 1;
+    }
+}
+
+void SendAttributeWrite(int shortAddr, int endpoint, int cluster, int attribut, uint8_t attrType, uint32_t value)
+{
+    uint8_t valueLen = getZclTypeSize(attrType);
+    
+    Packet trame;
+    trame.cmd = 0x0110;
+    trame.len = 15 + valueLen;
+    uint8_t datas[19];  // Max 15 + 4 octets
+    
+    datas[0] = 0x02;                          // Address mode (short)
+    datas[1] = (shortAddr >> 8) & 0xFF;
+    datas[2] = shortAddr & 0xFF;
+    datas[3] = 0x01;                          // Source endpoint
+    datas[4] = endpoint;                      // Destination endpoint
+    datas[5] = (cluster >> 8) & 0xFF;
+    datas[6] = cluster & 0xFF;
+    datas[7] = 0x00;                          // Direction
+    datas[8] = 0x00;                          // Manufacturer specific
+    datas[9] = 0x00;                          // Manufacturer ID MSB
+    datas[10] = 0x00;                         // Manufacturer ID LSB
+    datas[11] = 0x01;                         // Nombre d'attributs
+    datas[12] = (attribut >> 8) & 0xFF;
+    datas[13] = attribut & 0xFF;
+    datas[14] = attrType;
+    
+    // Valeur en little-endian
+    for(uint8_t i = 0; i < valueLen; i++)
+    {
+        datas[15 + i] = (value >> (8 * i)) & 0xFF;
+    }
+    
+    memcpy(trame.datas, datas, trame.len);
+    commandList->push(trame);
 }
 
 void SendAttributeRead(int shortAddr,int endpoint, int cluster, int attribut)
@@ -1148,7 +1277,7 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         {
           result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
           result += ";";
-          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230);
+          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*200);
           result += ";";
           result += device->getPowerW();
         }else{
@@ -2172,7 +2301,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         {
           result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
           result +=";";
-          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230);
+          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*200);
           result +=";0;"; 
           result += device->getPowerW()+" W";
         }else{
@@ -2823,6 +2952,28 @@ void getBind(uint64_t mac, int device_id, String model)
   
   }
 }*/
+
+void readZigbeeClusterCommand(String filename, uint8_t Cluster[2], 
+                               uint8_t commandId, int len, uint8_t* datas)
+{
+  uint16_t cluster = Cluster[0] * 256 + Cluster[1];
+  
+  switch (cluster) 
+  {
+    case 57348: // 0xE004 zosungIRControl
+    case 60672: // 0xED00 zosungIRTransmit
+      zosungIRManage(filename, cluster, commandId, datas, len);
+      break;
+      
+    default:
+      log_e("Unhandled cluster command: cluster=0x%04X, cmd=0x%02X", cluster, commandId);
+      break;
+  }
+}
+
+
+
+
 void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType, int len, char* datas)
 {
   int cluster;
@@ -2851,6 +3002,9 @@ void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], ui
     case 257: //0101 doorlock
       DoorlockManage(filename,attribute,DataType,len,datas);
       break;
+    case 258: //0102 windowCovering
+      WindowCoveringManage(filename,attribute,DataType,len,datas);
+      break;
     case 6: // 0006 onoff
       OnoffManage(filename,attribute,DataType,len,datas);
       break;
@@ -2860,8 +3014,21 @@ void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], ui
     case 1794: //0702 SM
       SimpleMeterManage(filename,attribute,DataType,len,datas);
       break;
-     case 2820: //0B04 ElectricalMeasurement
+    case 2820: //0B04 ElectricalMeasurement
       ElectricalMeasurementManage(filename,attribute,DataType,len,datas);
+      break;
+    case 513:  // 0x0201 - HVAC Thermostat (SONOFF TRVZB, etc.)
+      hvacThermostatManage(filename, attribute, DataType, len, datas);
+      break;
+    case 64529: // 0xFC11 - Sonoff Custom Cluster (TRVZB proprietary)
+      sonoffThermostatManage(filename, attribute, DataType, len, datas);
+      break;
+    case 61184: // 0xEF00 - Tuya Proprietary (TS0601 thermostats)
+      tuyaThermostatManage(filename, attribute, DataType, len, datas);
+      break;
+    case 57348: // 0xE004 zosungIRControl
+    case 60672: // 0xED00 zosungIRTransmit
+      log_e("IR cluster 0x%04X received (attribute mode) - ignored", cluster);
       break;
     default:
       defaultClusterManage(filename,cluster,attribute,DataType,len,datas);

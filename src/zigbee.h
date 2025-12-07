@@ -26,6 +26,7 @@ void SendBind(uint64_t mac, int cluster);
 void SendDeleteDevice(uint64_t mac);
 void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type, int rmin, int rmax, int rtimeout, uint8_t rchange);
 void SendAttributeRead(int shortAddr, int endpoint, int cluster, int attribut);
+void SendAttributeWrite(int shortAddr, int endpoint, int cluster, int attribut, uint8_t attrType, uint32_t value);
 void SendAction(int command, int ShortAddr, int endpoint, String tmpValue);
 void SendActiveRequest(uint8_t shortAddr[2]);
 void SendSimpleDescriptionRequest(uint8_t shortAddr[2], uint8_t endpoint);
@@ -36,6 +37,7 @@ void sendOtaSetWaitForDataParams( int u16TargetAddr, byte u8SeqNbr, byte u8Statu
 void sendOtaEndResponse( int u16ShortAddr, byte u8SeqNbr, uint32_t u32UpgradeTime, uint32_t u32CurrentTime, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode);
 void sendOtaImageNotify( int u16ShortAddr, byte u8NotifyType, uint32_t u32FileVersion, uint16_t u16ImageType, uint16_t u16ManuCode, byte u8Jitter);
 
+void readZigbeeClusterCommand(String filename, uint8_t Cluster[2], uint8_t commandId, int len, uint8_t* datas);
 
 //void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
 void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
