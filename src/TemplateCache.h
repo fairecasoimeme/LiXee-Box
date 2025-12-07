@@ -277,22 +277,47 @@ public:
     }
     
     bool reload(const String& name) {
+        Serial.printf("TemplateCache::reload('%s')\n", name.c_str());
+        
         PsString psName(name.c_str(), PsramAllocator<char>());
         auto it = templates.find(psName);
         
         if (it == templates.end()) {
+            // Template pas encore indexé, on le crée
+            Serial.println("  -> Nouveau template, création entrée");
             Template* tpl = new(ps_malloc(sizeof(Template))) Template();
             templates[psName] = tpl;
             it = templates.find(psName);
         } else {
-            // Supprimer tous les parsedData
+            Serial.printf("  -> Template existant, %d parsedData en cache\n", 
+                        it->second->parsedDataByModel.size());
+            
+            // Supprimer tous les parsedData (ils ont des pointeurs vers l'ancien JSON)
             for (auto& pair : it->second->parsedDataByModel) {
                 if (pair.second) delete pair.second;
             }
             it->second->parsedDataByModel.clear();
+            
+            // Libérer l'ancien JSON
+            if (it->second->jsonData) {
+                free(it->second->jsonData);
+                it->second->jsonData = nullptr;
+            }
+            it->second->jsonSize = 0;
+            it->second->loaded = false;  // *** IMPORTANT: Forcer le rechargement ***
         }
         
-        return loadTemplate(it->first, it->second);
+        // Recharger depuis le fichier
+        bool result = loadTemplate(it->first, it->second);
+        
+        // Marquer le cache JSON global comme dirty
+        isDirty = true;
+        
+        Serial.printf("  -> Rechargement: %s (size: %u bytes)\n", 
+                    result ? "OK" : "ECHEC", 
+                    it->second->jsonSize);
+        
+        return result;
     }
     
     void clear() {

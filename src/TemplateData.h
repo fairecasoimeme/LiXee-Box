@@ -20,12 +20,14 @@ struct State {
     float coefficient;
     char unit[20];
     bool visible;
+    bool writable;      
+    int  typewritable;           // Indique si l'attribut est modifiable (défaut: false)
     char typeJauge[20];
     int jaugeMin;
     int jaugeMax;
     
-    State() : cluster(0), attribute(0), coefficient(1.0f), visible(true), 
-              jaugeMin(0), jaugeMax(100) {
+    State() : cluster(0), attribute(0), coefficient(1.0f), visible(true),
+              writable(false),typewritable(0), jaugeMin(0), jaugeMax(100) {
         memset(name, 0, sizeof(name));
         memset(mode, 0, sizeof(mode));
         memset(mqtt_device_class, 0, sizeof(mqtt_device_class));
@@ -136,6 +138,8 @@ public:
                 s.coefficient = stateObj["coefficient"] | 1.0f;
                 strncpy(s.unit, stateObj["unit"] | "", sizeof(s.unit) - 1);
                 s.visible = stateObj["visible"] | 1;
+                s.writable = stateObj["writable"] | false;  // Par défaut readonly
+                s.typewritable = stateObj["typewritable"] | 0; 
                 
                 // Jauge
                 const char* jauge = stateObj["jauge"] | "";
