@@ -47,6 +47,7 @@ extern "C" {
 #include "energyHistory.h"
 
 #include "smart_wifi_manager.h"
+#include "mqtt.h"
 #include "notificationManager.h"
 
 SmartWiFiManager smartWiFi;
@@ -1131,23 +1132,13 @@ void onMqttConnect(bool sessionPresent) {
   DEBUG_PRINTLN(sessionPresent);
   extern unsigned long lastConnectionTest;
   lastConnectionTest = millis();
+  mqttResetReconnectionFlag();
 
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  DEBUG_PRINT(F("Disconnected from MQTT."));
-  DEBUG_PRINTLN((uint8_t)reason);
-  // IMPORTANT : Vider toutes les files d'attente
-  mqttClient.clearQueue(); // Si cette méthode existe
-  
-  // Sinon, forcer une réinitialisation complète
-  mqttClient.disconnect(true); // Force disconnect
-
-  // Tentative de reconnexion seulement si WiFi est connecté
-  if (WiFi.isConnected() && WifiReconnectTimer != NULL) {
-      xTimerStart(mqttReconnectTimer, 0);
-  }
-
+ log_e("⚠️ Disconnected from MQTT - Reason: %d", (uint8_t)reason);
+    // La reconnexion sera gérée par mqttAutoReconnect() dans loop()
 }
 
 void onMqttSubscribe(uint16_t packetId, uint8_t qos) {
@@ -1677,10 +1668,35 @@ void setupZigbeeAndTasks() {
   esp_task_wdt_init(30, true);
 }
 
+
+// ========== VERSION analogWrite (si supporté) ==========
+#define LED_PIN 3
+
+unsigned long lastFadeTime = 0;
+float ledPhase = 0;
+
+void setupWanadooLED() {
+    pinMode(LED_PIN, OUTPUT);
+}
+
+void loopWanadooLED() {
+    if (millis() - lastFadeTime >= 10) {
+        lastFadeTime = millis();
+        
+        uint8_t brightness = (uint8_t)(127.5 * (1.0 + sin(ledPhase)));
+        analogWrite(LED_PIN, brightness);
+        
+        ledPhase += 0.03;
+        if (ledPhase > 6.2832) ledPhase -= 6.2832;
+    }
+}
+
 void setup(void)
 {  
   ZiGateMode=PRODUCTION;
   initTempSensor();
+
+  setupWanadooLED();
  
   Serial.begin(115200, SERIAL_8N1);
   DEBUG_PRINTLN(F("Start"));
@@ -2039,6 +2055,8 @@ void loop(void)
   unsigned long loopStart = millis();
   esp_task_wdt_reset();
 
+  loopWanadooLED();
+
   smartWiFi.handleEvents();
 
   static uint32_t lastStatusPrint = 0;
@@ -2082,6 +2100,8 @@ void loop(void)
 
       printCrcStats();
       monitorSerialSimple();
+
+      mqttAutoReconnect();
 
       monitor_heap();
   }
