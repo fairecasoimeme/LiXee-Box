@@ -24,9 +24,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
   {
     switch (attribute)
     {
-      case 0:
-        //manufacturer   
-        
+      case 0:      
           
         for(int i=0;i<len;i++)
         {
@@ -35,7 +33,6 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
         }
         if (ini_exist(inifile))
         {
-          //ini_write(inifile,"0406", "0", (String)tmp);
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
@@ -46,7 +43,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0406",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"1030",(String)attribute,tmpvalue.c_str());
           }
 
           // Device update value;
@@ -75,9 +72,6 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
         }
         if (ini_exist(inifile))
         {
-          //ini_write(inifile,"0406", (String)attribute, (String)tmp);
-
-          //MQTT
           if (ConfigSettings.enableMqtt)
           {
             mqttPublish(inifile.substring(0,16),"1030",String(attribute),"numeric",String(tmp));
@@ -87,7 +81,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
           {
             String tmpvalue;
             tmpvalue += String(strtol(tmp.c_str(), NULL, 16));
-            WebPush(inifile.substring(0,16),"0406",(String)attribute,tmpvalue.c_str());
+            WebPush(inifile.substring(0,16),"1030",(String)attribute,tmpvalue.c_str());
           }
 
           // Device update value;
