@@ -449,6 +449,7 @@ void sendOtaBlock( int u16ShortAddr, byte u8SeqNbr, byte u8Status, uint32_t u32F
     // Transmit command
     memcpy(trame.datas,commandData,trame.len);
     sendZigbeeCmd(trame);
+   
     //PrioritycommandList->push(trame);
 }
 
@@ -1277,7 +1278,16 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         {
           result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
           result += ";";
-          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*200);
+          if (ConfigGeneral.LinkyMode == 0)
+          {
+            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
+          }else if (ConfigGeneral.LinkyMode == 2){
+            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200 / 3;
+          }else if ((ConfigGeneral.LinkyMode == 1) || (ConfigGeneral.LinkyMode == 5)){
+            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000;
+          }else if ((ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7)){
+            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000 / 3;
+          }
           result += ";";
           result += device->getPowerW();
         }else{
@@ -2301,7 +2311,16 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         {
           result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
           result +=";";
-          result += String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*200);
+          if (ConfigGeneral.LinkyMode == 0)
+          {
+            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
+          }else if (ConfigGeneral.LinkyMode == 2){
+            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200 / 3;
+          }else if ((ConfigGeneral.LinkyMode == 1) || (ConfigGeneral.LinkyMode == 5)){
+            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000;
+          }else if ((ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7)){
+            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000 / 3;
+          }
           result +=";0;"; 
           result += device->getPowerW()+" W";
         }else{
@@ -2837,7 +2856,7 @@ void getConfigReport(uint8_t shortAddr[2], int device_id, String model)
         SendConfigReport(shortAddr, cluster, attribut, rType, rMin, rMax, rTimeout, rChange);
         
         // Petit délai pour éviter la saturation
-        vTaskDelay(pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(1));
       }
       
     } catch (...) {
@@ -2895,6 +2914,7 @@ void getBind(uint64_t mac, int device_id, String model)
           while (pch != NULL)
           {
             SendBind(mac,atoi(pch));
+            vTaskDelay(pdMS_TO_TICKS(1));
             pch = strtok (NULL, " ;");
           }
         }
