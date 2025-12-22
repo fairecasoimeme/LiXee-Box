@@ -1817,7 +1817,7 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
                 </select>
               </div>
               <div class="col-md-3 trigger-event-fields" style="display:none;">
-                <label class="form-label small">Device</label>
+                <label class="form-label small">Appareil</label>
                 <select class="form-select form-select-sm" id="triggerDevice" onchange="onTriggerDeviceChange()"><option value="">-- Choisir --</option></select>
               </div>
               <div class="col-md-3 trigger-event-fields" style="display:none;">
@@ -1833,7 +1833,7 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
         </div>
 
         <div class="mb-4">
-          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
+          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel - filtre d'exécution)</span></label>
           <div id="timeRangesContainer"></div>
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Plage</button>
         </div>
@@ -1892,7 +1892,6 @@ function populateTriggerDeviceSelect(){
   })
 }
 
-// Récupère les actions du template d'un device
 function getDeviceActions(ieee){
   if(!ieee||!devices[ieee]||!devices[ieee].INFO)return[];
   var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default';
@@ -1903,7 +1902,6 @@ function getDeviceActions(ieee){
   return td[0].action
 }
 
-// Vérifie si un device a le cluster 0x0006 (pour legacy onoff)
 function hasCluster0006(ieee){
   if(!ieee||!devices[ieee]||!devices[ieee].INFO)return false;
   var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default';
@@ -1947,43 +1945,154 @@ function addTimeRange(data){
 }
 function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
 
+// ========== CONDITIONS avec types temporels ==========
+
 function addCondition(data){
-  var id=conditionCount++,html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Device</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">-- Cluster --</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">-- Attribut --</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&lt;=</option><option value=">">&gt;</option><option value=">=">&gt;=</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div><div class="col-md-1"><label class="form-label small">Logic</label><select class="form-select form-select-sm logic-select"><option value="AND">AND</option><option value="OR">OR</option></select></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div></div></div></div>';
+  var id=conditionCount++;
+  var type=data?data.type||'device':'device';
+  var html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body">'+
+    '<div class="row g-2 mb-2">'+
+    '<div class="col-md-3"><label class="form-label small">Type</label>'+
+    '<select class="form-select form-select-sm condition-type-select" onchange="onConditionTypeChange('+id+')" required>'+
+    '<option value="device" '+(type==='device'?'selected':'')+'>📡 Appareil Zigbee</option>'+
+    '<option value="time" '+(type==='time'?'selected':'')+'>🕐 Heure précise</option>'+
+    '<option value="time_range" '+(type==='time_range'?'selected':'')+'>🕐 Plage horaire</option>'+
+    '<option value="weekday" '+(type==='weekday'?'selected':'')+'>📅 Jour de semaine</option>'+
+    '<option value="date" '+(type==='date'?'selected':'')+'>📆 Date</option>'+
+    '<option value="day" '+(type==='day'?'selected':'')+'>📆 Jour du mois</option>'+
+    '<option value="month" '+(type==='month'?'selected':'')+'>📆 Mois</option>'+
+    '</select></div>'+
+    '<div class="col-md-8 condition-fields-wrapper"></div>'+
+    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div>'+
+    '</div>'+
+    '<div class="row g-2"><div class="col-md-2"><label class="form-label small">Logique</label>'+
+    '<select class="form-select form-select-sm logic-select"><option value="AND">ET (AND)</option><option value="OR">OU (OR)</option></select></div></div>'+
+    '</div></div>';
   $('#conditionsContainer').append(html);
-  var c=$('[data-id="'+id+'"]'),sel=c.find('.device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});
-  if(data){sel.val(data.IEEE);onDeviceChange(id);setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(id);setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.operator-select').val(data.operator);c.find('.value-input').val(data.value);c.find('.logic-select').val(data.logic);onOperatorChange(id)},100)},100)}
+  onConditionTypeChange(id);
+  if(data){
+    var c=$('[data-id="'+id+'"]');
+    c.find('.logic-select').val(data.logic||'AND');
+    setTimeout(function(){loadConditionData(c,data)},50);
+  }
 }
+
+function onConditionTypeChange(id){
+  var c=$('[data-id="'+id+'"]'),type=c.find('.condition-type-select').val();
+  var wrapper=c.find('.condition-fields-wrapper');
+  wrapper.html(getConditionFieldsHTML(type,id));
+  if(type==='device'){
+    var sel=c.find('.device-select');
+    $.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});
+  }
+}
+
+function getConditionFieldsHTML(type,id){
+  switch(type){
+    case 'time':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Heure</label><input type="time" class="form-control form-control-sm time-input" value="08:00" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= (égal)</option><option value="!=">≠ (différent)</option><option value="<">&lt; (avant)</option><option value="<=">&le;</option><option value=">">&gt; (après)</option><option value=">=">&ge;</option></select></div></div>';
+    case 'time_range':
+      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">De</label><input type="time" class="form-control form-control-sm time-start-input" value="08:00" required></div><div class="col-md-3"><label class="form-label small">À</label><input type="time" class="form-control form-control-sm time-end-input" value="18:00" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="in">Dans la plage</option><option value="not_in">Hors plage</option></select></div></div>';
+    case 'weekday':
+      return '<div class="row g-2"><div class="col-md-8"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex flex-wrap"><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-1" value="1"><label class="btn btn-outline-primary" for="wd-'+id+'-1">Lun</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-2" value="2"><label class="btn btn-outline-primary" for="wd-'+id+'-2">Mar</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-3" value="3"><label class="btn btn-outline-primary" for="wd-'+id+'-3">Mer</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-4" value="4"><label class="btn btn-outline-primary" for="wd-'+id+'-4">Jeu</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-5" value="5"><label class="btn btn-outline-primary" for="wd-'+id+'-5">Ven</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-6" value="6"><label class="btn btn-outline-primary" for="wd-'+id+'-6">Sam</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-7" value="7"><label class="btn btn-outline-primary" for="wd-'+id+'-7">Dim</label></div></div><div class="col-md-3"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" required><option value="in">Ces jours</option><option value="not_in">Sauf ces jours</option></select></div></div>';
+    case 'date':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Date</label><input type="date" class="form-control form-control-sm date-input" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= ce jour</option><option value="!=">≠ pas ce jour</option><option value="<">&lt; avant</option><option value=">">&gt; après</option></select></div><div class="col-md-3 d-flex align-items-end"><div class="form-check"><input class="form-check-input ignore-year-check" type="checkbox" checked id="iy-'+id+'"><label class="form-check-label small" for="iy-'+id+'">Récurrent (ignorer année)</label></div></div></div>';
+    case 'day':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Jour du mois</label><input type="number" class="form-control form-control-sm day-input" min="1" max="31" value="1" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option><option value="<">&lt;</option><option value=">">&gt;</option></select></div></div>';
+    case 'month':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Mois</label><select class="form-select form-select-sm month-input" required><option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option></select></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option></select></div></div>';
+    case 'device':
+    default:
+      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">Appareil</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">--</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">--</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&le;</option><option value=">">&gt;</option><option value=">=">&ge;</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div></div>';
+  }
+}
+
+function loadConditionData(c,data){
+  var type=data.type||'device';
+  c.find('.operator-select').val(data.operator||'==');
+  switch(type){
+    case 'time':
+      c.find('.time-input').val(data.value||'08:00');
+      break;
+    case 'time_range':
+      c.find('.time-start-input').val(data.value||'08:00');
+      c.find('.time-end-input').val(data.value2||'18:00');
+      break;
+    case 'weekday':
+      if(data.value){data.value.split(',').forEach(function(d){c.find('.weekday-check[value="'+d.trim()+'"]').prop('checked',!0)})}
+      break;
+    case 'date':
+      if(data.value){
+        var p=data.value.split('/');
+        if(p.length>=2){
+          var y=p.length===3?p[2]:new Date().getFullYear();
+          c.find('.date-input').val(y+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'));
+          c.find('.ignore-year-check').prop('checked',p.length===2);
+        }
+      }
+      break;
+    case 'day':
+      c.find('.day-input').val(data.value||'1');
+      break;
+    case 'month':
+      c.find('.month-input').val(data.value||'1');
+      break;
+    case 'device':
+    default:
+      c.find('.device-select').val(data.IEEE);onDeviceChange(parseInt(c.attr('data-id')));
+      setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(parseInt(c.attr('data-id')));setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.value-input').val(data.value);onOperatorChange(parseInt(c.attr('data-id')))},100)},100);
+      break;
+  }
+}
+
 function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
-function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">-- Cluster --</option>');c.find('.attribute-select').html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
-function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
+function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
 function removeCondition(id){$('[data-id="'+id+'"]').remove()}
 
-// ========== ACTIONS avec support Device/Legacy/Notification ==========
+function collectConditionData(c){
+  var type=c.find('.condition-type-select').val(),op=c.find('.operator-select').val(),logic=c.find('.logic-select').val();
+  var cond={type:type,operator:op,logic:logic,IEEE:'',cluster:0,attribute:0,value:'',value2:''};
+  switch(type){
+    case 'time':cond.value=c.find('.time-input').val();break;
+    case 'time_range':cond.value=c.find('.time-start-input').val();cond.value2=c.find('.time-end-input').val();break;
+    case 'weekday':var days=[];c.find('.weekday-check:checked').each(function(){days.push($(this).val())});cond.value=days.join(',');break;
+    case 'date':
+      var dv=c.find('.date-input').val();
+      if(dv){var p=dv.split('-');var iy=c.find('.ignore-year-check').is(':checked');cond.value=iy?p[2]+'/'+p[1]:p[2]+'/'+p[1]+'/'+p[0]}
+      break;
+    case 'day':cond.value=c.find('.day-input').val();break;
+    case 'month':cond.value=c.find('.month-input').val();break;
+    case 'device':default:
+      cond.IEEE=c.find('.device-select').val();cond.cluster=parseInt(c.find('.cluster-select').val())||0;
+      cond.attribute=parseInt(c.find('.attribute-select').val())||0;cond.value=c.find('.value-input').val();
+      break;
+  }
+  return cond;
+}
+
+// ========== ACTIONS ==========
 
 function addAction(data){
   var id=actionCount++;
   var html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
     '<div class="col-md-2"><label class="form-label small">Type</label>'+
     '<select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required>'+
-    '<option value="device">Device</option>'+
-    '<option value="onoff">ON/OFF (ancienne méthode)</option>'+
+    '<option value="device">Appareil</option>'+
+    '<option value="onoff">ON/OFF (legacy)</option>'+
     '<option value="notification">Notification</option></select></div>'+
-    // Champs Device (template) - required géré par onActionTypeChange
-    '<div class="col-md-3 action-device-fields"><label class="form-label small">Device</label>'+
+    '<div class="col-md-3 action-device-fields"><label class="form-label small">Appareil</label>'+
     '<select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
     '<div class="col-md-3 action-device-fields"><label class="form-label small">Action</label>'+
     '<select class="form-select form-select-sm action-name-select" onchange="onActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
     '<div class="col-md-2 action-device-fields"><label class="form-label small">Endpoint</label>'+
     '<input type="number" class="form-control form-control-sm action-device-endpoint-input" value="1" min="1"></div>'+
-    // Champs Legacy ON/OFF
-    '<div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Device</label>'+
+    '<div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label>'+
     '<select class="form-select form-select-sm action-legacy-device-select" onchange="onActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
     '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label>'+
     '<input type="number" class="form-control form-control-sm action-endpoint-input" value="1" min="1"></div>'+
     '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label>'+
     '<select class="form-select form-select-sm action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
-    // Champs Notification
     '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label>'+
     '<input type="text" class="form-control form-control-sm action-title-input"></div>'+
     '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label>'+
@@ -1991,249 +2100,81 @@ function addAction(data){
     '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';
   $('#actionsContainer').append(html);
   var c=$('[data-action-id="'+id+'"]');
-  // Peupler device (template) - devices avec actions
   var sel=c.find('.action-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
-  // Peupler legacy device - devices avec cluster 0006
   var selLegacy=c.find('.action-legacy-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
-  // Appliquer les required pour le type par défaut (device)
   onActionTypeChange(id);
-  // Charger données existantes
   if(data){
-    if(data.type==='notification'){
-      c.find('.action-type-select').val('notification');onActionTypeChange(id);
-      c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')
-    }else if(data.type==='device'&&data.actionName){
-      c.find('.action-type-select').val('device');onActionTypeChange(id);
-      c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);
-      setTimeout(function(){
-        c.find('.action-name-select').val(data.actionName);
-        c.find('.action-device-endpoint-input').val(data.endpoint||1)
-      },100)
-    }else if(data.type==='onoff'){
-      c.find('.action-type-select').val('onoff');onActionTypeChange(id);
-      c.find('.action-legacy-device-select').val(data.IEEE);
-      c.find('.action-endpoint-input').val(data.endpoint||1);
-      c.find('.action-value-select').val(data.value)
-    }
+    if(data.type==='notification'){c.find('.action-type-select').val('notification');onActionTypeChange(id);c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}
+    else if(data.type==='device'&&data.actionName){c.find('.action-type-select').val('device');onActionTypeChange(id);c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);setTimeout(function(){c.find('.action-name-select').val(data.actionName);c.find('.action-device-endpoint-input').val(data.endpoint||1)},100)}
+    else if(data.type==='onoff'){c.find('.action-type-select').val('onoff');onActionTypeChange(id);c.find('.action-legacy-device-select').val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint||1);c.find('.action-value-select').val(data.value)}
   }
 }
 
-function onActionTypeChange(id){
-  var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();
-  c.find('.action-device-fields,.action-legacy-fields,.action-notification-fields').hide();
-  c.find('.action-device-select,.action-name-select,.action-device-endpoint-input,.action-legacy-device-select,.action-endpoint-input,.action-value-select,.action-title-input,.action-message-input').prop('required',!1);
-  if(t==='device'){
-    c.find('.action-device-fields').show();
-    c.find('.action-device-select,.action-name-select,.action-device-endpoint-input').prop('required',!0)
-  }else if(t==='onoff'){
-    c.find('.action-legacy-fields').show();
-    c.find('.action-legacy-device-select,.action-endpoint-input,.action-value-select').prop('required',!0)
-  }else{
-    c.find('.action-notification-fields').show();
-    c.find('.action-title-input,.action-message-input').prop('required',!0)
-  }
-}
-
-function onActionDeviceChange(id){
-  var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val();
-  var actionSel=c.find('.action-name-select');
-  actionSel.html('<option value="">-- Action --</option>');
-  // Récupérer l'endpoint par défaut du device
-  var defaultEp = 1;
-  if(ieee && devices[ieee] && devices[ieee].INFO && devices[ieee].INFO.endpoint){
-    defaultEp = devices[ieee].INFO.endpoint;
-  }
-  c.find('.action-device-endpoint-input').val(defaultEp);
-  if(!ieee)return;
-  var actions=getDeviceActions(ieee);
-  actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})
-}
-
-function onActionNameChange(id){
-  var c=$('[data-action-id="'+id+'"]');
-  var selectedOption=c.find('.action-name-select option:selected');
-  var endpoint=selectedOption.data('endpoint');
-  if(endpoint){c.find('.action-device-endpoint-input').val(endpoint)}
-}
-
-function onActionLegacyDeviceChange(id){
-  var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-legacy-device-select').val();
-  if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
-}
-
+function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();c.find('.action-device-fields,.action-legacy-fields,.action-notification-fields').hide();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input,.action-legacy-device-select,.action-endpoint-input,.action-value-select,.action-title-input,.action-message-input').prop('required',!1);if(t==='device'){c.find('.action-device-fields').show();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.action-legacy-fields').show();c.find('.action-legacy-device-select,.action-endpoint-input,.action-value-select').prop('required',!0)}else{c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0)}}
+function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val(),actionSel=c.find('.action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
+function onActionNameChange(id){var c=$('[data-action-id="'+id+'"]'),opt=c.find('.action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.action-device-endpoint-input').val(ep)}}
+function onActionLegacyDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
 function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
 
-// ========== ELSE ACTIONS avec support Device/Legacy/Notification ==========
+// ========== ELSE ACTIONS ==========
 
 function addElseAction(data){
   var id=elseActionCount++;
   var html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
-    '<div class="col-md-2"><label class="form-label small">Type</label>'+
-    '<select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required>'+
-    '<option value="device">Device (template)</option>'+
-    '<option value="onoff">ON/OFF (legacy)</option>'+
-    '<option value="notification">Notification</option></select></div>'+
-    // Champs Device (template) - required géré par onElseActionTypeChange
-    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Device</label>'+
-    '<select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label>'+
-    '<select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
-    '<div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label>'+
-    '<input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div>'+
-    // Champs Legacy ON/OFF
-    '<div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Device</label>'+
-    '<select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label>'+
-    '<input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label>'+
-    '<select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
-    // Champs Notification
-    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label>'+
-    '<input type="text" class="form-control form-control-sm else-action-title-input"></div>'+
-    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label>'+
-    '<input type="text" class="form-control form-control-sm else-action-message-input"></div>'+
+    '<div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="device">Appareil</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div>'+
+    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
+    '<div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
+    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div>'+
+    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
+    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div>'+
+    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div>'+
     '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';
   $('#elseActionsContainer').append(html);
-  var c=$('[data-else-action-id="'+id+'"]');
-  // Peupler device (template)
-  var sel=c.find('.else-action-device-select');
+  var c=$('[data-else-action-id="'+id+'"]'),sel=c.find('.else-action-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
-  // Peupler legacy device
   var selLegacy=c.find('.else-action-legacy-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
-  // Appliquer les required pour le type par défaut (device)
   onElseActionTypeChange(id);
-  // Charger données
   if(data){
-    if(data.type==='notification'){
-      c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);
-      c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')
-    }else if(data.type==='device'&&data.actionName){
-      c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);
-      c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);
-      setTimeout(function(){
-        c.find('.else-action-name-select').val(data.actionName);
-        c.find('.else-action-device-endpoint-input').val(data.endpoint||1)
-      },100)
-    }else if(data.type==='onoff'){
-      c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);
-      c.find('.else-action-legacy-device-select').val(data.IEEE);
-      c.find('.else-action-endpoint-input').val(data.endpoint||1);
-      c.find('.else-action-value-select').val(data.value)
-    }
+    if(data.type==='notification'){c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')}
+    else if(data.type==='device'&&data.actionName){c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);setTimeout(function(){c.find('.else-action-name-select').val(data.actionName);c.find('.else-action-device-endpoint-input').val(data.endpoint||1)},100)}
+    else if(data.type==='onoff'){c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);c.find('.else-action-legacy-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint||1);c.find('.else-action-value-select').val(data.value)}
   }
 }
 
-function onElseActionTypeChange(id){
-  var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();
-  c.find('.else-action-device-fields,.else-action-legacy-fields,.else-action-notification-fields').hide();
-  c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input,.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select,.else-action-title-input,.else-action-message-input').prop('required',!1);
-  if(t==='device'){
-    c.find('.else-action-device-fields').show();
-    c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input').prop('required',!0)
-  }else if(t==='onoff'){
-    c.find('.else-action-legacy-fields').show();
-    c.find('.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0)
-  }else{
-    c.find('.else-action-notification-fields').show();
-    c.find('.else-action-title-input,.else-action-message-input').prop('required',!0)
-  }
-}
-
-function onElseActionDeviceChange(id){
-  var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val();
-  var actionSel=c.find('.else-action-name-select');
-  actionSel.html('<option value="">-- Action --</option>');
-  // Récupérer l'endpoint par défaut du device
-  var defaultEp = 1;
-  if(ieee && devices[ieee] && devices[ieee].INFO && devices[ieee].INFO.endpoint){
-    defaultEp = devices[ieee].INFO.endpoint;
-  }
-  c.find('.else-action-device-endpoint-input').val(defaultEp);
-  if(!ieee)return;
-  var actions=getDeviceActions(ieee);
-  actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})
-}
-
-function onElseActionNameChange(id){
-  var c=$('[data-else-action-id="'+id+'"]');
-  var selectedOption=c.find('.else-action-name-select option:selected');
-  var endpoint=selectedOption.data('endpoint');
-  if(endpoint){c.find('.else-action-device-endpoint-input').val(endpoint)}
-}
-
-function onElseActionLegacyDeviceChange(id){
-  var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-legacy-device-select').val();
-  if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}
-}
-
+function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();c.find('.else-action-device-fields,.else-action-legacy-fields,.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input,.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select,.else-action-title-input,.else-action-message-input').prop('required',!1);if(t==='device'){c.find('.else-action-device-fields').show();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.else-action-legacy-fields').show();c.find('.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0)}else{c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0)}}
+function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val(),actionSel=c.find('.else-action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.else-action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
+function onElseActionNameChange(id){var c=$('[data-else-action-id="'+id+'"]'),opt=c.find('.else-action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.else-action-device-endpoint-input').val(ep)}}
+function onElseActionLegacyDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
 function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
 
 function loadRule(rule){
   $('#oldRuleName').val(rule.name);$('#ruleName').val(rule.name);
   if(rule.trigger){$('#triggerMode').val(rule.trigger.mode||'timer');onTriggerModeChange();if(rule.trigger.mode==='event'){$('#triggerDevice').val(rule.trigger.IEEE);onTriggerDeviceChange();setTimeout(function(){$('#triggerCluster').val(rule.trigger.cluster);onTriggerClusterChange();setTimeout(function(){$('#triggerAttribute').val(rule.trigger.attribute)},100)},100)}}
   if(rule.timeRanges)rule.timeRanges.forEach(function(tr){addTimeRange(tr)});
-  if(rule.conditions)rule.conditions.forEach(function(c){addCondition(c)});else addCondition();
-  if(rule.actions)rule.actions.forEach(function(a){addAction(a)});else addAction();
+  if(rule.conditions&&rule.conditions.length>0)rule.conditions.forEach(function(c){addCondition(c)});else addCondition();
+  if(rule.actions&&rule.actions.length>0)rule.actions.forEach(function(a){addAction(a)});else addAction();
   if(rule.elseActions)rule.elseActions.forEach(function(a){addElseAction(a)})
 }
 
-// ========== SUBMIT avec support des 3 types ==========
+// ========== SUBMIT ==========
 
 $('#ruleForm').on('submit',function(e){
   e.preventDefault();
   var rule={oldName:$('#oldRuleName').val(),name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
   
-  // TimeRanges
   $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
   
-  // Conditions
-  $('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});
+  $('.condition-item').each(function(){rule.conditions.push(collectConditionData($(this)))});
   if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}
   
-  // Actions (3 types supportés)
-  $('.action-item').each(function(){
-    var c=$(this),t=c.find('.action-type-select').val(),a={type:t};
-    if(t==='device'){
-      a.IEEE=c.find('.action-device-select').val();
-      a.actionName=c.find('.action-name-select').val();
-      a.endpoint=parseInt(c.find('.action-device-endpoint-input').val())||1;
-      a.value='';a.title='';a.message=''
-    }else if(t==='onoff'){
-      a.IEEE=c.find('.action-legacy-device-select').val();
-      a.endpoint=parseInt(c.find('.action-endpoint-input').val())||1;
-      a.value=c.find('.action-value-select').val();
-      a.actionName='';a.title='';a.message=''
-    }else{
-      a.IEEE='';a.actionName='';a.endpoint=0;a.value='';
-      a.title=c.find('.action-title-input').val();
-      a.message=c.find('.action-message-input').val()
-    }
-    rule.actions.push(a)
-  });
+  $('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.action-device-select').val();a.actionName=c.find('.action-name-select').val();a.endpoint=parseInt(c.find('.action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.action-legacy-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val())||1;a.value=c.find('.action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});
   
-  // ElseActions (3 types supportés)
-  $('.else-action-item').each(function(){
-    var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};
-    if(t==='device'){
-      a.IEEE=c.find('.else-action-device-select').val();
-      a.actionName=c.find('.else-action-name-select').val();
-      a.endpoint=parseInt(c.find('.else-action-device-endpoint-input').val())||1;
-      a.value='';a.title='';a.message=''
-    }else if(t==='onoff'){
-      a.IEEE=c.find('.else-action-legacy-device-select').val();
-      a.endpoint=parseInt(c.find('.else-action-endpoint-input').val())||1;
-      a.value=c.find('.else-action-value-select').val();
-      a.actionName='';a.title='';a.message=''
-    }else{
-      a.IEEE='';a.actionName='';a.endpoint=0;a.value='';
-      a.title=c.find('.else-action-title-input').val();
-      a.message=c.find('.else-action-message-input').val()
-    }
-    rule.elseActions.push(a)
-  });
+  $('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.else-action-device-select').val();a.actionName=c.find('.else-action-name-select').val();a.endpoint=parseInt(c.find('.else-action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.else-action-legacy-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val())||1;a.value=c.find('.else-action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});
   
   $.ajax({url:'/api/rules/edit',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle modifiée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})
 });
@@ -2264,7 +2205,7 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
                 </select>
               </div>
               <div class="col-md-3 trigger-event-fields" style="display:none;">
-                <label class="form-label small">Device</label>
+                <label class="form-label small">Appareil</label>
                 <select class="form-select form-select-sm" id="triggerDevice" onchange="onTriggerDeviceChange()"><option value="">-- Choisir --</option></select>
               </div>
               <div class="col-md-3 trigger-event-fields" style="display:none;">
@@ -2280,7 +2221,7 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
         </div>
 
         <div class="mb-4">
-          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel)</span></label>
+          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel - filtre d'exécution)</span></label>
           <div id="timeRangesContainer"></div>
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Plage</button>
         </div>
@@ -2337,36 +2278,114 @@ function onTriggerClusterChange(){var ieee=$('#triggerDevice').val(),cl=parseInt
 function addTimeRange(data){var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';$('#timeRangesContainer').append(html);if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}}
 function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
 
-function addCondition(data){var id=conditionCount++,html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Device</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">-- Cluster --</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">-- Attribut --</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&lt;=</option><option value=">">&gt;</option><option value=">=">&gt;=</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div><div class="col-md-1"><label class="form-label small">Logic</label><select class="form-select form-select-sm logic-select"><option value="AND">AND</option><option value="OR">OR</option></select></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div></div></div></div>';$('#conditionsContainer').append(html);var c=$('[data-id="'+id+'"]'),sel=c.find('.device-select');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});if(data){sel.val(data.IEEE);onDeviceChange(id);setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(id);setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.operator-select').val(data.operator);c.find('.value-input').val(data.value);c.find('.logic-select').val(data.logic);onOperatorChange(id)},100)},100)}}
+// ========== CONDITIONS avec types temporels ==========
+
+function addCondition(data){
+  var id=conditionCount++;
+  var type=data?data.type||'device':'device';
+  var html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body">'+
+    '<div class="row g-2 mb-2">'+
+    '<div class="col-md-3"><label class="form-label small">Type</label>'+
+    '<select class="form-select form-select-sm condition-type-select" onchange="onConditionTypeChange('+id+')" required>'+
+    '<option value="device" '+(type==='device'?'selected':'')+'>📡 Appareil Zigbee</option>'+
+    '<option value="time" '+(type==='time'?'selected':'')+'>🕐 Heure précise</option>'+
+    '<option value="time_range" '+(type==='time_range'?'selected':'')+'>🕐 Plage horaire</option>'+
+    '<option value="weekday" '+(type==='weekday'?'selected':'')+'>📅 Jour de semaine</option>'+
+    '<option value="date" '+(type==='date'?'selected':'')+'>📆 Date</option>'+
+    '<option value="day" '+(type==='day'?'selected':'')+'>📆 Jour du mois</option>'+
+    '<option value="month" '+(type==='month'?'selected':'')+'>📆 Mois</option>'+
+    '</select></div>'+
+    '<div class="col-md-8 condition-fields-wrapper"></div>'+
+    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div>'+
+    '</div>'+
+    '<div class="row g-2"><div class="col-md-2"><label class="form-label small">Logique</label>'+
+    '<select class="form-select form-select-sm logic-select"><option value="AND">ET (AND)</option><option value="OR">OU (OR)</option></select></div></div>'+
+    '</div></div>';
+  $('#conditionsContainer').append(html);
+  onConditionTypeChange(id);
+  if(data){
+    var c=$('[data-id="'+id+'"]');
+    c.find('.logic-select').val(data.logic||'AND');
+    setTimeout(function(){loadConditionData(c,data)},50);
+  }
+}
+
+function onConditionTypeChange(id){
+  var c=$('[data-id="'+id+'"]'),type=c.find('.condition-type-select').val();
+  var wrapper=c.find('.condition-fields-wrapper');
+  wrapper.html(getConditionFieldsHTML(type,id));
+  if(type==='device'){
+    var sel=c.find('.device-select');
+    $.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});
+  }
+}
+
+function getConditionFieldsHTML(type,id){
+  switch(type){
+    case 'time':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Heure</label><input type="time" class="form-control form-control-sm time-input" value="08:00" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= (égal)</option><option value="!=">≠ (différent)</option><option value="<">&lt; (avant)</option><option value="<=">&le;</option><option value=">">&gt; (après)</option><option value=">=">&ge;</option></select></div></div>';
+    case 'time_range':
+      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">De</label><input type="time" class="form-control form-control-sm time-start-input" value="08:00" required></div><div class="col-md-3"><label class="form-label small">À</label><input type="time" class="form-control form-control-sm time-end-input" value="18:00" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="in">Dans la plage</option><option value="not_in">Hors plage</option></select></div></div>';
+    case 'weekday':
+      return '<div class="row g-2"><div class="col-md-8"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex flex-wrap"><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-1" value="1"><label class="btn btn-outline-primary" for="wd-'+id+'-1">Lun</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-2" value="2"><label class="btn btn-outline-primary" for="wd-'+id+'-2">Mar</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-3" value="3"><label class="btn btn-outline-primary" for="wd-'+id+'-3">Mer</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-4" value="4"><label class="btn btn-outline-primary" for="wd-'+id+'-4">Jeu</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-5" value="5"><label class="btn btn-outline-primary" for="wd-'+id+'-5">Ven</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-6" value="6"><label class="btn btn-outline-primary" for="wd-'+id+'-6">Sam</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-7" value="7"><label class="btn btn-outline-primary" for="wd-'+id+'-7">Dim</label></div></div><div class="col-md-3"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" required><option value="in">Ces jours</option><option value="not_in">Sauf ces jours</option></select></div></div>';
+    case 'date':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Date</label><input type="date" class="form-control form-control-sm date-input" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= ce jour</option><option value="!=">≠ pas ce jour</option><option value="<">&lt; avant</option><option value=">">&gt; après</option></select></div><div class="col-md-3 d-flex align-items-end"><div class="form-check"><input class="form-check-input ignore-year-check" type="checkbox" checked id="iy-'+id+'"><label class="form-check-label small" for="iy-'+id+'">Récurrent (ignorer année)</label></div></div></div>';
+    case 'day':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Jour du mois</label><input type="number" class="form-control form-control-sm day-input" min="1" max="31" value="1" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option><option value="<">&lt;</option><option value=">">&gt;</option></select></div></div>';
+    case 'month':
+      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Mois</label><select class="form-select form-select-sm month-input" required><option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option></select></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option></select></div></div>';
+    case 'device':
+    default:
+      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">Appareil</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">--</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">--</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&le;</option><option value=">">&gt;</option><option value=">=">&ge;</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div></div>';
+  }
+}
+
+function loadConditionData(c,data){
+  var type=data.type||'device';
+  c.find('.operator-select').val(data.operator||'==');
+  switch(type){
+    case 'time':c.find('.time-input').val(data.value||'08:00');break;
+    case 'time_range':c.find('.time-start-input').val(data.value||'08:00');c.find('.time-end-input').val(data.value2||'18:00');break;
+    case 'weekday':if(data.value){data.value.split(',').forEach(function(d){c.find('.weekday-check[value="'+d.trim()+'"]').prop('checked',!0)})}break;
+    case 'date':if(data.value){var p=data.value.split('/');if(p.length>=2){var y=p.length===3?p[2]:new Date().getFullYear();c.find('.date-input').val(y+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'));c.find('.ignore-year-check').prop('checked',p.length===2)}}break;
+    case 'day':c.find('.day-input').val(data.value||'1');break;
+    case 'month':c.find('.month-input').val(data.value||'1');break;
+    case 'device':default:c.find('.device-select').val(data.IEEE);onDeviceChange(parseInt(c.attr('data-id')));setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(parseInt(c.attr('data-id')));setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.value-input').val(data.value);onOperatorChange(parseInt(c.attr('data-id')))},100)},100);break;
+  }
+}
+
 function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
-function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">-- Cluster --</option>');c.find('.attribute-select').html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
-function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
+function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
 function removeCondition(id){$('[data-id="'+id+'"]').remove()}
+
+function collectConditionData(c){
+  var type=c.find('.condition-type-select').val(),op=c.find('.operator-select').val(),logic=c.find('.logic-select').val();
+  var cond={type:type,operator:op,logic:logic,IEEE:'',cluster:0,attribute:0,value:'',value2:''};
+  switch(type){
+    case 'time':cond.value=c.find('.time-input').val();break;
+    case 'time_range':cond.value=c.find('.time-start-input').val();cond.value2=c.find('.time-end-input').val();break;
+    case 'weekday':var days=[];c.find('.weekday-check:checked').each(function(){days.push($(this).val())});cond.value=days.join(',');break;
+    case 'date':var dv=c.find('.date-input').val();if(dv){var p=dv.split('-');var iy=c.find('.ignore-year-check').is(':checked');cond.value=iy?p[2]+'/'+p[1]:p[2]+'/'+p[1]+'/'+p[0]}break;
+    case 'day':cond.value=c.find('.day-input').val();break;
+    case 'month':cond.value=c.find('.month-input').val();break;
+    case 'device':default:cond.IEEE=c.find('.device-select').val();cond.cluster=parseInt(c.find('.cluster-select').val())||0;cond.attribute=parseInt(c.find('.attribute-select').val())||0;cond.value=c.find('.value-input').val();break;
+  }
+  return cond;
+}
+
+// ========== ACTIONS ==========
 
 function addAction(data){
   var id=actionCount++;
-  var html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
-    '<div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="device">Device (template)</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div>'+
-    '<div class="col-md-3 action-device-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-3 action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm action-name-select" onchange="onActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
-    '<div class="col-md-2 action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-device-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Device</label><select class="form-select form-select-sm action-legacy-device-select" onchange="onActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
-    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div>'+
-    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div>'+
-    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';
+  var html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="device">Appareil</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div><div class="col-md-3 action-device-fields"><label class="form-label small">Appareil</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-3 action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm action-name-select" onchange="onActionNameChange('+id+')"><option value="">-- Action --</option></select></div><div class="col-md-2 action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-device-endpoint-input" value="1" min="1"></div><div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label><select class="form-select form-select-sm action-legacy-device-select" onchange="onActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" min="1"></div><div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';
   $('#actionsContainer').append(html);
   var c=$('[data-action-id="'+id+'"]'),sel=c.find('.action-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
   var selLegacy=c.find('.action-legacy-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
   onActionTypeChange(id);
-  if(data){
-    if(data.type==='notification'){c.find('.action-type-select').val('notification');onActionTypeChange(id);c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}
-    else if(data.type==='device'&&data.actionName){c.find('.action-type-select').val('device');onActionTypeChange(id);c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);setTimeout(function(){c.find('.action-name-select').val(data.actionName);c.find('.action-device-endpoint-input').val(data.endpoint||1)},100)}
-    else if(data.type==='onoff'){c.find('.action-type-select').val('onoff');onActionTypeChange(id);c.find('.action-legacy-device-select').val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint||1);c.find('.action-value-select').val(data.value)}
-  }
+  if(data){if(data.type==='notification'){c.find('.action-type-select').val('notification');onActionTypeChange(id);c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}else if(data.type==='device'&&data.actionName){c.find('.action-type-select').val('device');onActionTypeChange(id);c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);setTimeout(function(){c.find('.action-name-select').val(data.actionName);c.find('.action-device-endpoint-input').val(data.endpoint||1)},100)}else if(data.type==='onoff'){c.find('.action-type-select').val('onoff');onActionTypeChange(id);c.find('.action-legacy-device-select').val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint||1);c.find('.action-value-select').val(data.value)}}
 }
 function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();c.find('.action-device-fields,.action-legacy-fields,.action-notification-fields').hide();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input,.action-legacy-device-select,.action-endpoint-input,.action-value-select,.action-title-input,.action-message-input').prop('required',!1);if(t==='device'){c.find('.action-device-fields').show();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.action-legacy-fields').show();c.find('.action-legacy-device-select,.action-endpoint-input,.action-value-select').prop('required',!0)}else{c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0)}}
 function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val(),actionSel=c.find('.action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
@@ -2374,30 +2393,18 @@ function onActionNameChange(id){var c=$('[data-action-id="'+id+'"]'),opt=c.find(
 function onActionLegacyDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
 function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
 
+// ========== ELSE ACTIONS ==========
+
 function addElseAction(data){
   var id=elseActionCount++;
-  var html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
-    '<div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="device">Device (template)</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div>'+
-    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
-    '<div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Device</label><select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
-    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div>'+
-    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div>'+
-    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';
+  var html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="device">Appareil</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div><div class="col-md-3 else-action-device-fields"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div><div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div><div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div><div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';
   $('#elseActionsContainer').append(html);
   var c=$('[data-else-action-id="'+id+'"]'),sel=c.find('.else-action-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
   var selLegacy=c.find('.else-action-legacy-device-select');
   $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
   onElseActionTypeChange(id);
-  if(data){
-    if(data.type==='notification'){c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')}
-    else if(data.type==='device'&&data.actionName){c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);setTimeout(function(){c.find('.else-action-name-select').val(data.actionName);c.find('.else-action-device-endpoint-input').val(data.endpoint||1)},100)}
-    else if(data.type==='onoff'){c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);c.find('.else-action-legacy-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint||1);c.find('.else-action-value-select').val(data.value)}
-  }
+  if(data){if(data.type==='notification'){c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')}else if(data.type==='device'&&data.actionName){c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);setTimeout(function(){c.find('.else-action-name-select').val(data.actionName);c.find('.else-action-device-endpoint-input').val(data.endpoint||1)},100)}else if(data.type==='onoff'){c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);c.find('.else-action-legacy-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint||1);c.find('.else-action-value-select').val(data.value)}}
 }
 function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();c.find('.else-action-device-fields,.else-action-legacy-fields,.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input,.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select,.else-action-title-input,.else-action-message-input').prop('required',!1);if(t==='device'){c.find('.else-action-device-fields').show();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.else-action-legacy-fields').show();c.find('.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0)}else{c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0)}}
 function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val(),actionSel=c.find('.else-action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.else-action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
@@ -2405,11 +2412,13 @@ function onElseActionNameChange(id){var c=$('[data-else-action-id="'+id+'"]'),op
 function onElseActionLegacyDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
 function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
 
+// ========== SUBMIT ==========
+
 $('#ruleForm').on('submit',function(e){
   e.preventDefault();
   var rule={name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
   $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
-  $('.condition-item').each(function(){var c=$(this),vr=c.find('.value-input').val(),op=c.find('.operator-select').val(),cv=(op==='=='||op==='!=')?isNaN(vr)?vr:parseInt(vr):parseInt(vr);rule.conditions.push({type:'device',IEEE:c.find('.device-select').val(),cluster:parseInt(c.find('.cluster-select').val()),attribute:parseInt(c.find('.attribute-select').val()),operator:op,value:cv,logic:c.find('.logic-select').val()})});
+  $('.condition-item').each(function(){rule.conditions.push(collectConditionData($(this)))});
   if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}
   $('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.action-device-select').val();a.actionName=c.find('.action-name-select').val();a.endpoint=parseInt(c.find('.action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.action-legacy-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val())||1;a.value=c.find('.action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});
   $('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.else-action-device-select').val();a.actionName=c.find('.else-action-name-select').val();a.endpoint=parseInt(c.find('.else-action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.else-action-legacy-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val())||1;a.value=c.find('.else-action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});
@@ -4949,10 +4958,11 @@ String createPowerGraph(String IEEE)
     {
       if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
       {
-        goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
-      }else{
-        goal = strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 1000;
+        goal += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
+      }else {
+        goal += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000;
       }
+     
       break;
     }
   }
@@ -7577,13 +7587,34 @@ void handleEditRule(AsyncWebServerRequest *request)
 
 void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
 {
+  // Buffer statique pour accumuler les données
+  static String jsonBuffer;
+  
+  // Premier chunk : réinitialiser le buffer
+  if (index == 0) {
+    jsonBuffer = "";
+    jsonBuffer.reserve(total);
+  }
+  
+  // Ajouter les données reçues au buffer
+  for (size_t i = 0; i < len; i++) {
+    jsonBuffer += (char)data[i];
+  }
+  
+  // Si on n'a pas encore tout reçu, attendre le prochain chunk
+  if (index + len < total) {
+    return;
+  }
+  
+  // Parser le JSON complet depuis jsonBuffer (pas data!)
   SpiRamJsonDocument doc(100000);
-  DeserializationError error = deserializeJson(doc, (const char*)data);
+  DeserializationError error = deserializeJson(doc, jsonBuffer);
+  
+  // Libérer le buffer
+  jsonBuffer = "";
   
   if (error) {
-    char errMess[1024];
-    sprintf(errMess,"JSON invalide : %d - %s\n Datas : %s",error.code(),error.c_str(),(const char*)data);
-    request->send(400, "text/plain", errMess );
+    request->send(400, "text/plain", "JSON invalide");
     return;
   }
 
@@ -7685,6 +7716,7 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
         c["attribute"] = cond["attribute"];
         c["operator"] = cond["operator"];
         c["value"] = cond["value"];
+        c["value2"] = cond["value2"];
         c["logic"] = cond["logic"];
       }
       
@@ -7742,8 +7774,30 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
 
 void APIDeleteRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
 {
+  // Buffer statique pour accumuler les données
+  static String jsonBuffer;
+  
+  // Premier chunk : réinitialiser le buffer
+  if (index == 0) {
+    jsonBuffer = "";
+    jsonBuffer.reserve(total);
+  }
+  
+  // Ajouter les données reçues au buffer
+  for (size_t i = 0; i < len; i++) {
+    jsonBuffer += (char)data[i];
+  }
+  
+  // Si on n'a pas encore tout reçu, attendre le prochain chunk
+  if (index + len < total) {
+    return;
+  }
+
   SpiRamJsonDocument doc(100000);
-  DeserializationError error = deserializeJson(doc, (const char*)data);
+  DeserializationError error = deserializeJson(doc, jsonBuffer);
+  
+  // Libérer le buffer
+  jsonBuffer = "";
   
   if (error) {
     request->send(400, "text/plain", "JSON invalide");
@@ -7771,22 +7825,50 @@ void APIDeleteRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, si
 
   // Supprimer la règle
   JsonArray rules = rulesDoc["rules"];
+  bool found = false;
   for (size_t i = 0; i < rules.size(); i++) {
     if (rules[i]["name"].as<String>() == ruleName) {
       rules.remove(i);
+      found = true;
       break;
     }
   }
 
-  // Sauvegarder le fichier
-  file = LittleFS.open("/config/rules.json", FILE_WRITE);
-  if (!file) {
-    request->send(500, "text/plain", "Erreur d'écriture");
+  if (!found) {
+    request->send(404, "text/plain", "Règle non trouvée");
     return;
   }
-  
+
+  // Sauvegarder rules.json
+  file = LittleFS.open("/config/rules.json", FILE_WRITE);
+  if (!file) {
+    request->send(500, "text/plain", "Erreur d'écriture rules.json");
+    return;
+  }
   serializeJson(rulesDoc, file);
   file.close();
+
+  // ====== SUPPRIMER LE STATUT DE LA RÈGLE ======
+  File statusFile = LittleFS.open("/config/statusRules.json", FILE_READ);
+  if (statusFile) {
+    SpiRamJsonDocument statusDoc(50000);
+    DeserializationError statusError = deserializeJson(statusDoc, statusFile);
+    statusFile.close();
+    
+    if (!statusError) {
+      // Supprimer l'entrée correspondant à la règle
+      if (statusDoc.containsKey(ruleName)) {
+        statusDoc.remove(ruleName);
+        
+        // Sauvegarder statusRules.json
+        statusFile = LittleFS.open("/config/statusRules.json", FILE_WRITE);
+        if (statusFile) {
+          serializeJson(statusDoc, statusFile);
+          statusFile.close();
+        }
+      }
+    }
+  }
 
   // Recharger les règles
   rulesManager.loadFromFile("/config/rules.json");
@@ -7812,11 +7894,34 @@ void handleAddRule(AsyncWebServerRequest *request)
 // API pour ajouter une règle
 void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
 {
-  // Parser le JSON reçu
+  // Buffer statique pour accumuler les données
+  static String jsonBuffer;
+  
+  // Premier chunk : réinitialiser le buffer
+  if (index == 0) {
+    jsonBuffer = "";
+    jsonBuffer.reserve(total);  // Pré-allouer la mémoire
+  }
+  
+  // Ajouter les données reçues au buffer
+  for (size_t i = 0; i < len; i++) {
+    jsonBuffer += (char)data[i];
+  }
+  
+  // Si on n'a pas encore tout reçu, attendre le prochain chunk
+  if (index + len < total) {
+    return;
+  }
+  
+  // Maintenant on a tout le JSON, on peut le parser
   SpiRamJsonDocument doc(100000);
-  DeserializationError error = deserializeJson(doc, (const char*)data);
+  DeserializationError error = deserializeJson(doc, jsonBuffer);
+  
+  // Libérer le buffer
+  jsonBuffer = "";
   
   if (error) {
+    Serial.printf("JSON parse error: %s\n", error.c_str());
     request->send(400, "text/plain", "JSON invalide");
     return;
   }
@@ -7829,11 +7934,11 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     return;
   }
 
-  // ✅ VALIDATION : Nom valide (caractères alphanumériques, underscore, tiret)
+  // ✅ VALIDATION : Nom valide (caractères alphanumériques, underscore, tiret, espaces)
   bool validName = true;
   for (size_t i = 0; i < ruleName.length(); i++) {
     char c = ruleName.charAt(i);
-    if (!isAlphaNumeric(c) && c != '_' && c != '-') {
+    if (!isAlphaNumeric(c) && c != '_' && c != '-' && c != ' ') {
       validName = false;
       break;
     }
@@ -7852,11 +7957,10 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     deserializeJson(rulesDoc, file);
     file.close();
   } else {
-    // Créer la structure de base si le fichier n'existe pas
     rulesDoc["rules"] = rulesDoc.createNestedArray();
   }
 
-  // ✅ VALIDATION D'UNICITÉ : Vérifier si le nom existe déjà
+  // ✅ VALIDATION D'UNICITÉ
   JsonArray rules = rulesDoc["rules"];
   for (JsonObject rule : rules) {
     if (rule["name"].as<String>() == ruleName) {
@@ -7870,15 +7974,15 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
   
   newRule["name"] = ruleName;
   
-  //ajouter un trigger
+  // Trigger
   JsonObject trigger = newRule.createNestedObject("trigger");
   JsonObject triggerDoc = doc["trigger"].as<JsonObject>();
-  trigger["mode"] = triggerDoc["mode"] | "timer";  // Par défaut: timer
+  trigger["mode"] = triggerDoc["mode"] | "timer";
   trigger["IEEE"] = triggerDoc["IEEE"] | "";
   trigger["cluster"] = triggerDoc["cluster"] | 0;
   trigger["attribute"] = triggerDoc["attribute"] | 0;
 
-  //Copier les plages horaires
+  // Plages horaires
   JsonArray timeRanges = newRule.createNestedArray("timeRanges");
   for (JsonObject tr : doc["timeRanges"].as<JsonArray>()) {
     JsonObject t = timeRanges.createNestedObject();
@@ -7890,7 +7994,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     }
   }
 
-  // Copier les conditions
+  // Conditions (avec value2 pour time_range)
   JsonArray conditions = newRule.createNestedArray("conditions");
   for (JsonObject cond : doc["conditions"].as<JsonArray>()) {
     JsonObject c = conditions.createNestedObject();
@@ -7900,10 +8004,11 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     c["attribute"] = cond["attribute"];
     c["operator"] = cond["operator"];
     c["value"] = cond["value"];
+    c["value2"] = cond["value2"];  // ← Pour time_range
     c["logic"] = cond["logic"];
   }
   
-  // Copier les actions
+  // Actions
   JsonArray actions = newRule.createNestedArray("actions");
   for (JsonObject act : doc["actions"].as<JsonArray>()) {
     JsonObject a = actions.createNestedObject();
@@ -7916,6 +8021,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     a["message"] = act["message"];
   }
 
+  // Else Actions
   JsonArray elseActions = newRule.createNestedArray("elseActions");
   for (JsonObject act : doc["elseActions"].as<JsonArray>()) {
     JsonObject a = elseActions.createNestedObject();
@@ -7928,7 +8034,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     a["message"] = act["message"];
   }
 
-  // Sauvegarder le fichier
+  // Sauvegarder
   file = LittleFS.open("/config/rules.json", FILE_WRITE);
   if (!file) {
     request->send(500, "text/plain", "Erreur d'écriture");
@@ -7997,10 +8103,10 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
         checked="";
       }
       listDevicesAction += "<input type='checkbox' name='delestage_"+device->getDeviceID()+"' "+checked+"> "+device->getInfo().model+" ("+device->getDeviceID()+")<br>";
-      listDevicesAction += "</div>";
       nbActionDevices++;
     }
   }
+  listDevicesAction += "</div>";
   if (!nbActionDevices)
   {
     listDevicesAction =" Pas d'appareil disponible. Prise connectée obligatoire.";
@@ -11094,11 +11200,10 @@ void handleSaveConfigProduction(AsyncWebServerRequest *request)
 {
   String path = "configGeneral.json";
 
-  if (request->arg("prodDevice") != "")
-  {
-    strlcpy(ConfigGeneral.Production, request->arg("prodDevice").c_str(), sizeof(ConfigGeneral.Production));
-    config_write(path, "Production", String(request->arg("prodDevice")));
-  }
+
+  strlcpy(ConfigGeneral.Production, request->arg("prodDevice").c_str(), sizeof(ConfigGeneral.Production));
+  config_write(path, "Production", String(request->arg("prodDevice")));
+  
   if (request->arg("tarifAboProd").toFloat() >= 0)
   {
     // ConfigGeneral.tarifAbo = request->arg("tarifAbo");
@@ -12024,6 +12129,17 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     zdevices += F("</div>"); // fin card-body
     zdevices += F("</div></div>"); // fin card et col
   }
+  // Script JavaScript pour deleteDevice
+  zdevices += F("<script>");
+  zdevices += F("function deleteDevice(devId){");
+  zdevices += F("if(confirm('Are you sure you want to delete this device ?')){");
+  zdevices += F("var xhr=getXhr();");
+  zdevices += F("xhr.onreadystatechange=function(){");
+  zdevices += F("if(xhr.readyState==4){");
+  zdevices += F("if(xhr.status==200){window.location.href='/configDevices';}");
+  zdevices += F("else{alert('Erreur lors de la suppression');}}};");
+  zdevices += F("xhr.open('GET','deleteDevice?devId='+encodeURIComponent(devId),true);");
+  zdevices += F("xhr.send();}}</script>");
 
   if (exist>0)
   {
@@ -13756,13 +13872,11 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
 
   if (res)
   {
-    AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/configDevices"));
-    request->send(response);
+      request->send(200, "text/plain", "OK");
   }
   else
   {
-    request->send(200, F("text/html"), "Error");
+      request->send(500, "text/plain", "Error");
   }
 }
 
