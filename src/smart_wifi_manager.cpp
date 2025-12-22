@@ -29,7 +29,12 @@ SmartWiFiManager::SmartWiFiManager()
     , _maxReconnectAttempts(10)             
     , _reconnectDelayMs(5000)                 
     , _lastReconnectTime(0)                   
-    , _reconnecting(false)                    
+    , _reconnecting(false)      
+    , _ledPin(3)                    // GPIO 3
+    , _ledEnabled(true)
+    , _ledState(false)
+    , _lastLedToggle(0)
+    , _ledBlinkInterval(1000)       // 1 seconde = clignotement lent              
 {
     _instance = this;
 }
@@ -87,6 +92,11 @@ void SmartWiFiManager::attemptReconnection() {
 
 // === DÉMARRAGE INTELLIGENT ===
 bool SmartWiFiManager::begin() {  
+    // Configuration LED
+    if (_ledEnabled) {
+        pinMode(_ledPin, OUTPUT);
+        digitalWrite(_ledPin, LOW);
+    }
     // Configurer les événements WiFi
     WiFi.onEvent(staticWiFiEventHandler);
     
@@ -482,6 +492,20 @@ bool SmartWiFiManager::forceProvisioning() {
 
 // Gestionnaire événements principal
 void SmartWiFiManager::handleEvents() {
+    // === Gestion LED en mode BLE ===
+    if (_ledEnabled && _currentState == WIFI_STATE_BLE_PROVISIONING) {
+        if (millis() - _lastLedToggle >= _ledBlinkInterval) {
+            _lastLedToggle = millis();
+            _ledState = !_ledState;
+            digitalWrite(_ledPin, _ledState);
+        }
+    } else if (_ledEnabled) {
+        // LED éteinte hors mode BLE (ou allumée fixe si connecté)
+        if (_ledState) {
+            _ledState = false;
+            digitalWrite(_ledPin, LOW);
+        }
+    }
     // Gérer BLE si actif
     if (_bleManager && _currentState == WIFI_STATE_BLE_PROVISIONING) {
         _bleManager->handleEvents();

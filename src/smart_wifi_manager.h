@@ -96,6 +96,12 @@ private:
     DynamicBLEManager* _bleManager;                  // Pointeur dynamique
     bool _bleLoadAttempted;                          // Flag pour éviter les rechargements
     bool _provisioningRequired;                      // BLE requis ?
+
+    uint8_t _ledPin;
+    bool _ledEnabled;
+    bool _ledState;
+    unsigned long _lastLedToggle;
+    unsigned long _ledBlinkInterval;
     
     // === CALLBACKS ===
     WiFiStateCallback _stateCallback;
