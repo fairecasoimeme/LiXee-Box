@@ -13,14 +13,26 @@ extern std::vector<DeviceData*> devices;
 using PsString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
 
 // Condition de règle, tout en PSRAM
+// Types supportés:
+//   "device"     - Condition sur un device Zigbee (existant)
+//   "time"       - Condition sur l'heure HH:MM
+//   "time_range" - Condition sur une plage horaire
+//   "weekday"    - Condition sur le jour de semaine (1-7)
+//   "date"       - Condition sur une date DD/MM ou DD/MM/YYYY
+//   "day"        - Condition sur le jour du mois (1-31)
+//   "month"      - Condition sur le mois (1-12)
+//   "datetime"   - Condition sur date + heure
 struct Condition {
-    PsString type;
+    PsString type;      // "device", "time", "time_range", "weekday", "date", "day", "month", "datetime"
     PsString IEEE;
     int      cluster;
     int      attribute;
     PsString op;
-    PsString value;  
+    PsString value;
+    PsString value2;    // Pour time_range: endTime
     PsString logic;
+    
+    Condition() : cluster(0), attribute(0) {}
 };
 
 struct TimeRange {
@@ -80,7 +92,7 @@ public:
     void applyRules();
     void applyRulesOnEvent(const char* IEEE, int cluster, int attribute);
 
-    // Statut et date de la dernière exécution d’une règle
+    // Statut et date de la dernière exécution d'une règle
     int    getStatusRule(const char* name) const;
     String getLastDateRule(const char* name)  const;
 
@@ -103,6 +115,19 @@ private:
     String getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE) const;
     bool   evaluateCondition(const Condition& cond) const;
     bool   isInTimeRange(const Rule& rule) const;
+
+    // Évaluation des conditions temporelles
+    bool evaluateTimeCondition(const Condition& cond) const;
+    bool evaluateTimeRangeCondition(const Condition& cond) const;
+    bool evaluateWeekdayCondition(const Condition& cond) const;
+    bool evaluateDateCondition(const Condition& cond) const;
+    bool evaluateDateTimeCondition(const Condition& cond) const;
+
+    // Helpers temporels
+    int  getCurrentTimeMinutes() const;
+    int  parseTimeToMinutes(const String& timeStr) const;
+    int  getCurrentWeekdayISO() const;
+    bool isInWeekdayList(const String& daysList) const;
 
     bool   isNumeric(const String& str) const;
     double parseNumber(const String& str, bool isFromZigbee = false) const;

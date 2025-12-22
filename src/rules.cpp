@@ -17,6 +17,9 @@
 
 extern String Hour;
 extern String Minute;
+extern String Day;
+extern String Month;
+extern String Year;
 extern String FormattedDate;
 
 extern NotificationManager notificationManager;
@@ -25,8 +28,197 @@ extern CircularBuffer<Notification, 10> *notifList;
 // Déclaration externe de SendAction (définie dans zigbee.cpp)
 extern void SendAction(int command, int ShortAddr, int endpoint, String tmpValue);
 
+// ============================================================================
+// HELPERS TEMPORELS
+// ============================================================================
+
+int RulesManager::getCurrentTimeMinutes() const {
+    return Hour.toInt() * 60 + Minute.toInt();
+}
+
+int RulesManager::parseTimeToMinutes(const String& timeStr) const {
+    if (timeStr.length() < 5) return -1;
+    int h = timeStr.substring(0, 2).toInt();
+    int m = timeStr.substring(3, 5).toInt();
+    return h * 60 + m;
+}
+
+int RulesManager::getCurrentWeekdayISO() const {
+    int wd = weekday();  // TimeLib: 1=Dimanche
+    return (wd == 1) ? 7 : (wd - 1);
+}
+
+bool RulesManager::isInWeekdayList(const String& daysList) const {
+    int currentDay = getCurrentWeekdayISO();
+    if (daysList.length() == 1) {
+        return daysList.toInt() == currentDay;
+    }
+    String list = daysList;
+    int start = 0;
+    while (start < (int)list.length()) {
+        int end = list.indexOf(',', start);
+        if (end == -1) end = list.length();
+        String dayStr = list.substring(start, end);
+        dayStr.trim();
+        if (dayStr.toInt() == currentDay) return true;
+        start = end + 1;
+    }
+    return false;
+}
+
+// ============================================================================
+// ÉVALUATION DES CONDITIONS TEMPORELLES
+// ============================================================================
+
+bool RulesManager::evaluateTimeCondition(const Condition& cond) const {
+    int currentMinutes = getCurrentTimeMinutes();
+    int condMinutes = parseTimeToMinutes(String(cond.value.c_str()));
+    if (condMinutes < 0) return false;
+    
+    String op = String(cond.op.c_str());
+    if (op == "==") return currentMinutes == condMinutes;
+    if (op == "!=") return currentMinutes != condMinutes;
+    if (op == "<")  return currentMinutes <  condMinutes;
+    if (op == "<=") return currentMinutes <= condMinutes;
+    if (op == ">")  return currentMinutes >  condMinutes;
+    if (op == ">=") return currentMinutes >= condMinutes;
+    return false;
+}
+
+bool RulesManager::evaluateTimeRangeCondition(const Condition& cond) const {
+    int currentMinutes = getCurrentTimeMinutes();
+    int startMinutes = parseTimeToMinutes(String(cond.value.c_str()));
+    int endMinutes = parseTimeToMinutes(String(cond.value2.c_str()));
+    if (startMinutes < 0 || endMinutes < 0) return false;
+    
+    String op = String(cond.op.c_str());
+    bool inRange;
+    // Gestion du cas où la plage traverse minuit (ex: 22:00 - 06:00)
+    if (startMinutes <= endMinutes) {
+        inRange = (currentMinutes >= startMinutes && currentMinutes <= endMinutes);
+    } else {
+        inRange = (currentMinutes >= startMinutes || currentMinutes <= endMinutes);
+    }
+    
+    if (op == "in" || op == "==") return inRange;
+    if (op == "!=" || op == "not_in") return !inRange;
+    return false;
+}
+
+bool RulesManager::evaluateWeekdayCondition(const Condition& cond) const {
+    int currentDay = getCurrentWeekdayISO();
+    String condValue = String(cond.value.c_str());
+    String op = String(cond.op.c_str());
+    
+    if (op == "in") return isInWeekdayList(condValue);
+    if (op == "not_in" || (op == "!=" && condValue.indexOf(',') >= 0)) {
+        return !isInWeekdayList(condValue);
+    }
+    
+    int condDay = condValue.toInt();
+    if (op == "==") return currentDay == condDay;
+    if (op == "!=") return currentDay != condDay;
+    if (op == "<")  return currentDay <  condDay;
+    if (op == "<=") return currentDay <= condDay;
+    if (op == ">")  return currentDay >  condDay;
+    if (op == ">=") return currentDay >= condDay;
+    return false;
+}
+
+bool RulesManager::evaluateDateCondition(const Condition& cond) const {
+    String condValue = String(cond.value.c_str());
+    String op = String(cond.op.c_str());
+    
+    int condDay = 0, condMonth = 0, condYear = 0;
+    if (condValue.length() >= 5) {
+        condDay = condValue.substring(0, 2).toInt();
+        condMonth = condValue.substring(3, 5).toInt();
+        if (condValue.length() >= 10) {
+            condYear = condValue.substring(6, 10).toInt();
+        }
+    }
+    
+    int currentDay = Day.toInt();
+    int currentMonth = Month.toInt();
+    int currentYear = Year.toInt();
+    
+    bool yearMatch = (condYear == 0) || (condYear == currentYear);
+    bool monthMatch = (condMonth == currentMonth);
+    bool dayMatch = (condDay == currentDay);
+    
+    if (op == "==") return yearMatch && monthMatch && dayMatch;
+    if (op == "!=") return !(yearMatch && monthMatch && dayMatch);
+    
+    if (condYear == 0) {
+        int currentVal = currentMonth * 100 + currentDay;
+        int condVal = condMonth * 100 + condDay;
+        if (op == "<")  return currentVal <  condVal;
+        if (op == "<=") return currentVal <= condVal;
+        if (op == ">")  return currentVal >  condVal;
+        if (op == ">=") return currentVal >= condVal;
+    } else {
+        int currentVal = currentYear * 10000 + currentMonth * 100 + currentDay;
+        int condVal = condYear * 10000 + condMonth * 100 + condDay;
+        if (op == "<")  return currentVal <  condVal;
+        if (op == "<=") return currentVal <= condVal;
+        if (op == ">")  return currentVal >  condVal;
+        if (op == ">=") return currentVal >= condVal;
+    }
+    return false;
+}
+
+bool RulesManager::evaluateDateTimeCondition(const Condition& cond) const {
+    String condValue = String(cond.value.c_str());
+    String op = String(cond.op.c_str());
+    
+    if (condValue.length() < 16) return false;
+    
+    int condDay = condValue.substring(0, 2).toInt();
+    int condMonth = condValue.substring(3, 5).toInt();
+    int condYear = condValue.substring(6, 10).toInt();
+    int condHour = condValue.substring(11, 13).toInt();
+    int condMin = condValue.substring(14, 16).toInt();
+    
+    int currentDay = Day.toInt();
+    int currentMonth = Month.toInt();
+    int currentYear = Year.toInt();
+    int currentHour = Hour.toInt();
+    int currentMin = Minute.toInt();
+    
+    long long currentTS = (long long)currentYear * 100000000LL + 
+                          currentMonth * 1000000LL + 
+                          currentDay * 10000LL + 
+                          currentHour * 100LL + currentMin;
+    long long condTS = (long long)condYear * 100000000LL + 
+                       condMonth * 1000000LL + 
+                       condDay * 10000LL + 
+                       condHour * 100LL + condMin;
+    
+    if (op == "==") return currentTS == condTS;
+    if (op == "!=") return currentTS != condTS;
+    if (op == "<")  return currentTS <  condTS;
+    if (op == "<=") return currentTS <= condTS;
+    if (op == ">")  return currentTS >  condTS;
+    if (op == ">=") return currentTS >= condTS;
+    return false;
+}
+
+// ============================================================================
+// CHARGEMENT DES RÈGLES
+// ============================================================================
+
 // Charge le JSON en PSRAM et construit le vector<Rule>
 bool RulesManager::loadFromFile(const char* path) {
+
+    if (!LittleFS.exists("/config/statusRules.json")) {
+        File statusFile = LittleFS.open("/config/statusRules.json", FILE_WRITE);
+        if (statusFile) {
+            statusFile.print("{}");
+            statusFile.close();
+            Serial.println("statusRules.json créé");
+        }
+    }
+
     File file = LittleFS.open(path, FILE_READ);
     if (!file || file.isDirectory()) {
         Serial.printf("RulesManager: impossible d'ouvrir %s\n", path);
@@ -57,7 +249,7 @@ bool RulesManager::loadFromFile(const char* path) {
         rule.trigger.cluster = triggerObj["cluster"] | 0;
         rule.trigger.attribute = triggerObj["attribute"] | 0;
 
-        // ← NOUVEAU: Plages horaires
+        // Plages horaires
         JsonArray timeRangesArr = r["timeRanges"].as<JsonArray>();
         rule.timeRanges.clear();
         rule.timeRanges.reserve(timeRangesArr.size());
@@ -81,7 +273,7 @@ bool RulesManager::loadFromFile(const char* path) {
         rule.conditions.reserve(condArr.size());
         for (JsonObject c : condArr) {
             Condition cond;
-            cond.type      = PsString(c["type"]      | "", PsramAllocator<char>());
+            cond.type      = PsString(c["type"]      | "device", PsramAllocator<char>());
             cond.IEEE      = PsString(c["IEEE"]      | "", PsramAllocator<char>());
             cond.cluster   = c["cluster"]   | 0;
             cond.attribute = c["attribute"] | 0;
@@ -95,6 +287,8 @@ bool RulesManager::loadFromFile(const char* path) {
             } else {
                 cond.value = PsString("", PsramAllocator<char>());
             }
+            // value2 pour time_range
+            cond.value2    = PsString(c["value2"]    | "", PsramAllocator<char>());
             cond.logic     = PsString(c["logic"]     | "", PsramAllocator<char>());
             rule.conditions.push_back(std::move(cond));
         }
@@ -127,7 +321,7 @@ bool RulesManager::loadFromFile(const char* path) {
         }
 
 
-        // ← NOUVEAU: Actions ELSE (SINON)
+        // Actions ELSE (SINON)
         JsonArray elseActArr = r["elseActions"].as<JsonArray>();
         rule.elseActions.clear();
         rule.elseActions.reserve(elseActArr.size());
@@ -159,7 +353,7 @@ bool RulesManager::loadFromFile(const char* path) {
     return true;
 }
 
-// Récupère la valeur actuelle d’un attribut (simulateur Zigbee)
+// Récupère la valeur actuelle d'un attribut (simulateur Zigbee)
 double RulesManager::getCurrentValue(const char* type, int cluster, int attribute, const char* IEEE) const {
     if (strcmp(type, "device") == 0) {
         char tmpKey[5];
@@ -221,8 +415,55 @@ double RulesManager::parseNumber(const String& str, bool isFromZigbee) const {
     return str.toDouble();
 }
 
-// Évalue une condition
+// ============================================================================
+// ÉVALUATION DES CONDITIONS
+// ============================================================================
+
 bool RulesManager::evaluateCondition(const Condition& cond) const {
+    String type = String(cond.type.c_str());
+    
+    // ===== CONDITIONS TEMPORELLES =====
+    if (type == "time") {
+        return evaluateTimeCondition(cond);
+    }
+    if (type == "time_range") {
+        return evaluateTimeRangeCondition(cond);
+    }
+    if (type == "weekday") {
+        return evaluateWeekdayCondition(cond);
+    }
+    if (type == "date") {
+        return evaluateDateCondition(cond);
+    }
+    if (type == "datetime") {
+        return evaluateDateTimeCondition(cond);
+    }
+    if (type == "day") {
+        int currentDay = Day.toInt();
+        int condDay = String(cond.value.c_str()).toInt();
+        String op = String(cond.op.c_str());
+        if (op == "==") return currentDay == condDay;
+        if (op == "!=") return currentDay != condDay;
+        if (op == "<")  return currentDay <  condDay;
+        if (op == "<=") return currentDay <= condDay;
+        if (op == ">")  return currentDay >  condDay;
+        if (op == ">=") return currentDay >= condDay;
+        return false;
+    }
+    if (type == "month") {
+        int currentMonth = Month.toInt();
+        int condMonth = String(cond.value.c_str()).toInt();
+        String op = String(cond.op.c_str());
+        if (op == "==") return currentMonth == condMonth;
+        if (op == "!=") return currentMonth != condMonth;
+        if (op == "<")  return currentMonth <  condMonth;
+        if (op == "<=") return currentMonth <= condMonth;
+        if (op == ">")  return currentMonth >  condMonth;
+        if (op == ">=") return currentMonth >= condMonth;
+        return false;
+    }
+    
+    // ===== CONDITION DEVICE (code existant) =====
     String curStr = getCurrentValueAsString(cond.type.c_str(), cond.cluster, cond.attribute, cond.IEEE.c_str());
     
     if (curStr == "") return false;  // Valeur non trouvée
@@ -256,9 +497,7 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
             String condTrimmed = condValueStr;
             curTrimmed.trim();
             condTrimmed.trim();
-            Serial.printf("Comparaison texte : cur='%s' vs cond='%s'\n", 
-                     curStr.c_str(), condValueStr.c_str());
-            return curTrimmed.equalsIgnoreCase(condTrimmed);
+            return !curTrimmed.equalsIgnoreCase(condTrimmed);
         }
         // Si les deux sont des nombres, comparaison numérique
         double curNum = parseNumber(curStr, true);        // Valeur Zigbee = hex
@@ -345,6 +584,14 @@ String RulesManager::buildConditionsText(const Rule& rule) const {
     for (size_t i = 0; i < rule.conditions.size(); i++) {
         const auto& cond = rule.conditions[i];
         
+        // Pour les conditions temporelles, on n'affiche pas de détails device
+        String condType = String(cond.type.c_str());
+        if (condType != "device" && condType.length() > 0) {
+            if (i > 0) conditionsText += "\n";
+            conditionsText += "⏰ " + condType + ": " + String(cond.value.c_str());
+            continue;
+        }
+        
         // Chercher le device par IEEE
         DeviceData* device = nullptr;
         String ieeeStr = String(cond.IEEE.c_str());
@@ -378,16 +625,16 @@ String RulesManager::buildConditionsText(const Rule& rule) const {
             float coefficient = device->GetAttributeCoefficient(cond.cluster, cond.attribute);
             
             // Vérifier si c'est une valeur numérique (commence par des chiffres hex)
-            bool isNumeric = true;
+            bool isNumericVal = true;
             for (size_t k = 0; k < valueHex.length(); k++) {
                 char c = valueHex[k];
                 if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
-                    isNumeric = false;
+                    isNumericVal = false;
                     break;
                 }
             }
             
-            if (isNumeric && valueHex.length() > 0) {
+            if (isNumericVal && valueHex.length() > 0) {
                 // Conversion hexadécimal vers décimal
                 long valueDec = strtol(valueHex.c_str(), nullptr, 16);
                 double valueWithCoeff = valueDec * coefficient;
@@ -501,7 +748,7 @@ void RulesManager::applyRules() {
     }
 }
 
-// Récupère le statut (0 ou 1) d’une règle nommée
+// Récupère le statut (0 ou 1) d'une règle nommée
 int RulesManager::getStatusRule(const char* name) const {
     String hist = config_read("statusRules.json", String(name));
     if (hist.length() > 0 && hist != "null")  {
