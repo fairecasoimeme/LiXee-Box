@@ -50,6 +50,11 @@ extern "C" {
 #include "mqtt.h"
 #include "notificationManager.h"
 
+#include "ConfigResetManager.h"
+#define RESET_WINDOW_MS     3000    // Fenêtre de détection
+#define RESET_BOOT_COUNT    3       // Nombre de reboots pour RAZ
+ConfigResetManager resetManager(RESET_WINDOW_MS, RESET_BOOT_COUNT);
+
 SmartWiFiManager smartWiFi;
 
 // Gestionnaire de notifications
@@ -1618,8 +1623,7 @@ void setupZigbeeAndTasks() {
 
   pinMode(RESET_ZIGATE, OUTPUT);
   pinMode(FLASH_ZIGATE, OUTPUT);
-  pinMode(LED1, OUTPUT);
-  digitalWrite(LED1, 1);
+
   digitalWrite(FLASH_ZIGATE, 1);
   digitalWrite(RESET_ZIGATE, 0);
   digitalWrite(RESET_ZIGATE, 1);
@@ -1669,25 +1673,25 @@ void setupZigbeeAndTasks() {
 }
 
 
-// ========== VERSION analogWrite (si supporté) ==========
-#define LED_PIN 3
-
-unsigned long lastFadeTime = 0;
-float ledPhase = 0;
-
-void setupWanadooLED() {
-    pinMode(LED_PIN, OUTPUT);
+void clearWifiConfig() {
+    if (LittleFS.exists("/config/configWifi.json")) {
+        String path="configWifi.json";
+        
+        config_write(path,"ssid","");
+        config_write(path,"pass","");
+        config_write(path,"enableDHCP","1");
+        Serial.println("[RESET] Config WiFi effacée");
+    } else {
+        Serial.println("[RESET] Pas de config WiFi à effacer");
+    }
 }
 
-void loopWanadooLED() {
-    if (millis() - lastFadeTime >= 10) {
-        lastFadeTime = millis();
-        
-        uint8_t brightness = (uint8_t)(127.5 * (1.0 + sin(ledPhase)));
-        analogWrite(LED_PIN, brightness);
-        
-        ledPhase += 0.03;
-        if (ledPhase > 6.2832) ledPhase -= 6.2832;
+void blinkLed(uint8_t times, uint16_t delayMs) {
+    for (uint8_t i = 0; i < times; i++) {
+        digitalWrite(LED_PIN, HIGH);
+        delay(delayMs);
+        digitalWrite(LED_PIN, LOW);
+        delay(delayMs);
     }
 }
 
@@ -1696,7 +1700,8 @@ void setup(void)
   ZiGateMode=PRODUCTION;
   initTempSensor();
 
-  setupWanadooLED();
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);
  
   Serial.begin(115200, SERIAL_8N1);
   DEBUG_PRINTLN(F("Start"));
@@ -1735,10 +1740,6 @@ void setup(void)
   delay(2000);
   DEBUG_PRINTLN(F("Send data to UART0 in order to activate the RX callback"));
 
-
-  
-
-
   // creates a mutex object to control access to files
   Queue_Mutex = xSemaphoreCreateMutex();
   if (Queue_Mutex == NULL) {
@@ -1766,6 +1767,19 @@ void setup(void)
     return;
   }
   DEBUG_PRINTLN(F("LittleFS OK"));
+
+  // Vérifier si RAZ demandée
+  if (resetManager.checkForReset()) {
+      
+      blinkLed(10, 50);
+      // Effacer la config
+      clearWifiConfig();
+      
+      Serial.println("[RESET] Redémarrage...");
+      delay(500);
+      ESP.restart();
+  }
+
   //if ( (!loadConfigWifi()) || (!loadConfigGeneral())) {
   if (!loadConfigGeneral()) {
       DEBUG_PRINTLN(F("Erreur Loadconfig LittleFS"));
@@ -1909,6 +1923,8 @@ void setup(void)
             Serial.println("📱 Device name: " + smartWiFi.generateDeviceName("LIXEEBOX"));
             Serial.println("📱 Use Nordic UART app to connect");
             Serial.println("📱 Send: SSID|PASSWORD");
+
+
         } else if (smartWiFi.isConnected()) {
             Serial.println("🌐 WiFi already connected!");
             Serial.println("🌐 IP: " + smartWiFi.getLocalIP());
@@ -2005,14 +2021,13 @@ void sendTreatment()
   {
     log_d("Priority send");
     sendZigbeeCmd(PrioritycommandList->shift());
-    vTaskDelay(100);
+    vTaskDelay(50);
   }
   if (!commandList->isEmpty())
   {
     sendZigbeeCmd(commandList->shift());
     vTaskDelay(100);
   }
-  
   vTaskDelay(10 / portTICK_PERIOD_MS);
 
 }
@@ -2055,7 +2070,8 @@ void loop(void)
   unsigned long loopStart = millis();
   esp_task_wdt_reset();
 
-  loopWanadooLED();
+  // Gestion du compteur de boot
+  resetManager.tick();
 
   smartWiFi.handleEvents();
 
