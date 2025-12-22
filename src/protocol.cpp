@@ -1024,54 +1024,55 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         endpoint = (uint8_t)protocol.payload[5];
         device_id = (uint8_t)protocol.payload[8]*256+(uint8_t)protocol.payload[9];
         
-        String path = GetMacAdrr(shortAddr);
-        
-        SetInfoDeviceId(path,String(device_id));
-      
-        nbIN= (uint8_t)protocol.payload[11];
-        nbOUT=(uint8_t)protocol.payload[11+(nbIN*2)+1];
-
-        String tmpIN="";
-        String tmpOUT="";
-        int i;
-        for (i=12;i<(12+(nbIN*2));i=i+2)
-        {
-          int cluster;
-          cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
-          if (cluster == 6)
-          {
-            SetInfoPowerSocket(path,"1");
-          }
-          if (i>12){tmpIN+=",";}
-          tmpIN+=String(cluster);
-        
-        }
-    
-        for (i=((12+(nbIN*2))+1);i<(((12+(nbIN*2))+1)+(nbOUT*2));i=i+2)
-        {
-          int cluster;
-          cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
-          if (i>((12+(nbIN*2))+1)){tmpOUT+=",";}
-          tmpOUT+=(String)cluster;
-        }
-        
-        
-        //get info basic (Appli version / Manuf / model)
         if (endpoint != 0xf2)
         {
-          SetInfoEndpoint(path,String(endpoint));
-          uint8_t shrtAddr[2];
-          shrtAddr[0]=protocol.payload[2];
-          shrtAddr[1]=protocol.payload[3];
-          SendBasicDescription(shrtAddr,1);
-        }
+          String path = GetMacAdrr(shortAddr);
+          
+          log_e("DEVICE_ID : %d \n",device_id);
+          SetInfoDeviceId(path,String(device_id));
+        
+          nbIN= (uint8_t)protocol.payload[11];
+          nbOUT=(uint8_t)protocol.payload[11+(nbIN*2)+1];
 
-        // backup du fichier
-        if (copyFile(path) )
-        {
-            log_d("File copied successfully.");
-        } else {
-            log_e("Failed to copy file.");
+          String tmpIN="";
+          String tmpOUT="";
+          int i;
+          for (i=12;i<(12+(nbIN*2));i=i+2)
+          {
+            int cluster;
+            cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
+            if (cluster == 6)
+            {
+              SetInfoPowerSocket(path,"1");
+            }
+            if (i>12){tmpIN+=",";}
+            tmpIN+=String(cluster);
+          
+          }
+      
+          for (i=((12+(nbIN*2))+1);i<(((12+(nbIN*2))+1)+(nbOUT*2));i=i+2)
+          {
+            int cluster;
+            cluster = (uint8_t)protocol.payload[i]*256+(uint8_t)protocol.payload[i+1];
+            if (i>((12+(nbIN*2))+1)){tmpOUT+=",";}
+            tmpOUT+=(String)cluster;
+          }
+          
+          
+          //get info basic (Appli version / Manuf / model)
+            SetInfoEndpoint(path,String(endpoint));
+            uint8_t shrtAddr[2];
+            shrtAddr[0]=protocol.payload[2];
+            shrtAddr[1]=protocol.payload[3];
+            SendBasicDescription(shrtAddr,1);
+
+          // backup du fichier
+          if (copyFile(path) )
+          {
+              log_d("File copied successfully.");
+          } else {
+              log_e("Failed to copy file.");
+          }
         }
 
       }
