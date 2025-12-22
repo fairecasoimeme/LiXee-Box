@@ -1,5 +1,5 @@
 {
-      "ZLinky_TIC" : [
+	"ZLinky_TIC" : [
 	{
 		"status" : [
 			    {"name" : "Mode",
@@ -592,7 +592,6 @@
                 "type": "numeric",
                 "visible":1,
                 "unit": "VA",
-                "poll":1,
                 "mode":"5;7"
 			},
 			{
@@ -979,7 +978,7 @@
 			{
 				"cluster" : "FF66",
 				"attribut": 519,
-				"type":41,
+				"type":33,
 				"min":1,
 				"max":300,
 				"timeout":0,
@@ -1005,270 +1004,49 @@
 			}
 
 		]
-        }],
-       "LOM001" : [
-	    {
-			"status" : [
+        }]
+        ,"default" : [
+	{
+		"status" : [
 			{
-				"name" : "Power",
+				"name" : "On/Off",
 				"cluster" : "0006",
 				"attribut" : 0,
-				"visible":1
+                                "visible":1
 			}
-			],
-                        "bind" : "6",
-			"action" : [
+		],	
+	        "bind":"6",
+                "report" : [
 			{
-				"name" : "ON",
-				"command" : 146,
-				"endpoint" : 11,
-				"value" : 1,
-				"visible":1
-			},
-			{
-				"name" : "OFF",
-				"command" : 146,
-				"endpoint" : 11,
-				"value" : 0,
-				"visible":1
-			},
-			{
-				"name" : "TOGGLE",
-				"command" : 146,
-				"endpoint" : 11,
-				"value" : 2,
-				"visible":1
-			}
-			]
-	   }
-   ],
-     "TS0601": [
-    {
-      "status": [
-        {
-          "name": "Affichage",
-          "cluster": "EF00",
-          "attribut": 1,
-          "type": "numeric",
-          "visible": 1,
-          "mqtt_device_class": "",
-          "mqtt_state_class": "",
-          "mqtt_icon": "power"
-        },
-        {
-          "name": "Mode",
-          "cluster": "EF00",
-          "attribut": 2,
-          "type": "numeric",
-          "visible": 1,
-          "mqtt_device_class": "",
-          "mqtt_state_class": "",
-          "mqtt_icon": "calendar-clock"
-        },
-        {
-          "name": "Temperature",
-          "cluster": "EF00",
-          "attribut": 16,
-          "type": "numeric",
-          "unit": "°C",
-          "coefficient": 0.1,
-          "jauge": "Gauge",
-          "visible": 1,
-          "mqtt_device_class": "temperature",
-          "mqtt_state_class": "measurement",
-          "mqtt_icon": "thermometer"
-        },
-       {
-          "name": "Consigne",
-          "cluster": "EF00",
-          "attribut": 50,
-          "type": "numeric",
-          "unit": "°C",
-          "coefficient": 1,
-          "jauge": "Gauge",
-          "visible": 1,
-          "mqtt_device_class": "temperature",
-          "mqtt_state_class": "measurement",
-          "mqtt_icon": "thermometer"
-        },
-        {
-          "name": "local_temperature",
-          "cluster": "EF00",
-          "attribut": 24,
-          "type": "numeric",
-          "unit": "°C",
-          "coefficient": 0.1,
-          "jauge": "Gauge",
-          "visible": 1,
-          "mqtt_device_class": "temperature",
-          "mqtt_state_class": "measurement",
-          "mqtt_icon": "home-thermometer"
-        },
-        {
-          "name": "child_lock",
-          "cluster": "EF00",
-          "attribut": 40,
-          "type": "numeric",
-          "visible": 1,
-          "mqtt_device_class": "",
-          "mqtt_state_class": "",
-          "mqtt_icon": "lock"
-        }
-      ],
-      "bind": "",
-      "report": [],
-    "action": [
-      {
-        "name": "ON",
-        "command": 300,
-        "endpoint": 1,
-        "value": 1,
-        "visible": 1
-      },
-      {
-        "name": "OFF",
-        "command": 300,
-        "endpoint": 1,
-        "value": 0,
-        "visible": 1
-      },
-      {
-        "name": "Manuel",
-        "command": 302,
-        "endpoint": 2,
-        "value": 1,
-        "visible": 1
-      },
-      {
-        "name": "Programme",
-        "command": 302,
-        "endpoint": 2,
-        "value": 0,
-        "visible": 1
-      },
-     {
-        "name": "Force Heat",
-        "command": 301,
-        "endpoint": 50,
-        "value": 35,
-        "visible": 1
-      },
-      {
-        "name": "18°C",
-        "command": 301,
-        "endpoint": 50,
-        "value": 18,
-        "visible": 1
-      },
-      {
-        "name": "19°C",
-        "command": 301,
-        "endpoint": 50,
-        "value": 19,
-        "visible": 1
-      },
-      {
-        "name": "21°C",
-        "command": 301,
-        "endpoint": 50,
-        "value": 21,
-        "visible": 1
-      },
-      {
-        "name": "23°C",
-        "command": 301,
-        "endpoint": 50,
-        "value": 23,
-        "visible": 1
-      },
-      {
-        "name": "Lock ON",
-        "command": 300,
-        "endpoint": 40,
-        "value": 1,
-        "visible": 1
-      },
-      {
-        "name": "Lock OFF",
-        "command": 300,
-        "endpoint": 40,
-        "value": 0,
-        "visible": 1
-      }
-    ]
-}
-],
-        "default" : [
-	    {
-			"status" : [
-			{
-				"name" : "Power",
 				"cluster" : "0006",
-				"attribut" : 0,
-				"visible":1
-			},
-                        {
-				"name" : "Energy",
-				"cluster" : "0B04",
-				"attribut" : 1295,
-				"mqtt_device_class" : "apparent_power",
-				"mqtt_icon" :  "lightning-bolt",
-				"mqtt_state_class" : "measurement",
-				"type": "numeric",
-				"visible":1,
-                                "jauge":"gauge",
-				"min":0,
-				"max":8000,
-				"unit": "VA"
-			},
-                        {
-				"name" : "Consumption",
-				"cluster" : "0702",
-				"attribut" : 0,
-				"mqtt_device_class" : "energy",
-				"mqtt_icon" :  "transmission-tower",
-				"mqtt_state_class" : "total_increasing",
-				"type": "numeric",
-				"visible":1,
-                                "jauge":"text",
-				"unit": "Wh"
-			}
-			],
-                        "bind" : "6;1794;2820;65382",
-		         "report" : [
-			{
-				"cluster" : "0702",
 				"attribut": 0,
-				"type":37,
+				"type":33,
 				"min":60,
-				"max":300,
+				"max":61,
 				"timeout":0,
 				"change":1
 			}
-                        ],
-			"action" : [
+                ],
+		"action" : [
 			{
 				"name" : "ON",
 				"command" : 146,
-				"endpoint" : 1,
-				"value" : 1,
-				"visible":1
+                                "endpoint" : 1,
+				"value" : 1
 			},
 			{
 				"name" : "OFF",
 				"command" : 146,
-				"endpoint" : 1,
-				"value" : 0,
-				"visible":1
+                                "endpoint" : 1,
+				"value" : 0
 			},
 			{
 				"name" : "TOGGLE",
 				"command" : 146,
-				"endpoint" : 1,
-				"value" : 2,
-				"visible":1
+                                "endpoint" : 1,
+				"value" : 2
 			}
-			]
-	   }
-   ]
+		]
+	}
+	]
 }
