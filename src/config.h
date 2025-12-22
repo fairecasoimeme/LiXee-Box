@@ -9,12 +9,12 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.12"
+#define VERSION "v2.13"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
 #define FLASH_ZIGATE 40//33
-#define LED1 40
+#define LED_PIN 3
 #define PRODUCTION 1
 #define FLASH 0
 
