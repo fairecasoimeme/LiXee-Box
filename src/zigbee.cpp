@@ -1276,7 +1276,23 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
       {
         if (Attribute != "519")
         {
-          result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          if (ConfigGeneral.LinkyMode == 2)
+          {
+            if (Attribute == "1295")
+            {
+              result = String(strtol(device->getValue(std::string("0B04"),std::string(String("1288").c_str())).c_str(),0,16) * 200);
+            }else if (Attribute == "2319")
+            {
+              result = String(strtol(device->getValue(std::string("0B04"),std::string(String("2312").c_str())).c_str(),0,16) * 200);
+            }else if (Attribute == "2575")
+            {
+              result = String(strtol(device->getValue(std::string("0B04"),std::string(String("2568").c_str())).c_str(),0,16) * 200);
+            }
+      
+          }else{
+            result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          }
+          
           result += ";";
           if (ConfigGeneral.LinkyMode == 0)
           {
@@ -1986,7 +2002,8 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
          //result += "</div>";
         // result += "<div class='col-10'>"; 
           result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-      for (const auto &graphEntry : hist.days.graph) {
+      for (const auto &graphEntry : hist.days.graph) 
+      {
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
         if (memcmp(Yesterday.c_str(),Key.c_str(),2)==0)
@@ -2018,18 +2035,17 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
           result+="</svg>  ";
           result += String(tmpEuros);
           result += " €";
-
+          break;
         }
       }
         result += "</div>";
       result += "</div>";
       result += "<div class='row'>";
-        result += "<div class='col-12'>";
-        result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'></path><path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'></path></svg> ";
-        //result += "</div>";
-        //result += "<div class='col-10'>";
-          result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-        for (const auto &graphEntry : hist.months.graph) {
+      result += "<div class='col-12'>";
+      result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'></path><path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'></path></svg> ";
+      result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+      for (const auto &graphEntry : hist.months.graph) 
+      {
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
         if (memcmp(Month.c_str(),Key.c_str(),2)==0)
@@ -2061,22 +2077,22 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
           result+="</svg>  ";
           result += String(tmpEuros);
           result += " €";
-
+          break;
         }
       }
-        result += "</div>";
+      
+      result += "</div>";
       result += "</div>";
       result += "<div class='row'>";
-        result += "<div class='col-12'>";
-        result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'><path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text></svg> ";
-        //result += "</div>";
-        //result += "<div class='col-10'>";
-          result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-        
-        for (const auto &graphEntry : hist.years.graph) {
+      result += "<div class='col-12'>";
+      result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'><path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text></svg> ";
+      result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+      
+      for (const auto &graphEntry : hist.years.graph) 
+      {
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
-        if (memcmp(Year.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Year.c_str(),Key.c_str(),4)==0)
         {
           long int sum=0;
           float tmpEuros=0;
@@ -2105,7 +2121,7 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
           result+="</svg>  ";
           result += String(tmpEuros);
           result += " €";
-
+          break;
         }
       }
         result += "</div>";
@@ -2408,7 +2424,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
 
-        if (memcmp(Year.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Year.c_str(),Key.c_str(),4)==0)
         {
           for (const auto &attrPair : valMap.attributes) {
               long attrVal = attrPair.second;
