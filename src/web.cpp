@@ -173,7 +173,37 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
       "    -webkit-user-select: none;"
       "    user-select: none;"
       "}"
-
+      ".tempo-badge {"
+        "display: inline-flex;"
+        "align-items: center;"
+        "justify-content: center;"
+        "width: 44px;"
+        "height: 44px;"
+        "border-radius: 50%;"
+        "font-size: 1.3rem;"
+        "font-weight: bold;"
+        "box-shadow: 0 3px 6px rgba(0,0,0,0.3);"
+        "transition: transform 0.2s;"
+      "}"
+      ".tempo-badge:hover { transform: scale(1.1); }"
+      ".tempo-bleu {"
+        "background: linear-gradient(135deg, #2196F3, #1565C0);"
+        "color: white;"
+      "}"
+      ".tempo-blanc {"
+        "background: linear-gradient(135deg, #fafafa, #e0e0e0);"
+        "color: #333;"
+        "border: 2px solid #bdbdbd;"
+      "}"
+      ".tempo-rouge {"
+        "background: linear-gradient(135deg, #f44336, #c62828);"
+        "color: white;"
+      "}"
+      ".tempo-undef {"
+        "background: linear-gradient(135deg, #9e9e9e, #616161);"
+        "color: white;"
+      "}"
+      
     "</style>"
     "</head>";
 
@@ -2799,9 +2829,39 @@ const char HTTP_ENERGY[] PROGMEM = R"(
     </div>
     )";
     
-/*<script>
-      function wait(div){ document.getElementById(div).innerHTML = "<img src='web/img/wait.gif' />";}
-    </script>*/
+const char HTTP_TARIFF_CARD[] PROGMEM = R"rawstring(
+<div class='row g-2 mb-3' id='tariff-section' style='display:none;'>
+  <div class='col-12'>
+    <div class='card p-3' id='tariff-card' style='background:#2980b9;color:white;'>
+      <div class='row align-items-center'>
+        <div class='col-auto'>
+          <div class='d-flex align-items-center'>
+            <svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' fill='currentColor' class='me-2' viewBox='0 0 16 16'><path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/></svg>
+            <div>
+              <small style='opacity:0.8;'>Tarif en cours</small>
+              <h5 class='mb-0 fw-bold' id='tariff-name'>---</h5>
+            </div>
+          </div>
+        </div>
+        <div class='col-auto ms-auto' id='tempo-section' style='display:none;'>
+          <div class='d-flex gap-3'>
+            <div class='text-center'>
+              <small style='opacity:0.8;display:block;'>Aujourd'hui</small>
+              <div class='tempo-badge tempo-undef' id='tempo-today'>?</div>
+            </div>
+            <div class='text-center'>
+              <small style='opacity:0.8;display:block;'>Demain</small>
+              <div class='tempo-badge tempo-undef' id='tempo-tomorrow'>-</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+)rawstring";
+
+
 const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
 <div class='col-sm-12'>
   {{LinkyStatus}}
@@ -2813,6 +2873,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
     <span style='color:red;' id='energyAlert'>⚠️ {{energyAlertMessage}}</span>
   </div>
 </div>
+{{tariffCard}}
 <div class='row g-2' >
   <div class='col-12'>
     <div class='card p-4' id='label-energy'>
@@ -6185,15 +6246,204 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   request->send(200, "text/html", result.c_str());
 }
 
+void handleAPITariff(AsyncWebServerRequest *request)
+{
+  String json = "{";
+    
+    String currentTariff = "---";
+    String tariffBgColor = "#2980b9";
+    String tempoTodayClass = "tempo-undef";
+    String tempoTodayLabel = "Non défini";
+    String tempoTodayIcon = "?";
+    String tempoTomorrowClass = "tempo-undef";
+    String tempoTomorrowLabel = "Non défini";
+    String tempoTomorrowIcon = "-";
+    bool isTempo = false;
+    bool isHP = false;
+    bool showCard = false;
+
+    // Chercher le device ZLinky
+    DeviceData* device = nullptr;
+    for (size_t i = 0; i < devices.size(); i++) {
+      if (devices[i]->getDeviceID() == String(ConfigGeneral.ZLinky)) {
+        device = devices[i];
+        break;
+      }
+    }
+
+    if (device != nullptr)
+    {
+      showCard = true;
+      
+      // Récupérer le tarif en cours - Attribut 16 (0x10)
+      String tarif = device->getValue(std::string("FF66"), std::string("16"));
+      
+      if (tarif.length() > 0)
+      {
+        tarif.trim();
+        currentTariff = tarif;
+        
+        String tarifUpper = tarif;
+        tarifUpper.toUpperCase();
+        isHP = (tarifUpper.indexOf("HP") >= 0) || (tarifUpper.indexOf("PLEINE") >= 0);
+      }
+      // Mode Historique (LinkyMode 0 ou 2)
+      if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
+      {
+        // Mapping des codes PTEC
+        if (currentTariff.startsWith("TH")) {
+          currentTariff = "Base";
+          tariffBgColor = "#2980b9";
+        }
+        else if (currentTariff == "HC..") {
+          currentTariff = "Heures Creuses";
+          tariffBgColor = "#2980b9";
+        }
+        else if (currentTariff == "HP..") {
+          currentTariff = "Heures Pleines";
+          tariffBgColor = "#154360";
+        }
+        else if (currentTariff == "HN..") {
+          currentTariff = "Heures Normales";
+          tariffBgColor = "#2980b9";
+        }
+        else if (currentTariff == "PM..") {
+          currentTariff = "Pointe Mobile";
+          tariffBgColor = "#c0392b";
+        }
+        
+        // Tempo via PTEC
+        if (tarif.startsWith("HCJB") || tarif.startsWith("HPJB")) {
+          isTempo = true;
+          currentTariff = (tarif.startsWith("HC")) ? "HC Bleu" : "HP Bleu";
+          tariffBgColor = (tarif.startsWith("HC")) ? "#2980b9" : "#154360";
+          tempoTodayClass = "tempo-bleu";
+          tempoTodayLabel = "Jour Bleu";
+          tempoTodayIcon = "B";
+        }
+        else if (tarif.startsWith("HCJW") || tarif.startsWith("HPJW")) {
+          isTempo = true;
+          currentTariff = (tarif.startsWith("HC")) ? "HC Blanc" : "HP Blanc";
+          tariffBgColor = (tarif.startsWith("HC")) ? "#7f8c8d" : "#000000";
+          tempoTodayClass = "tempo-blanc";
+          tempoTodayLabel = "Jour Blanc";
+          tempoTodayIcon = "W";
+        }
+        else if (tarif.startsWith("HCJR") || tarif.startsWith("HPJR")) {
+          isTempo = true;
+          currentTariff = (tarif.startsWith("HC")) ? "HC Rouge" : "HP Rouge";
+          tariffBgColor = (tarif.startsWith("HC")) ? "#e74c3c" : "#c0392b";
+          tempoTodayClass = "tempo-rouge";
+          tempoTodayLabel = "Jour Rouge";
+          tempoTodayIcon = "R";
+        }
+        
+        // DEMAIN (attribut 1)
+        if (isTempo)
+        {
+          String demain = device->getValue(std::string("FF66"), std::string("1"));
+          if (demain.length() > 0)
+          {
+            demain.trim();
+            demain.toUpperCase();
+            
+            if (demain.startsWith("BLEU")) {
+              tempoTomorrowClass = "tempo-bleu";
+              tempoTomorrowLabel = "Jour Bleu";
+              tempoTomorrowIcon = "B";
+            } else if (demain.startsWith("BLAN")) {
+              tempoTomorrowClass = "tempo-blanc";
+              tempoTomorrowLabel = "Jour Blanc";
+              tempoTomorrowIcon = "W";
+            } else if (demain.startsWith("ROUG")) {
+              tempoTomorrowClass = "tempo-rouge";
+              tempoTomorrowLabel = "Jour Rouge";
+              tempoTomorrowIcon = "R";
+            }
+          }
+        }
+      }
+      // Mode Standard
+      else
+      {
+        String stge = device->getValue(std::string("FF66"), std::string("535"));
+        if (stge.length() >= 8)
+        {
+          auto status = parseStatusRegister(stge);
+          
+          if (status.tempo_jour != "UNDEF")
+          {
+            isTempo = true;
+            
+            if (status.tempo_jour == "BLEU") {
+              tempoTodayClass = "tempo-bleu";
+              tempoTodayLabel = "Jour Bleu";
+              tempoTodayIcon = "B";
+              tariffBgColor = isHP ? "#154360" : "#2980b9";
+            } else if (status.tempo_jour == "BLANC") {
+              tempoTodayClass = "tempo-blanc";
+              tempoTodayLabel = "Jour Blanc";
+              tempoTodayIcon = "W";
+              tariffBgColor = isHP ? "#000000" : "#7f8c8d";
+            } else if (status.tempo_jour == "ROUGE") {
+              tempoTodayClass = "tempo-rouge";
+              tempoTodayLabel = "Jour Rouge";
+              tempoTodayIcon = "R";
+              tariffBgColor = isHP ? "#c0392b" : "#e74c3c";
+            }
+            
+            if (status.tempo_demain == "BLEU") {
+              tempoTomorrowClass = "tempo-bleu";
+              tempoTomorrowLabel = "Jour Bleu";
+              tempoTomorrowIcon = "B";
+            } else if (status.tempo_demain == "BLANC") {
+              tempoTomorrowClass = "tempo-blanc";
+              tempoTomorrowLabel = "Jour Blanc";
+              tempoTomorrowIcon = "W";
+            } else if (status.tempo_demain == "ROUGE") {
+              tempoTomorrowClass = "tempo-rouge";
+              tempoTomorrowLabel = "Jour Rouge";
+              tempoTomorrowIcon = "R";
+            }
+          }
+          else
+          {
+            tariffBgColor = isHP ? "#154360" : "#2980b9";
+          }
+        }
+      }
+    }
+
+    // Construire le JSON
+    json += "\"show\":" + String(showCard ? "true" : "false") + ",";
+    json += "\"tariff\":\"" + currentTariff + "\",";
+    json += "\"bgColor\":\"" + tariffBgColor + "\",";
+    json += "\"isTempo\":" + String(isTempo ? "true" : "false") + ",";
+    json += "\"today\":{";
+    json += "\"class\":\"" + tempoTodayClass + "\",";
+    json += "\"label\":\"" + tempoTodayLabel + "\",";
+    json += "\"icon\":\"" + tempoTodayIcon + "\"";
+    json += "},";
+    json += "\"tomorrow\":{";
+    json += "\"class\":\"" + tempoTomorrowClass + "\",";
+    json += "\"label\":\"" + tempoTomorrowLabel + "\",";
+    json += "\"icon\":\"" + tempoTomorrowIcon + "\"";
+    json += "}";
+    json += "}";
+
+    request->send(200, "application/json", json);
+}
+
+
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
   
-  PSRAMString result(300000);
+  PSRAMString result(500000);
   result = F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ENERGY);
-  result +=F("<div class='row'>");
+  result += F("<div class='row'>");
   if (strcmp(ConfigGeneral.ZLinky,"")!=0)
   {
     result += FPSTR(HTTP_ENERGY_LINKY);
@@ -6207,7 +6457,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
      result += FPSTR(HTTP_ENERGY_WATER);
   }
   result +=F("</div>");
-  result +=  R"(<script>
+  result +=R"(<script>
             document.addEventListener('DOMContentLoaded', () => {
               const params  = new URLSearchParams(window.location.search);
               // Si aucun ?time, on choisit 'hour' par défaut
@@ -6263,11 +6513,10 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
           </script>)";
       result += FPSTR(HTTP_ENERGY_JAVASCRIPT);
-  result+=footer();
+  result +=footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
   String LinkyStatus;
-  
   String tmpStatus = getDeviceStatus(String(ConfigGeneral.ZLinky)+".json");
   if (tmpStatus =="d4")
   {
@@ -6276,8 +6525,6 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     LinkyStatus="";
   }
   result.replace("{{LinkyStatus}}",LinkyStatus);
-
-
 
   int i = 0;
   String time;
@@ -6318,7 +6565,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   result.replace("{{time}}",time);
 
   ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
-    // Status STGE
+
   bool foundDevice = false;
   DeviceData* device;
   for (size_t ident = 0; ident < devices.size(); ident++) 
@@ -6343,6 +6590,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
         result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
       }else{
         result.replace("{{styleEnergyAlert}}", F("display:none;"));
+        result.replace("{{energyAlertMessage}}", F(""));
       }
     }else{
       String tmp = device->getValue(std::string("FF66"),std::string(String("535").c_str()));
@@ -6354,9 +6602,17 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
         result.replace("{{energyAlertMessage}}", F("Dépassement de puissance souscrite"));
       }else{
         result.replace("{{styleEnergyAlert}}", F("display:none;"));
+        result.replace("{{energyAlertMessage}}", F(""));
       }
     }   
   }
+  else
+  {
+    result.replace("{{styleEnergyAlert}}", F("display:none;"));
+    result.replace("{{energyAlertMessage}}", F(""));
+  }
+ 
+  result.replace("{{tariffCard}}", FPSTR(HTTP_TARIFF_CARD));
   
   //
   
@@ -6624,6 +6880,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   javascript +=F("}else{");
     javascript += F("document.getElementById('energyTrend').style.minHeight=`${EG}px`;");
   javascript +=F("} }");  
+  javascript += F("function uT(){fetch('/api/tariff').then(r=>r.json()).then(d=>{if(d.show){document.getElementById('tariff-name').textContent=d.tariff;document.getElementById('tariff-card').style.background=d.bgColor;document.getElementById('tempo-section').style.display=d.isTempo?'block':'none';if(d.isTempo){var t=document.getElementById('tempo-today');t.className='tempo-badge '+d.today.class;t.textContent=d.today.icon;var m=document.getElementById('tempo-tomorrow');m.className='tempo-badge '+d.tomorrow.class;m.textContent=d.tomorrow.icon;}document.getElementById('tariff-section').style.display='block';}}).catch(e=>{});}uT();setInterval(uT,60000);");
   javascript += F("</script>");
 
   result.replace("{{javascript}}", javascript);
@@ -14297,6 +14554,18 @@ void initWebServer()
     }
     handleStatusEnergy(request); 
   });
+
+  serverWeb.on("/api/tariff", HTTP_GET, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleAPITariff(request); 
+  });
+
+
   serverWeb.on("/statusNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -15740,8 +16009,8 @@ void initWebServer()
   serverWeb.serveStatic("/web/img/wait.gif", LittleFS, "/web/img/wait.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/ziwifi32.gif", LittleFS, "/web/img/ziwifi32.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/zlinky.gif", LittleFS, "/web/img/zlinky.gif").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/").setCacheControl("max-age=600");
-  serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");*/
+  serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/").setCacheControl("max-age=600");*/
+  serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");
   serverWeb.serveStatic("/web", LittleFS, "/web")
     .setCacheControl("max-age=604800, immutable");
   serverWeb.onNotFound(handleNotFound);
