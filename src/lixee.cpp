@@ -277,10 +277,13 @@ void handleAttribute768(const String& inifile, uint8_t* datas, int len) {
         sprintf(value, "%02X", datas[i]);
         tmp += value;
     }
-    
-    ConfigGeneral.LinkyMode = tmp.toInt();
-    
     String deviceId = inifile.substring(0, 16);
+
+    if (ConfigGeneral.ZLinky == deviceId.c_str())
+    {
+        ConfigGeneral.LinkyMode = tmp.toInt();
+    }
+    
     ProcessedData data = {deviceId, "65382", "768", tmp, "numeric", true};
     
     publishData(data);
