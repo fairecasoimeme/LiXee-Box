@@ -129,10 +129,14 @@ Interface complète pour configurer et surveiller tous vos appareils Zigbee conn
 
 
 ### Tableau de Bord Énergétique
-![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/screenshot_lixee-box-v2.8.PNG)
+![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/tariff_complet_BASE.png)
 ![Interface Mobile](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Mobile_energy.png)
 
 Tableau de bord complet avec visualisation en temps réel de votre consommation énergétique, graphiques historiques et interface mobile responsive.
+
+#### Tarif et couleurs
+Selon votre abonnement, vous verrez apparaître en première ligne le tarif en cours de votre abonnement mais aussi la couleur du jour ou la couleur du lendemain si vous avez un abonnement Tempo
+![Tarif et couelur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/tariff_tempo_1.png)
 
 ### Production d'énergie et Injection
 
