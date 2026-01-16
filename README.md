@@ -104,8 +104,8 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 
 #### En mode console
 
-9. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
-10. Taper la commande suivante :
+1. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
+2. Taper la commande suivante :
 
    ```esptool.exe --chip esp32s3 --port "COMXX" --baud 921600 write_flash -z --flash_mode dio --flash_freq 40m --flash_size 16MB 0x10000 firmware.bin```
 
