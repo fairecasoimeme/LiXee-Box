@@ -94,7 +94,7 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 
 #### En mode GUI
 
-6. Télécharger l'utilitaire de flash : ![Flash Download Tools](https://dl.espressif.com/public/flash_download_tool.zip)
+6. Télécharger l'utilitaire de flash : https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32s3/production_stage/tools/flash_download_tool.html
 7. Décompresser et lancer l'exéctutable : flash_download_tool_x.x.x.exe
 8. Suivez les même paramètres que les captures d'écran
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash tools.png"/>
