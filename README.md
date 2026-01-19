@@ -112,6 +112,8 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 ## 📱 Interface Utilisateur
 
 ### Jumelage d'Appareils
+à partir de l'interface, aller dans le menu : Réseau --> Zigbee puis Appuyer sur le bouton "Ajouter"  
+
 ![Appairage d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p1.png)
 ![Appairage LiXee-Box](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p2.png)
 ![Recherche d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p3.png)
@@ -182,7 +184,9 @@ Vous pourrez **créer**, **modifier** ou **supprimer** une règle.
 * Une règle peut être déclenchée :
   * toutes les 60 secondes
   * dès que le couple cluster/attribut choisi est mis à jour  
-* Une règle peut contenir une ou plusieurs conditions.  
+* Une règle peut contenir une ou plusieurs conditions.
+  * <img width="1305" height="329" alt="image" src="https://github.com/user-attachments/assets/96e995dc-7375-4e07-84a8-7ccbe7731e0b" />
+ 
 * Une règle peut contenir une ou plusieurs actions si les conditions sont réunis.
 * Une règle peut contenir une ou plusieurs actions si les conditions ne sont pas réunis
 * Une règle peut intégrer une plage horaire (Optionnel)
@@ -232,11 +236,11 @@ par défaut mode = timer
 
 | Paramètre | Obligatoire | Type | Valeur | Commentaire |
 |-----------|-------------|------|--------|-------------|
-| `type` | ✓ | String | "device" | |
-| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
-| `cluster` | ✓ | Decimal | ID du cluster en décimal | |
-| `attribut` | ✓ | Decimal | Numéro d'attribut | |
-| `operator` | ✓ | String | "<", ">", "==", "!=", ">=", "<=" | |
+| `type` | ✓ | String | "device" / "time" / "time_range" / "weekday" / "date" / "day" / "month" | |
+| `IEEE` |  | si type == 'device' --> String sinon 0 | Adresse MAC sans ':' ou '-' | |
+| `cluster` |  | si type == 'device' --> Decimal sinon 0 | ID du cluster en décimal | |
+| `attribut` |  | si type == 'device' --> Decimal sinon 0| Numéro d'attribut | |
+| `operator` | ✓ | String | "<", ">", "==", "!=", ">=", "<=", "in", "not_in" | |
 | `value` | ✓ | Decimal/String | Valeur de comparaison | Peut être un String sur les opérateurs == ou != uniquement |
 | `logic` | | String | "AND", "OR" | Uniquement pour conditions multiples |
 
