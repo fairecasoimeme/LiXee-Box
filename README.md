@@ -96,18 +96,24 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 
 6. Télécharger l'utilitaire de flash : https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32s3/production_stage/tools/flash_download_tool.html
 7. Décompresser et lancer l'exéctutable : flash_download_tool_x.x.x.exe
-8. Suivez les même paramètres que les captures d'écran (⚠️ **ne pas cliquer sur le bouton ERASE**)
+8. Suivez les mêmes paramètres que les captures d'écran (⚠️ **ne pas cliquer sur le bouton ERASE**)
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash tools.png"/>
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware.png"/>
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware_loading.png" />
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware_finish.png"/>
+
+Voici les fichiers à sélectionner avec les adresses correspondantes :
+* firmware.bin @ 0x10000
+* boot_app0.bin @ 0xe000
+* bootloader.bin @ 0x0 
+* partitions.bin @ 0x8000
+
+Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START 
 
 #### En mode console
 
 1. Ouvrir une console ou powershell et se placer dans le répertoire ou se trouve le fichier **firmware.bin**
 2. Taper la commande suivante :
 
-   ```esptool.exe --chip esp32s3 --port "COMXX" --baud 921600 write_flash -z --flash_mode dio --flash_freq 40m --flash_size 16MB 0x10000 firmware.bin```
+   ```esptool.exe --chip esp32s3 --port "COMXX" --baud 921600 write_flash -z --flash_mode dio --flash_freq 40m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 boot_app0.bin 0x10000 firmware.bin```
 
 ## 📱 Interface Utilisateur
 
