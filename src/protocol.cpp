@@ -15,6 +15,7 @@
 #include "basic.h"
 #include "Infrared.h"
 #include "thermostat.h"
+#include "energymeter.h" 
 
 #include "device.h"
 
@@ -1011,7 +1012,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       break;
       case 0x8043:   
       {
-        log_d("Simple descriptor");
+        log_e("Simple descriptor");
         int shortAddr;
         int device_id;
         int endpoint;
@@ -1143,7 +1144,6 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         log_d("RAW response : ");
         int i=0;
         
-        
         uint8_t Cluster[2];
         for (i=0;i<2;i++)
         {
@@ -1173,22 +1173,17 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
         uint16_t clusterId = (Cluster[0] << 8) | Cluster[1];
         
+        // === CLUSTERS IR ZOSUNG ===
         if (clusterId == 0xE004 || clusterId == 0xED00)
         {
-          // Clusters IR Zosung - traiter comme commande cluster-specific
           log_i("IR Cluster 0x%04X - Command 0x%02X from %s", clusterId, Command, inifile.c_str());
           
-          // Extraire les données de la commande
-          // Format RAW: ... [15]=Command, [16...]=payload de la commande
           int dataOffset = 16;
           int dataLen = protocol.ln - dataOffset;
           
           if (dataLen > 0 && dataLen < 200)
           {
-            // Mettre à jour lastSeen
             SetInfoLastseen(inifile, FormattedDate);
-            
-            // Appeler le gestionnaire IR
             zosungIRManage(inifile, clusterId, Command, 
                           (uint8_t*)&protocol.payload[dataOffset], dataLen);
           }
@@ -1196,9 +1191,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           {
             log_e("IR command with invalid data length: %d", dataLen);
           }
-        }else if (clusterId == 0xEF00)
+        }
+        // === CLUSTER TUYA 0xEF00 ===
+        else if (clusterId == 0xEF00)
         {
-            log_i("Tuya cluster 0xEF00 - Command 0x%02X from %s", Command, inifile.c_str());
+            log_i(">>> Tuya cluster 0xEF00 - Command 0x%02X from %s (SA=0x%04X)", 
+                  Command, inifile.c_str(), SA);
             
             if (Command == 0x24)
             {
@@ -1208,36 +1206,92 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
             }
             else if (Command == 0x01 || Command == 0x02)
             {
-                // Datapoint Report - Extraire les datapoints
+                // Datapoint Report (0x01 ou 0x02)
                 int dataOffset = 16;
                 int dataLen = protocol.ln - dataOffset;
                 
-                if (dataLen > 0)
+                log_d("Tuya DP Report: dataOffset=%d, dataLen=%d", dataOffset, dataLen);
+                
+                if (dataLen > 0 && dataLen < 200)
                 {
                     SetInfoLastseen(inifile, FormattedDate);
-                    tuyaThermostatManage(inifile, 0, 0, dataLen, 
-                                        (char*)&protocol.payload[dataOffset]);
+                    
+                    // === DISPATCHER SELON LE TYPE D'APPAREIL ===
+                    String deviceId = inifile.substring(0, 16);
+                    DeviceData* device = nullptr;
+                    
+                    // Rechercher le device
+                    for (size_t idx = 0; idx < devices.size(); idx++) {
+                        if (devices[idx]->getDeviceID() == deviceId.c_str()) {
+                            device = devices[idx];
+                            break;
+                        }
+                    }
+                    
+                    if (device != nullptr) {
+                        String manufacturer = device->getInfo().manufacturer;
+                        log_d("Tuya device found: %s, manufacturer: %s", 
+                              deviceId.c_str(), manufacturer.c_str());
+                        
+                        // Vérifier si c'est un compteur d'énergie Tuya
+                        if (isTuyaEnergyMeter(manufacturer)) {
+                            log_i(">>> EF00 -> Energy Meter (%s)", manufacturer.c_str());
+                            tuyaEnergyMeterManage(inifile, 0, 0, dataLen, 
+                                                 (char*)&protocol.payload[dataOffset]);
+                        }
+                        // Vérifier si c'est un thermostat Tuya
+                        else if (isTuyaThermostat(manufacturer)) {
+                            log_i(">>> EF00 -> Thermostat (%s)", manufacturer.c_str());
+                            tuyaThermostatManage(inifile, 0, 0, dataLen, 
+                                                (char*)&protocol.payload[dataOffset]);
+                        }
+                        // Appareil Tuya inconnu - tenter compteur d'énergie par défaut
+                        // (car tes logs montrent des DP typiques de compteur)
+                        else {
+                            log_w(">>> EF00 unknown Tuya: %s - trying energy meter", 
+                                  manufacturer.c_str());
+                            tuyaEnergyMeterManage(inifile, 0, 0, dataLen, 
+                                                 (char*)&protocol.payload[dataOffset]);
+                        }
+                    } else {
+                        // Device non trouvé - tenter quand même
+                        log_w(">>> EF00 device not found: %s - trying energy meter", 
+                              deviceId.c_str());
+                        tuyaEnergyMeterManage(inifile, 0, 0, dataLen, 
+                                             (char*)&protocol.payload[dataOffset]);
+                    }
+                }
+                else
+                {
+                    log_e("Tuya DP Report invalid length: %d", dataLen);
                 }
             }
             else if (Command == 0x00)
             {
                 log_d("Tuya Datapoint Set Response from %04X", SA);
             }
+            else if (Command == 0x11)
+            {
+                // MCU Version Query Response (vu dans tes logs)
+                log_d("Tuya MCU Version from %04X", SA);
+            }
             else
             {
                 log_w("Tuya unknown command 0x%02X from %04X", Command, SA);
             }
+            
+            // IMPORTANT: Ne pas continuer vers le traitement ZCL standard
+            // car les données Tuya sont cluster-specific, pas des attributs ZCL
+            break;  // <-- SORTIR DU CASE ICI !
         }
-
-        
-        if ((Command == 10) || (Command == 1))
+        // === TRAITEMENT ZCL STANDARD (Attribute Report) ===
+        else if ((Command == 10) || (Command == 1))
         {
           uint8_t Attribute[2];
           char tmp[4];
 
           Attribute[0]=(uint8_t)protocol.payload[17];
           Attribute[1]=(uint8_t)protocol.payload[16];
-
 
           int offset, ln;
           if (Command ==10)
@@ -1254,11 +1308,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
           //Traitement données
           readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[offset]);
-        }else{
-          log_e("Cluster-specific command: cluster=0x%04X, cmd=0x%02X", clusterId, Command);
         }
-        
-
+        else
+        {
+          // Commande cluster-specific non gérée
+          log_w("Unhandled cluster-specific: cluster=0x%04X, cmd=0x%02X", clusterId, Command);
+        }
       }
       break;
       case 0x8100:  
