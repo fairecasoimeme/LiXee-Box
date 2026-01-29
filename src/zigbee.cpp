@@ -23,6 +23,7 @@
 #include "Infrared.h"
 #include "thermostat.h"
 #include "hvac.h"
+#include "energymeter.h" 
 
 #include "web.h"
 #include "device.h"
@@ -71,6 +72,37 @@ void SendActiveRequest(uint8_t shortAddr[2])
   memcpy(trame.datas,shortAddr,2);
   DEBUG_PRINTLN(F("Active Req")); 
   commandList->push(trame);
+}
+
+// Commande cluster-specific avec support manufacturer code
+void SendClusterSpecificCommand(int shortAddr, int endpoint, int cluster, 
+                                 int commandId, uint16_t manufacturerCode, uint8_t value)
+{
+    Packet trame;
+    trame.cmd = 0x0530;  // Cluster-specific command
+    trame.len = 14;
+    
+    uint8_t datas[14];
+    datas[0] = 0x02;                              // Address mode
+    datas[1] = (shortAddr >> 8) & 0xFF;           // Short addr MSB
+    datas[2] = shortAddr & 0xFF;                  // Short addr LSB
+    datas[3] = 0x01;                              // Src endpoint
+    datas[4] = endpoint;                          // Dst endpoint
+    datas[5] = (cluster >> 8) & 0xFF;             // Cluster MSB
+    datas[6] = cluster & 0xFF;                    // Cluster LSB
+    datas[7] = 0x01;                              // Direction (client to server)
+    datas[8] = (manufacturerCode != 0) ? 0x01 : 0x00;  // Manufacturer specific flag
+    datas[9] = (manufacturerCode >> 8) & 0xFF;    // Manufacturer code MSB
+    datas[10] = manufacturerCode & 0xFF;          // Manufacturer code LSB
+    datas[11] = 0x00;                             // Command ID (toujours 0x00 pour setMode)
+    datas[12] = 0x01;                             // Payload length
+    datas[13] = value;                            // Payload (mode)
+    
+    memcpy(trame.datas, datas, trame.len);
+    commandList->push(trame);
+    
+    log_i("ClusterCmd: addr=%04X ep=%d cluster=%04X cmd=00 mfr=%04X val=%02X", 
+          shortAddr, endpoint, cluster, manufacturerCode, value);
 }
 
 void SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
@@ -124,6 +156,7 @@ void SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
         sendTuyaDatapointSet(ShortAddr, 1, dpId, TUYA_TYPE_RAW, value);
         log_i("Tuya Action: DP%d (raw) = %lu to %04X", dpId, value, ShortAddr);
       }
+      break;
       // 
       case 310:  // HVAC System Mode
       case 311:  // HVAC Setpoint Both
@@ -133,15 +166,45 @@ void SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
       case 315:  // HVAC Heating Setpoint
           SendHVACAction(ShortAddr, endpoint, command, tmpValue.toInt());
           break;
+      case 320:  // Energy Meter Query
+      {
+          sendEnergyMeterQuery(ShortAddr, endpoint);
+      }
+      break;
+      case 400:
+        // Ne rien faire ici - utiliser SendActionEx() à la place
+        log_w("Command 400 requires SendActionEx() with cluster and mfr code");
+      break;
       default:
       break;
     }
+}
+
+void SendActionEx(int command, int ShortAddr, int endpoint, int cluster, 
+                  uint16_t manufacturerCode, String tmpValue)
+{
+  switch (command)
+  {
+    case 400:  // Commande cluster-specific (ex: NodOn Fil Pilote)
+    {
+      uint8_t value = (uint8_t)tmpValue.toInt();
+      SendClusterSpecificCommand(ShortAddr, endpoint, cluster, 0x00, manufacturerCode, value);
+    }
+    break;
+    
+    default:
+      // Fallback vers SendAction standard
+      SendAction(command, ShortAddr, endpoint, tmpValue);
+      break;
+  }
 }
   
 void SendSimpleDescriptionRequest(uint8_t shortAddr[2], uint8_t endpoint)
 {
   
 }
+
+
 
 void SendDeleteDevice(uint64_t mac)
 {
@@ -306,6 +369,44 @@ uint8_t getZclTypeSize(uint8_t attrType)
     }
 }
 
+void SendAttributeWriteManufacturer(int shortAddr, int endpoint, int cluster, 
+                                     int attribut, uint8_t attrType, uint32_t value,
+                                     uint16_t manufacturerCode)
+{
+    uint8_t valueLen = getZclTypeSize(attrType);
+    
+    Packet trame;
+    trame.cmd = 0x0110;
+    trame.len = 15 + valueLen;
+    uint8_t datas[19];
+    
+    datas[0] = 0x02;                          // Address mode (short)
+    datas[1] = (shortAddr >> 8) & 0xFF;
+    datas[2] = shortAddr & 0xFF;
+    datas[3] = 0x01;                          // Source endpoint
+    datas[4] = endpoint;                      // Destination endpoint
+    datas[5] = (cluster >> 8) & 0xFF;
+    datas[6] = cluster & 0xFF;
+    datas[7] = 0x00;                          // Direction
+    datas[8] = (manufacturerCode != 0) ? 0x01 : 0x00;  // Manufacturer specific flag
+
+    datas[9] = (manufacturerCode >> 8) & 0xFF;               
+    datas[10] = manufacturerCode & 0xFF;      
+    
+    datas[11] = 0x01;                         // Nombre d'attributs
+    datas[12] = (attribut >> 8) & 0xFF;            
+    datas[13] =  attribut & 0xFF;       
+    datas[14] = attrType;
+    
+    for(uint8_t i = 0; i < valueLen; i++)
+    {
+        datas[15 + i] = (value >> (8 * i)) & 0xFF;
+    }
+    
+    memcpy(trame.datas, datas, trame.len);
+    commandList->push(trame);
+}
+
 void SendAttributeWrite(int shortAddr, int endpoint, int cluster, int attribut, uint8_t attrType, uint32_t value)
 {
     uint8_t valueLen = getZclTypeSize(attrType);
@@ -327,42 +428,44 @@ void SendAttributeWrite(int shortAddr, int endpoint, int cluster, int attribut, 
     datas[9] = 0x00;                          // Manufacturer ID MSB
     datas[10] = 0x00;                         // Manufacturer ID LSB
     datas[11] = 0x01;                         // Nombre d'attributs
-    datas[12] = (attribut >> 8) & 0xFF;
-    datas[13] = attribut & 0xFF;
+    
+    datas[12] = (attribut >> 8) & 0xFF;             
+    datas[13] =  attribut & 0xFF;       
+    
     datas[14] = attrType;
     
-    // Valeur en little-endian
     for(uint8_t i = 0; i < valueLen; i++)
     {
-        datas[15 + i] = (value >> (8 * i)) & 0xFF;
+        datas[15 + i] = (value >> (8 * (valueLen - 1 - i))) & 0xFF;
     }
     
     memcpy(trame.datas, datas, trame.len);
     commandList->push(trame);
 }
 
-void SendAttributeRead(int shortAddr,int endpoint, int cluster, int attribut)
+void SendAttributeRead(int shortAddr, int endpoint, int cluster, int attribut, uint16_t manufacturerCode = 0)
 {
-   Packet trame;
-    trame.cmd=0x0100;
-    trame.len=14;
+    Packet trame;
+    trame.cmd = 0x0100;
+    trame.len = 14;
     uint8_t datas[trame.len];
-    datas[0]=0x02;
-    datas[1]= (shortAddr >>8) & 0xFF;
-    datas[2]= shortAddr & 0xFF ;
-    datas[3]= 0x01;
-    datas[4]= endpoint;
-    datas[5]= (cluster >>8) & 0xFF;
-    datas[6]= cluster & 0xFF ;
-    datas[7]= 0x00;
-    datas[8]= 0x00;
-    datas[9]= 0x00;
-    datas[10]= 0x00;
-    datas[11]= 0x01;
-    datas[12]= (attribut >>8) & 0xFF;
-    datas[13]= attribut & 0xFF ;
     
-    memcpy(trame.datas,datas,trame.len);
+    datas[0] = 0x02;                              // Address mode
+    datas[1] = (shortAddr >> 8) & 0xFF;           // Short addr MSB
+    datas[2] = shortAddr & 0xFF;                  // Short addr LSB
+    datas[3] = 0x01;                              // Src endpoint
+    datas[4] = endpoint;                          // Dst endpoint
+    datas[5] = (cluster >> 8) & 0xFF;             // Cluster MSB
+    datas[6] = cluster & 0xFF;                    // Cluster LSB
+    datas[7] = (manufacturerCode != 0) ? 0x01 : 0x00;  // Manufacturer specific flag
+    datas[8] = 0x00;                              // Direction (0 = client to server)
+    datas[9] = (manufacturerCode >> 8) & 0xFF;   // Manufacturer code MSB
+    datas[10] = manufacturerCode & 0xFF;          // Manufacturer code LSB
+    datas[11] = 0x01;                             // Nombre d'attributs
+    datas[12] = (attribut >> 8) & 0xFF;           // Attribut MSB
+    datas[13] = attribut & 0xFF;                  // Attribut LSB
+    
+    memcpy(trame.datas, datas, trame.len);
     commandList->push(trame);
 }
 
@@ -1687,6 +1790,13 @@ int getkWhBudget(String IEEE, String Time, int budget)
 }
 
 
+// PATCH pour getDatasPower() 
+// Correction du double comptage des sous-compteurs dans la répartition et le total
+//
+// Changements :
+// 1. Les sous-compteurs sont soustraits des index tarifaires (sums)
+// 2. Le total n'additionne plus totalSubMeters (déjà dans TotalWh)
+
 PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
 {
   // Trouver le device
@@ -1754,24 +1864,24 @@ PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
       if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
     }
 
-    DeviceEnergyHistory& ehProd = devProd->energyHistory;
-    PeriodData* pdProd = nullptr;
-    if      (Time=="hour")  pdProd=&ehProd.hours;
-    else if (Time=="day")   pdProd=&ehProd.days;
-    else if (Time=="month") pdProd=&ehProd.months;
-    else if (Time=="year")  pdProd=&ehProd.years;
-    else                      return result;
+    if (devProd) {
+      DeviceEnergyHistory& ehProd = devProd->energyHistory;
+      PeriodData* pdProd = nullptr;
+      if      (Time=="hour")  pdProd=&ehProd.hours;
+      else if (Time=="day")   pdProd=&ehProd.days;
+      else if (Time=="month") pdProd=&ehProd.months;
+      else if (Time=="year")  pdProd=&ehProd.years;
+      else                      return result;
 
-    
-    for (auto &kv : pdProd->graph) {
-      ValueMap &vm = kv.second;   
-      int attrId = 1;
-      auto itv = vm.attributes.find(attrId);
-      if (itv != vm.attributes.end()) {       
-        sumProd += itv->second;
+      for (auto &kv : pdProd->graph) {
+        ValueMap &vm = kv.second;   
+        int attrId = 1;
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end()) {       
+          sumProd += itv->second;
+        }
       }
     }
-
   }
 
   //GAZ
@@ -1795,34 +1905,115 @@ PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
       }
     }
     try {
-      DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
-      PeriodData* pdGaz = nullptr;
-      if      (Time=="hour")  pdGaz=&ehGaz.hours;
-      else if (Time=="day")   pdGaz=&ehGaz.days;
-      else if (Time=="month") pdGaz=&ehGaz.months;
-      else if (Time=="year")  pdGaz=&ehGaz.years;
-      else                      return result;
+      if (devGaz) {
+        DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
+        PeriodData* pdGaz = nullptr;
+        if      (Time=="hour")  pdGaz=&ehGaz.hours;
+        else if (Time=="day")   pdGaz=&ehGaz.days;
+        else if (Time=="month") pdGaz=&ehGaz.months;
+        else if (Time=="year")  pdGaz=&ehGaz.years;
+        else                      return result;
 
-      
-      for (auto &kv : pdGaz->graph) {
-        ValueMap &vm = kv.second;   
-        int attrId = 0;
-        auto itv = vm.attributes.find(attrId);
-        if (itv != vm.attributes.end()) {       
-          sumGaz += itv->second * ConfigGeneral.coeffGaz;
+        for (auto &kv : pdGaz->graph) {
+          ValueMap &vm = kv.second;   
+          int attrId = 0;
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end()) {       
+            sumGaz += itv->second * ConfigGeneral.coeffGaz;
+          }
         }
       }
     }catch (...) {
       log_e("Exception in getDatasPower\n");
       return result;
     }
+  }
 
+  // ============================================
+  // SOUS-COMPTEURS - Calculer d'abord pour soustraire des index
+  // ============================================
+  struct SubMeterData {
+    String alias;
+    String color;
+    long totalWh;
+    float totalEuros;
+    std::map<int, long> perIndex;  // Répartition par index (position dans sums)
+  };
+  std::vector<SubMeterData> subMetersData;
+  
+  for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+    if (!ConfigGeneral.subMeters[i].enabled) continue;
+    if (strlen(ConfigGeneral.subMeters[i].IEEE) == 0) continue;
+    
+    // Trouver le device du sous-compteur
+    DeviceData* devSub = nullptr;
+    for (auto* d : devices) {
+      if (d == nullptr) continue;
+      try {
+        if (d->getDeviceID() == ConfigGeneral.subMeters[i].IEEE) {
+          devSub = d;
+          break;
+        }
+      } catch (...) {
+        continue;
+      }
+    }
+    if (!devSub) continue;
+
+    // Sélectionner la même période
+    DeviceEnergyHistory& ehSub = devSub->energyHistory;
+    PeriodData* pdSub = nullptr;
+    if      (Time == "hour")  pdSub = &ehSub.hours;
+    else if (Time == "day")   pdSub = &ehSub.days;
+    else if (Time == "month") pdSub = &ehSub.months;
+    else if (Time == "year")  pdSub = &ehSub.years;
+
+    if (!pdSub) continue;
+
+    SubMeterData subData;
+    subData.alias = String(ConfigGeneral.subMeters[i].alias);
+    subData.color = String(ConfigGeneral.subMeters[i].color);
+    subData.totalWh = 0;
+    subData.totalEuros = 0;
+    
+    float coef = devSub->GetAttributeCoefficient(0x0702, 0);
+    
+    for (auto &kv : pdSub->graph) {
+      ValueMap &vm = kv.second;
+      for (size_t j = 2; j < arrayLength; ++j) {
+        int attrId = section[j].toInt();
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end()) {
+          long correctedValue = (long)(itv->second * coef);
+          subData.totalWh += correctedValue;
+          subData.totalEuros += correctedValue * getTarif(attrId, "energy") / 1000;
+          subData.perIndex[(j-1)] += correctedValue;  // Stocker par position d'index
+        }
+      }
+    }
+
+    if (subData.totalWh > 0) {
+      subMetersData.push_back(subData);
+      
+      // *** SOUSTRACTION DES SOUS-COMPTEURS DES INDEX TARIFAIRES ***
+      for (auto &pi : subData.perIndex) {
+        if (sums.find(pi.first) != sums.end()) {
+          sums[pi.first] -= pi.second;
+          if (sums[pi.first] < 0) sums[pi.first] = 0;
+        }
+      }
+    }
   }
 
   String color[9] = { "#d35400","#2980b9","#154360","#7f8c8d","#000000","#e74c3c","#c0392b","#f5b041","#145a32"};
   
+  // ============================================
+  // AFFICHAGE RÉPARTITION (index ajustés)
+  // ============================================
   result = "<h5>Répartition</h5>";
   for (auto &p : sums) {
+    if (p.second <= 0) continue;  // Ne pas afficher si 0 après soustraction
+    
     result += "<div class='row'><div class='col-1'><div style=\"border:1px solid grey;width:10px;height:15px;background-color:";
     if (p.first <= 10)
     {
@@ -1848,6 +2039,9 @@ PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
     result +="</div></div>";
   }
 
+  // ============================================
+  // PRODUCTION
+  // ============================================
   if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
   {
     result += "<div class='row'>";
@@ -1873,6 +2067,9 @@ PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
     result += "</div>";
   }
 
+  // ============================================
+  // GAZ
+  // ============================================
   if ((strcmp(ConfigGeneral.Gaz,"")!=0) && (strcmp(ConfigGeneral.unitGaz,"Wh")==0))
   {
     result += "<div class='row'>";
@@ -1898,9 +2095,47 @@ PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
     result += "</div>";
   }
 
-  result += "<br><div class=''><h5>Total</h5>"; //<div class='position-absolute bottom-0 start-0'>
+  // ============================================
+  // AFFICHAGE SOUS-COMPTEURS (après calcul)
+  // ============================================
+  for (auto &sub : subMetersData) {
+    result += "<div class='row'>";
+    result += "<div class='col-1'>";
+    result += "<div style=\"border:1px solid grey;width:10px;height:15px;background-color:";
+    result += sub.color;
+    result += "\"></div>";
+    result += "</div>";
+    result += "<div class='col-11'> ";
+    // Icône prise électrique
+    result += "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+
+    result += getValuekWh(sub.totalWh);
+    result += " ";
+    // Icône euro
+    result += "<svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
+    result += "<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
+    result += "<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
+    result += "<g id='SVGRepo_iconCarrier'>";
+    result += "<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
+    result += "<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
+    result += "</g>";
+    result += "</svg> ";
+    TotalEuros += sub.totalEuros;
+    result += String(sub.totalEuros, 2);
+    result += " € ";
+    result += "</div>";
+    result += "</div>";
+  }
+
+  // ============================================
+  // TOTAL - Sans double comptage !
+  // TotalWh contient déjà les sous-compteurs, on ne les ajoute pas
+  // ============================================
+  result += "<br><div class=''><h5>Total</h5>";
   result += "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-  result += getValuekWh((TotalWh+sumProd+sumGaz));
+  
+  // Total = ZLinky + Production + Gaz (sans totalSubMeters car déjà inclus dans TotalWh)
+  result += getValuekWh((TotalWh + sumProd + sumGaz));
   result += " ";
   result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
   result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
@@ -1911,12 +2146,13 @@ PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
   result+="</g>";
   result+="</svg>  ";
 
+  // Total euros = somme des index ajustés + prod + gaz (TotalEuros calculé avec sums ajustés)
+  //result += String(TotalEuros);
   result += String(TotalEuros);
   result += " € ";
   result += "</div>";
 
   return result;
-
 }
 
 PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
@@ -2821,20 +3057,20 @@ void getConfigReport(uint8_t shortAddr[2], int device_id, String model)
 
     // Vérification des champs obligatoires
     if (!reportItem.containsKey("cluster") || !reportItem.containsKey("attribut") ||
-        !reportItem.containsKey("type") || !reportItem.containsKey("min") ||
-        !reportItem.containsKey("max") || !reportItem.containsKey("timeout") ||
-        !reportItem.containsKey("change")) {
+      !reportItem.containsKey("type") || !reportItem.containsKey("min") ||
+      !reportItem.containsKey("max") || !reportItem.containsKey("change")) {
       log_w("Missing required fields in report item at index %d", i);
       continue;
     }
 
     try {
+
       int cluster = (int)strtol(reportItem["cluster"], 0, 16);
       int attribut = (int)reportItem["attribut"];
       uint8_t rType = (uint8_t)reportItem["type"];
       int rMin = (int)reportItem["min"];
       int rMax = (int)reportItem["max"];
-      int rTimeout = (int)reportItem["timeout"];
+      int rTimeout = reportItem.containsKey("timeout") ? (int)reportItem["timeout"] : 0;
       uint8_t rChange = (uint8_t)reportItem["change"];
       
       bool sendReport = false;
@@ -3033,7 +3269,7 @@ void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], ui
       humidityManage(filename,attribute,DataType,len,datas);
       break;
     case 1030: //406 occupancy
-      OccupancyManage(filename,attribute,DataType,len,datas);
+      OccupancyManage(filename,attribute,DataType,len,datas);    
       break;
     case 257: //0101 doorlock
       DoorlockManage(filename,attribute,DataType,len,datas);

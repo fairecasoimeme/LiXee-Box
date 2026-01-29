@@ -25,9 +25,16 @@ String getValuekWh(long energy);
 void SendBind(uint64_t mac, int cluster);
 void SendDeleteDevice(uint64_t mac);
 void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type, int rmin, int rmax, int rtimeout, uint8_t rchange);
-void SendAttributeRead(int shortAddr, int endpoint, int cluster, int attribut);
+void SendAttributeRead(int shortAddr, int endpoint, int cluster, int attribut, uint16_t manufacturerCode = 0);
 void SendAttributeWrite(int shortAddr, int endpoint, int cluster, int attribut, uint8_t attrType, uint32_t value);
+void SendAttributeWriteManufacturer(int shortAddr, int endpoint, int cluster, 
+                                     int attribut, uint8_t attrType, uint32_t value,
+                                     uint16_t manufacturerCode);
 void SendAction(int command, int ShortAddr, int endpoint, String tmpValue);
+void SendActionEx(int command, int ShortAddr, int endpoint, int cluster, 
+                  uint16_t manufacturerCode, String tmpValue);
+void SendClusterSpecificCommand(int shortAddr, int endpoint, int cluster, 
+                                 int commandId, uint16_t manufacturerCode, uint8_t value);
 void SendActiveRequest(uint8_t shortAddr[2]);
 void SendSimpleDescriptionRequest(uint8_t shortAddr[2], uint8_t endpoint);
 void SendBasicDescription(uint8_t shortAddr[2], uint8_t endpoint);

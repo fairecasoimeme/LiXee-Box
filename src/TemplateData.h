@@ -12,6 +12,7 @@ struct State {
     char name[50];
     unsigned int cluster;
     unsigned int attribute;
+    uint16_t manufacturerCode;
     char mode[20];
     char mqtt_device_class[20];
     char mqtt_state_class[20];
@@ -44,9 +45,11 @@ struct Action {
     unsigned int command;
     unsigned int endpoint;
     unsigned int value;
+    unsigned int cluster;           // NOUVEAU: Cluster pour commandes cluster-specific
+    uint16_t manufacturerCode;      // NOUVEAU: Manufacturer code (0 = standard)
     bool visible;
     
-    Action() : command(0), endpoint(0), value(0), visible(true) {
+    Action() : command(0), endpoint(0), value(0), cluster(0), manufacturerCode(0), visible(true) {
         memset(name, 0, sizeof(name));
     }
 };
@@ -128,6 +131,17 @@ public:
                 
                 // Attribut (avec 't' pas 'te')
                 s.attribute = stateObj["attribut"] | 0;
+
+                // ManufacturerSpecific: peut être string hex "0x128B" ou int 4747
+                if (stateObj.containsKey("manufacturerSpecific")) {
+                    if (stateObj["manufacturerSpecific"].is<const char*>()) {
+                        s.manufacturerCode = strtoul(stateObj["manufacturerSpecific"], nullptr, 16);
+                    } else {
+                        s.manufacturerCode = stateObj["manufacturerSpecific"] | 0;
+                    }
+                } else {
+                    s.manufacturerCode = 0;  // Standard ZCL (pas manufacturer specific)
+                }
                 
                 strncpy(s.mode, stateObj["mode"] | "", sizeof(s.mode) - 1);
                 strncpy(s.mqtt_device_class, stateObj["mqtt_device_class"] | "", sizeof(s.mqtt_device_class) - 1);
@@ -156,13 +170,35 @@ public:
         if (!actionArray.isNull()) {
             for (JsonObject actionObj : actionArray) {
                 Action a;
-                memset(&a, 0, sizeof(a));  // Init à zéro
+                memset(&a, 0, sizeof(a));
                 
                 strncpy(a.name, actionObj["name"] | "", sizeof(a.name) - 1);
                 a.command = actionObj["command"] | 0;
                 a.endpoint = actionObj["endpoint"] | 0;
                 a.value = actionObj["value"] | 0;
                 a.visible = actionObj["visible"] | 1;
+                
+                // NOUVEAU: Cluster pour commandes cluster-specific
+                if (actionObj.containsKey("cluster")) {
+                    if (actionObj["cluster"].is<const char*>()) {
+                        a.cluster = strtoul(actionObj["cluster"], nullptr, 16);
+                    } else {
+                        a.cluster = actionObj["cluster"] | 0;
+                    }
+                } else {
+                    a.cluster = 0;
+                }
+                
+                // NOUVEAU: ManufacturerSpecific
+                if (actionObj.containsKey("manufacturerSpecific")) {
+                    if (actionObj["manufacturerSpecific"].is<const char*>()) {
+                        a.manufacturerCode = strtoul(actionObj["manufacturerSpecific"], nullptr, 16);
+                    } else {
+                        a.manufacturerCode = actionObj["manufacturerSpecific"] | 0;
+                    }
+                } else {
+                    a.manufacturerCode = 0;
+                }
                 
                 actions.push_back(a);
             }
