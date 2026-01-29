@@ -8,6 +8,8 @@
 #include "mqtt.h"
 #include "device.h"
 
+#include "presence.h"
+
 extern std::vector<DeviceData*> devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
@@ -25,7 +27,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
     switch (attribute)
     {
       case 0:      
-          
+      {   
         for(int i=0;i<len;i++)
         {
           sprintf(value, "%02X",datas[i]);
@@ -52,17 +54,21 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
             int shortaddr = GetShortAddr(inifile);
             deviceList->push(Device{shortaddr,1030,attribute,String(strtol(tmp.c_str(), NULL, 16))});
           }
-        }
+        }     
+
         for (size_t i = 0; i < devices.size(); i++) 
         {
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
             device->setValue(std::string("0406"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            handleOccupancyChange(device->getDeviceID(), device->getInfo().model, strtol(tmp.c_str(), NULL, 16));
             break;
           }
         }
-        break;       
+        
+      }
+      break;       
       default:
         
         for(int i=0;i<len;i++)
