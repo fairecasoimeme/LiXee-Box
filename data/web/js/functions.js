@@ -81,7 +81,7 @@ function GetAction(mac)
 	xhr.send();
 }
 
-function ZigbeeAction(shortaddr,command,endpoint,value)
+function ZigbeeAction(shortaddr,command,endpoint,value,cluster, mfr)
 {
 	var xhr = getXhr();
 	xhr.onreadystatechange = function(){
@@ -89,7 +89,7 @@ function ZigbeeAction(shortaddr,command,endpoint,value)
 			leselect = xhr.responseText;
 		}
 	}
-	xhr.open("GET","ZigbeeAction?shortaddr="+escape(shortaddr)+"&command="+escape(command)+"&endpoint="+escape(endpoint)+"&value="+escape(value),true);
+	xhr.open("GET","ZigbeeAction?shortaddr="+escape(shortaddr)+"&command="+escape(command)+"&endpoint="+escape(endpoint)+"&value="+escape(value)+"&cluster="+escape(cluster)+"&mfr="+escape(mfr),true);
 	xhr.setRequestHeader('Content-Type','application/html');
 	xhr.send();
 }
@@ -972,20 +972,54 @@ function loadEnergyChart(IEEE, time, type) {
 
 // Fonction pour obtenir les couleurs selon le type
 function getBarColors(type, count) {
+    var tarifInfo = window[type + 'TarifInfo'] || {};
+    var keys = window[type + 'Keys'] || [];
+    
+    // Couleurs spécifiques par attribut pour l'énergie
+    var energyAttrColors = {
+        '0': '#2980b9',      // Total
+        '256': '#2980b9',    // BASE/HC - bleu
+        '258': '#154360',    // HP - bleu foncé
+        '260': '#7f8c8d',    // HC Blanc - gris
+        '262': '#000000',    // HP Blanc - noir
+        '264': '#e74c3c',    // HC Rouge - rouge
+        '266': '#c0392b',    // HP Rouge - rouge foncé
+        '268': '#f5b041',    // EASF07 - orange
+        '270': '#d35400',    // EASF08 - orange foncé
+        '272': '#8e44ad',    // EASF09 - violet
+        '274': '#6c3483',    // EASF10 - violet foncé
+        '1': '#27ae60'       // Production - vert
+    };
+    
     var baseColors = {
-        'energy': ['#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b'],
         'gaz': ['#e67e22'],
         'water': ['#3498db'],
         'production': ['#27ae60']
     };
     
-    var colors = baseColors[type] || ['#1e88e5'];
+    var colors = [];
     
-    while (colors.length < count) {
-        colors = colors.concat(baseColors[type]);
+    // Parcourir les keys et attribuer la bonne couleur
+    for (var i = 0; i < keys.length; i++) {
+        var keyStr = keys[i].replace(/'/g, '');
+        var info = tarifInfo[keyStr] || {};
+        
+        if (info.color) {
+            // Couleur personnalisée (sous-compteurs)
+            colors.push(info.color);
+        } else if (type === 'energy' && energyAttrColors[keyStr]) {
+            // Couleur spécifique pour cet attribut ZLinky
+            colors.push(energyAttrColors[keyStr]);
+        } else if (baseColors[type]) {
+            // Couleur par défaut pour gaz/water/production
+            colors.push(baseColors[type][0]);
+        } else {
+            // Fallback
+            colors.push('#95a5a6');
+        }
     }
     
-    return colors.slice(0, count);
+    return colors;
 }
 
 // Fonction pour calculer les coûts détaillés
@@ -1267,18 +1301,40 @@ function getEnergyTooltipFooter(tooltipItems, type) {
 }
 
 
-function loadDistributionChart(time,type)
+function loadDistributionChart(time, type)
 {
-	var xhr = getXhr();
-	xhr.onreadystatechange = function(){
-		if(xhr.readyState == 4 ){
-			var datas = JSON.parse(xhr.responseText);
-			 donutChart.setData(datas);
-		}
-	}
-	xhr.open("GET","loadDistributionChart?time="+escape(time)+"&type="+escape(type),true);
-	xhr.setRequestHeader('Content-Type','application/html');
-	xhr.send();
+    var xhr = getXhr();
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState == 4) {
+            var datas = JSON.parse(xhr.responseText);
+            
+            // Extraire les couleurs si présentes dans les données
+            var colors = [];
+            var hasCustomColors = false;
+            
+            for (var i = 0; i < datas.length; i++) {
+                if (datas[i].color) {
+                    colors.push(datas[i].color);
+                    hasCustomColors = true;
+                } else {
+                    // Couleurs par défaut si pas de couleur spécifiée
+                    var defaultColors = ['#2980b9', '#154360', '#7f8c8d', '#e74c3c', '#c0392b', '#f5b041', '#145a32', '#8e44ad'];
+                    colors.push(defaultColors[i % defaultColors.length]);
+                }
+            }
+            
+            // Appliquer les couleurs personnalisées si présentes
+            if (hasCustomColors && donutChart && donutChart.options) {
+                donutChart.options.colors = colors;
+            }
+            
+            // Mettre à jour les données
+            donutChart.setData(datas);
+        }
+    }
+    xhr.open("GET", "loadDistributionChart?time=" + escape(time) + "&type=" + escape(type), true);
+    xhr.setRequestHeader('Content-Type', 'application/html');
+    xhr.send();
 }
 
 // Fonction pour formater chaque ligne du tooltip
