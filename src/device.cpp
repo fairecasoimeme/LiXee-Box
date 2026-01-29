@@ -386,3 +386,17 @@ float DeviceData::GetAttributeCoefficient(int cluster, int attribute)
   }
   return coefficient;
 }
+
+bool DeviceData::hasCluster(int cluster, int attribute) const {
+    if (_template == nullptr) return false;
+    
+    for (int i = 0; i < _template->StateSize(); i++) {
+        if (_template->states[i].cluster == cluster) {
+            // Si attribute == -1, on vérifie juste le cluster
+            if (attribute == -1 || _template->states[i].attribute == attribute) {
+                return true;
+            }
+        }
+    }
+    return false;
+}

@@ -136,6 +136,8 @@ public:
     // Libérer le template (si besoin de RAM)
     void clearTemplate();
 
+    bool hasCluster(int cluster, int attribute = -1) const;
+
 private:
     // Parse un contenu JSON pour remplir _info et _values
     bool parseJsonToDevice(const String &jsonString);
