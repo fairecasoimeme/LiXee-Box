@@ -1,108 +1,107 @@
 {
-	"default" : [
-	{
-		"status" : [
-			{
-				"name" : "Temperature",
-				"cluster" : "0402",
-				"attribut" : 0,
-				"type" : "float",
-				"coefficient" : 0.01,
-				"unit" : "°C",
-				"visible":1,
-				"jauge":"gauge",
-				"min":-20,
-				"max":50
-			},
-                        {
-				"name" : "Humidity",
-				"cluster" : "0405",
-				"attribut" : 0,
-				"type" : "float",
-				"coefficient" : 0.01,
-				"unit" : "%",
-				"visible":1,
-				"jauge":"gauge",
-				"min":0,
-				"max":100
-			},
-                        {
-				"name" : "Voltage",
-				"cluster" : "0001",
-				"attribut" : 32,
-				"type" : "float",
-				"coefficient" : 0.1,
-				"unit" : "V",
-				"visible":1
-			},
-                        {
-				"name" : "Bat",
-				"cluster" : "0001",
-				"attribut" : 33,
-				"type" : "numeric",
-				"unit" : "%",
-				"visible":1,
-				"jauge":"battery",
-				"min":0,
-				"max":100
-			}
-		],
-               "bind" : "1026;1029;1",
-	       "report" : [
-			{
-				"cluster" : "0402",
-				"attribut": 0,
-				"type":33,
-				"min":60,
-				"max":61,
-				"timeout":0,
-				"change":0
-			},
-			{
-				"cluster" : "0405",
-				"attribut": 1295,
-				"type":33,
-				"min":60,
-				"max":61,
-				"timeout":0,
-				"change":0
-			},
-			{
-				"cluster" : "0001",
-				"attribut": 32,
-				"type":33,
-				"min":60,
-				"max":61,
-				"timeout":0,
-				"change":0
-			},
-			{
-				"cluster" : "0001",
-				"attribut": 33,
-				"type":33,
-				"min":60,
-				"max":61,
-				"timeout":0,
-				"change":0
-			}
-		]
-		
-	}
-	],
-"SNZB-02D": [
+  "default": [
+    {
+      "status": [
+        {
+          "name": "Temperature",
+          "cluster": "0402",
+          "attribut": 0,
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "°C",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": -20,
+          "max": 50
+        },
+        {
+          "name": "Humidity",
+          "cluster": "0405",
+          "attribut": 0,
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "%",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "name": "Voltage",
+          "cluster": "0001",
+          "attribut": 32,
+          "type": "float",
+          "coefficient": 0.1,
+          "unit": "V",
+          "visible": 1
+        },
+        {
+          "name": "Bat",
+          "cluster": "0001",
+          "attribut": 33,
+          "type": "numeric",
+          "unit": "%",
+          "visible": 1,
+          "jauge": "battery",
+          "min": 0,
+          "max": 100
+        }
+      ],
+      "bind": "1026;1029;1",
+      "report": [
+        {
+          "cluster": "0402",
+          "attribut": 0,
+          "type": 33,
+          "min": 60,
+          "max": 61,
+          "timeout": 0,
+          "change": 0
+        },
+        {
+          "cluster": "0405",
+          "attribut": 1295,
+          "type": 33,
+          "min": 60,
+          "max": 61,
+          "timeout": 0,
+          "change": 0
+        },
+        {
+          "cluster": "0001",
+          "attribut": 32,
+          "type": 33,
+          "min": 60,
+          "max": 61,
+          "timeout": 0,
+          "change": 0
+        },
+        {
+          "cluster": "0001",
+          "attribut": 33,
+          "type": 33,
+          "min": 60,
+          "max": 61,
+          "timeout": 0,
+          "change": 0
+        }
+      ]
+    }
+  ],
+  "SNZB-02D": [
     {
       "status": [
         {
           "name": "temperature",
           "cluster": "0402",
           "attribut": 0,
-         "type" : "float",
-				"coefficient" : 0.01,
-				"unit" : "°C",
-				"visible":1,
-				"jauge":"gauge",
-				"min":-20,
-				"max":50,
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "°C",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": -20,
+          "max": 50,
           "mqtt_device_class": "temperature",
           "mqtt_state_class": "measurement",
           "mqtt_icon": "thermometer"
@@ -111,13 +110,13 @@
           "name": "humidity",
           "cluster": "0405",
           "attribut": 0,
-         "type" : "float",
-				"coefficient" : 0.01,
-				"unit" : "%",
-				"visible":1,
-				"jauge":"gauge",
-				"min":0,
-				"max":100,
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "%",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 100,
           "mqtt_device_class": "humidity",
           "mqtt_state_class": "measurement",
           "mqtt_icon": "water-percent"
@@ -126,13 +125,13 @@
           "name": "battery",
           "cluster": "0001",
           "attribut": 33,
-				"type" : "numeric",
-				"unit" : "%",
-                                "coefficient" : 0.5,
-				"visible":1,
-				"jauge":"battery",
-				"min":0,
-				"max":100,
+          "type": "numeric",
+          "unit": "%",
+          "coefficient": 0.5,
+          "visible": 1,
+          "jauge": "battery",
+          "min": 0,
+          "max": 100,
           "mqtt_device_class": "battery",
           "mqtt_state_class": "measurement",
           "mqtt_icon": "battery"
@@ -217,5 +216,4 @@
       "action": []
     }
   ]
-	
 }

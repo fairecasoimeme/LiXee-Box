@@ -1,135 +1,139 @@
 {
-	"lumi.plug" : [
-	{
-		"status" : [
-			{
-				"name" : "Power",
-				"cluster" : "0006",
-				"attribut" : 0
-			}
-		],		
-		"action" : [
-			{
-				"name" : "ON",
-				"command" : 146,
-                                "endpoint" : 1,
-				"value" : 1
-			},
-			{
-				"name" : "OFF",
-				"command" : 146,
-                                "endpoint" : 1,
-				"value" : 0
-			},
-			{
-				"name" : "TOGGLE",
-				"command" : 146,
-                                "endpoint" : 1,
-				"value" : 2
-			}
-		]
-	}
-	],
-	"SNZB-06P" : [
-	{
-		"status" : [
-			{
-				"name" : "occupancy",
-				"cluster" : "0406",
-				"attribut" : 0
-			},
-			{
-				"name" : "occupancy_timeout",
-				"cluster" : "0406",
-				"attribut" : 32,
-				"writable": true,
-				"typewritable": 33
-			},
-			{
-				"name" : "occupancy_sensitivity",
-				"cluster" : "0406",
-				"attribut" : 34,
-				"writable": true,
-				"typewritable": 32
-			},
-			{
-				"name" : "illumination",
-				"cluster" : "FC11",
-				"attribut" : 0
-			}
-		],
-		"bind" : "1030",
-		"report" : [
-			{
-				"cluster": "0406",
-				"attribut": 0,
-				"type": 24,
-				"min": 0,
-				"max": 3600,
-				"change": 1
-			}
-		],
-		"action" : []
-	}
-	],
-	"ZiPulses": [
-	{
-		"status" : [
-			{
-				"name" : "Batterie",
-				"cluster" : "0001",
-				"attribut" : 32,
-                                "mqtt_device_class" : null,
-				"mqtt_icon" :  "alpha-v",
-				"mqtt_state_class" : null,
-				"type" : "float",
-				"coefficient" : 0.1,
-				"unit" : "V"
-			},{
-				"name" : "Batterie",
-				"cluster" : "0001",
-				"attribut" : 33,
-                                "mqtt_device_class" : null,
-				"mqtt_icon" :  "car-battery",
-				"mqtt_state_class" : null,
-				"type" : "numeric",
-				"coefficient" : 0.4,
-				"unit" : "%",
-				"visible" : 1,
-				"jauge" : "battery",
-				"min" : 0,
-				"max" : 100
-			},
-			{
-				"name" : "Temperature",
-				"cluster" : "0402",
-				"attribut" : 0,
-                                "mqtt_device_class" : null,
-				"mqtt_icon" :  "thermometer",
-				"mqtt_state_class" : null,
-				"type" : "float",
-				"coefficient" : 0.01,
-				"unit" : "°C",
-				"visible" : 1,
-				"jauge" : "gauge",
-				"min" : -20,
-				"max" : 50
-			},
-			{
-				"name" : "Index",
-				"cluster" : "0702",
-				"attribut" : 0,
-				"mqtt_device_class" : "water",
-				"mqtt_icon" :  "water",
-				"mqtt_state_class" : "total",
-				"type" : "numeric",
-				"coefficient" : 1,
-                                "jauge":"text",
-                                "visible" : 1,
-				"unit" : "L"
-
-			}
-		],
-		"bind" : "1794;1026;1"
-	}]
+  "lumi.plug": [
+    {
+      "status": [
+        {
+          "name": "Power",
+          "cluster": "0006",
+          "attribut": 0
+        }
+      ],
+      "action": [
+        {
+          "name": "ON",
+          "command": 146,
+          "endpoint": 1,
+          "value": 1
+        },
+        {
+          "name": "OFF",
+          "command": 146,
+          "endpoint": 1,
+          "value": 0
+        },
+        {
+          "name": "TOGGLE",
+          "command": 146,
+          "endpoint": 1,
+          "value": 2
+        }
+      ]
+    }
+  ],
+  "SNZB-06P": [
+    {
+      "status": [
+        {
+          "name": "occupancy",
+          "cluster": "0406",
+          "attribut": 0,
+          "poll": 1
+        },
+        {
+          "name": "occupancy_timeout",
+          "cluster": "0406",
+          "attribut": 32,
+          "type": "numeric",
+          "writable": true,
+          "typewritable": 33
+        },
+        {
+          "name": "occupancy_sensitivity",
+          "cluster": "0406",
+          "attribut": 34,
+          "type": "numeric",
+          "writable": true,
+          "typewritable": 32
+        },
+        {
+          "name": "illumination",
+          "cluster": "FC11",
+          "attribut": 0
+        }
+      ],
+      "bind": "1030",
+      "report": [
+        {
+          "cluster": "0406",
+          "attribut": 0,
+          "type": 24,
+          "min": 20,
+          "max": 60,
+          "change": 1
+        }
+      ],
+      "action": []
+    }
+  ],
+  "ZiPulses": [
+    {
+      "status": [
+        {
+          "name": "Batterie",
+          "cluster": "0001",
+          "attribut": 32,
+          "mqtt_device_class": null,
+          "mqtt_icon": "alpha-v",
+          "mqtt_state_class": null,
+          "type": "float",
+          "coefficient": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "Batterie",
+          "cluster": "0001",
+          "attribut": 33,
+          "mqtt_device_class": null,
+          "mqtt_icon": "car-battery",
+          "mqtt_state_class": null,
+          "type": "numeric",
+          "coefficient": 0.4,
+          "unit": "%",
+          "visible": 1,
+          "jauge": "battery",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "name": "Temperature",
+          "cluster": "0402",
+          "attribut": 0,
+          "mqtt_device_class": null,
+          "mqtt_icon": "thermometer",
+          "mqtt_state_class": null,
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "°C",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": -20,
+          "max": 50
+        },
+        {
+          "name": "Index",
+          "cluster": "0702",
+          "attribut": 0,
+          "mqtt_device_class": "water",
+          "mqtt_icon": "water",
+          "mqtt_state_class": "total",
+          "type": "numeric",
+          "coefficient": 1,
+          "jauge": "text",
+          "visible": 1,
+          "unit": "L"
+        }
+      ],
+      "bind": "1794;1026;1"
+    }
+  ]
 }
