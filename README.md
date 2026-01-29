@@ -195,13 +195,13 @@ Les données sont persistées et restaurées automatiquement après un redémarr
 ###### Compatibilité
 Tout device Zigbee reportant le cluster **Simple Metering (0x0702)** avec l'attribut **Current Summation Delivered (0x0000)** est compatible.
 
-### Gestion de présence
+#### Gestion de présence
 
-#### Présentation
+##### Présentation
 
 La gestion de présence permet de corréler votre consommation énergétique avec les périodes d'occupation de votre habitat. En intégrant des capteurs de présence, vous pouvez visualiser l'impact de votre présence sur votre consommation et identifier des anomalies (consommation excessive en votre absence, par exemple).
 
-#### Cas d'usage
+##### Cas d'usage
 
 * **Analyse comportementale** : Comprenez comment votre présence influence votre consommation énergétique et identifiez des pistes d'économies.  
 * **Détection d'anomalies** : Repérez une consommation anormale pendant vos absences (appareil resté allumé, fuite, dysfonctionnement).  
@@ -209,16 +209,16 @@ La gestion de présence permet de corréler votre consommation énergétique ave
 * **Suivi des habitudes** : Visualisez vos routines quotidiennes et leur impact énergétique.  
 * **Maison secondaire** : Surveillez la consommation en votre absence et détectez toute activité inattendue.  
 
-#### Fonctionnalités
+##### Fonctionnalités
 
-##### Overlay de présence sur les graphiques
+###### Overlay de présence sur les graphiques
 
 Les périodes de présence sont affichées sous forme de zones colorées superposées aux graphiques de consommation énergétique. D'un coup d'œil, vous pouvez identifier :
 
 * Les périodes où le logement est occupé (zone colorée)  
 * Les périodes d'absence (zone transparente)  
 
-##### Historique de présence
+###### Historique de présence
 
 L'historique de présence est conservé avec la même granularité que les données énergétiques :
 
@@ -226,21 +226,21 @@ L'historique de présence est conservé avec la même granularité que les donn�
 * **Journalier** : Taux d'occupation par jour  
 * **Mensuel** : Statistiques d'occupation mensuelles  
 
-#### Configuration
+##### Configuration
 
 1. Accédez à la page **Config** --> **Énergie**
 2. Dans l'onglet **Présence**,
 3. Sélectionnez le capteur Zigbee à utiliser pour la détection
 4. Activez la fonctionnalité
 
-#### Visualisation
+##### Visualisation
 
-##### Graphique d'énergie avec overlay
+###### Graphique d'énergie avec overlay
 
 Les zones de présence sont affichées en transparence sur le graphique de consommation :
 ![présence](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box-Presence.png)
 
-#### Compatibilité
+##### Compatibilité
 Tout device Zigbee reportant le cluster **Occupancy (0x0406)** avec l'attribut **0x0000** est compatible.
 
 ### Production d'énergie et Injection
