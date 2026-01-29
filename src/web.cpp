@@ -30,6 +30,7 @@
 #include "zigbee.h"
 #include "basic.h"
 #include "thermostat.h"
+#include "presence.h"
 
 #include "rules.h"
 #include "microtar.h"
@@ -79,7 +80,8 @@ HTTPClient clientWeb;
 AsyncWebServer serverWeb(80);
 AsyncWebSocket ws("/ws");
 
-TemplateCache templateCache(true);
+//TemplateCache templateCache(true);
+extern TemplateCache templateCache;
 
 #define UPD_FILE "https://github.com/fairecasoimeme/lixee-gateway/releases/latest/download/update.tar"
 
@@ -138,73 +140,13 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<script type='text/javascript' src='web/js/justgage.min.js'></script>"
     "<script type='text/javascript' src='web/js/functions.min.js'></script>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
+    "<script type='text/javascript' src='web/js/presence.min.js'></script>"
     "<script src='https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js'></script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/energy.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=yes'>"
-    "<style>"
-      "body {"
-        "background-color: #f7f9fc;"
-        "font-family: 'Inter', sans-serif;"
-      "}"
-     ".card {"
-        "border-radius: 1rem;"
-        "box-shadow: 0 4px 6px rgba(0,0,0,0.05);"
-      "}"
-      ".link {"
-        "color : rgba(0,0,0);"
-        "text-decoration: none !important;"
-        "font-size: 24px;"
-        "display:inline-flex;"
-        "align-items:center;"
-        "padding-bottom: 2px;"
-      "}"
-      ".link.active {"
-        "border-bottom: 2px solid currentColor;"
-      "}"
-      "#power_gauge_global svg,#power_gauge_global2 svg,#power_gauge_global3 svg,#power_gauge_prod svg {"
-        "height: auto !important;"
-      "}"
-      "#donut-chart svg{text-align:center;width:100%;margin-top:-50px;height:250px;}"
-      "#power-chart, #energy-chart, #gaz-chart, #water-chart {"
-      "     touch-action: none !important;"
-      "    -webkit-user-select: none;"
-      "    user-select: none;"
-      "}"
-      ".tempo-badge {"
-        "display: inline-flex;"
-        "align-items: center;"
-        "justify-content: center;"
-        "width: 44px;"
-        "height: 44px;"
-        "border-radius: 50%;"
-        "font-size: 1.3rem;"
-        "font-weight: bold;"
-        "box-shadow: 0 3px 6px rgba(0,0,0,0.3);"
-        "transition: transform 0.2s;"
-      "}"
-      ".tempo-badge:hover { transform: scale(1.1); }"
-      ".tempo-bleu {"
-        "background: linear-gradient(135deg, #2196F3, #1565C0);"
-        "color: white;"
-      "}"
-      ".tempo-blanc {"
-        "background: linear-gradient(135deg, #fafafa, #e0e0e0);"
-        "color: #333;"
-        "border: 2px solid #bdbdbd;"
-      "}"
-      ".tempo-rouge {"
-        "background: linear-gradient(135deg, #f44336, #c62828);"
-        "color: white;"
-      "}"
-      ".tempo-undef {"
-        "background: linear-gradient(135deg, #9e9e9e, #616161);"
-        "color: white;"
-      "}"
-      
-    "</style>"
     "</head>";
 
 
@@ -430,71 +372,98 @@ const char HTTP_MENU[] PROGMEM =
 
 
 const char HTTP_TOOLS[] PROGMEM =
-    "<h4>"
-    "Outils avancés"
-    "</h4>"
-    "<div class='btn-group-vertical'>"
-    //"<a href='/logs' class='btn btn-primary mb-2'>Console</a>"
-    "<a href='/debugFiles' class='btn btn-primary mb-2'>"
-    "<svg viewBox='0 0 24 24'  width='24' height='24' stroke='currentColor' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'>"
-      "<polyline points='4 17 10 11 4 5'></polyline>"
-      "<line x1='12' y1='19' x2='20' y2='19'></line>"
-    "</svg><br>"
-    " Debug"
+    "<style>"
+    ".tools-container{max-width:1200px;margin:0 auto;padding:20px;}"
+    ".tools-header{margin-bottom:30px;}"
+    ".tools-header h4{margin:0;font-size:24px;font-weight:600;color:#333;}"
+    ".tools-header p{color:#6c757d;margin-top:5px;}"
+    ".tools-section{margin-bottom:30px;}"
+    ".tools-section-title{font-size:14px;font-weight:600;color:#6c757d;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:15px;padding-bottom:10px;border-bottom:1px solid #dee2e6;}"
+    ".tools-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:15px;}"
+    ".tool-card{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px 15px;background:#fff;border-radius:12px;border:1px solid #dee2e6;text-decoration:none;color:#333;transition:all 0.2s ease;min-height:120px;}"
+    ".tool-card:hover{transform:translateY(-3px);box-shadow:0 8px 25px rgba(0,0,0,0.1);border-color:#0d6efd;text-decoration:none;color:#333;}"
+    ".tool-card:active{transform:translateY(0);}"
+    ".tool-card .icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;}"
+    ".tool-card .icon svg{width:24px;height:24px;}"
+    ".tool-card .icon.blue{background:#e7f1ff;color:#0d6efd;}"
+    ".tool-card .icon.green{background:#d1e7dd;color:#198754;}"
+    ".tool-card .icon.orange{background:#fff3cd;color:#fd7e14;}"
+    ".tool-card .icon.red{background:#f8d7da;color:#dc3545;}"
+    ".tool-card .icon.purple{background:#e2d9f3;color:#6f42c1;}"
+    ".tool-card .icon.cyan{background:#cff4fc;color:#0dcaf0;}"
+    ".tool-card .label{font-size:13px;font-weight:500;text-align:center;}"
+    ".tool-card .desc{font-size:11px;color:#6c757d;text-align:center;margin-top:4px;}"
+    "@media(max-width:576px){"
+    ".tools-grid{grid-template-columns:repeat(2,1fr);gap:10px;}"
+    ".tool-card{padding:15px 10px;min-height:100px;}"
+    ".tool-card .icon{width:40px;height:40px;margin-bottom:8px;}"
+    ".tool-card .icon svg{width:20px;height:20px;}"
+    ".tool-card .label{font-size:12px;}"
+    ".tool-card .desc{display:none;}"
+    "}"
+    "</style>"
+    "<div class='tools-container'>"
+    "<div class='tools-header'>"
+    "<h4>Outils avancés</h4>"
+    "</div>"
+
+    // Section Fichiers & Données
+    "<div class='tools-section'>"
+    "<div class='tools-section-title'>Fichiers & Données</div>"
+    "<div class='tools-grid'>"
+
+    "<a href='/fsbrowser' class='tool-card'>"
+    "<div class='icon blue'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/><path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/></svg></div>"
+    "<span class='label'>Appareils</span>"
+    "<span class='desc'>Fichiers devices</span>"
     "</a>"
-    "<a href='/fsbrowser' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg'  width='24' height='24' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
-      "<path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
-      "<path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
-    "</svg><br>"
-    " Fichiers appareils"
+
+    "<a href='/hst' class='tool-card'>"
+    "<div class='icon green'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022l-.074.997zm2.004.45a7.003 7.003 0 0 0-.985-.299l.219-.976c.383.086.76.2 1.126.342l-.36.933zm1.37.71a7.01 7.01 0 0 0-.439-.27l.493-.87a8.025 8.025 0 0 1 .979.654l-.615.789a6.996 6.996 0 0 0-.418-.302zm1.834 1.79a6.99 6.99 0 0 0-.653-.796l.724-.69c.27.285.52.59.747.91l-.818.576zm.744 1.352a7.08 7.08 0 0 0-.214-.468l.893-.45a7.976 7.976 0 0 1 .45 1.088l-.95.313a7.023 7.023 0 0 0-.179-.483zm.53 2.507a6.991 6.991 0 0 0-.1-1.025l.985-.17c.067.386.106.778.116 1.17l-1 .025zm-.131 1.538c.033-.17.06-.339.081-.51l.993.123a7.957 7.957 0 0 1-.23 1.155l-.964-.267c.046-.165.086-.332.12-.501zm-.952 2.379c.184-.29.346-.594.486-.908l.914.405c-.16.36-.345.706-.555 1.038l-.845-.535zm-.964 1.205c.122-.122.239-.248.35-.378l.758.653a8.073 8.073 0 0 1-.401.432l-.707-.707z'/><path d='M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0v1z'/><path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5z'/></svg></div>"
+    "<span class='label'>Historique</span>"
+    "<span class='desc'>Données history</span>"
     "</a>"
-    "<a href='/hst' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-filetype-json' viewBox='0 0 16 16'>"
-      "<path fill-rule='evenodd' d='M14 4.5V11h-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM4.151 15.29a1.2 1.2 0 0 1-.111-.449h.764a.58.58 0 0 0 .255.384q.105.073.25.114.142.041.319.041.245 0 .413-.07a.56.56 0 0 0 .255-.193.5.5 0 0 0 .084-.29.39.39 0 0 0-.152-.326q-.152-.12-.463-.193l-.618-.143a1.7 1.7 0 0 1-.539-.214 1 1 0 0 1-.352-.367 1.1 1.1 0 0 1-.123-.524q0-.366.19-.639.192-.272.528-.422.337-.15.777-.149.456 0 .779.152.326.153.5.41.18.255.2.566h-.75a.56.56 0 0 0-.12-.258.6.6 0 0 0-.246-.181.9.9 0 0 0-.37-.068q-.324 0-.512.152a.47.47 0 0 0-.185.384q0 .18.144.3a1 1 0 0 0 .404.175l.621.143q.326.075.566.211a1 1 0 0 1 .375.358q.135.222.135.56 0 .37-.188.656a1.2 1.2 0 0 1-.539.439q-.351.158-.858.158-.381 0-.665-.09a1.4 1.4 0 0 1-.478-.252 1.1 1.1 0 0 1-.29-.375m-3.104-.033a1.3 1.3 0 0 1-.082-.466h.764a.6.6 0 0 0 .074.27.5.5 0 0 0 .454.246q.285 0 .422-.164.137-.165.137-.466v-2.745h.791v2.725q0 .66-.357 1.005-.355.345-.985.345a1.6 1.6 0 0 1-.568-.094 1.15 1.15 0 0 1-.407-.266 1.1 1.1 0 0 1-.243-.39m9.091-1.585v.522q0 .384-.117.641a.86.86 0 0 1-.322.387.9.9 0 0 1-.47.126.9.9 0 0 1-.47-.126.87.87 0 0 1-.32-.387 1.55 1.55 0 0 1-.117-.641v-.522q0-.386.117-.641a.87.87 0 0 1 .32-.387.87.87 0 0 1 .47-.129q.265 0 .47.129a.86.86 0 0 1 .322.387q.117.255.117.641m.803.519v-.513q0-.565-.205-.973a1.46 1.46 0 0 0-.59-.63q-.38-.22-.916-.22-.534 0-.92.22a1.44 1.44 0 0 0-.589.628q-.205.407-.205.975v.513q0 .562.205.973.205.407.589.626.386.217.92.217.536 0 .917-.217.384-.22.589-.626.204-.41.205-.973m1.29-.935v2.675h-.746v-3.999h.662l1.752 2.66h.032v-2.66h.75v4h-.656l-1.761-2.676z'/>"
-    "</svg><br>"
-    " Historique"
+
+    "<a href='/tp' class='tool-card'>"
+    "<div class='icon purple'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z'/><path d='M4.5 12.5A.5.5 0 0 1 5 12h3a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm0-2A.5.5 0 0 1 5 10h6a.5.5 0 0 1 0 1H5a.5.5 0 0 1-.5-.5zm1.639-3.708 1.33.886 1.854-1.855a.25.25 0 0 1 .289-.047l1.888.974V8.5a.5.5 0 0 1-.5.5H5a.5.5 0 0 1-.5-.5V8s1.54-1.274 1.639-1.208zM6.25 6a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5z'/></svg></div>"
+    "<span class='label'>Templates</span>"
+    "<span class='desc'>Modèles JSON</span>"
     "</a>"
-    "<a href='/tp' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-filetype-json' viewBox='0 0 16 16'>"
-      "<path fill-rule='evenodd' d='M14 4.5V11h-1V4.5h-2A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v9H2V2a2 2 0 0 1 2-2h5.5zM4.151 15.29a1.2 1.2 0 0 1-.111-.449h.764a.58.58 0 0 0 .255.384q.105.073.25.114.142.041.319.041.245 0 .413-.07a.56.56 0 0 0 .255-.193.5.5 0 0 0 .084-.29.39.39 0 0 0-.152-.326q-.152-.12-.463-.193l-.618-.143a1.7 1.7 0 0 1-.539-.214 1 1 0 0 1-.352-.367 1.1 1.1 0 0 1-.123-.524q0-.366.19-.639.192-.272.528-.422.337-.15.777-.149.456 0 .779.152.326.153.5.41.18.255.2.566h-.75a.56.56 0 0 0-.12-.258.6.6 0 0 0-.246-.181.9.9 0 0 0-.37-.068q-.324 0-.512.152a.47.47 0 0 0-.185.384q0 .18.144.3a1 1 0 0 0 .404.175l.621.143q.326.075.566.211a1 1 0 0 1 .375.358q.135.222.135.56 0 .37-.188.656a1.2 1.2 0 0 1-.539.439q-.351.158-.858.158-.381 0-.665-.09a1.4 1.4 0 0 1-.478-.252 1.1 1.1 0 0 1-.29-.375m-3.104-.033a1.3 1.3 0 0 1-.082-.466h.764a.6.6 0 0 0 .074.27.5.5 0 0 0 .454.246q.285 0 .422-.164.137-.165.137-.466v-2.745h.791v2.725q0 .66-.357 1.005-.355.345-.985.345a1.6 1.6 0 0 1-.568-.094 1.15 1.15 0 0 1-.407-.266 1.1 1.1 0 0 1-.243-.39m9.091-1.585v.522q0 .384-.117.641a.86.86 0 0 1-.322.387.9.9 0 0 1-.47.126.9.9 0 0 1-.47-.126.87.87 0 0 1-.32-.387 1.55 1.55 0 0 1-.117-.641v-.522q0-.386.117-.641a.87.87 0 0 1 .32-.387.87.87 0 0 1 .47-.129q.265 0 .47.129a.86.86 0 0 1 .322.387q.117.255.117.641m.803.519v-.513q0-.565-.205-.973a1.46 1.46 0 0 0-.59-.63q-.38-.22-.916-.22-.534 0-.92.22a1.44 1.44 0 0 0-.589.628q-.205.407-.205.975v.513q0 .562.205.973.205.407.589.626.386.217.92.217.536 0 .917-.217.384-.22.589-.626.204-.41.205-.973m1.29-.935v2.675h-.746v-3.999h.662l1.752 2.66h.032v-2.66h.75v4h-.656l-1.761-2.676z'/>"
-    "</svg><br>"
-    " Templates"
+
+    "<a href='/rules' class='tool-card'>"
+    "<div class='icon orange'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/></svg></div>"
+    "<span class='label'>Règles</span>"
+    "<span class='desc'>Automatisations</span>"
     "</a>"
-    "<a href='/rules' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
-      "<path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
-    "</svg><br>"
-    " Règles"
+
+    "</div>"
+    "</div>"
+
+    // Section Système
+    "<div class='tools-section'>"
+    "<div class='tools-section-title'>Système</div>"
+    "<div class='tools-grid'>"
+
+    "<a href='/debugFiles' class='tool-card'>"
+    "<div class='icon cyan'><svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='4 17 10 11 4 5'></polyline><line x1='12' y1='19' x2='20' y2='19'></line></svg></div>"
+    "<span class='label'>Debug</span>"
+    "<span class='desc'>Console logs</span>"
     "</a>"
-    "<a href='/generateNotif' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
-      "<path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
-    "</svg><br>"
-    " Notif Gen"
+
+    "<a href='/backup' class='tool-card'>"
+    "<div class='icon purple'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708l2-2z'/><path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383zm.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/></svg></div>"
+    "<span class='label'>Sauvegarde</span>"
+    "<span class='desc'>Backup config</span>"
     "</a>"
-    //"<a href='/javascript' class='btn btn-primary mb-2'>Javascript</a>"
-    "<a href='/update' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-download' viewBox='0 0 16 16'>"
-    "  <path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5'/>"
-    "  <path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z'/>"
-    "</svg><br>"
-    " Mise à jour"
+
+    "<a href='/reboot' class='tool-card'>"
+    "<div class='icon red'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z'/><path fill-rule='evenodd' d='M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z'/></svg></div>"
+    "<span class='label'>Redémarrer</span>"
+    "<span class='desc'>Reboot système</span>"
     "</a>"
-    "<a href='/backup' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-cloud-arrow-up' viewBox='0 0 16 16'>"
-    "  <path fill-rule='evenodd' d='M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708z'/>"
-    "  <path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>"
-    "</svg><br>"
-    " Sauvegarde"
-    "</a>"
-    "<a href='/reboot' class='btn btn-primary mb-2'>"
-    "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-bootstrap-reboot' viewBox='0 0 16 16'>"
-    "  <path d='M1.161 8a6.84 6.84 0 1 0 6.842-6.84.58.58 0 1 1 0-1.16 8 8 0 1 1-6.556 3.412l-.663-.577a.58.58 0 0 1 .227-.997l2.52-.69a.58.58 0 0 1 .728.633l-.332 2.592a.58.58 0 0 1-.956.364l-.643-.56A6.8 6.8 0 0 0 1.16 8z'/>"
-    "  <path d='M6.641 11.671V8.843h1.57l1.498 2.828h1.314L9.377 8.665c.897-.3 1.427-1.106 1.427-2.1 0-1.37-.943-2.246-2.456-2.246H5.5v7.352zm0-3.75V5.277h1.57c.881 0 1.416.499 1.416 1.32 0 .84-.504 1.324-1.386 1.324z'/>"
-    "</svg><br>"
-    " Redémarrer"
-    "</a>"
+
+    "</div>"
+    "</div>"
     "</div>"; 
 
 const char HTTP_HISTORY[] PROGMEM = 
@@ -697,7 +666,7 @@ const char HTTP_BACKUP[] PROGMEM =
     ;
 
 
-const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
+const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"rawstring(
 
   <div class="container py-5">
     <h4 class="mb-4">Config Energie</h4>
@@ -756,6 +725,23 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
           Eau
         </button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link"
+          id="submeters-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#submeters"
+          type="button"
+          role="tab"
+          aria-controls="submeters"
+          aria-selected="false">
+          Sous-compteurs
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="presence-tab" data-bs-toggle="tab" 
+          data-bs-target="#presence" type="button" role="tab">Présence</button>
+      </li>
     </ul>
 
     <!-- Tab contents -->
@@ -797,51 +783,51 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
                 </h5>
                 <div class="collapse" id="tarifLinky" style="display:none;">
                   <div class="mb-3">
-                    <label for='tarifAbo'>Tarif abonnement (€)</label> 
+                    <label for='tarifAbo'>Tarif abonnement (€ / mois)</label> 
                     <input class='form-control' id='tarifAbo' type='text' name='tarifAbo' value='{{tarifAbo}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifCSPE'>Accise sur l'Electricité (€)</label> 
+                    <label for='tarifCSPE'>Accise sur l'Electricité (€ / kWh)</label> 
                     <input class='form-control' id='tarifCSPE' type='text' name='tarifCSPE' value='{{tarifCSPE}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€)</label> 
+                    <label for='tarifCTA'>Contribution Tarifaire d'Acheminement Electricité (CTA) (€ / mois)</label> 
                     <input class='form-control' id='tarifCTA' type='text' name='tarifCTA' value='{{tarifCTA}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx2'>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (€)</label> 
+                    <label for='tarifIdx2'>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx2' type='text' name='tarifIdx2' value='{{tarifIdx2}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€)</label> 
+                    <label for='tarifIdx3'>Tarif HP/EJPHPM/BBRHPJB/EASF02 (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx3' type='text' name='tarifIdx3' value='{{tarifIdx3}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€)</label> 
+                    <label for='tarifIdx4'>Tarif BBRHCJW/EASF03  (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx4' type='text' name='tarifIdx4' value='{{tarifIdx4}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€)</label> 
+                    <label for='tarifIdx5'>Tarif BBRHPJW/EASF04 (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx5' type='text' name='tarifIdx5' value='{{tarifIdx5}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€)</label> 
+                    <label for='tarifIdx6'>Tarif BBRHCJR/EASF05 (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx6' type='text' name='tarifIdx6' value='{{tarifIdx6}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€)</label> 
+                    <label for='tarifIdx7'>Tarif BBRHPJR/EASF06  (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx7' type='text' name='tarifIdx7' value='{{tarifIdx7}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx8'>Tarif EASF07 (€)</label> 
+                    <label for='tarifIdx8'>Tarif EASF07 (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx8' type='text' name='tarifIdx8' value='{{tarifIdx8}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx9'>Tarif EASF08 (€)</label> 
+                    <label for='tarifIdx9'>Tarif EASF08 (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx9' type='text' name='tarifIdx9' value='{{tarifIdx9}}'> 
                   </div>
                   <div class="mb-3">
-                    <label for='tarifIdx10'>Tarif EASF09 (€)</label> 
+                    <label for='tarifIdx10'>Tarif EASF09 (€ / kWh)</label> 
                     <input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'> 
                   </div>
                 </div>
@@ -1194,6 +1180,78 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
           </div> 
         </div>
       </div>
+      <!-- Onglet Sous-compteurs -->
+      <div
+        class="tab-pane fade"
+        id="submeters"
+        role="tabpanel"
+        aria-labelledby="submeters-tab">
+        
+        <div class='card mx-auto shadow-sm'>
+          <div class="card-body"> 
+            <h5>Sous-compteurs énergie</h5>
+            <p class="text-muted small">
+              Ajoutez des prises ou appareils Zigbee avec mesure de consommation pour détailler 
+              la répartition de votre consommation électrique dans le dashboard.
+            </p>
+            
+            <!-- Liste des sous-compteurs configurés -->
+            <div id="subMetersList" class="mb-3">
+              <div class="text-center py-3">
+                <div class="spinner-border spinner-border-sm" role="status"></div>
+                Chargement...
+              </div>
+            </div>
+            
+            <!-- Formulaire d'ajout -->
+            <div class="card bg-light mt-3">
+              <div class="card-body">
+                <h6>Ajouter un sous-compteur</h6>
+                <div class="mb-3">
+                  <label for="subMeterDevice" class="form-label">Appareil</label>
+                  <select id="subMeterDevice" class="form-select">
+                    <option value="">-- Sélectionner --</option>
+                  </select>
+                  <div class="form-text">Seuls les appareils avec mesure d'énergie (Wh) sont affichés.</div>
+                </div>
+                <div class="mb-3">
+                  <label for="subMeterAlias" class="form-label">Nom affiché</label>
+                  <input type="text" id="subMeterAlias" class="form-control" placeholder="Ex: Salon, Cuisine, Bureau...">
+                </div>
+                <div class="mb-3">
+                  <label for="subMeterColor" class="form-label">Couleur</label>
+                  <input type="color" id="subMeterColor" class="form-control form-control-color" value="#3498db" title="Choisir une couleur">
+                </div>
+                <button type="button" class="btn btn-primary" onclick="addSubMeter()">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-lg" viewBox="0 0 16 16">
+                    <path fill-rule="evenodd" d="M8 2a.5.5 0 0 1 .5.5v5h5a.5.5 0 0 1 0 1h-5v5a.5.5 0 0 1-1 0v-5h-5a.5.5 0 0 1 0-1h5v-5A.5.5 0 0 1 8 2"/>
+                  </svg>
+                  Ajouter
+                </button>
+              </div>
+            </div>
+            
+          </div> 
+        </div>
+      </div>
+      <!-- Onglet Présence -->
+      <div class="tab-pane fade" id="presence" role="tabpanel">
+        <div class='card mx-auto shadow-sm'>
+          <div class="card-body"> 
+            <form method='POST' action='saveConfigPresence'> 
+              <h5>Capteur de présence</h5>
+              {{selectDevicesPresence}}
+              <div class='form-check mt-3'>
+                <input id='enablePresenceGraph' type='checkbox' name='enablePresenceGraph' {{checkedEnablePresenceGraph}}>
+                <label for='enablePresenceGraph'>Afficher sur le graphique</label>
+              </div>
+              <div class="d-flex justify-content-end mt-3">
+                <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
+              </div>
+            </form>
+          </div> 
+        </div>
+      </div>
     </div>
   </div>
   <script>
@@ -1219,13 +1277,132 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"(
         });
       });
     }
+
+    // ==========================================
+    // SOUS-COMPTEURS
+    // ==========================================
+    
+    // Charger au clic sur l'onglet
+    document.getElementById('submeters-tab').addEventListener('shown.bs.tab', function() {
+      loadSubMetersList();
+      loadEligibleDevices();
+    });
+    
+    // Charger la liste des sous-compteurs configurés
+    function loadSubMetersList() {
+      fetch('/getSubMeters')
+        .then(response => response.json())
+        .then(data => {
+          let html = '';
+          if (data.subMeters.length === 0) {
+            html = '<p class="text-muted text-center py-3">Aucun sous-compteur configuré</p>';
+          } else {
+            html = '<div class="list-group">';
+            data.subMeters.forEach(function(sm) {
+              html += '<div class="list-group-item d-flex align-items-center">';
+              html += '<span class="me-3" style="width:24px;height:24px;background:' + sm.color + ';border-radius:50%;flex-shrink:0;"></span>';
+              html += '<div class="flex-grow-1">';
+              html += '<strong>' + sm.alias + '</strong>';
+              html += '<br><small class="text-muted">' + sm.IEEE + '</small>';
+              html += '</div>';
+              html += '<button class="btn btn-sm btn-outline-danger" onclick="deleteSubMeter(\'' + sm.IEEE + '\',\'' + sm.alias + '\')" title="Supprimer">';
+              html += '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/><path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/></svg>';
+              html += '</button>';
+              html += '</div>';
+            });
+            html += '</div>';
+          }
+          document.getElementById('subMetersList').innerHTML = html;
+        })
+        .catch(err => {
+          document.getElementById('subMetersList').innerHTML = '<p class="text-danger">Erreur de chargement</p>';
+        });
+    }
+    
+    // Charger les devices éligibles
+    function loadEligibleDevices() {
+      fetch('/getEligibleSubMeters')
+        .then(response => response.json())
+        .then(data => {
+          let select = document.getElementById('subMeterDevice');
+          select.innerHTML = '<option value="">-- Sélectionner --</option>';
+          data.forEach(function(dev) {
+            let opt = document.createElement('option');
+            opt.value = dev.IEEE;
+            opt.textContent = (dev.alias || dev.model || dev.IEEE) + ' (' + dev.IEEE.substring(0,8) + '...)';
+            select.appendChild(opt);
+          });
+        });
+    }
+    
+    // Ajouter un sous-compteur
+    function addSubMeter() {
+      let IEEE = document.getElementById('subMeterDevice').value;
+      let alias = document.getElementById('subMeterAlias').value.trim();
+      let color = document.getElementById('subMeterColor').value;
+      
+      if (!IEEE) {
+        alert('Veuillez sélectionner un appareil');
+        return;
+      }
+      if (!alias) {
+        alert('Veuillez entrer un nom');
+        return;
+      }
+      
+      let formData = new FormData();
+      formData.append('IEEE', IEEE);
+      formData.append('alias', alias);
+      formData.append('color', color);
+      formData.append('enabled', 'true');
+      
+      fetch('/setSubMeter', {
+        method: 'POST',
+        body: new URLSearchParams(formData)
+      })
+      .then(response => response.text())
+      .then(result => {
+        if (result === 'OK') {
+          document.getElementById('subMeterAlias').value = '';
+          document.getElementById('subMeterDevice').value = '';
+          loadSubMetersList();
+          loadEligibleDevices();
+        } else {
+          alert('Erreur: ' + result);
+        }
+      })
+      .catch(err => alert('Erreur réseau'));
+    }
+    
+    // Supprimer un sous-compteur
+    function deleteSubMeter(IEEE, alias) {
+      if (!confirm('Supprimer le sous-compteur "' + alias + '" ?')) return;
+      
+      let formData = new FormData();
+      formData.append('IEEE', IEEE);
+      
+      fetch('/deleteSubMeter', {
+        method: 'POST',
+        body: new URLSearchParams(formData)
+      })
+      .then(response => response.text())
+      .then(result => {
+        if (result === 'OK') {
+          loadSubMetersList();
+          loadEligibleDevices();
+        } else {
+          alert('Erreur: ' + result);
+        }
+      })
+      .catch(err => alert('Erreur réseau'));
+    }
     
     // Exécuter au chargement de la page
     document.addEventListener('DOMContentLoaded', setupDecimalInputs);
   </script>
 
 
-)";
+)rawstring";
 
 const char HTTP_UPDATE[] PROGMEM = R"(
     <div class="container py-5">
@@ -2795,7 +2972,8 @@ const char HTTP_DASHBOARD[] PROGMEM =
 const char HTTP_ENERGY[] PROGMEM = R"(
     
     <div class='container'>
-    <h4>Tableau de bord énergétique</h4>
+    <h4>Tableau de bord énergétique
+    </h4>
     <div class='row g-4'>
         <div class='col-md-12'>
             <div class='nav justify-content-end'>
@@ -3959,20 +4137,60 @@ const char HTTP_CREATE_HISTORY[] PROGMEM =
     "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Enregistrer</button>"
     "</form>";
 const char HTTP_CREATE_TEMPLATE[] PROGMEM =
-    "<h4>Create tp file</h4>"
-    "<div class='row justify-content-md-center' >"
-    "<div class='col col-md-6'><form method='POST' action='saveFileTemplates'>"
-    "<div class='form-group'>"
-    "<label for='filename'>File name</label>"
-    "<input class='form-control' id='filename' type='text' name='filename' value=''> "
+    "<style>"
+    ".create-container{max-width:900px;margin:0 auto;padding:20px;}"
+    ".create-card{background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,0.08);overflow:hidden;}"
+    ".create-header{background:#f8f9fa;padding:20px;border-bottom:1px solid #dee2e6;}"
+    ".create-header h4{margin:0;display:flex;align-items:center;gap:10px;}"
+    ".create-body{padding:20px;}"
+    ".form-label{font-weight:500;margin-bottom:8px;}"
+    "#file{font-family:'Consolas','Monaco',monospace;font-size:13px;background:#1e1e1e;color:#d4d4d4;border-radius:8px;}"
+    ".validation-msg{padding:10px;border-radius:6px;margin-top:10px;}"
+    ".validation-msg.valid{background:#d1e7dd;color:#0f5132;}"
+    ".validation-msg.invalid{background:#f8d7da;color:#842029;}"
+    ".btn-group-actions{display:flex;gap:10px;margin-top:20px;}"
+    "</style>"
+    "<div class='create-container'>"
+    "<div class='create-card'>"
+    "<div class='create-header'>"
+    "<h4><svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' viewBox='0 0 16 16'><path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z'/></svg> Nouveau Template</h4>"
     "</div>"
-    "<div class='form-group'>"
-    " <label for='file'>Content</label>"
-    " <textarea class='form-control' id='file' name='file' rows='20'>"
+    "<div class='create-body'>"
+    "<form id='createForm'>"
+    "<div class='mb-3'>"
+    "<label class='form-label' for='filename'>Nom du fichier</label>"
+    "<input class='form-control' id='filename' type='text' name='filename' placeholder='Ex: 123.json' required>"
+    "<div class='form-text'>Le fichier sera enregistré dans /tp/</div>"
+    "</div>"
+    "<div class='mb-3'>"
+    "<label class='form-label' for='file'>Contenu JSON</label>"
+    "<textarea class='form-control' id='file' name='file' rows='18' spellcheck='false'>"
+    "{\\n  \"default\": [\\n    {\\n      \"status\": [],\\n      \"action\": [],\\n      \"bind\": \"\",\\n      \"report\": []\\n    }\\n  ]\\n}"
     "</textarea>"
+    "<div id='validationMsg' class='validation-msg valid'>✓ JSON valide</div>"
     "</div>"
-    "<button type='submit' class='btn btn-primary mb-2' name='save' value='save'>Enregistrer</button>"
-    "</form>";
+    "<div class='btn-group-actions'>"
+    "<button type='button' class='btn btn-primary' onclick='saveNewTemplate()'>Créer le template</button>"
+    "<a href='/configTemplates' class='btn btn-outline-secondary'>Annuler</a>"
+    "</div>"
+    "</form>"
+    "</div></div></div>"
+    "<script>"
+    "$('#file').on('input',validateJson);"
+    "function validateJson(){"
+    "try{JSON.parse($('#file').val());"
+    "$('#validationMsg').removeClass('invalid').addClass('valid').html('✓ JSON valide');return true;"
+    "}catch(e){$('#validationMsg').removeClass('valid').addClass('invalid').html('✗ '+e.message);return false;}}"
+    "function saveNewTemplate(){"
+    "var filename=$('#filename').val();"
+    "if(!filename){alert('Entrez un nom de fichier');return;}"
+    "if(!filename.endsWith('.json'))filename+='.json';"
+    "if(!validateJson()){alert('Corrigez les erreurs JSON');return;}"
+    "$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:$('#file').val(),2:'save'},dataType:'json',"
+    "success:function(){window.location='/configTemplates';},"
+    "error:function(xhr){alert('Erreur: '+(xhr.responseJSON||{}).error||'Erreur inconnue');}});}"
+    "</script>";
+
 
 const char HTTP_DEVICE[] PROGMEM =
     "<div class='col-sm-3'><div class='card'><div class='card-header'>Socket num : {{numero}}"
@@ -4910,24 +5128,29 @@ String createDistributionGraph(String IEEE)
   result += F("donutChart = Morris.Donut({");
   result += F(" element: 'donut-chart',");
   result += F("data: [],");
-  result += F("formatter: function (value,data){return value +' '+data.unit;},"); //#e67e22
-  if (strcmp(ConfigGeneral.Production,"")==0)
-  {
-    if ((strcmp(ConfigGeneral.Gaz,"")==0) || (strcmp(ConfigGeneral.unitGaz,"Wh")!=0))
-    {
-      result += F(" colors: ['#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
-    }else{
-      result += F(" colors: ['#e67e22','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
-    }  
-  }else{
-    if ((strcmp(ConfigGeneral.Gaz,"")==0) || (strcmp(ConfigGeneral.unitGaz,"Wh")!=0))
-    {
-      result += F(" colors: ['#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
-    }else{
-      result += F(" colors: ['#e67e22','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+  result += F("formatter: function (value,data){return value +' '+data.unit;},");
+  
+  // Couleurs par défaut - seront remplacées dynamiquement si sous-compteurs configurés
+  if (ConfigGeneral.subMeterCount > 0) {
+    // Mode sous-compteurs : couleurs gérées dynamiquement par JavaScript
+    result += F(" colors: ['#3498db','#e74c3c','#f39c12','#9b59b6','#1abc9c','#e67e22','#95a5a6','#27ae60','#2980b9','#8e44ad'],");
+  } else {
+    // Mode index tarifaires : couleurs originales
+    if (strcmp(ConfigGeneral.Production, "") == 0) {
+      if ((strcmp(ConfigGeneral.Gaz, "") == 0) || (strcmp(ConfigGeneral.unitGaz, "Wh") != 0)) {
+        result += F(" colors: ['#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+      } else {
+        result += F(" colors: ['#e67e22','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+      }
+    } else {
+      if ((strcmp(ConfigGeneral.Gaz, "") == 0) || (strcmp(ConfigGeneral.unitGaz, "Wh") != 0)) {
+        result += F(" colors: ['#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+      } else {
+        result += F(" colors: ['#e67e22','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32'],");
+      }
     }
-    
   }
+  
   result += F(" resize: true,");
   result += F(" animate: false,");
   result += F(" showPercentage: true,");
@@ -5335,6 +5558,29 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
       JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + String(getTarif(1, "production")) + ",\"unit\":\"Wh\"}";
       ykeys += sep + "'1'";
       labels += sep + "'Production'";
+      i++;
+    }
+    
+    // Ajouter les sous-compteurs
+    for (int sm = 0; sm < ConfigGeneral.subMeterCount; sm++)
+    {
+      if (!ConfigGeneral.subMeters[sm].enabled) continue;
+      if (strlen(ConfigGeneral.subMeters[sm].IEEE) == 0) continue;
+      
+      sep = (i > 0) ? "," : "";
+      String subKey = "sub_" + String(sm);
+      
+      // Utiliser le tarif moyen (256 = BASE/HC)
+      JsonEuros += sep + "\"" + subKey + "\":{";
+      JsonEuros += "\"name\":\"" + String(ConfigGeneral.subMeters[sm].alias) + "\",";
+      JsonEuros += "\"coeff\":1,";
+      JsonEuros += "\"price\":" + String(getTarif(256, "energy")) + ",";
+      JsonEuros += "\"color\":\"" + String(ConfigGeneral.subMeters[sm].color) + "\",";
+      JsonEuros += "\"unit\":\"Wh\"}";
+      
+      ykeys += sep + "'" + subKey + "'";
+      labels += sep + "'" + String(ConfigGeneral.subMeters[sm].alias) + "'";
+      i++;
     }
     
     unit = "Wh";
@@ -6250,47 +6496,51 @@ void handleAPITariff(AsyncWebServerRequest *request)
 {
   String json = "{";
     
-    String currentTariff = "---";
-    String tariffBgColor = "#2980b9";
-    String tempoTodayClass = "tempo-undef";
-    String tempoTodayLabel = "Non défini";
-    String tempoTodayIcon = "?";
-    String tempoTomorrowClass = "tempo-undef";
-    String tempoTomorrowLabel = "Non défini";
-    String tempoTomorrowIcon = "-";
-    bool isTempo = false;
-    bool isHP = false;
-    bool showCard = false;
+  String currentTariff = "---";
+  String tariffBgColor = "#2980b9";
+  String tempoTodayClass = "tempo-undef";
+  String tempoTodayLabel = "Non défini";
+  String tempoTodayIcon = "?";
+  String tempoTomorrowClass = "tempo-undef";
+  String tempoTomorrowLabel = "Non défini";
+  String tempoTomorrowIcon = "-";
+  bool isTempo = false;
+  bool isHP = false;
+  bool showCard = false;
 
-    // Chercher le device ZLinky
-    DeviceData* device = nullptr;
-    for (size_t i = 0; i < devices.size(); i++) {
-      if (devices[i]->getDeviceID() == String(ConfigGeneral.ZLinky)) {
-        device = devices[i];
-        break;
-      }
+  // Chercher le device ZLinky
+  DeviceData* device = nullptr;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() == String(ConfigGeneral.ZLinky)) {
+      device = devices[i];
+      break;
     }
+  }
 
-    if (device != nullptr)
+  if (device != nullptr)
+  {
+    showCard = true;
+    String tarif = "";
+    
+    // =====================================================
+    // Mode Historique (LinkyMode 0 ou 2)
+    // =====================================================
+    if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
     {
-      showCard = true;
-      
-      // Récupérer le tarif en cours - Attribut 16 (0x10)
-      String tarif = device->getValue(std::string("FF66"), std::string("16"));
+      // PTEC = Cluster 0x0702 attribut 32 (0x0020)
+      tarif = device->getValue(std::string("0702"), std::string("32"));
+      tarif.trim();
       
       if (tarif.length() > 0)
       {
-        tarif.trim();
         currentTariff = tarif;
         
+        // Déterminer si c'est HP ou HC
         String tarifUpper = tarif;
         tarifUpper.toUpperCase();
         isHP = (tarifUpper.indexOf("HP") >= 0) || (tarifUpper.indexOf("PLEINE") >= 0);
-      }
-      // Mode Historique (LinkyMode 0 ou 2)
-      if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
-      {
-        // Mapping des codes PTEC
+        
+        // Mapping des codes PTEC vers des noms lisibles
         if (currentTariff.startsWith("TH")) {
           currentTariff = "Base";
           tariffBgColor = "#2980b9";
@@ -6315,30 +6565,30 @@ void handleAPITariff(AsyncWebServerRequest *request)
         // Tempo via PTEC
         if (tarif.startsWith("HCJB") || tarif.startsWith("HPJB")) {
           isTempo = true;
-          currentTariff = (tarif.startsWith("HC")) ? "HC Bleu" : "HP Bleu";
-          tariffBgColor = (tarif.startsWith("HC")) ? "#2980b9" : "#154360";
+          currentTariff = tarif.startsWith("HC") ? "HC Bleu" : "HP Bleu";
+          tariffBgColor = tarif.startsWith("HC") ? "#2980b9" : "#154360";
           tempoTodayClass = "tempo-bleu";
           tempoTodayLabel = "Jour Bleu";
           tempoTodayIcon = "B";
         }
         else if (tarif.startsWith("HCJW") || tarif.startsWith("HPJW")) {
           isTempo = true;
-          currentTariff = (tarif.startsWith("HC")) ? "HC Blanc" : "HP Blanc";
-          tariffBgColor = (tarif.startsWith("HC")) ? "#7f8c8d" : "#000000";
+          currentTariff = tarif.startsWith("HC") ? "HC Blanc" : "HP Blanc";
+          tariffBgColor = tarif.startsWith("HC") ? "#7f8c8d" : "#000000";
           tempoTodayClass = "tempo-blanc";
           tempoTodayLabel = "Jour Blanc";
           tempoTodayIcon = "W";
         }
         else if (tarif.startsWith("HCJR") || tarif.startsWith("HPJR")) {
           isTempo = true;
-          currentTariff = (tarif.startsWith("HC")) ? "HC Rouge" : "HP Rouge";
-          tariffBgColor = (tarif.startsWith("HC")) ? "#e74c3c" : "#c0392b";
+          currentTariff = tarif.startsWith("HC") ? "HC Rouge" : "HP Rouge";
+          tariffBgColor = tarif.startsWith("HC") ? "#e74c3c" : "#c0392b";
           tempoTodayClass = "tempo-rouge";
           tempoTodayLabel = "Jour Rouge";
           tempoTodayIcon = "R";
         }
         
-        // DEMAIN (attribut 1)
+        // DEMAIN (cluster FF66 attribut 1)
         if (isTempo)
         {
           String demain = device->getValue(std::string("FF66"), std::string("1"));
@@ -6363,77 +6613,144 @@ void handleAPITariff(AsyncWebServerRequest *request)
           }
         }
       }
-      // Mode Standard
-      else
+    }
+    // =====================================================
+    // Mode Standard (LinkyMode 1, 3 ou 7)
+    // =====================================================
+    else
+    {
+      // Essayer cluster FF66 attribut 16 (0x10) d'abord
+      tarif = device->getValue(std::string("FF66"), std::string("16"));
+      tarif.trim();
+      
+      // FALLBACK : Si vide, utiliser LTARF (attribut 512)
+      if (tarif.length() == 0)
       {
-        String stge = device->getValue(std::string("FF66"), std::string("535"));
-        if (stge.length() >= 8)
+        tarif = device->getValue(std::string("FF66"), std::string("512"));
+        tarif.trim();
+      }
+      
+      if (tarif.length() > 0)
+      {
+        currentTariff = tarif;
+        
+        // Déterminer si c'est HP ou HC
+        String tarifUpper = tarif;
+        tarifUpper.toUpperCase();
+        isHP = (tarifUpper.indexOf("HP") >= 0) || (tarifUpper.indexOf("PLEINE") >= 0);
+      }
+      
+      // Couleur par défaut selon HP/HC
+      tariffBgColor = isHP ? "#154360" : "#2980b9";
+      
+      // Récupérer STGE (attribut 535) pour les couleurs Tempo
+      String stge = device->getValue(std::string("FF66"), std::string("535"));
+      if (stge.length() >= 8)
+      {
+        auto status = parseStatusRegister(stge);
+        
+        if (status.tempo_jour != "UNDEF")
         {
-          auto status = parseStatusRegister(stge);
+          isTempo = true;
           
-          if (status.tempo_jour != "UNDEF")
-          {
-            isTempo = true;
-            
-            if (status.tempo_jour == "BLEU") {
-              tempoTodayClass = "tempo-bleu";
-              tempoTodayLabel = "Jour Bleu";
-              tempoTodayIcon = "B";
-              tariffBgColor = isHP ? "#154360" : "#2980b9";
-            } else if (status.tempo_jour == "BLANC") {
-              tempoTodayClass = "tempo-blanc";
-              tempoTodayLabel = "Jour Blanc";
-              tempoTodayIcon = "W";
-              tariffBgColor = isHP ? "#000000" : "#7f8c8d";
-            } else if (status.tempo_jour == "ROUGE") {
-              tempoTodayClass = "tempo-rouge";
-              tempoTodayLabel = "Jour Rouge";
-              tempoTodayIcon = "R";
-              tariffBgColor = isHP ? "#c0392b" : "#e74c3c";
-            }
-            
-            if (status.tempo_demain == "BLEU") {
-              tempoTomorrowClass = "tempo-bleu";
-              tempoTomorrowLabel = "Jour Bleu";
-              tempoTomorrowIcon = "B";
-            } else if (status.tempo_demain == "BLANC") {
-              tempoTomorrowClass = "tempo-blanc";
-              tempoTomorrowLabel = "Jour Blanc";
-              tempoTomorrowIcon = "W";
-            } else if (status.tempo_demain == "ROUGE") {
-              tempoTomorrowClass = "tempo-rouge";
-              tempoTomorrowLabel = "Jour Rouge";
-              tempoTomorrowIcon = "R";
-            }
-          }
-          else
-          {
+          if (status.tempo_jour == "BLEU") {
+            tempoTodayClass = "tempo-bleu";
+            tempoTodayLabel = "Jour Bleu";
+            tempoTodayIcon = "B";
             tariffBgColor = isHP ? "#154360" : "#2980b9";
+          } else if (status.tempo_jour == "BLANC") {
+            tempoTodayClass = "tempo-blanc";
+            tempoTodayLabel = "Jour Blanc";
+            tempoTodayIcon = "W";
+            tariffBgColor = isHP ? "#000000" : "#7f8c8d";
+          } else if (status.tempo_jour == "ROUGE") {
+            tempoTodayClass = "tempo-rouge";
+            tempoTodayLabel = "Jour Rouge";
+            tempoTodayIcon = "R";
+            tariffBgColor = isHP ? "#c0392b" : "#e74c3c";
+          }
+          
+          if (status.tempo_demain == "BLEU") {
+            tempoTomorrowClass = "tempo-bleu";
+            tempoTomorrowLabel = "Jour Bleu";
+            tempoTomorrowIcon = "B";
+          } else if (status.tempo_demain == "BLANC") {
+            tempoTomorrowClass = "tempo-blanc";
+            tempoTomorrowLabel = "Jour Blanc";
+            tempoTomorrowIcon = "W";
+          } else if (status.tempo_demain == "ROUGE") {
+            tempoTomorrowClass = "tempo-rouge";
+            tempoTomorrowLabel = "Jour Rouge";
+            tempoTomorrowIcon = "R";
           }
         }
       }
     }
+  }
 
-    // Construire le JSON
-    json += "\"show\":" + String(showCard ? "true" : "false") + ",";
-    json += "\"tariff\":\"" + currentTariff + "\",";
-    json += "\"bgColor\":\"" + tariffBgColor + "\",";
-    json += "\"isTempo\":" + String(isTempo ? "true" : "false") + ",";
-    json += "\"today\":{";
-    json += "\"class\":\"" + tempoTodayClass + "\",";
-    json += "\"label\":\"" + tempoTodayLabel + "\",";
-    json += "\"icon\":\"" + tempoTodayIcon + "\"";
-    json += "},";
-    json += "\"tomorrow\":{";
-    json += "\"class\":\"" + tempoTomorrowClass + "\",";
-    json += "\"label\":\"" + tempoTomorrowLabel + "\",";
-    json += "\"icon\":\"" + tempoTomorrowIcon + "\"";
-    json += "}";
-    json += "}";
+  // Construire le JSON
+  json += "\"show\":" + String(showCard ? "true" : "false") + ",";
+  json += "\"tariff\":\"" + currentTariff + "\",";
+  json += "\"bgColor\":\"" + tariffBgColor + "\",";
+  json += "\"isTempo\":" + String(isTempo ? "true" : "false") + ",";
+  json += "\"today\":{";
+  json += "\"class\":\"" + tempoTodayClass + "\",";
+  json += "\"label\":\"" + tempoTodayLabel + "\",";
+  json += "\"icon\":\"" + tempoTodayIcon + "\"";
+  json += "},";
+  json += "\"tomorrow\":{";
+  json += "\"class\":\"" + tempoTomorrowClass + "\",";
+  json += "\"label\":\"" + tempoTomorrowLabel + "\",";
+  json += "\"icon\":\"" + tempoTomorrowIcon + "\"";
+  json += "}";
+  json += "}";
 
-    request->send(200, "application/json", json);
+  request->send(200, "application/json", json);
 }
 
+String getPresenceJavaScript(String time) {
+    String js = "";
+    
+    // Plugin Chart.js pour dessiner les bandes de présence
+    // UNIQUEMENT sur le graphe d'énergie (window.energyChart)
+    js += F("if(typeof Chart!=='undefined'){");
+    js += F("Chart.register({id:'presenceOverlay',beforeDraw:function(c){");
+    
+    // Vérifier que c'est bien le graphe d'énergie
+    js += F("if(c!==window.energyChart)return;");
+    
+    js += F("var ctx=c.ctx,ca=c.chartArea,p=window.energyPeriod||'hour';");
+    js += F("if(!ca)return;ctx.save();");
+    
+    // Mode horaire - pD[i] correspond directement au label i (sliding 24h)
+    js += F("if(p==='hour'&&pD.length===24){");
+    js += F("var l=c.data.labels||[],cw=ca.right-ca.left,bw=cw/l.length;");
+    js += F("for(var i=0;i<l.length&&i<24;i++){");
+    js += F("if(pD[i]===1){");
+    js += F("var x=ca.left+(i*bw)+(bw/2);");
+    js += F("ctx.fillStyle='rgba(76,175,80,0.15)';");
+    js += F("ctx.fillRect(x-bw/2,ca.top,bw,ca.bottom-ca.top);");
+    js += F("ctx.fillStyle='rgba(76,175,80,0.8)';");
+    js += F("ctx.beginPath();ctx.arc(x,ca.top+8,4,0,6.28);ctx.fill();");
+    js += F("}}}");
+    
+    // Mode journalier
+    js += F("else if(p==='day'&&Object.keys(pDD).length>0){");
+    js += F("var l=c.data.labels||[],cw=ca.right-ca.left,bw=cw/l.length;");
+    js += F("for(var i=0;i<l.length;i++){");
+    js += F("var dy=parseInt(l[i].toString().split('/')[0]);");
+    js += F("if(!isNaN(dy)&&dy>=1&&dy<=31&&pDD[dy]===1){");
+    js += F("var x=ca.left+(i*bw)+(bw/2);");
+    js += F("ctx.fillStyle='rgba(76,175,80,0.15)';");
+    js += F("ctx.fillRect(x-bw/2,ca.top,bw,ca.bottom-ca.top);");
+    js += F("ctx.fillStyle='rgba(76,175,80,0.8)';");
+    js += F("ctx.beginPath();ctx.arc(x,ca.top+8,4,0,6.28);ctx.fill();");
+    js += F("}}}");
+    
+    js += F("ctx.restore();}});}");
+    
+    return js;
+}
 
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
@@ -6790,6 +7107,11 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
      
 
     javascript += createEnergyGraph(ConfigGeneral.ZLinky,"energy","['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']",budget);
+    if (strlen(ConfigGeneral.Presence) > 0 && ConfigGeneral.enablePresenceGraph) {
+      if (time == "hour" || time == "day") {
+        javascript += getPresenceJavaScript(time);
+      }
+    }
     javascript += F("loadPowerGaugeAbo(1");
     javascript += F(",'");
     javascript += String(ConfigGeneral.ZLinky);
@@ -6869,7 +7191,11 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     javascript += time;
     javascript += F("');");
   }
-
+  if (time == "hour" || time == "day") {
+      javascript += F("initPresence('");
+      javascript += time;
+      javascript += F("');");
+  }
   javascript += F("});");
   javascript += F("var ET = document.getElementById('energyTrend').offsetHeight;");
   javascript += F("var EG = document.getElementById('energyGauge').offsetHeight;");
@@ -8438,6 +8764,38 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   }
   ListWater +="</select>";
 
+  String ListPresence = "<Select name='presenceDevice' class='form-select form-select-lg mb-3'><OPTION value=''>--Aucun--</OPTION>";
+  for (size_t i = 0; i < devices.size(); i++) 
+  {
+      DeviceData* device = devices[i];
+      
+      // Vérifier si le device a le cluster Occupancy (0x0406 = 1030) avec attribut 0x0000
+      if (device->hasCluster(0x0406, 0x0000))
+      {
+          ListPresence += F("<OPTION value='");
+          ListPresence += device->getDeviceID();
+          ListPresence += F("'");
+          if (device->getDeviceID() == String(ConfigGeneral.Presence))
+          {
+              ListPresence += F(" Selected");
+          }
+          ListPresence += F(">");
+          if (device->getInfo().alias.length() > 0) {
+              ListPresence += device->getInfo().alias;
+              ListPresence += F(" (");
+              ListPresence += device->getInfo().model;
+              ListPresence += F(")");
+          } else {
+              ListPresence += device->getInfo().model;
+              ListPresence += F(" (");
+              ListPresence += device->getDeviceID();
+              ListPresence += F(")");
+          }
+          ListPresence += F("</OPTION>");
+      }
+  }
+  ListPresence += F("</select>");
+
   result.replace("{{selectDevicesAction}}", listDevicesAction);
   result.replace("{{selectDevices}}", listLinky);
   result.replace("{{shon}}", String(ConfigGeneral.HouseSurface));
@@ -8468,6 +8826,17 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   result.replace("{{coeffWater}}", String(ConfigGeneral.coeffWater));
   result.replace("{{unitWater}}", String(ConfigGeneral.unitWater));
   result.replace("{{tarifWater}}", String(ConfigGeneral.tarifWater));
+
+  // Présence
+  result.replace("{{selectDevicesPresence}}", ListPresence);
+  if (ConfigGeneral.enablePresenceGraph)
+  {
+    result.replace("{{checkedEnablePresenceGraph}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedEnablePresenceGraph}}", "");
+  }
 
   // NOTIFICATION
   result.replace("{{valOverVoltageThreshold}}", String(ConfigNotif.OverVoltageThreshold));
@@ -9725,28 +10094,133 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
 
 void handleToolBackup(AsyncWebServerRequest *request)
 {
-  String result, listFiles;
+  String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += FPSTR(HTTP_BACKUP);
-  File root = LittleFS.open("/rt");
-  File file = root.openNextFile();
 
-  listFiles="";
+  // CSS Styles
+  result += F("<style>");
+  result += F(".backup-container{max-width:800px;margin:0 auto;padding:20px;}");
+  result += F(".backup-container svg{display:inline!important;vertical-align:middle!important;}");
+  result += F(".page-title{margin-bottom:30px;padding-bottom:15px;border-bottom:2px solid #dee2e6;}");
+  result += F(".page-title h2{margin:0;color:#333;font-size:1.5rem;}");
+  result += F(".backup-card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);padding:25px;margin-bottom:20px;}");
+  result += F(".backup-card h4{margin:0 0 15px 0;color:#333;font-size:1.1rem;}");
+  result += F(".backup-card p{color:#666;margin-bottom:20px;line-height:1.6;}");
+  result += F(".backup-info{background:#f8f9fa;border-radius:8px;padding:15px;margin-bottom:20px;}");
+  result += F(".backup-info-item{display:flex;align-items:center;padding:8px 0;border-bottom:1px solid #e9ecef;}");
+  result += F(".backup-info-item:last-child{border-bottom:none;}");
+  result += F(".backup-info-item .label{color:#666;width:140px;flex-shrink:0;}");
+  result += F(".backup-info-item .value{color:#333;font-weight:500;}");
+  result += F(".btn-backup{display:inline-block;padding:12px 24px;font-size:1rem;border-radius:8px;border:none;cursor:pointer;text-decoration:none;}");
+  result += F(".btn-backup-primary{background:#0d6efd;color:#fff;}");
+  result += F(".btn-backup-primary:hover{background:#0b5ed7;}");
+  result += F(".btn-backup-primary:disabled{background:#6c757d;cursor:not-allowed;}");
+  result += F(".backup-status{margin-top:20px;padding:15px;border-radius:8px;display:none;}");
+  result += F(".backup-status.show{display:block;}");
+  result += F(".backup-status.loading{background:#e7f1ff;border:1px solid #b6d4fe;color:#084298;}");
+  result += F(".backup-status.success{background:#d1e7dd;border:1px solid #badbcc;color:#0f5132;}");
+  result += F(".backup-status.error{background:#f8d7da;border:1px solid #f5c2c7;color:#842029;}");
+  result += F(".spinner{display:inline-block;width:20px;height:20px;border:2px solid #b6d4fe;border-top-color:#0d6efd;border-radius:50%;animation:spin 1s linear infinite;margin-right:10px;}");
+  result += F("@keyframes spin{to{transform:rotate(360deg);}}");
+  result += F(".section-title{margin:30px 0 15px 0;color:#333;font-size:1rem;font-weight:600;}");
+  result += F(".file-list{list-style:none;padding:0;margin:0;}");
+  result += F(".file-item{display:flex;align-items:center;justify-content:space-between;padding:12px 15px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;}");
+  result += F(".file-item:hover{background:#e9ecef;}");
+  result += F(".file-info{display:flex;align-items:center;}");
+  result += F(".file-name{color:#333;font-weight:500;margin:0 10px;}");
+  result += F(".file-size{color:#666;font-size:0.85rem;}");
+  result += F(".file-actions{display:flex;gap:8px;}");
+  result += F(".btn-sm{width:36px;height:36px;border-radius:6px;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;}");
+  result += F(".btn-success{background:#198754;color:#fff;}");
+  result += F(".btn-success:hover{background:#157347;}");
+  result += F(".btn-danger{background:#dc3545;color:#fff;}");
+  result += F(".btn-danger:hover{background:#bb2d3b;}");
+  result += F(".empty-state{text-align:center;padding:30px;color:#666;}");
+  result += F("@media(max-width:576px){.backup-container{padding:15px;}.backup-card{padding:20px;}.backup-info-item{flex-direction:column;align-items:flex-start;}.backup-info-item .label{width:auto;margin-bottom:4px;}}");
+  result += F("</style>");
+
+  // HTML Content
+  result += F("<div class='backup-container'>");
+
+  // Header
+  result += F("<div class='page-title'>");
+  result += F("<h2><svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='#0d6efd' style='margin-right:10px;width:24px' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708l2-2z'/><path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383zm.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/></svg>Sauvegarde</h2>");
+  result += F("</div>");
+
+  // Create Backup Card
+  result += F("<div class='backup-card'>");
+  result += F("<h4><svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' fill='#0d6efd' style='margin-right:10px;width:18px' viewBox='0 0 16 16'><path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z'/><path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z'/></svg>Créer une sauvegarde</h4>");
+  result += F("<p>Créez une sauvegarde de vos données utilisateur. Ce fichier peut être utilisé lors d'une mise à jour manuelle pour restaurer vos paramètres.</p>");
+
+  // Info about what's backed up
+  result += F("<div class='backup-info'>");
+  result += F("<div class='backup-info-item'><span class='label'>Appareils</span><span class='value'>/db/</span></div>");
+  result += F("<div class='backup-info-item'><span class='label'>Configuration</span><span class='value'>/config/</span></div>");
+  result += F("<div class='backup-info-item'><span class='label'>Debug</span><span class='value'>/debug/</span></div>");
+  result += F("<div class='backup-info-item'><span class='label'>Templates</span><span class='value'>/tp/</span></div>");
+  result += F("<div class='backup-info-item'><span class='label'>Historique</span><span class='value'>/hst/</span></div>");
+  result += F("</div>");
+
+  result += F("<button class='btn-backup btn-backup-primary' id='btnBackup' onclick='createBackup()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='margin-right:10px;width:16px' viewBox='0 0 16 16'><path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z'/><path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z'/></svg>Créer la sauvegarde</button>");
+
+  result += F("<div class='backup-status' id='backupStatus'>");
+  result += F("<div class='status-content'><span class='spinner' id='statusSpinner'></span><span id='statusText'></span></div>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // List of existing backups
+  result += F("<h5 class='section-title'><svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='#0d6efd' style='margin-right:10px;width:16px' viewBox='0 0 16 16'><path d='M9.293 0H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V4.707A1 1 0 0 0 13.707 4L10 .293A1 1 0 0 0 9.293 0zM9.5 3.5v-2l3 3h-2a1 1 0 0 1-1-1zM4.5 9a.5.5 0 0 1 0-1h7a.5.5 0 0 1 0 1h-7zM4 10.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5zm.5 2.5a.5.5 0 0 1 0-1h4a.5.5 0 0 1 0 1h-4z'/></svg>Sauvegardes existantes</h5>");
+  result += F("<ul class='file-list' id='backupList'>");
+
+  // List backup files from /bk directory
+  File root = LittleFS.open("/bk");
+  File file = root.openNextFile();
+  bool hasFiles = false;
+
   while (file)
   {
     if (!file.isDirectory())
     {
       String tmp = file.name();
-      listFiles += F("<li><a href='web/");
-      listFiles += tmp;
-      listFiles += F("'>");
-      listFiles += tmp;
-      listFiles += F(" ( ");
-      listFiles += file.size();
-      listFiles += F(" o)</a></li>");
+      // Filtrer uniquement les fichiers .tar
+      if (!tmp.endsWith(".tar")) {
+        file.close();
+        file = root.openNextFile();
+        continue;
+      }
+      hasFiles = true;
+      int fileSize = file.size();
+      result += F("<li class='file-item'>");
+      result += F("<div class='file-info'>");
+      result += F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='#6c757d' style='width:16px' viewBox='0 0 16 16'><path d='M4 0h5.293A1 1 0 0 1 10 .293L13.707 4a1 1 0 0 1 .293.707V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2zm5.5 1.5v2a1 1 0 0 0 1 1h2l-3-3z'/></svg>");
+      result += F("<span class='file-name'>");
+      result += tmp;
+      result += F("</span><span class='file-size'>(");
+      if (fileSize > 1024) {
+        result += String(fileSize / 1024);
+        result += F(" Ko");
+      } else {
+        result += String(fileSize);
+        result += F(" o");
+      }
+      result += F(")</span></div>");
+      result += F("<div class='file-actions'>");
+      result += F("<a href='/web/");
+      result += tmp;
+      result += F("' download class='btn-sm btn-success' title='Télécharger'>");
+      result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' style='width:14px' viewBox='0 0 16 16'><path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z'/><path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z'/></svg>");
+      result += F("</a>");
+      result += F("<button class='btn-sm btn-danger' onclick=\"deleteBackup('");
+      result += tmp;
+      result += F("')\" title='Supprimer'>");
+      result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' style='width:14px' viewBox='0 0 16 16'><path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z'/><path fill-rule='evenodd' d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z'/></svg>");
+      result += F("</button>");
+      result += F("</div>");
+      result += F("</li>");
     }
     file.close();
     vTaskDelay(1);
@@ -9754,8 +10228,44 @@ void handleToolBackup(AsyncWebServerRequest *request)
   }
   root.close();
   file.close();
-  result.replace("{{listBackupFiles}}", listFiles);
-  result+=footer();
+
+  if (!hasFiles) {
+    result += F("<li class='empty-state'><p>Aucune sauvegarde disponible</p></li>");
+  }
+
+  result += F("</ul>");
+  result += F("</div>");
+
+  // JavaScript
+  result += F("<script>");
+  result += F("function createBackup(){");
+  result += F("var btn=$('#btnBackup');");
+  result += F("var status=$('#backupStatus');");
+  result += F("btn.prop('disabled',true).html('<span class=\"spinner\" style=\"width:16px;height:16px;border-width:2px;\"></span> Création en cours...');");
+  result += F("status.removeClass('success error').addClass('loading show');");
+  result += F("$('#statusSpinner').show();");
+  result += F("$('#statusText').text('Création de la sauvegarde en cours...');");
+  result += F("$.get('/createBackupFile',function(data){");
+  result += F("status.removeClass('loading').addClass('success');");
+  result += F("$('#statusSpinner').hide();");
+  result += F("$('#statusText').html('Sauvegarde créée avec succès! <a href=\"/web/backup.tar\" download>Télécharger</a>');");
+  result += F("btn.prop('disabled',false).html('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z\"/></svg> Créer la sauvegarde');");
+  result += F("setTimeout(function(){location.reload();},2000);");
+  result += F("}).fail(function(){");
+  result += F("status.removeClass('loading').addClass('error');");
+  result += F("$('#statusSpinner').hide();");
+  result += F("$('#statusText').text('Erreur lors de la création de la sauvegarde');");
+  result += F("btn.prop('disabled',false).html('<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"18\" height=\"18\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z\"/><path d=\"M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z\"/></svg> Créer la sauvegarde');");
+  result += F("});");
+  result += F("}");
+  result += F("function deleteBackup(filename){");
+  result += F("if(confirm('Supprimer '+filename+' ?')){");
+  result += F("$.post('/deleteBackupFile',{filename:filename},function(){location.reload();});");
+  result += F("}");
+  result += F("}");
+  result += F("</script>");
+
+  result += footer();
   result += F("</html>");
 
   request->send(200, F("text/html"), result);
@@ -9935,59 +10445,188 @@ void handleDebugFiles(AsyncWebServerRequest *request)
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
+
+  // CSS pour l'interface
+  result += F("<style>");
+  result += F(".debug-container{display:flex;height:calc(100vh - 120px);gap:0;overflow:hidden;}");
+  result += F(".sidebar{width:280px;min-width:280px;background:#fff;border-right:1px solid #dee2e6;display:flex;flex-direction:column;transition:margin-left 0.3s;}");
+  result += F(".sidebar.collapsed{margin-left:-280px;}");
+  result += F(".sidebar-header{padding:15px;border-bottom:1px solid #dee2e6;background:#f8f9fa;}");
+  result += F(".sidebar-search{position:relative;}");
+  result += F(".sidebar-search input{width:100%;padding:8px 12px 8px 35px;border:1px solid #ced4da;border-radius:6px;font-size:14px;}");
+  result += F(".file-list{flex:1;overflow-y:auto;padding:10px;}");
+  result += F(".file-item{display:flex;align-items:center;padding:10px 12px;margin-bottom:6px;background:#f8f9fa;border-radius:8px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;}");
+  result += F(".file-item:hover{background:#e9ecef;transform:translateX(3px);}");
+  result += F(".file-item.active{background:#e7f1ff;border-color:#0d6efd;}");
+  result += F(".file-item .name{font-weight:500;font-size:14px;flex:1;word-break:break-all;}");
+  result += F(".file-item .size{font-size:12px;color:#6c757d;margin-left:8px;white-space:nowrap;}");
+  result += F(".main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fff;}");
+  result += F(".toolbar{display:flex;align-items:center;gap:10px;padding:12px 15px;background:#f8f9fa;border-bottom:1px solid #dee2e6;flex-wrap:wrap;}");
+  result += F(".toolbar-title{font-weight:600;font-size:16px;margin-right:auto;}");
+  result += F(".toolbar .btn{padding:6px 12px;font-size:13px;}");
+  result += F(".editor-container{flex:1;display:flex;overflow:hidden;}");
+  result += F(".editor-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}");
+  result += F(".pane-header{padding:8px 15px;background:#e9ecef;font-weight:500;font-size:13px;border-bottom:1px solid #dee2e6;}");
+  result += F(".editor-wrapper{flex:1;position:relative;overflow:hidden;}");
+  result += F("#file{width:100%;height:100%;border:none;resize:none;padding:15px;font-family:'Consolas','Monaco',monospace;font-size:13px;line-height:1.5;tab-size:2;background:#1e1e1e;color:#d4d4d4;}");
+  result += F(".toggle-sidebar{display:none;position:fixed;bottom:20px;left:20px;z-index:1000;width:50px;height:50px;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,0.2);}");
+  result += F(".empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#6c757d;}");
+  result += F("@media(max-width:768px){");
+  result += F(".sidebar{position:fixed;left:0;top:60px;height:calc(100vh - 60px);z-index:999;box-shadow:2px 0 10px rgba(0,0,0,0.1);}");
+  result += F(".toggle-sidebar{display:flex;align-items:center;justify-content:center;}");
+  result += F(".debug-container{height:calc(100vh - 60px);}");
+  result += F(".toolbar{flex-wrap:wrap;gap:6px;padding:10px;}");
+  result += F(".toolbar-title{width:100%;font-size:14px;margin-bottom:5px;}");
+  result += F(".toolbar .btn{padding:5px 8px;font-size:12px;}");
+  result += F("}");
+  result += F(".hidden{display:none!important;}");
+  result += F(".loading-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(30,30,30,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;}");
+  result += F(".loading-spinner{width:40px;height:40px;border:3px solid #444;border-top-color:#0d6efd;border-radius:50%;animation:spin 1s linear infinite;}");
+  result += F(".loading-text{color:#aaa;margin-top:15px;font-size:14px;}");
+  result += F("@keyframes spin{to{transform:rotate(360deg);}}");
+  result += F(".file-count{font-size:12px;color:#6c757d;padding:10px 15px;border-top:1px solid #dee2e6;background:#f8f9fa;}");
+  result += F("</style>");
+
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h4>Debug files</h4>");
-  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
-  result += F("      <div class='navbar-header'>");
-  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
-  result += F("      </div>");
-  result += F("<ul class='nav navbar-nav'>");
 
-  String str = "";
+  // Structure principale
+  result += F("<div class='debug-container'>");
+
+  // Sidebar avec liste des fichiers
+  result += F("<div class='sidebar' id='sidebar'>");
+  result += F("<div class='sidebar-header'>");
+  result += F("<div class='d-flex justify-content-between align-items-center mb-2'>");
+  result += F("<h5 class='mb-0'>Debug Files</h5>");
+  result += F("</div>");
+  result += F("<div class='sidebar-search'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6c757d;' viewBox='0 0 16 16'><path d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/></svg>");
+  result += F("<input type='text' id='searchInput' placeholder='Rechercher...' onkeyup='filterFiles()'>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("<div class='file-list' id='fileList'>");
+
+  // Liste des fichiers
+  int fileCount = 0;
   File root = LittleFS.open("/debug");
   File file = root.openNextFile();
   while (file)
   {
     if (!file.isDirectory())
     {
+      fileCount++;
       String tmp = file.name();
-      // tmp = tmp.substring(10);
-      result += F("<li><a href='#' onClick=\"readfile('");
+      result += F("<div class='file-item' data-file='");
       result += tmp;
-      result += F("','debug');document.getElementById('actions').style.display='block';\">");
+      result += F("' onclick=\"selectFile('");
       result += tmp;
-      result += F(" ( ");
+      result += F("')\">");
+      result += F("<span class='name'>");
+      result += tmp;
+      result += F("</span>");
+      result += F("<span class='size'>");
       result += file.size();
-      result += F(" o)</a></li>");
+      result += F(" o</span>");
+      result += F("</div>");
     }
     file.close();
     vTaskDelay(1);
     file = root.openNextFile();
   }
-  result += F("</ul></nav>");
-  result += F("<div class='container-fluid' >");
-  result += F("  <div class='app-main-content'>");
-  result += F("<form method='POST' action='saveDebug'>");
-  result += F("<div class='form-group'>");
-  result += F(" <label for='file'>File : <span id='title'></span></label>");
-  result += F("<input type='hidden' name='filename' id='filename' value=''>");
-  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
-  result += F("</textarea>");
-  result += F("</div>");
-  result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
-  result += F("</div>");
-  result += F("<button type='submit' class='btn btn-danger mb-2' name='deleteAll' value='deleteAll' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Tout supprimer</button>");
-
-  result += F("</Form>");
-  result += F("</div>");
-  result += F("</div>");
-  result += F("</body>");
-  result+=footer();
-  result += F("</html>");
   file.close();
   root.close();
+
+  result += F("</div>");
+  result += F("<div class='file-count'><span id='fileCount'>");
+  result += fileCount;
+  result += F("</span> fichier(s)</div>");
+  result += F("<div class='p-2 border-top'>");
+  result += F("<button class='btn btn-danger btn-sm w-100' onclick='deleteAllFiles()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' class='me-1' viewBox='0 0 16 16'><path d='M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5ZM11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0H11Zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916Zm-7.487 1a.5.5 0 0 1 .528.47l.5 8.5a.5.5 0 0 1-.998.06L5 5.03a.5.5 0 0 1 .47-.53Zm5.058 0a.5.5 0 0 1 .47.53l-.5 8.5a.5.5 0 1 1-.998-.06l.5-8.5a.5.5 0 0 1 .528-.47ZM8 4.5a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5Z'/></svg>");
+  result += F("Tout supprimer</button>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Contenu principal
+  result += F("<div class='main-content'>");
+
+  // Toolbar
+  result += F("<div class='toolbar'>");
+  result += F("<span class='toolbar-title' id='currentFile'>Sélectionnez un fichier</span>");
+  result += F("<input type='hidden' id='filename' value=''>");
+  result += F("<div id='toolbarActions' class='hidden'>");
+  result += F("<button class='btn btn-danger btn-sm' onclick='deleteFile()' id='btnDelete'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' class='me-1' viewBox='0 0 16 16'><path d='M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5ZM11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 0H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1h-.995a.59.59 0 0 0-.01 0H11Zm1.958 1-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916Z'/></svg>");
+  result += F("Supprimer</button>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Zone de visualisation (lecture seule)
+  result += F("<div class='editor-container'>");
+  result += F("<div class='editor-pane' id='editorPane'>");
+  result += F("<div class='pane-header'>Contenu du fichier (lecture seule)</div>");
+  result += F("<div class='editor-wrapper'>");
+  result += F("<textarea id='file' spellcheck='false' readonly placeholder='Sélectionnez un fichier dans la liste...'></textarea>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Bouton toggle sidebar mobile
+  result += F("<button class='btn btn-primary toggle-sidebar' onclick='toggleSidebar()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='currentColor' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z'/></svg>");
+  result += F("</button>");
+
+  // Scripts
+  result += F("<script>");
+  result += F("var currentFile='';");
+
+  result += F("function toggleSidebar(){$('#sidebar').toggleClass('collapsed');}");
+
+  result += F("function filterFiles(){");
+  result += F("var search=$('#searchInput').val().toLowerCase();");
+  result += F("var count=0;");
+  result += F("$('.file-item').each(function(){");
+  result += F("var name=$(this).data('file').toLowerCase();");
+  result += F("var show=name.indexOf(search)>-1;");
+  result += F("$(this).toggle(show);");
+  result += F("if(show)count++;");
+  result += F("});");
+  result += F("$('#fileCount').text(count);");
+  result += F("}");
+
+  result += F("function selectFile(filename){");
+  result += F("$('.file-item').removeClass('active');");
+  result += F("$('.file-item[data-file=\"'+filename+'\"]').addClass('active');");
+  result += F("currentFile=filename;");
+  result += F("$('#filename').val(filename);");
+  result += F("$('#currentFile').text(filename);");
+  result += F("$('#toolbarActions').removeClass('hidden');");
+  result += F("$('#file').val('');");
+  result += F("$('.editor-wrapper').append('<div class=\"loading-overlay\" id=\"loader\"><div class=\"loading-spinner\"></div><div class=\"loading-text\">Chargement de '+filename+'...</div></div>');");
+  result += F("$.get('readFile?0=debug&1='+filename,function(data){");
+  result += F("$('#loader').remove();");
+  result += F("$('#file').val(data);");
+  result += F("}).fail(function(){$('#loader').remove();$('#file').val('Erreur de chargement');});");
+  result += F("if(window.innerWidth<768)toggleSidebar();");
+  result += F("}");
+
+  result += F("function deleteFile(){");
+  result += F("if(!confirm('Supprimer ce fichier ?'))return;");
+  result += F("var filename=$('#filename').val();");
+  result += F("$.post('saveDebug',{filename:filename,delete:'delete'},function(){location.reload();});");
+  result += F("}");
+
+  result += F("function deleteAllFiles(){");
+  result += F("if(!confirm('Supprimer TOUS les fichiers debug ?'))return;");
+  result += F("$.post('saveDebug',{deleteAll:'deleteAll'},function(){location.reload();});");
+  result += F("}");
+
+  result += F("</script>");
+  result += F("</body>");
+  result += footer();
+  result += F("</html>");
   request->send(200, F("text/html"), result);
 }
 
@@ -10057,17 +10696,89 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
+
+  // CSS pour l'interface
+  result += F("<style>");
+  result += F(".fs-container{display:flex;height:calc(100vh - 120px);gap:0;overflow:hidden;}");
+  result += F(".sidebar{width:280px;min-width:280px;background:#fff;border-right:1px solid #dee2e6;display:flex;flex-direction:column;transition:margin-left 0.3s;}");
+  result += F(".sidebar.collapsed{margin-left:-280px;}");
+  result += F(".sidebar-header{padding:15px;border-bottom:1px solid #dee2e6;background:#f8f9fa;}");
+  result += F(".sidebar-search{position:relative;}");
+  result += F(".sidebar-search input{width:100%;padding:8px 12px 8px 35px;border:1px solid #ced4da;border-radius:6px;font-size:14px;}");
+  result += F(".file-list{flex:1;overflow-y:auto;padding:10px;}");
+  result += F(".file-item{display:flex;align-items:center;padding:10px 12px;margin-bottom:6px;background:#f8f9fa;border-radius:8px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;}");
+  result += F(".file-item:hover{background:#e9ecef;transform:translateX(3px);}");
+  result += F(".file-item.active{background:#e7f1ff;border-color:#0d6efd;}");
+  result += F(".file-item .name{font-weight:500;font-size:14px;flex:1;word-break:break-all;}");
+  result += F(".file-item .size{font-size:12px;color:#6c757d;margin-left:8px;white-space:nowrap;}");
+  result += F(".main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fff;}");
+  result += F(".toolbar{display:flex;align-items:center;gap:10px;padding:12px 15px;background:#f8f9fa;border-bottom:1px solid #dee2e6;flex-wrap:wrap;}");
+  result += F(".toolbar-title{font-weight:600;font-size:16px;margin-right:auto;}");
+  result += F(".toolbar .btn{padding:6px 12px;font-size:13px;}");
+  result += F(".editor-container{flex:1;display:flex;overflow:hidden;}");
+  result += F(".editor-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}");
+  result += F(".editor-pane.split{flex:0 0 50%;}");
+  result += F(".preview-pane{flex:0 0 50%;border-left:1px solid #dee2e6;display:none;flex-direction:column;overflow:hidden;}");
+  result += F(".preview-pane.visible{display:flex;}");
+  result += F(".pane-header{padding:8px 15px;background:#e9ecef;font-weight:500;font-size:13px;border-bottom:1px solid #dee2e6;}");
+  result += F(".editor-wrapper{flex:1;position:relative;overflow:hidden;}");
+  result += F("#file{width:100%;height:100%;border:none;resize:none;padding:15px;font-family:'Consolas','Monaco',monospace;font-size:13px;line-height:1.5;tab-size:2;background:#1e1e1e;color:#d4d4d4;}");
+  result += F(".preview-content{flex:1;overflow-y:auto;padding:15px;}");
+  result += F(".model-section{margin-bottom:20px;border:1px solid #dee2e6;border-radius:8px;overflow:hidden;}");
+  result += F(".model-header{background:#f8f9fa;padding:10px 15px;font-weight:600;border-bottom:1px solid #dee2e6;display:flex;align-items:center;gap:10px;}");
+  result += F(".model-body{padding:15px;}");
+  result += F(".section-group{margin-bottom:15px;}");
+  result += F(".section-title{font-weight:500;color:#495057;margin-bottom:8px;display:flex;align-items:center;gap:8px;}");
+  result += F(".section-title .badge{font-size:11px;}");
+  result += F(".item-card{background:#f8f9fa;border-radius:6px;padding:10px;margin-bottom:8px;font-size:12px;}");
+  result += F(".item-card .label{color:#6c757d;font-size:11px;}");
+  result += F(".item-card .value{font-weight:500;}");
+  result += F(".validation-panel{padding:10px 15px;background:#f8f9fa;border-top:1px solid #dee2e6;}");
+  result += F(".validation-success{color:#198754;}");
+  result += F(".validation-error{color:#dc3545;}");
+  result += F(".toggle-sidebar{display:none;position:fixed;bottom:20px;left:20px;z-index:1000;width:50px;height:50px;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,0.2);}");
+  result += F(".empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#6c757d;}");
+  result += F("@media(max-width:768px){");
+  result += F(".sidebar{position:fixed;left:0;top:60px;height:calc(100vh - 60px);z-index:999;box-shadow:2px 0 10px rgba(0,0,0,0.1);}");
+  result += F(".toggle-sidebar{display:flex;align-items:center;justify-content:center;}");
+  result += F(".fs-container{height:calc(100vh - 60px);}");
+  result += F(".toolbar{flex-wrap:wrap;gap:6px;padding:10px;}");
+  result += F(".toolbar-title{width:100%;font-size:14px;margin-bottom:5px;}");
+  result += F(".toolbar .btn{padding:5px 8px;font-size:12px;}");
+  result += F(".preview-pane{position:fixed;top:0;left:0;right:0;bottom:0;z-index:1001;border:none;flex:none;width:100%;height:100%;background:#fff;}");
+  result += F(".preview-pane .pane-header{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#0d6efd;color:#fff;}");
+  result += F(".preview-pane .close-preview{background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:0 5px;}");
+  result += F("}");
+  result += F(".is-invalid{border-color:#dc3545!important;background-color:#2d1f1f!important;}");
+  result += F(".hidden{display:none!important;}");
+  result += F(".close-preview{display:none;}");
+  result += F("@media(max-width:768px){.close-preview{display:block;}}");
+  result += F(".loading-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(30,30,30,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;}");
+  result += F(".loading-spinner{width:40px;height:40px;border:3px solid #444;border-top-color:#0d6efd;border-radius:50%;animation:spin 1s linear infinite;}");
+  result += F(".loading-text{color:#aaa;margin-top:15px;font-size:14px;}");
+  result += F("@keyframes spin{to{transform:rotate(360deg);}}");
+  result += F("</style>");
+
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h4>Devices list files</h4>");
-  result += F("<div align='right'><a href='/createDevice' class='btn btn-primary mb-2'>+ Nouveau</a></div>");
-  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
-  result += F("      <div class='navbar-header'>");
-  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
-  result += F("      </div>");
-  result += F("<ul class='nav navbar-nav'>");
 
-  String str = "";
+  // Structure principale
+  result += F("<div class='fs-container'>");
+
+  // Sidebar avec liste des fichiers
+  result += F("<div class='sidebar' id='sidebar'>");
+  result += F("<div class='sidebar-header'>");
+  result += F("<div class='d-flex justify-content-between align-items-center mb-2'>");
+  result += F("<h5 class='mb-0'>Appareils</h5>");
+  result += F("</div>");
+  result += F("<div class='sidebar-search'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6c757d;' viewBox='0 0 16 16'><path d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/></svg>");
+  result += F("<input type='text' id='searchInput' placeholder='Rechercher...' onkeyup='filterFiles()'>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("<div class='file-list' id='fileList'>");
+
+  // Liste des fichiers
   File root = LittleFS.open("/db");
   File file = root.openNextFile();
   while (file)
@@ -10075,41 +10786,185 @@ void handleFSbrowser(AsyncWebServerRequest *request)
     if (!file.isDirectory())
     {
       String tmp = file.name();
-      // tmp = tmp.substring(10);
-      result += F("<li><a href='#' onClick=\"readfile('");
+      result += F("<div class='file-item' data-file='");
       result += tmp;
-      result += F("','db');document.getElementById('actions').style.display='block';\">");
+      result += F("' onclick=\"selectFile('");
       result += tmp;
-      result += F(" ( ");
+      result += F("')\">");
+      result += F("<span class='name'>");
+      result += tmp;
+      result += F("</span>");
+      result += F("<span class='size'>");
       result += file.size();
-      result += F(" o)</a></li>");
+      result += F(" o</span>");
+      result += F("</div>");
     }
     file.close();
     vTaskDelay(1);
     file = root.openNextFile();
   }
-  result += F("</ul></nav>");
-  result += F("<div class='container-fluid' >");
-  result += F("  <div class='app-main-content'>");
-  result += F("<form method='POST' action='saveFileDatabase'>");
-  result += F("<div class='form-group'>");
-  result += F(" <label for='file'>File : <span id='title'></span></label>");
-  result += F("<input type='hidden' name='filename' id='filename' value=''>");
-  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
-  result += F("</textarea>");
-  result += F("</div>");
-  result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' class='btn btn-warning mb-2' name='save' value='save'>Enregistrer</button>&nbsp;");
-  result += F("<button type='submit' class='btn btn-danger mb-2' name='delete' value='delete' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
-  result += F("</div>");
-  result += F("</Form>");
-  result += F("</div>");
-  result += F("</div>");
-  result += F("</body>");
-  result+=footer();
-  result += F("</html>");
   file.close();
   root.close();
+
+  result += F("</div>");
+  result += F("</div>");
+
+  // Contenu principal
+  result += F("<div class='main-content'>");
+
+  // Toolbar
+  result += F("<div class='toolbar'>");
+  result += F("<span class='toolbar-title' id='currentFile'>Sélectionnez un fichier</span>");
+  result += F("<input type='hidden' id='filename' value=''>");
+  result += F("<div id='toolbarActions' class='hidden'>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='togglePreview()' id='btnPreview' title='Prévisualisation'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z'/><path d='M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='formatJson()' title='Formater JSON'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-warning btn-sm' onclick='saveFile()' id='btnSave'>Enregistrer</button>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Zone d'édition
+  result += F("<div class='editor-container'>");
+  result += F("<div class='editor-pane' id='editorPane'>");
+  result += F("<div class='pane-header'>Éditeur JSON</div>");
+  result += F("<div class='editor-wrapper'>");
+  result += F("<textarea id='file' spellcheck='false' placeholder='Sélectionnez un fichier dans la liste...'></textarea>");
+  result += F("</div>");
+  result += F("<div class='validation-panel' id='validationPanel'>");
+  result += F("<span id='validationStatus'></span>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Panneau de prévisualisation
+  result += F("<div class='preview-pane' id='previewPane'>");
+  result += F("<div class='pane-header'><span>Prévisualisation</span><button class='close-preview' onclick='togglePreview()'>&times;</button></div>");
+  result += F("<div class='preview-content' id='previewContent'>");
+  result += F("<div class='empty-state'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' viewBox='0 0 16 16'><path d='M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z'/></svg>");
+  result += F("<span>Sélectionnez un fichier</span>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Bouton toggle sidebar mobile
+  result += F("<button class='btn btn-primary toggle-sidebar' onclick='toggleSidebar()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='currentColor' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z'/></svg>");
+  result += F("</button>");
+
+  // Scripts
+  result += F("<script>");
+  result += F("var currentFile='';var previewVisible=false;var hasChanges=false;");
+
+  result += F("function toggleSidebar(){$('#sidebar').toggleClass('collapsed');}");
+
+  result += F("function filterFiles(){");
+  result += F("var search=$('#searchInput').val().toLowerCase();");
+  result += F("$('.file-item').each(function(){");
+  result += F("var name=$(this).data('file').toLowerCase();");
+  result += F("$(this).toggle(name.indexOf(search)>-1);");
+  result += F("});");
+  result += F("}");
+
+  result += F("function selectFile(filename){");
+  result += F("if(hasChanges&&!confirm('Modifications non sauvegardées. Continuer ?'))return;");
+  result += F("$('.file-item').removeClass('active');");
+  result += F("$('.file-item[data-file=\"'+filename+'\"]').addClass('active');");
+  result += F("currentFile=filename;");
+  result += F("$('#filename').val(filename);");
+  result += F("$('#currentFile').text(filename);");
+  result += F("$('#toolbarActions').removeClass('hidden');");
+  result += F("$('#file').val('');");
+  result += F("$('.editor-wrapper').append('<div class=\"loading-overlay\" id=\"loader\"><div class=\"loading-spinner\"></div><div class=\"loading-text\">Chargement de '+filename+'...</div></div>');");
+  result += F("$('#validationStatus').html('');");
+  result += F("$.get('readFile?0=db&1='+filename,function(data){");
+  result += F("$('#loader').remove();");
+  result += F("$('#file').val(data).removeClass('is-invalid');");
+  result += F("validateJson();");
+  result += F("updatePreview();");
+  result += F("hasChanges=false;");
+  result += F("}).fail(function(){$('#loader').remove();$('#validationStatus').html('<span class=\"validation-error\">Erreur de chargement</span>');});");
+  result += F("if(window.innerWidth<768)toggleSidebar();");
+  result += F("}");
+
+  result += F("function validateJson(){");
+  result += F("var content=$('#file').val();");
+  result += F("if(!content.trim()){$('#validationStatus').html('');return null;}");
+  result += F("try{");
+  result += F("var json=JSON.parse(content);");
+  result += F("$('#file').removeClass('is-invalid');");
+  result += F("$('#validationStatus').html('<span class=\"validation-success\">✓ JSON valide</span>');");
+  result += F("return json;");
+  result += F("}catch(e){");
+  result += F("$('#file').addClass('is-invalid');");
+  result += F("var msg=e.message;");
+  result += F("var line=msg.match(/position (\\d+)/);");
+  result += F("if(line){var pos=parseInt(line[1]);var lines=content.substr(0,pos).split('\\n');msg+=' (ligne '+lines.length+')';}");
+  result += F("$('#validationStatus').html('<span class=\"validation-error\">✗ '+msg+'</span>');");
+  result += F("return null;");
+  result += F("}");
+  result += F("}");
+
+  result += F("function updatePreview(){");
+  result += F("var json=validateJson();");
+  result += F("if(!json){$('#previewContent').html('<div class=\"empty-state\"><span class=\"text-danger\">JSON invalide</span></div>');return;}");
+  result += F("var html='<div class=\"model-section\"><div class=\"model-header\">Device Info</div><div class=\"model-body\">';");
+  result += F("for(var key in json){");
+  result += F("if(typeof json[key]==='object'){");
+  result += F("html+='<div class=\"section-group\"><div class=\"section-title\">'+key+'</div>';");
+  result += F("for(var k2 in json[key]){html+='<div class=\"item-card\"><span class=\"label\">'+k2+':</span> <span class=\"value\">'+JSON.stringify(json[key][k2])+'</span></div>';}");
+  result += F("html+='</div>';");
+  result += F("}else{html+='<div class=\"item-card\"><span class=\"label\">'+key+':</span> <span class=\"value\">'+json[key]+'</span></div>';}");
+  result += F("}");
+  result += F("html+='</div></div>';");
+  result += F("$('#previewContent').html(html);");
+  result += F("}");
+
+  result += F("function togglePreview(){");
+  result += F("previewVisible=!previewVisible;");
+  result += F("$('#previewPane').toggleClass('visible',previewVisible);");
+  result += F("$('#editorPane').toggleClass('split',previewVisible);");
+  result += F("$('#btnPreview').toggleClass('btn-primary btn-outline-secondary');");
+  result += F("if(previewVisible)updatePreview();");
+  result += F("}");
+
+  result += F("function formatJson(){");
+  result += F("try{");
+  result += F("var json=JSON.parse($('#file').val());");
+  result += F("$('#file').val(JSON.stringify(json,null,2));");
+  result += F("validateJson();");
+  result += F("hasChanges=true;");
+  result += F("}catch(e){alert('JSON invalide: '+e.message);}");
+  result += F("}");
+
+  result += F("function saveFile(){");
+  result += F("var filename=$('#filename').val();");
+  result += F("var content=$('#file').val();");
+  result += F("if(!validateJson()){alert('Corrigez les erreurs JSON avant de sauvegarder');return;}");
+  result += F("$.post('saveFileDatabase',{filename:filename,file:content,save:'save'},function(){");
+  result += F("hasChanges=false;alert('Fichier sauvegardé!');");
+  result += F("}).fail(function(){alert('Erreur lors de la sauvegarde');});");
+  result += F("}");
+
+  result += F("function deleteFile(){");
+  result += F("if(!confirm('Supprimer ce fichier ?'))return;");
+  result += F("var filename=$('#filename').val();");
+  result += F("$.post('saveFileDatabase',{filename:filename,file:'',delete:'delete'},function(){location.reload();});");
+  result += F("}");
+
+  result += F("$('#file').on('input',function(){hasChanges=true;validateJson();if(previewVisible)updatePreview();});");
+  result += F("$(window).on('beforeunload',function(){if(hasChanges)return'Modifications non sauvegardées';});");
+
+  result += F("</script>");
+  result += F("</body>");
+  result += footer();
+  result += F("</html>");
   request->send(200, F("text/html"), result);
 }
 
@@ -10154,17 +11009,90 @@ void handleHistory(AsyncWebServerRequest *request)
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
+
+  // CSS pour l'interface
+  result += F("<style>");
+  result += F(".hst-container{display:flex;height:calc(100vh - 120px);gap:0;overflow:hidden;}");
+  result += F(".sidebar{width:280px;min-width:280px;background:#fff;border-right:1px solid #dee2e6;display:flex;flex-direction:column;transition:margin-left 0.3s;}");
+  result += F(".sidebar.collapsed{margin-left:-280px;}");
+  result += F(".sidebar-header{padding:15px;border-bottom:1px solid #dee2e6;background:#f8f9fa;}");
+  result += F(".sidebar-search{position:relative;}");
+  result += F(".sidebar-search input{width:100%;padding:8px 12px 8px 35px;border:1px solid #ced4da;border-radius:6px;font-size:14px;}");
+  result += F(".file-list{flex:1;overflow-y:auto;padding:10px;}");
+  result += F(".file-item{display:flex;align-items:center;padding:10px 12px;margin-bottom:6px;background:#f8f9fa;border-radius:8px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;}");
+  result += F(".file-item:hover{background:#e9ecef;transform:translateX(3px);}");
+  result += F(".file-item.active{background:#e7f1ff;border-color:#0d6efd;}");
+  result += F(".file-item .name{font-weight:500;font-size:14px;flex:1;word-break:break-all;}");
+  result += F(".file-item .size{font-size:12px;color:#6c757d;margin-left:8px;white-space:nowrap;}");
+  result += F(".main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fff;}");
+  result += F(".toolbar{display:flex;align-items:center;gap:10px;padding:12px 15px;background:#f8f9fa;border-bottom:1px solid #dee2e6;flex-wrap:wrap;}");
+  result += F(".toolbar-title{font-weight:600;font-size:16px;margin-right:auto;}");
+  result += F(".toolbar .btn{padding:6px 12px;font-size:13px;}");
+  result += F(".editor-container{flex:1;display:flex;overflow:hidden;}");
+  result += F(".editor-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}");
+  result += F(".editor-pane.split{flex:0 0 50%;}");
+  result += F(".preview-pane{flex:0 0 50%;border-left:1px solid #dee2e6;display:none;flex-direction:column;overflow:hidden;}");
+  result += F(".preview-pane.visible{display:flex;}");
+  result += F(".pane-header{padding:8px 15px;background:#e9ecef;font-weight:500;font-size:13px;border-bottom:1px solid #dee2e6;}");
+  result += F(".editor-wrapper{flex:1;position:relative;overflow:hidden;}");
+  result += F("#file{width:100%;height:100%;border:none;resize:none;padding:15px;font-family:'Consolas','Monaco',monospace;font-size:13px;line-height:1.5;tab-size:2;background:#1e1e1e;color:#d4d4d4;}");
+  result += F(".preview-content{flex:1;overflow-y:auto;padding:15px;}");
+  result += F(".model-section{margin-bottom:20px;border:1px solid #dee2e6;border-radius:8px;overflow:hidden;}");
+  result += F(".model-header{background:#f8f9fa;padding:10px 15px;font-weight:600;border-bottom:1px solid #dee2e6;display:flex;align-items:center;gap:10px;}");
+  result += F(".model-body{padding:15px;}");
+  result += F(".section-group{margin-bottom:15px;}");
+  result += F(".section-title{font-weight:500;color:#495057;margin-bottom:8px;display:flex;align-items:center;gap:8px;}");
+  result += F(".section-title .badge{font-size:11px;}");
+  result += F(".item-card{background:#f8f9fa;border-radius:6px;padding:10px;margin-bottom:8px;font-size:12px;}");
+  result += F(".item-card .label{color:#6c757d;font-size:11px;}");
+  result += F(".item-card .value{font-weight:500;}");
+  result += F(".validation-panel{padding:10px 15px;background:#f8f9fa;border-top:1px solid #dee2e6;}");
+  result += F(".validation-success{color:#198754;}");
+  result += F(".validation-error{color:#dc3545;}");
+  result += F(".toggle-sidebar{display:none;position:fixed;bottom:20px;left:20px;z-index:1000;width:50px;height:50px;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,0.2);}");
+  result += F(".empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#6c757d;}");
+  result += F("@media(max-width:768px){");
+  result += F(".sidebar{position:fixed;left:0;top:60px;height:calc(100vh - 60px);z-index:999;box-shadow:2px 0 10px rgba(0,0,0,0.1);}");
+  result += F(".toggle-sidebar{display:flex;align-items:center;justify-content:center;}");
+  result += F(".hst-container{height:calc(100vh - 60px);}");
+  result += F(".toolbar{flex-wrap:wrap;gap:6px;padding:10px;}");
+  result += F(".toolbar-title{width:100%;font-size:14px;margin-bottom:5px;}");
+  result += F(".toolbar .btn{padding:5px 8px;font-size:12px;}");
+  result += F(".preview-pane{position:fixed;top:0;left:0;right:0;bottom:0;z-index:1001;border:none;flex:none;width:100%;height:100%;background:#fff;}");
+  result += F(".preview-pane .pane-header{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#0d6efd;color:#fff;}");
+  result += F(".preview-pane .close-preview{background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:0 5px;}");
+  result += F("}");
+  result += F(".is-invalid{border-color:#dc3545!important;background-color:#2d1f1f!important;}");
+  result += F(".hidden{display:none!important;}");
+  result += F(".close-preview{display:none;}");
+  result += F("@media(max-width:768px){.close-preview{display:block;}}");
+  result += F(".loading-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(30,30,30,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;}");
+  result += F(".loading-spinner{width:40px;height:40px;border:3px solid #444;border-top-color:#0d6efd;border-radius:50%;animation:spin 1s linear infinite;}");
+  result += F(".loading-text{color:#aaa;margin-top:15px;font-size:14px;}");
+  result += F("@keyframes spin{to{transform:rotate(360deg);}}");
+  result += F("</style>");
+
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h4>History</h4>");
-  result += F("<div align='right'><a href='/createHistory' class='btn btn-primary mb-2'>+ Nouveau</a></div>");
-  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
-  result += F("      <div class='navbar-header'>");
-  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
-  result += F("      </div>");
-  result += F("<ul class='nav navbar-nav'>");
 
-  String str = "";
+  // Structure principale
+  result += F("<div class='hst-container'>");
+
+  // Sidebar avec liste des fichiers
+  result += F("<div class='sidebar' id='sidebar'>");
+  result += F("<div class='sidebar-header'>");
+  result += F("<div class='d-flex justify-content-between align-items-center mb-2'>");
+  result += F("<h5 class='mb-0'>Historique</h5>");
+  //result += F("<a href='/createHistory' class='btn btn-primary btn-sm'>+ Nouveau</a>");
+  result += F("</div>");
+  result += F("<div class='sidebar-search'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6c757d;' viewBox='0 0 16 16'><path d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/></svg>");
+  result += F("<input type='text' id='searchInput' placeholder='Rechercher...' onkeyup='filterFiles()'>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("<div class='file-list' id='fileList'>");
+
+  // Liste des fichiers
   File root = LittleFS.open("/hst");
   File file = root.openNextFile();
   while (file)
@@ -10172,42 +11100,192 @@ void handleHistory(AsyncWebServerRequest *request)
     if (!file.isDirectory())
     {
       String tmp = file.name();
-      // tmp = tmp.substring(11);
-      result += F("<li><a href='#' onClick=\"readfile('");
+      result += F("<div class='file-item' data-file='");
       result += tmp;
-      result += F("','hst');document.getElementById('actions').style.display = 'block';\">");
+      result += F("' onclick=\"selectFile('");
       result += tmp;
-      result += F(" ( ");
+      result += F("')\">");
+      result += F("<span class='name'>");
+      result += tmp;
+      result += F("</span>");
+      result += F("<span class='size'>");
       result += file.size();
-      result += F(" o)</a></li>");
+      result += F(" o</span>");
+      result += F("</div>");
     }
     file.close();
     vTaskDelay(1);
     file = root.openNextFile();
   }
-  result += F("</ul></nav>");
-  result += F("<div class='container-fluid' >");
-  result += F("  <div class='app-main-content'>");
-  result += F("<form method='POST' action='saveFileHistory'>");
-  result += F("<div class='form-group'>");
-  result += F(" <label for='file'>File : <span id='title'></span></label>");
-  result += F("<input type='hidden' name='filename' id='filename' value=''>");
-  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
-  result += F("</textarea>");
-  result += F("</div>");
-  result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
-  result += F("<button type='submit' name='delete' value='delete' class='btn btn-danger mb-2' onClick=\"if (confirm('Etes-vous sure ?')==true){return true;}else{return false;};\">Supprimer</button>");
-  result += F("</div>");
-  result += F("</Form>");
+  file.close();
+  root.close();
 
   result += F("</div>");
   result += F("</div>");
+
+  // Contenu principal
+  result += F("<div class='main-content'>");
+
+  // Toolbar
+  result += F("<div class='toolbar'>");
+  result += F("<span class='toolbar-title' id='currentFile'>Sélectionnez un fichier</span>");
+  result += F("<input type='hidden' id='filename' value=''>");
+  result += F("<div id='toolbarActions' class='hidden'>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='togglePreview()' id='btnPreview' title='Prévisualisation'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z'/><path d='M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='formatJson()' title='Formater JSON'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-warning btn-sm' onclick='saveFile()' id='btnSave'>Enregistrer</button>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Zone d'édition
+  result += F("<div class='editor-container'>");
+  result += F("<div class='editor-pane' id='editorPane'>");
+  result += F("<div class='pane-header'>Éditeur JSON</div>");
+  result += F("<div class='editor-wrapper'>");
+  result += F("<textarea id='file' spellcheck='false' placeholder='Sélectionnez un fichier dans la liste...'></textarea>");
+  result += F("</div>");
+  result += F("<div class='validation-panel' id='validationPanel'>");
+  result += F("<span id='validationStatus'></span>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Panneau de prévisualisation
+  result += F("<div class='preview-pane' id='previewPane'>");
+  result += F("<div class='pane-header'><span>Prévisualisation</span><button class='close-preview' onclick='togglePreview()'>&times;</button></div>");
+  result += F("<div class='preview-content' id='previewContent'>");
+  result += F("<div class='empty-state'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' viewBox='0 0 16 16'><path d='M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z'/></svg>");
+  result += F("<span>Sélectionnez un fichier</span>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Bouton toggle sidebar mobile
+  result += F("<button class='btn btn-primary toggle-sidebar' onclick='toggleSidebar()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='currentColor' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z'/></svg>");
+  result += F("</button>");
+
+  // Scripts
+  result += F("<script>");
+  result += F("var currentFile='';var previewVisible=false;var hasChanges=false;");
+
+  result += F("function toggleSidebar(){$('#sidebar').toggleClass('collapsed');}");
+
+  result += F("function filterFiles(){");
+  result += F("var search=$('#searchInput').val().toLowerCase();");
+  result += F("$('.file-item').each(function(){");
+  result += F("var name=$(this).data('file').toLowerCase();");
+  result += F("$(this).toggle(name.indexOf(search)>-1);");
+  result += F("});");
+  result += F("}");
+
+  result += F("function selectFile(filename){");
+  result += F("if(hasChanges&&!confirm('Modifications non sauvegardées. Continuer ?'))return;");
+  result += F("$('.file-item').removeClass('active');");
+  result += F("$('.file-item[data-file=\"'+filename+'\"]').addClass('active');");
+  result += F("currentFile=filename;");
+  result += F("$('#filename').val(filename);");
+  result += F("$('#currentFile').text(filename);");
+  result += F("$('#toolbarActions').removeClass('hidden');");
+  result += F("$('#file').val('');");
+  result += F("$('.editor-wrapper').append('<div class=\"loading-overlay\" id=\"loader\"><div class=\"loading-spinner\"></div><div class=\"loading-text\">Chargement de '+filename+'...</div></div>');");
+  result += F("$('#validationStatus').html('');");
+  result += F("$.get('readFile?0=hst&1='+filename,function(data){");
+  result += F("$('#loader').remove();");
+  result += F("$('#file').val(data).removeClass('is-invalid');");
+  result += F("validateJson();");
+  result += F("updatePreview();");
+  result += F("hasChanges=false;");
+  result += F("}).fail(function(){$('#loader').remove();$('#validationStatus').html('<span class=\"validation-error\">Erreur de chargement</span>');});");
+  result += F("if(window.innerWidth<768)toggleSidebar();");
+  result += F("}");
+
+  result += F("function validateJson(){");
+  result += F("var content=$('#file').val();");
+  result += F("if(!content.trim()){$('#validationStatus').html('');return null;}");
+  result += F("try{");
+  result += F("var json=JSON.parse(content);");
+  result += F("$('#file').removeClass('is-invalid');");
+  result += F("var entries=Array.isArray(json)?json.length:Object.keys(json).length;");
+  result += F("$('#validationStatus').html('<span class=\"validation-success\">✓ JSON valide - '+entries+' entrée(s)</span>');");
+  result += F("return json;");
+  result += F("}catch(e){");
+  result += F("$('#file').addClass('is-invalid');");
+  result += F("var msg=e.message;");
+  result += F("var line=msg.match(/position (\\d+)/);");
+  result += F("if(line){var pos=parseInt(line[1]);var lines=content.substr(0,pos).split('\\n');msg+=' (ligne '+lines.length+')';}");
+  result += F("$('#validationStatus').html('<span class=\"validation-error\">✗ '+msg+'</span>');");
+  result += F("return null;");
+  result += F("}");
+  result += F("}");
+
+  result += F("function updatePreview(){");
+  result += F("var json=validateJson();");
+  result += F("if(!json){$('#previewContent').html('<div class=\"empty-state\"><span class=\"text-danger\">JSON invalide</span></div>');return;}");
+  result += F("var html='<div class=\"model-section\"><div class=\"model-header\">History Data</div><div class=\"model-body\">';");
+  result += F("if(Array.isArray(json)){");
+  result += F("json.forEach(function(item,i){");
+  result += F("html+='<div class=\"item-card\"><span class=\"label\">#'+(i+1)+':</span> <span class=\"value\">'+JSON.stringify(item)+'</span></div>';");
+  result += F("});");
+  result += F("}else{");
+  result += F("for(var key in json){");
+  result += F("if(typeof json[key]==='object'){");
+  result += F("html+='<div class=\"section-group\"><div class=\"section-title\">'+key+'</div>';");
+  result += F("for(var k2 in json[key]){html+='<div class=\"item-card\"><span class=\"label\">'+k2+':</span> <span class=\"value\">'+JSON.stringify(json[key][k2])+'</span></div>';}");
+  result += F("html+='</div>';");
+  result += F("}else{html+='<div class=\"item-card\"><span class=\"label\">'+key+':</span> <span class=\"value\">'+json[key]+'</span></div>';}");
+  result += F("}");
+  result += F("}");
+  result += F("html+='</div></div>';");
+  result += F("$('#previewContent').html(html);");
+  result += F("}");
+
+  result += F("function togglePreview(){");
+  result += F("previewVisible=!previewVisible;");
+  result += F("$('#previewPane').toggleClass('visible',previewVisible);");
+  result += F("$('#editorPane').toggleClass('split',previewVisible);");
+  result += F("$('#btnPreview').toggleClass('btn-primary btn-outline-secondary');");
+  result += F("if(previewVisible)updatePreview();");
+  result += F("}");
+
+  result += F("function formatJson(){");
+  result += F("try{");
+  result += F("var json=JSON.parse($('#file').val());");
+  result += F("$('#file').val(JSON.stringify(json,null,2));");
+  result += F("validateJson();");
+  result += F("hasChanges=true;");
+  result += F("}catch(e){alert('JSON invalide: '+e.message);}");
+  result += F("}");
+
+  result += F("function saveFile(){");
+  result += F("var filename=$('#filename').val();");
+  result += F("var content=$('#file').val();");
+  result += F("if(!validateJson()){alert('Corrigez les erreurs JSON avant de sauvegarder');return;}");
+  result += F("$.post('saveFileHistory',{filename:filename,file:content,save:'save'},function(){");
+  result += F("hasChanges=false;alert('Fichier sauvegardé!');");
+  result += F("}).fail(function(){alert('Erreur lors de la sauvegarde');});");
+  result += F("}");
+
+  result += F("function deleteFile(){");
+  result += F("if(!confirm('Supprimer ce fichier ?'))return;");
+  result += F("var filename=$('#filename').val();");
+  result += F("$.post('saveFileHistory',{filename:filename,file:'',delete:'delete'},function(){location.reload();});");
+  result += F("}");
+
+  result += F("$('#file').on('input',function(){hasChanges=true;validateJson();if(previewVisible)updatePreview();});");
+  result += F("$(window).on('beforeunload',function(){if(hasChanges)return'Modifications non sauvegardées';});");
+
+  result += F("</script>");
   result += F("</body>");
-  result+=footer();
+  result += footer();
   result += F("</html>");
-  file.close();
-  root.close();
   request->send(200, F("text/html"), result);
 }
 
@@ -10229,20 +11307,111 @@ void handleTemplates(AsyncWebServerRequest *request)
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
+
+  // CSS pour la nouvelle interface
   result += F("<style>");
-  result += F(".is-invalid { border-color: #dc3545 !important; background-color: #fff5f5 !important; }");
+  result += F(".template-container{display:flex;height:calc(100vh - 120px);gap:0;overflow:hidden;}");
+  result += F(".sidebar{width:280px;min-width:280px;background:#fff;border-right:1px solid #dee2e6;display:flex;flex-direction:column;transition:margin-left 0.3s;}");
+  result += F(".sidebar.collapsed{margin-left:-280px;}");
+  result += F(".sidebar-header{padding:15px;border-bottom:1px solid #dee2e6;background:#f8f9fa;}");
+  result += F(".sidebar-search{position:relative;}");
+  result += F(".sidebar-search input{width:100%;padding:8px 12px 8px 35px;border:1px solid #ced4da;border-radius:6px;font-size:14px;}");
+  result += F(".sidebar-search i{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6c757d;}");
+  result += F(".template-list{flex:1;overflow-y:auto;padding:10px;}");
+  result += F(".template-item{display:flex;align-items:center;padding:10px 12px;margin-bottom:6px;background:#f8f9fa;border-radius:8px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;}");
+  result += F(".template-item:hover{background:#e9ecef;transform:translateX(3px);}");
+  result += F(".template-item.active{background:#e7f1ff;border-color:#0d6efd;}");
+  result += F(".template-item .name{font-weight:500;font-size:14px;flex:1;}");
+  result += F(".template-item .size{font-size:12px;color:#6c757d;margin-left:8px;}");
+  result += F(".template-item .badge{font-size:10px;padding:2px 6px;}");
+  result += F(".main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fff;}");
+  result += F(".toolbar{display:flex;align-items:center;gap:10px;padding:12px 15px;background:#f8f9fa;border-bottom:1px solid #dee2e6;flex-wrap:wrap;}");
+  result += F(".toolbar-title{font-weight:600;font-size:16px;margin-right:auto;}");
+  result += F(".toolbar .btn{padding:6px 12px;font-size:13px;}");
+  result += F(".editor-container{flex:1;display:flex;overflow:hidden;}");
+  result += F(".editor-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}");
+  result += F(".editor-pane.split{flex:0 0 50%;}");
+  result += F(".preview-pane{flex:0 0 50%;border-left:1px solid #dee2e6;display:none;flex-direction:column;overflow:hidden;}");
+  result += F(".preview-pane.visible{display:flex;}");
+  result += F(".pane-header{padding:8px 15px;background:#e9ecef;font-weight:500;font-size:13px;border-bottom:1px solid #dee2e6;}");
+  result += F(".editor-wrapper{flex:1;position:relative;overflow:hidden;}");
+  result += F("#file{width:100%;height:100%;border:none;resize:none;padding:15px;font-family:'Consolas','Monaco',monospace;font-size:13px;line-height:1.5;tab-size:2;background:#1e1e1e;color:#d4d4d4;}");
+  result += F(".preview-content{flex:1;overflow-y:auto;padding:15px;}");
+  result += F(".json-tree{font-family:'Consolas',monospace;font-size:13px;}");
+  result += F(".json-key{color:#0d6efd;font-weight:500;}");
+  result += F(".json-string{color:#28a745;}");
+  result += F(".json-number{color:#fd7e14;}");
+  result += F(".json-boolean{color:#6f42c1;}");
+  result += F(".json-null{color:#6c757d;}");
+  result += F(".json-bracket{color:#666;}");
+  result += F(".model-section{margin-bottom:20px;border:1px solid #dee2e6;border-radius:8px;overflow:hidden;}");
+  result += F(".model-header{background:#f8f9fa;padding:10px 15px;font-weight:600;border-bottom:1px solid #dee2e6;display:flex;align-items:center;gap:10px;}");
+  result += F(".model-body{padding:15px;}");
+  result += F(".section-group{margin-bottom:15px;}");
+  result += F(".section-title{font-weight:500;color:#495057;margin-bottom:8px;display:flex;align-items:center;gap:8px;}");
+  result += F(".section-title .badge{font-size:11px;}");
+  result += F(".item-card{background:#f8f9fa;border-radius:6px;padding:10px;margin-bottom:8px;font-size:12px;}");
+  result += F(".item-card .label{color:#6c757d;font-size:11px;}");
+  result += F(".item-card .value{font-weight:500;}");
+  result += F(".validation-panel{padding:10px 15px;background:#f8f9fa;border-top:1px solid #dee2e6;}");
+  result += F(".validation-success{color:#198754;}");
+  result += F(".validation-error{color:#dc3545;}");
+  result += F(".validation-error pre{background:#fff5f5;padding:10px;border-radius:4px;font-size:12px;margin-top:5px;white-space:pre-wrap;word-break:break-all;}");
+  result += F(".toggle-sidebar{display:none;position:fixed;bottom:20px;left:20px;z-index:1000;width:50px;height:50px;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,0.2);}");
+  result += F(".empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#6c757d;}");
+  result += F(".empty-state i{font-size:48px;margin-bottom:15px;opacity:0.5;}");
+  // Mobile styles avec prévisualisation en overlay
+  result += F("@media(max-width:768px){");
+  result += F(".sidebar{position:fixed;left:0;top:60px;height:calc(100vh - 60px);z-index:999;box-shadow:2px 0 10px rgba(0,0,0,0.1);}");
+  result += F(".toggle-sidebar{display:flex;align-items:center;justify-content:center;}");
+  result += F(".template-container{height:calc(100vh - 60px);}");
+  result += F(".toolbar{flex-wrap:wrap;gap:6px;padding:10px;}");
+  result += F(".toolbar-title{width:100%;font-size:14px;margin-bottom:5px;}");
+  result += F(".toolbar .btn{padding:5px 8px;font-size:12px;}");
+  result += F(".editor-pane.split{flex:1;}");
+  result += F(".preview-pane{position:fixed;top:0;left:0;right:0;bottom:0;z-index:1001;border:none;flex:none;width:100%;height:100%;background:#fff;}");
+  result += F(".preview-pane .pane-header{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#0d6efd;color:#fff;}");
+  result += F(".preview-pane .close-preview{background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:0 5px;}");
+  result += F(".preview-content{padding:15px;}");
+  result += F(".model-section{margin-bottom:15px;}");
+  result += F(".model-header{padding:8px 12px;font-size:14px;}");
+  result += F(".model-body{padding:10px;}");
+  result += F(".item-card{padding:8px;font-size:11px;}");
+  result += F(".section-title{font-size:13px;}");
+  result += F("}");
+  result += F(".is-invalid{border-color:#dc3545!important;background-color:#2d1f1f!important;}");
+  result += F(".btn-icon{padding:6px 10px;}");
+  result += F(".hidden{display:none!important;}");
+  result += F(".close-preview{display:none;}");
+  result += F("@media(max-width:768px){.close-preview{display:block;}}");
+  // Loader styles
+  result += F(".loading-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(30,30,30,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;}");
+  result += F(".loading-spinner{width:40px;height:40px;border:3px solid #444;border-top-color:#0d6efd;border-radius:50%;animation:spin 1s linear infinite;}");
+  result += F(".loading-text{color:#aaa;margin-top:15px;font-size:14px;}");
+  result += F("@keyframes spin{to{transform:rotate(360deg);}}");
   result += F("</style>");
+
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h4>Templates</h4>");
-  result += F("<div align='right'><a href='/createTemplate' class='btn btn-primary mb-2'>+ Nouveau</a></div>");
-  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
-  result += F("      <div class='navbar-header'>");
-  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
-  result += F("      </div>");
-  result += F("<ul class='nav navbar-nav'>");
 
-  String str = "";
+  // Structure principale
+  result += F("<div class='template-container'>");
+
+  // Sidebar avec liste des templates
+  result += F("<div class='sidebar' id='sidebar'>");
+  result += F("<div class='sidebar-header'>");
+  result += F("<div class='d-flex justify-content-between align-items-center mb-2'>");
+  result += F("<h5 class='mb-0'>Templates</h5>");
+  result += F("<button class='btn btn-primary btn-sm' onclick='createNewTemplate()'>+ Nouveau</button>");
+  result += F("</div>");
+  result += F("<div class='sidebar-search'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#6c757d;' viewBox='0 0 16 16'><path d='M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z'/></svg>");
+  result += F("<input type='text' id='searchInput' placeholder='Rechercher...' onkeyup='filterTemplates()'>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("<div class='template-list' id='templateList'>");
+
+  // Liste des fichiers templates
   File root = LittleFS.open("/tp");
   File file = root.openNextFile();
   while (file)
@@ -10250,71 +11419,285 @@ void handleTemplates(AsyncWebServerRequest *request)
     if (!file.isDirectory())
     {
       String tmp = file.name();
-      // tmp = tmp.substring(11);
-      result += F("<li><a href='#' onClick=\"readfile('");
+      result += F("<div class='template-item' data-file='");
       result += tmp;
-      result += F("','tp');document.getElementById('actions').style.display = 'block';\">");
+      result += F("' onclick=\"selectTemplate('");
       result += tmp;
-      result += F(" ( ");
+      result += F("')\">");
+      result += F("<span class='name'>");
+      result += tmp;
+      result += F("</span>");
+      result += F("<span class='size'>");
       result += file.size();
-      result += F(" o)</a></li>");
+      result += F(" o</span>");
+      result += F("</div>");
     }
     file.close();
     vTaskDelay(1);
     file = root.openNextFile();
   }
-  result += F("</ul></nav>");
-  result += F("<div class='container-fluid' >");
-  result += F("  <div class='app-main-content'>");
-  result += F("<div class='form-group'>");
-  result += F(" <label for='file'>File : <span id='title'></span></label>");
-  result += F("<input type='hidden' id='filename' value=''>");
-  result += F(" <textarea class='form-control' id='file' rows='10'></textarea>");
-  result += F(" <div id='jsonError' class='text-danger mt-2' style='display:none;'></div>");
-  result += F("</div>");
-  result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='button' id='btnSave' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
-  result += F("<button type='button' id='btnDelete' class='btn btn-danger mb-2'>Supprimer</button>");
-  result += F("</div>");
-
-  // Script pour gérer la sauvegarde AJAX
-  result += F("<script>");
-  result += F("$('#btnSave').click(function(){");
-  result += F("  var filename = $('#filename').val();");
-  result += F("  var content = $('#file').val();");
-  result += F("  $('#file').removeClass('is-invalid');");
-  result += F("  $('#jsonError').hide();");
-  result += F("  $.ajax({");
-  result += F("    url: 'saveFileTemplates',");
-  result += F("    type: 'POST',");
-  result += F("    data: {0: filename, 1: content, 2: 'save'},");
-  result += F("    dataType: 'json',");
-  result += F("    success: function(data){");
-  result += F("      if(data.success){");
-  result += F("        location.reload();");
-  result += F("      }");
-  result += F("    },");
-  result += F("    error: function(xhr){");
-  result += F("      var resp = xhr.responseJSON || {error:'Erreur inconnue'};");
-  result += F("      $('#file').addClass('is-invalid');");
-  result += F("      $('#jsonError').text('JSON invalide: ' + resp.error).show();");
-  result += F("    }");
-  result += F("  });");
-  result += F("});");
-  result += F("$('#btnDelete').click(function(){");
-  result += F("  if(confirm('Etes-vous sure ?')){");
-  result += F("    var filename = $('#filename').val();");
-  result += F("    $.post('saveFileTemplates', {0: filename, 1: '', 2: 'delete'}, function(){");
-  result += F("      location.reload();");
-  result += F("    });");
-  result += F("  }");
-  result += F("});");
-  result += F("</script>");
-  result += F("</body>");
-  result+=footer();
-  result += F("</html>");
   file.close();
   root.close();
+
+  result += F("</div>");
+  result += F("<div class='p-2 border-top'>");
+  result += F("<button class='btn btn-outline-secondary btn-sm w-100' onclick='importTemplate()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' class='me-1' viewBox='0 0 16 16'><path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z'/><path d='M7.646 1.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 2.707V11.5a.5.5 0 0 1-1 0V2.707L5.354 4.854a.5.5 0 1 1-.708-.708l3-3z'/></svg>");
+  result += F("Importer</button>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Contenu principal
+  result += F("<div class='main-content'>");
+
+  // Toolbar
+  result += F("<div class='toolbar'>");
+  result += F("<span class='toolbar-title' id='currentFile'>Sélectionnez un template</span>");
+  result += F("<input type='hidden' id='filename' value=''>");
+  result += F("<div id='toolbarActions' class='hidden'>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='togglePreview()' id='btnPreview' title='Prévisualisation'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z'/><path d='M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='formatJson()' title='Formater JSON'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='exportTemplate()' title='Exporter'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z'/><path d='M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-warning btn-sm' onclick='saveTemplate()' id='btnSave'>Enregistrer</button>");
+  result += F("<button class='btn btn-danger btn-sm' onclick='deleteTemplate()' id='btnDelete'>Supprimer</button>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Zone d'édition
+  result += F("<div class='editor-container'>");
+  result += F("<div class='editor-pane' id='editorPane'>");
+  result += F("<div class='pane-header'>Éditeur JSON</div>");
+  result += F("<div class='editor-wrapper'>");
+  result += F("<textarea id='file' spellcheck='false' placeholder='Sélectionnez un template dans la liste...'></textarea>");
+  result += F("</div>");
+  result += F("<div class='validation-panel' id='validationPanel'>");
+  result += F("<span id='validationStatus'></span>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Panneau de prévisualisation
+  result += F("<div class='preview-pane' id='previewPane'>");
+  result += F("<div class='pane-header'><span>Prévisualisation</span><button class='close-preview' onclick='togglePreview()'>&times;</button></div>");
+  result += F("<div class='preview-content' id='previewContent'>");
+  result += F("<div class='empty-state'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' viewBox='0 0 16 16'><path d='M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z'/></svg>");
+  result += F("<span>Sélectionnez un template</span>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Bouton toggle sidebar mobile
+  result += F("<button class='btn btn-primary toggle-sidebar' onclick='toggleSidebar()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='currentColor' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z'/></svg>");
+  result += F("</button>");
+
+  // Input file caché pour import
+  result += F("<input type='file' id='importFile' accept='.json' style='display:none' onchange='handleImport(event)'>");
+
+  // Scripts
+  result += F("<script>");
+
+  // Variables globales
+  result += F("var currentTemplate='';var previewVisible=false;var hasChanges=false;");
+
+  // Toggle sidebar
+  result += F("function toggleSidebar(){$('#sidebar').toggleClass('collapsed');}");
+
+  // Filtrage des templates
+  result += F("function filterTemplates(){");
+  result += F("var search=$('#searchInput').val().toLowerCase();");
+  result += F("$('.template-item').each(function(){");
+  result += F("var name=$(this).data('file').toLowerCase();");
+  result += F("$(this).toggle(name.indexOf(search)>-1);");
+  result += F("});");
+  result += F("}");
+
+  // Sélection d'un template
+  result += F("function selectTemplate(filename){");
+  result += F("if(hasChanges&&!confirm('Modifications non sauvegardées. Continuer ?'))return;");
+  result += F("$('.template-item').removeClass('active');");
+  result += F("$('.template-item[data-file=\"'+filename+'\"]').addClass('active');");
+  result += F("currentTemplate=filename;");
+  result += F("$('#filename').val(filename);");
+  result += F("$('#currentFile').text(filename);");
+  result += F("$('#toolbarActions').removeClass('hidden');");
+  // Afficher le loader
+  result += F("$('#file').val('');");
+  result += F("$('.editor-wrapper').append('<div class=\"loading-overlay\" id=\"loader\"><div class=\"loading-spinner\"></div><div class=\"loading-text\">Chargement de '+filename+'...</div></div>');");
+  result += F("$('#validationStatus').html('');");
+  result += F("$.get('readFile?0=tp&1='+filename,function(data){");
+  result += F("$('#loader').remove();");
+  result += F("$('#file').val(data).removeClass('is-invalid');");
+  result += F("validateJson();");
+  result += F("updatePreview();");
+  result += F("hasChanges=false;");
+  result += F("}).fail(function(){$('#loader').remove();$('#validationStatus').html('<span class=\"validation-error\">Erreur de chargement</span>');});");
+  result += F("if(window.innerWidth<768)toggleSidebar();");
+  result += F("}");
+
+  // Validation JSON
+  result += F("function validateJson(){");
+  result += F("var content=$('#file').val();");
+  result += F("if(!content.trim()){$('#validationStatus').html('');return null;}");
+  result += F("try{");
+  result += F("var json=JSON.parse(content);");
+  result += F("$('#file').removeClass('is-invalid');");
+  result += F("var models=Object.keys(json).length;");
+  result += F("var statusCount=0,actionCount=0;");
+  result += F("for(var k in json){if(json[k][0]){statusCount+=(json[k][0].status||[]).length;actionCount+=(json[k][0].action||[]).length;}}");
+  result += F("$('#validationStatus').html('<span class=\"validation-success\">✓ JSON valide - '+models+' modèle(s), '+statusCount+' status, '+actionCount+' actions</span>');");
+  result += F("return json;");
+  result += F("}catch(e){");
+  result += F("$('#file').addClass('is-invalid');");
+  result += F("var msg=e.message;");
+  result += F("var line=msg.match(/position (\\d+)/);");
+  result += F("if(line){var pos=parseInt(line[1]);var lines=content.substr(0,pos).split('\\n');msg+=' (ligne '+lines.length+')';}");
+  result += F("$('#validationStatus').html('<span class=\"validation-error\">✗ '+msg+'</span>');");
+  result += F("return null;");
+  result += F("}");
+  result += F("}");
+
+  // Mise à jour prévisualisation
+  result += F("function updatePreview(){");
+  result += F("var json=validateJson();");
+  result += F("if(!json){$('#previewContent').html('<div class=\"empty-state\"><span class=\"text-danger\">JSON invalide</span></div>');return;}");
+  result += F("var html='';");
+  result += F("for(var model in json){");
+  result += F("html+='<div class=\"model-section\">';");
+  result += F("html+='<div class=\"model-header\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" fill=\"currentColor\" viewBox=\"0 0 16 16\"><path d=\"M11 6a3 3 0 1 1-6 0 3 3 0 0 1 6 0z\"/><path fill-rule=\"evenodd\" d=\"M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8zm8-7a7 7 0 0 0-5.468 11.37C3.242 11.226 4.805 10 8 10s4.757 1.225 5.468 2.37A7 7 0 0 0 8 1z\"/></svg>'+model+'</div>';");
+  result += F("html+='<div class=\"model-body\">';");
+  result += F("var data=json[model][0]||{};");
+  // Status section
+  result += F("if(data.status&&data.status.length){");
+  result += F("html+='<div class=\"section-group\"><div class=\"section-title\"><span>Status</span><span class=\"badge bg-primary\">'+data.status.length+'</span></div>';");
+  result += F("data.status.forEach(function(s){");
+  result += F("html+='<div class=\"item-card\"><div class=\"value\">'+s.name+'</div><div class=\"label\">Cluster: '+s.cluster+' | Attr: '+s.attribut+(s.unit?' | '+s.unit:'')+'</div></div>';");
+  result += F("});");
+  result += F("html+='</div>';}");
+  // Actions section
+  result += F("if(data.action&&data.action.length){");
+  result += F("html+='<div class=\"section-group\"><div class=\"section-title\"><span>Actions</span><span class=\"badge bg-success\">'+data.action.length+'</span></div>';");
+  result += F("data.action.forEach(function(a){");
+  result += F("html+='<div class=\"item-card\"><div class=\"value\">'+a.name+'</div><div class=\"label\">Cmd: '+a.command+(a.endpoint?' | EP: '+a.endpoint:'')+'</div></div>';");
+  result += F("});");
+  result += F("html+='</div>';}");
+  // Report section
+  result += F("if(data.report&&data.report.length){");
+  result += F("html+='<div class=\"section-group\"><div class=\"section-title\"><span>Report</span><span class=\"badge bg-warning text-dark\">'+data.report.length+'</span></div>';");
+  result += F("data.report.forEach(function(r){");
+  result += F("html+='<div class=\"item-card\"><div class=\"label\">Cluster: '+r.cluster+' | Attr: '+r.attribut+' | Min: '+r.min+'s Max: '+r.max+'s</div></div>';");
+  result += F("});");
+  result += F("html+='</div>';}");
+  // Bind section
+  result += F("if(data.bind){");
+  result += F("html+='<div class=\"section-group\"><div class=\"section-title\"><span>Bind</span></div>';");
+  result += F("html+='<div class=\"item-card\"><div class=\"label\">'+data.bind+'</div></div></div>';}");
+  result += F("html+='</div></div>';");
+  result += F("}");
+  result += F("$('#previewContent').html(html);");
+  result += F("}");
+
+  // Toggle prévisualisation
+  result += F("function togglePreview(){");
+  result += F("previewVisible=!previewVisible;");
+  result += F("$('#previewPane').toggleClass('visible',previewVisible);");
+  result += F("$('#editorPane').toggleClass('split',previewVisible);");
+  result += F("$('#btnPreview').toggleClass('btn-primary btn-outline-secondary');");
+  result += F("if(previewVisible)updatePreview();");
+  result += F("}");
+
+  // Formater JSON
+  result += F("function formatJson(){");
+  result += F("try{");
+  result += F("var json=JSON.parse($('#file').val());");
+  result += F("$('#file').val(JSON.stringify(json,null,2));");
+  result += F("validateJson();");
+  result += F("hasChanges=true;");
+  result += F("}catch(e){alert('JSON invalide: '+e.message);}");
+  result += F("}");
+
+  // Sauvegarde
+  result += F("function saveTemplate(){");
+  result += F("var filename=$('#filename').val();");
+  result += F("var content=$('#file').val();");
+  result += F("if(!validateJson()){alert('Corrigez les erreurs JSON avant de sauvegarder');return;}");
+  result += F("$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:content,2:'save'},dataType:'json',");
+  result += F("success:function(d){if(d.success){hasChanges=false;alert('Template sauvegardé!');}},");
+  result += F("error:function(xhr){var r=xhr.responseJSON||{error:'Erreur inconnue'};alert('Erreur: '+r.error);}");
+  result += F("});");
+  result += F("}");
+
+  // Suppression
+  result += F("function deleteTemplate(){");
+  result += F("if(!confirm('Supprimer ce template ?'))return;");
+  result += F("var filename=$('#filename').val();");
+  result += F("$.post('saveFileTemplates',{0:filename,1:'',2:'delete'},function(){location.reload();});");
+  result += F("}");
+
+  // Export
+  result += F("function exportTemplate(){");
+  result += F("var content=$('#file').val();");
+  result += F("var filename=$('#filename').val()||'template.json';");
+  result += F("var blob=new Blob([content],{type:'application/json'});");
+  result += F("var a=document.createElement('a');");
+  result += F("a.href=URL.createObjectURL(blob);");
+  result += F("a.download=filename;");
+  result += F("a.click();");
+  result += F("}");
+
+  // Import
+  result += F("function importTemplate(){$('#importFile').click();}");
+  result += F("function handleImport(e){");
+  result += F("var file=e.target.files[0];");
+  result += F("if(!file)return;");
+  result += F("var reader=new FileReader();");
+  result += F("reader.onload=function(ev){");
+  result += F("try{");
+  result += F("JSON.parse(ev.target.result);");
+  result += F("var filename=prompt('Nom du fichier:',file.name);");
+  result += F("if(!filename)return;");
+  result += F("if(!filename.endsWith('.json'))filename+='.json';");
+  result += F("$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:ev.target.result,2:'save'},dataType:'json',");
+  result += F("success:function(){location.reload();},");
+  result += F("error:function(xhr){alert('Erreur: '+(xhr.responseJSON||{}).error||'Erreur inconnue');}");
+  result += F("});");
+  result += F("}catch(err){alert('JSON invalide: '+err.message);}");
+  result += F("};");
+  result += F("reader.readAsText(file);");
+  result += F("e.target.value='';");
+  result += F("}");
+
+  // Nouveau template
+  result += F("function createNewTemplate(){");
+  result += F("var name=prompt('Nom du nouveau template (ex: 123.json):');");
+  result += F("if(!name)return;");
+  result += F("if(!name.endsWith('.json'))name+='.json';");
+  result += F("var defaultContent='{\\n  \"default\": [\\n    {\\n      \"status\": [],\\n      \"action\": [],\\n      \"bind\": \"\",\\n      \"report\": []\\n    }\\n  ]\\n}';");
+  result += F("$.ajax({url:'saveFileTemplates',type:'POST',data:{0:name,1:defaultContent,2:'save'},dataType:'json',");
+  result += F("success:function(){location.reload();},");
+  result += F("error:function(xhr){alert('Erreur: '+(xhr.responseJSON||{}).error||'Erreur inconnue');}");
+  result += F("});");
+  result += F("}");
+
+  // Détecter les changements
+  result += F("$('#file').on('input',function(){hasChanges=true;validateJson();if(previewVisible)updatePreview();});");
+
+  // Avertir avant de quitter
+  result += F("$(window).on('beforeunload',function(){if(hasChanges)return'Modifications non sauvegardées';});");
+
+  result += F("</script>");
+  result += F("</body>");
+  result += footer();
+  result += F("</html>");
   request->send(200, F("text/html"), result);
 }
 
@@ -10324,15 +11707,75 @@ void handleRules(AsyncWebServerRequest *request)
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
+
+  // CSS pour l'interface
+  result += F("<style>");
+  result += F(".rules-container{display:flex;height:calc(100vh - 120px);gap:0;overflow:hidden;}");
+  result += F(".sidebar{width:280px;min-width:280px;background:#fff;border-right:1px solid #dee2e6;display:flex;flex-direction:column;transition:margin-left 0.3s;}");
+  result += F(".sidebar.collapsed{margin-left:-280px;}");
+  result += F(".sidebar-header{padding:15px;border-bottom:1px solid #dee2e6;background:#f8f9fa;}");
+  result += F(".file-list{flex:1;overflow-y:auto;padding:10px;}");
+  result += F(".file-item{display:flex;align-items:center;padding:10px 12px;margin-bottom:6px;background:#f8f9fa;border-radius:8px;cursor:pointer;transition:all 0.2s;border:2px solid transparent;}");
+  result += F(".file-item:hover{background:#e9ecef;transform:translateX(3px);}");
+  result += F(".file-item.active{background:#e7f1ff;border-color:#0d6efd;}");
+  result += F(".file-item .name{font-weight:500;font-size:14px;flex:1;word-break:break-all;}");
+  result += F(".file-item .size{font-size:12px;color:#6c757d;margin-left:8px;white-space:nowrap;}");
+  result += F(".main-content{flex:1;display:flex;flex-direction:column;overflow:hidden;background:#fff;}");
+  result += F(".toolbar{display:flex;align-items:center;gap:10px;padding:12px 15px;background:#f8f9fa;border-bottom:1px solid #dee2e6;flex-wrap:wrap;}");
+  result += F(".toolbar-title{font-weight:600;font-size:16px;margin-right:auto;}");
+  result += F(".toolbar .btn{padding:6px 12px;font-size:13px;}");
+  result += F(".editor-container{flex:1;display:flex;overflow:hidden;}");
+  result += F(".editor-pane{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}");
+  result += F(".editor-pane.split{flex:0 0 50%;}");
+  result += F(".preview-pane{flex:0 0 50%;border-left:1px solid #dee2e6;display:none;flex-direction:column;overflow:hidden;}");
+  result += F(".preview-pane.visible{display:flex;}");
+  result += F(".pane-header{padding:8px 15px;background:#e9ecef;font-weight:500;font-size:13px;border-bottom:1px solid #dee2e6;}");
+  result += F(".editor-wrapper{flex:1;position:relative;overflow:hidden;}");
+  result += F("#file{width:100%;height:100%;border:none;resize:none;padding:15px;font-family:'Consolas','Monaco',monospace;font-size:13px;line-height:1.5;tab-size:2;background:#1e1e1e;color:#d4d4d4;}");
+  result += F(".preview-content{flex:1;overflow-y:auto;padding:15px;}");
+  result += F(".validation-panel{padding:10px 15px;background:#f8f9fa;border-top:1px solid #dee2e6;}");
+  result += F(".validation-success{color:#198754;}");
+  result += F(".validation-error{color:#dc3545;}");
+  result += F(".toggle-sidebar{display:none;position:fixed;bottom:20px;left:20px;z-index:1000;width:50px;height:50px;border-radius:50%;box-shadow:0 2px 10px rgba(0,0,0,0.2);}");
+  result += F(".empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#6c757d;}");
+  result += F(".rule-card{background:#f8f9fa;border-radius:8px;padding:12px;margin-bottom:10px;border-left:4px solid #0d6efd;}");
+  result += F(".rule-card .rule-name{font-weight:600;margin-bottom:5px;}");
+  result += F(".rule-card .rule-detail{font-size:12px;color:#6c757d;}");
+  result += F("@media(max-width:768px){");
+  result += F(".sidebar{position:fixed;left:0;top:60px;height:calc(100vh - 60px);z-index:999;box-shadow:2px 0 10px rgba(0,0,0,0.1);}");
+  result += F(".toggle-sidebar{display:flex;align-items:center;justify-content:center;}");
+  result += F(".rules-container{height:calc(100vh - 60px);}");
+  result += F(".toolbar{flex-wrap:wrap;gap:6px;padding:10px;}");
+  result += F(".toolbar-title{width:100%;font-size:14px;margin-bottom:5px;}");
+  result += F(".toolbar .btn{padding:5px 8px;font-size:12px;}");
+  result += F(".preview-pane{position:fixed;top:0;left:0;right:0;bottom:0;z-index:1001;border:none;flex:none;width:100%;height:100%;background:#fff;}");
+  result += F(".preview-pane .pane-header{display:flex;justify-content:space-between;align-items:center;padding:12px 15px;background:#0d6efd;color:#fff;}");
+  result += F(".preview-pane .close-preview{background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:0 5px;}");
+  result += F("}");
+  result += F(".is-invalid{border-color:#dc3545!important;background-color:#2d1f1f!important;}");
+  result += F(".hidden{display:none!important;}");
+  result += F(".close-preview{display:none;}");
+  result += F("@media(max-width:768px){.close-preview{display:block;}}");
+  result += F(".loading-overlay{position:absolute;top:0;left:0;right:0;bottom:0;background:rgba(30,30,30,0.95);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:10;}");
+  result += F(".loading-spinner{width:40px;height:40px;border:3px solid #444;border-top-color:#0d6efd;border-radius:50%;animation:spin 1s linear infinite;}");
+  result += F(".loading-text{color:#aaa;margin-top:15px;font-size:14px;}");
+  result += F("@keyframes spin{to{transform:rotate(360deg);}}");
+  result += F("</style>");
+
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("<h4>Règles</h4>");
-  result += F("<nav id='navbar-custom' class='navbar navbar-default navbar-fixed-left'>");
-  result += F("      <div class='navbar-header'>");
-  result += F("        <!--<a class='navbar-brand' href='#'>Brand</a>-->");
-  result += F("      </div>");
-  result += F("<ul class='nav navbar-nav'>");
-  String str = "";
+
+  // Structure principale
+  result += F("<div class='rules-container'>");
+
+  // Sidebar avec liste des fichiers
+  result += F("<div class='sidebar' id='sidebar'>");
+  result += F("<div class='sidebar-header'>");
+  result += F("<h5 class='mb-0'>Règles</h5>");
+  result += F("</div>");
+  result += F("<div class='file-list' id='fileList'>");
+
+  // Liste des fichiers (seulement rules.json)
   File root = LittleFS.open("/config");
   File file = root.openNextFile();
   while (file)
@@ -10340,18 +11783,21 @@ void handleRules(AsyncWebServerRequest *request)
     if (!file.isDirectory())
     {
       String tmp = file.name();
-      if (strcmp(file.name(),"rules.json")==0)
+      if (strcmp(file.name(), "rules.json") == 0)
       {
-        // tmp = tmp.substring(11);
-        result += F("<li><a href='#' onClick=\"readfile('");
+        result += F("<div class='file-item' data-file='");
         result += tmp;
-        result += F("','config');document.getElementById('actions').style.display = 'block';\">");
+        result += F("' onclick=\"selectFile('");
         result += tmp;
-        result += F(" ( ");
+        result += F("')\">");
+        result += F("<span class='name'>");
+        result += tmp;
+        result += F("</span>");
+        result += F("<span class='size'>");
         result += file.size();
-        result += F(" o)</a></li>");
+        result += F(" o</span>");
+        result += F("</div>");
       }
-      
     }
     file.close();
     vTaskDelay(1);
@@ -10360,27 +11806,156 @@ void handleRules(AsyncWebServerRequest *request)
   file.close();
   root.close();
 
-  result += F("</ul></nav>");
-  result += F("<div class='container-fluid' >");
-  result += F("  <div class='app-main-content'>");
-  result += F("<form method='POST' action='saveFileRules'>");
-  result += F("<div class='form-group'>");
-  result += F(" <label for='file'>File : <span id='title'></span></label>");
-  result += F("<input type='hidden' name='filename' id='filename' value=''>");
-  result += F(" <textarea class='form-control' id='file' name='file' rows='10'>");
-  result += F("</textarea>");
   result += F("</div>");
-  result += F("<div id='actions' style='display:none;'>");
-  result += F("<button type='submit' name='save' value='save' class='btn btn-warning mb-2'>Enregistrer</button>&nbsp;");
   result += F("</div>");
-  result += F("</Form>");
 
+  // Contenu principal
+  result += F("<div class='main-content'>");
+
+  // Toolbar
+  result += F("<div class='toolbar'>");
+  result += F("<span class='toolbar-title' id='currentFile'>Sélectionnez un fichier</span>");
+  result += F("<input type='hidden' id='filename' value=''>");
+  result += F("<div id='toolbarActions' class='hidden'>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='togglePreview()' id='btnPreview' title='Prévisualisation'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z'/><path d='M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-outline-secondary btn-sm' onclick='formatJson()' title='Formater JSON'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'><path d='M5.854 4.854a.5.5 0 1 0-.708-.708l-3.5 3.5a.5.5 0 0 0 0 .708l3.5 3.5a.5.5 0 0 0 .708-.708L2.707 8l3.147-3.146zm4.292 0a.5.5 0 0 1 .708-.708l3.5 3.5a.5.5 0 0 1 0 .708l-3.5 3.5a.5.5 0 0 1-.708-.708L13.293 8l-3.147-3.146z'/></svg>");
+  result += F("</button>");
+  result += F("<button class='btn btn-warning btn-sm' onclick='saveFile()' id='btnSave'>Enregistrer</button>");
   result += F("</div>");
   result += F("</div>");
+
+  // Zone d'édition
+  result += F("<div class='editor-container'>");
+  result += F("<div class='editor-pane' id='editorPane'>");
+  result += F("<div class='pane-header'>Éditeur JSON</div>");
+  result += F("<div class='editor-wrapper'>");
+  result += F("<textarea id='file' spellcheck='false' placeholder='Sélectionnez un fichier dans la liste...'></textarea>");
+  result += F("</div>");
+  result += F("<div class='validation-panel' id='validationPanel'>");
+  result += F("<span id='validationStatus'></span>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Panneau de prévisualisation
+  result += F("<div class='preview-pane' id='previewPane'>");
+  result += F("<div class='pane-header'><span>Prévisualisation</span><button class='close-preview' onclick='togglePreview()'>&times;</button></div>");
+  result += F("<div class='preview-content' id='previewContent'>");
+  result += F("<div class='empty-state'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' fill='currentColor' viewBox='0 0 16 16'><path d='M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zm-3 0A1.5 1.5 0 0 1 9.5 3V1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5h-2z'/></svg>");
+  result += F("<span>Sélectionnez un fichier</span>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+  result += F("</div>");
+
+  // Bouton toggle sidebar mobile
+  result += F("<button class='btn btn-primary toggle-sidebar' onclick='toggleSidebar()'>");
+  result += F("<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='currentColor' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M2.5 12a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5zm0-4a.5.5 0 0 1 .5-.5h10a.5.5 0 0 1 0 1H3a.5.5 0 0 1-.5-.5z'/></svg>");
+  result += F("</button>");
+
+  // Scripts
+  result += F("<script>");
+  result += F("var currentFile='';var previewVisible=false;var hasChanges=false;");
+
+  result += F("function toggleSidebar(){$('#sidebar').toggleClass('collapsed');}");
+
+  result += F("function selectFile(filename){");
+  result += F("if(hasChanges&&!confirm('Modifications non sauvegardées. Continuer ?'))return;");
+  result += F("$('.file-item').removeClass('active');");
+  result += F("$('.file-item[data-file=\"'+filename+'\"]').addClass('active');");
+  result += F("currentFile=filename;");
+  result += F("$('#filename').val(filename);");
+  result += F("$('#currentFile').text(filename);");
+  result += F("$('#toolbarActions').removeClass('hidden');");
+  result += F("$('#file').val('');");
+  result += F("$('.editor-wrapper').append('<div class=\"loading-overlay\" id=\"loader\"><div class=\"loading-spinner\"></div><div class=\"loading-text\">Chargement de '+filename+'...</div></div>');");
+  result += F("$('#validationStatus').html('');");
+  result += F("$.get('readFile?0=config&1='+filename,function(data){");
+  result += F("$('#loader').remove();");
+  result += F("$('#file').val(data).removeClass('is-invalid');");
+  result += F("validateJson();");
+  result += F("updatePreview();");
+  result += F("hasChanges=false;");
+  result += F("}).fail(function(){$('#loader').remove();$('#validationStatus').html('<span class=\"validation-error\">Erreur de chargement</span>');});");
+  result += F("if(window.innerWidth<768)toggleSidebar();");
+  result += F("}");
+
+  result += F("function validateJson(){");
+  result += F("var content=$('#file').val();");
+  result += F("if(!content.trim()){$('#validationStatus').html('');return null;}");
+  result += F("try{");
+  result += F("var json=JSON.parse(content);");
+  result += F("$('#file').removeClass('is-invalid');");
+  result += F("var rulesCount=json.rules?json.rules.length:0;");
+  result += F("$('#validationStatus').html('<span class=\"validation-success\">✓ JSON valide - '+rulesCount+' règle(s)</span>');");
+  result += F("return json;");
+  result += F("}catch(e){");
+  result += F("$('#file').addClass('is-invalid');");
+  result += F("var msg=e.message;");
+  result += F("var line=msg.match(/position (\\d+)/);");
+  result += F("if(line){var pos=parseInt(line[1]);var lines=content.substr(0,pos).split('\\n');msg+=' (ligne '+lines.length+')';}");
+  result += F("$('#validationStatus').html('<span class=\"validation-error\">✗ '+msg+'</span>');");
+  result += F("return null;");
+  result += F("}");
+  result += F("}");
+
+  result += F("function updatePreview(){");
+  result += F("var json=validateJson();");
+  result += F("if(!json){$('#previewContent').html('<div class=\"empty-state\"><span class=\"text-danger\">JSON invalide</span></div>');return;}");
+  result += F("var html='';");
+  result += F("if(json.rules&&json.rules.length){");
+  result += F("json.rules.forEach(function(rule,i){");
+  result += F("html+='<div class=\"rule-card\">';");
+  result += F("html+='<div class=\"rule-name\">'+(rule.name||'Règle '+(i+1))+'</div>';");
+  result += F("var conds=rule.conditions?rule.conditions.length:0;");
+  result += F("var acts=rule.actions?rule.actions.length:0;");
+  result += F("html+='<div class=\"rule-detail\">'+conds+' condition(s), '+acts+' action(s)</div>';");
+  result += F("if(rule.enabled===false)html+='<div class=\"rule-detail text-warning\">Désactivée</div>';");
+  result += F("html+='</div>';");
+  result += F("});");
+  result += F("}else{html='<div class=\"empty-state\"><span>Aucune règle définie</span></div>';}");
+  result += F("$('#previewContent').html(html);");
+  result += F("}");
+
+  result += F("function togglePreview(){");
+  result += F("previewVisible=!previewVisible;");
+  result += F("$('#previewPane').toggleClass('visible',previewVisible);");
+  result += F("$('#editorPane').toggleClass('split',previewVisible);");
+  result += F("$('#btnPreview').toggleClass('btn-primary btn-outline-secondary');");
+  result += F("if(previewVisible)updatePreview();");
+  result += F("}");
+
+  result += F("function formatJson(){");
+  result += F("try{");
+  result += F("var json=JSON.parse($('#file').val());");
+  result += F("$('#file').val(JSON.stringify(json,null,2));");
+  result += F("validateJson();");
+  result += F("hasChanges=true;");
+  result += F("}catch(e){alert('JSON invalide: '+e.message);}");
+  result += F("}");
+
+  result += F("function saveFile(){");
+  result += F("var filename=$('#filename').val();");
+  result += F("var content=$('#file').val();");
+  result += F("if(!validateJson()){alert('Corrigez les erreurs JSON avant de sauvegarder');return;}");
+  result += F("$.post('saveFileRules',{filename:filename,file:content,save:'save'},function(){");
+  result += F("hasChanges=false;alert('Règles sauvegardées!');");
+  result += F("}).fail(function(){alert('Erreur lors de la sauvegarde');});");
+  result += F("}");
+
+  result += F("$('#file').on('input',function(){hasChanges=true;validateJson();if(previewVisible)updatePreview();});");
+  result += F("$(window).on('beforeunload',function(){if(hasChanges)return'Modifications non sauvegardées';});");
+
+  result += F("</script>");
   result += F("</body>");
-  result+=footer();
+  result += footer();
   result += F("</html>");
-  
+
   request->send(200, F("text/html"), result);
 }
 
@@ -10755,16 +12330,9 @@ void handleSaveDebug(AsyncWebServerRequest *request)
   }
   else
   {
-    uint8_t i = 0;
-    String filename = "/debug/" + request->arg(i);
-    String content = request->arg(1);
-    String action = request->arg(2);
-    if (action == "delete")
+    // Vérifier si c'est une suppression de tous les fichiers
+    if (request->hasArg("deleteAll"))
     {
-      LittleFS.remove(filename);
-    }else if (action == "deleteAll")
-    {
-      String str = "";
       File root = LittleFS.open("/debug");
       File file = root.openNextFile();
       while (file)
@@ -10775,10 +12343,20 @@ void handleSaveDebug(AsyncWebServerRequest *request)
             file.close();
             LittleFS.remove("/debug/"+tmp);
           }
-          file.close();
+          else
+          {
+            file.close();
+          }
           vTaskDelay(1);
           file = root.openNextFile();
       }
+      root.close();
+    }
+    // Vérifier si c'est une suppression d'un fichier unique
+    else if (request->hasArg("delete") && request->hasArg("filename"))
+    {
+      String filename = "/debug/" + request->arg("filename");
+      LittleFS.remove(filename);
     }
     AsyncWebServerResponse *response = request->beginResponse(303);
     response->addHeader(F("Location"), F("/debugFiles"));
@@ -11560,6 +13138,31 @@ void handleSaveConfigWater(AsyncWebServerRequest *request)
   {
     strlcpy(ConfigGeneral.unitWater, request->arg("unitWater").c_str(), sizeof(ConfigGeneral.unitWater));
     config_write(path, "unitWater", String(request->arg("unitWater")));
+  }
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configEnergy"));
+  request->send(response);
+}
+
+void handleSaveConfigPresence(AsyncWebServerRequest *request)
+{
+  String path = "configGeneral.json";
+
+  // Sauvegarder le capteur de présence sélectionné
+  strlcpy(ConfigGeneral.Presence, request->arg("presenceDevice").c_str(), sizeof(ConfigGeneral.Presence));
+  config_write(path, "Presence", String(request->arg("presenceDevice")));
+
+  // Sauvegarder l'option d'affichage sur le graphique
+  if (request->arg("enablePresenceGraph") == "on")
+  {
+    ConfigGeneral.enablePresenceGraph = true;
+    config_write(path, "enablePresenceGraph", "1");
+  }
+  else
+  {
+    ConfigGeneral.enablePresenceGraph = false;
+    config_write(path, "enablePresenceGraph", "0");
   }
 
   AsyncWebServerResponse *response = request->beginResponse(303);
@@ -12457,6 +14060,7 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F(".attr-table tr:hover { background: #f8f9fa; }");
   result += F(".cluster-badge { background: #007bff; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace; }");
   result += F(".attr-badge { background: #6c757d; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace; }");
+  result += F(".mfr-badge { background: #dc3545; color: white; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: monospace; }");
   result += F(".value-cell { font-family: 'Courier New', monospace; }");
   result += F(".btn-read { background: #17a2b8; border: none; color: white; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }");
   result += F(".btn-read:hover { background: #138496; }");
@@ -12502,7 +14106,7 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("  .info-table td:first-child { width: 45% !important; }");
   result += F("  .attr-table { display: block; overflow-x: auto; white-space: nowrap; }");
   result += F("  .attr-table th, .attr-table td { padding: 6px 4px !important; font-size: 11px !important; }");
-  result += F("  .attr-table .cluster-badge, .attr-table .attr-badge { padding: 1px 4px !important; font-size: 10px !important; }");
+  result += F("  .attr-table .cluster-badge, .attr-table .attr-badge, .attr-table .mfr-badge { padding: 1px 4px !important; font-size: 10px !important; }");
   result += F("  .writable-input { width: 60px !important; font-size: 11px !important; }");
   result += F("  .btn-read, .btn-write { padding: 3px 6px !important; font-size: 11px !important; }");
   result += F("  .action-btn { padding: 8px 12px !important; font-size: 12px !important; margin: 3px !important; }");
@@ -12525,12 +14129,14 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += device->getDeviceID();
   result += F("';");
   result += F("var previousValues = {};");
+  
   // Fonction pour marquer visuellement un changement
   result += F("function highlightChange(el) {");
   result += F("  el.classList.remove('value-changed');");
-  result += F("  void el.offsetWidth;"); // Force reflow pour relancer l'animation
+  result += F("  void el.offsetWidth;");
   result += F("  el.classList.add('value-changed');");
   result += F("}");
+  
   // Fonction pour récupérer les valeurs de cet appareil
   result += F("function refreshDeviceValues() {");
   result += F("  fetch('/getDeviceAttrValues?id=' + deviceId).then(r => r.json()).then(data => {");
@@ -12551,14 +14157,18 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("    }");
   result += F("  }).catch(e => console.error('Refresh error:', e));");
   result += F("}");
+  
   // Refresh permanent toutes les 5 secondes
   result += F("setInterval(refreshDeviceValues, 5000);");
   // Premier refresh au chargement
   result += F("refreshDeviceValues();");
-  // Fonction de lecture d'attribut
-  result += F("function readAttribute(shortAddr, endpoint, cluster, attr, spanId) {");
+  
+  // Fonction de lecture d'attribut avec support manufacturer specific
+  result += F("function readAttribute(shortAddr, endpoint, cluster, attr, spanId, mfrCode) {");
   result += F("  var btn = event.target; btn.classList.add('pending');");
-  result += F("  fetch('/ZigbeeReadAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr)");
+  result += F("  var url = '/ZigbeeReadAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr;");
+  result += F("  if(mfrCode && mfrCode > 0) { url += '&mfr=' + mfrCode; }");
+  result += F("  fetch(url)");
   result += F("  .then(r => r.json()).then(d => {");
   result += F("    btn.classList.remove('pending');");
   result += F("    if(d.success) {");
@@ -12566,27 +14176,40 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("      setTimeout(() => btn.classList.remove('success'), 2000);");
   result += F("    } else {");
   result += F("      btn.classList.add('error');");
+  result += F("      setTimeout(() => btn.classList.remove('error'), 3000);");
   result += F("    }");
   result += F("  }).catch(e => { btn.classList.remove('pending'); btn.classList.add('error'); });");
   result += F("}");
-  result += F("function writeAttribute(shortAddr, cluster, attr, type, inputId) {");
+  
+  // Fonction d'écriture d'attribut avec support manufacturer specific
+  result += F("function writeAttribute(shortAddr, endpoint, cluster, attr, type, inputId, mfrCode) {");
   result += F("  var inp = document.getElementById(inputId); var btn = event.target;");
   result += F("  btn.classList.add('pending');");
-  result += F("  fetch('/ZigbeeWriteAttribut?addr=' + shortAddr + '&cluster=' + cluster + '&attr=' + attr + '&type=' + type + '&value=' + encodeURIComponent(inp.value))");
+  result += F("  var url = '/ZigbeeWriteAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr + '&type=' + type + '&value=' + encodeURIComponent(inp.value);");
+  result += F("  if(mfrCode && mfrCode > 0) { url += '&mfr=' + mfrCode; }");
+  result += F("  fetch(url)");
   result += F("  .then(r => r.json()).then(d => {");
   result += F("    btn.classList.remove('pending');");
-  result += F("    if(d.success) { btn.classList.add('success'); setTimeout(() => btn.classList.remove('success'), 2000); }");
-  result += F("    else { btn.classList.add('error'); alert('Erreur: ' + (d.error || 'Echec')); }");
-  result += F("  }).catch(e => { btn.classList.remove('pending'); btn.classList.add('error'); });");
+  result += F("    if(d.success) {");
+  result += F("      btn.classList.add('success');");
+  result += F("      setTimeout(function() { btn.classList.remove('success'); }, 2000);");
+  result += F("      setTimeout(function() { readAttribute(shortAddr, endpoint, cluster, attr, inputId, mfrCode); }, 500);");
+  result += F("    } else {");
+  result += F("      btn.classList.add('error');");
+  result += F("      setTimeout(function() { btn.classList.remove('error'); }, 3000);");
+  result += F("      alert('Erreur: ' + (d.error || 'Echec'));");
+  result += F("    }");
+  result += F("  }).catch(function(e) { btn.classList.remove('pending'); btn.classList.add('error'); });");
   result += F("}");
+  
   // Variables pour l'édition du titre
   result += F("var currentAlias = '");
-  // Échapper l'alias pour JavaScript
   String jsAlias = device->getInfo().alias;
   jsAlias.replace("\\", "\\\\");
   jsAlias.replace("'", "\\'");
   result += jsAlias;
   result += F("';");
+  
   // Fonction pour démarrer l'édition du titre
   result += F("function startEditTitle() {");
   result += F("  var container = document.getElementById('titleContainer');");
@@ -12604,10 +14227,12 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("    if(e.key === 'Escape') { e.preventDefault(); cancelEditTitle(); }");
   result += F("  });");
   result += F("}");
+  
   // Fonction pour annuler l'édition
   result += F("function cancelEditTitle() {");
   result += F("  showTitleDisplay();");
   result += F("}");
+  
   // Fonction pour afficher le titre en mode lecture
   result += F("function showTitleDisplay() {");
   result += F("  var container = document.getElementById('titleContainer');");
@@ -12618,6 +14243,7 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("    \"<path d='M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293l6.5-6.5zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325z'/>\" +");
   result += F("    \"</svg></button>\";");
   result += F("}");
+  
   // Fonction pour sauvegarder le titre
   result += F("function saveTitle() {");
   result += F("  var inp = document.getElementById('titleInput');");
@@ -12655,7 +14281,6 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   // Header avec titre
   result += F("<div class='device-header'><div>");
   result += F("<div class='device-title title-container' id='titleContainer'>");
-  // Le contenu sera généré par JavaScript
   result += F("</div>");
   result += F("<div class='device-subtitle'>MAC: ");
   result += device->getDeviceID();
@@ -12716,39 +14341,15 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   int linkyMode = device->getInfo().linkyMode.toInt();
   
   if (t != nullptr && t->StateSize() > 0) {
-    // Compter le nombre d'attributs qui seront affichés
-    //int visibleCount = 0;
-    for (int i = 0; i < t->StateSize(); i++) {
-      //if (!t->states[i].visible) continue;
-      if (isZLinky) {
-        const char *tmp = t->states[i].mode;
-        if ((tmp != NULL) && (tmp[0] != '\0')) {
-          char modeCopy[50];
-          strncpy(modeCopy, tmp, sizeof(modeCopy) - 1);
-          modeCopy[sizeof(modeCopy) - 1] = '\0';
-          char *pch = strtok(modeCopy, ";");
-          bool found = false;
-          while (pch != NULL) {
-            if (atoi(pch) == linkyMode) { found = true; break; }
-            pch = strtok(NULL, ";");
-          }
-          if (!found) continue;
-        }
-      }
-      //visibleCount++;
-    }
     result += F("<div class='section-title'>Attributs (");
     result += String(t->StateSize());
     result += F(" états)</div>");
     
     result += F("<table class='attr-table'>");
-    result += F("<thead><tr><th>Nom</th><th>Cluster</th><th>Attribut</th><th>Valeur</th><th>Unité</th><th>Actions</th></tr></thead>");
+    result += F("<thead><tr><th>Nom</th><th>Cluster</th><th>Attribut</th><th>Mfr</th><th>Valeur</th><th>Unité</th><th>Actions</th></tr></thead>");
     result += F("<tbody>");
     
     for (int i = 0; i < t->StateSize(); i++) {
-      // Vérifier si visible
-      //if (!t->states[i].visible) continue;
-      
       // Filtrage par mode Linky pour ZLinky_TIC
       if (isZLinky) {
         bool afficheOK = false;
@@ -12797,6 +14398,19 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       result += attrHex;
       result += F("</span></td>");
       
+      // Manufacturer Code
+      result += F("<td data-label='Mfr'>");
+      if (t->states[i].manufacturerCode != 0) {
+        result += F("<span class='mfr-badge'>");
+        char mfrHex[7];
+        snprintf(mfrHex, 7, "%04X", t->states[i].manufacturerCode);
+        result += mfrHex;
+        result += F("</span>");
+      } else {
+        result += F("-");
+      }
+      result += F("</td>");
+      
       // Valeur (avec input si writable)
       result += F("<td data-label='Valeur' class='value-cell'>");
       if (t->states[i].writable) {
@@ -12805,7 +14419,6 @@ void handleConfigDevice(AsyncWebServerRequest *request)
         result += F("' value='");
         result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, 
                                   (String)t->states[i].type, t->states[i].coefficient);
-
         result += F("' />");
       } else {
         result += F("<span id='");
@@ -12824,7 +14437,8 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       
       // Actions
       result += F("<td data-label='' class='actions-cell'>");
-      // Bouton lecture
+      
+      // Bouton lecture avec manufacturer code
       result += F("<button class='btn-read' onclick=\"readAttribute(");
       result += String(shortAddr);
       result += F(", ");
@@ -12835,12 +14449,16 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       result += String(t->states[i].attribute);
       result += F(", '");
       result += attrId;
-      result += F("')\" title='Lire'>&#8635;</button> ");
+      result += F("', ");
+      result += String(t->states[i].manufacturerCode);
+      result += F(")\" title='Lire'>&#8635;</button> ");
       
-      // Bouton écriture si writable
+      // Bouton écriture si writable avec manufacturer code
       if (t->states[i].writable) {
         result += F("<button class='btn-write' onclick=\"writeAttribute(");
         result += String(shortAddr);
+        result += F(", ");
+        result += String(endpoint);
         result += F(", ");
         result += String(t->states[i].cluster);
         result += F(", ");
@@ -12849,7 +14467,9 @@ void handleConfigDevice(AsyncWebServerRequest *request)
         result += String(t->states[i].typewritable);
         result += F(", '");
         result += attrId;
-        result += F("')\" title='Écrire'>&#9998;</button>");
+        result += F("', ");
+        result += String(t->states[i].manufacturerCode);
+        result += F(")\" title='Écrire'>&#9998;</button>");
       }
       result += F("</td>");
       
@@ -12877,6 +14497,14 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       result += String(t->actions[i].endpoint);
       result += F(",");
       result += String(t->actions[i].value);
+
+      if (t->actions[i].command == 400) {
+        result += F(",");
+        result += String(t->actions[i].cluster);
+        result += F(",");
+        result += String(t->actions[i].manufacturerCode);
+      }
+
       result += F(");\" class='btn btn-primary action-btn'>");
       result += t->actions[i].name;
       result += F("</button>");
@@ -12911,12 +14539,13 @@ void handleAssistDevice(AsyncWebServerRequest *request)
 
 void handleZigbeeAction(AsyncWebServerRequest *request)
 {
-
   // Récupérer les paramètres avec vérification
   int ShortAddr = 0;
   int command = 0; 
   int endpoint = 0;
   String tmpValue = "";
+  int cluster = 0;           // NOUVEAU
+  uint16_t mfrCode = 0;      // NOUVEAU
   
   // Vérification et conversion sécurisée
   if (request->hasArg("0") || request->args() > 0) {
@@ -12932,9 +14561,24 @@ void handleZigbeeAction(AsyncWebServerRequest *request)
   }
   
   if (request->hasArg("3") || request->args() > 3) {
-      tmpValue = request->arg(3); // Pas besoin de String()
+      tmpValue = request->arg(3);
   }
-  SendAction(command, ShortAddr, endpoint, tmpValue);
+  
+  // NOUVEAU: Paramètres optionnels pour commandes cluster-specific
+  if (request->args() > 4) {
+      cluster = request->arg(4).toInt();
+  }
+  
+  if (request->args() > 5) {
+      mfrCode = (uint16_t)request->arg(5).toInt();
+  }
+  
+  // Appeler la version étendue si cluster est spécifié
+  if (cluster != 0) {
+      SendActionEx(command, ShortAddr, endpoint, cluster, mfrCode, tmpValue);
+  } else {
+      SendAction(command, ShortAddr, endpoint, tmpValue);
+  }
 
   request->send(200, F("text/html"), "");
 }
@@ -12972,6 +14616,7 @@ void handleZigbeeWriteattribut(AsyncWebServerRequest *request)
 
   SendAttributeWrite(shortAddr, 1, cluster, attribute, type, valueStr.toInt());
 
+
   bool success = true; // Placeholder
     
     if (success) {
@@ -12994,7 +14639,11 @@ void handleZigbeeReadattribut(AsyncWebServerRequest *request)
   uint8_t endpoint = request->getParam(F("endpoint"))->value().toInt();
   uint16_t cluster = request->getParam(F("cluster"))->value().toInt();
   uint16_t attribute = request->getParam(F("attr"))->value().toInt();
-  
+  // Récupérer manufacturer code (optionnel)
+  uint16_t mfrCode = 0;
+  if (request->hasParam("mfr")) {
+    mfrCode = request->getParam("mfr")->value().toInt();
+  }
   Serial.printf("ZigbeeRead: addr=%04X endpoint=%d cluster=%04X attr=%04X\n",
                 shortAddr, endpoint, cluster, attribute);
 
@@ -13007,7 +14656,7 @@ void handleZigbeeReadattribut(AsyncWebServerRequest *request)
       return;
   }
 
-  SendAttributeRead(shortAddr, endpoint, cluster, attribute);
+  SendAttributeRead(shortAddr, endpoint, cluster, attribute, mfrCode);
 
   request->send(200, F("application/json"), F("{\"success\":true}"));
 }
@@ -13152,202 +14801,322 @@ void handleLoadTotalEnergy(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+String getTariffName(int attrId) {
+    switch (attrId) {
+        case 256:  return "BASE/HC";        // Base, Heures Creuses, HCJB, EJPHN
+        case 258:  return "HP";             // Heures Pleines, HPJB, EJPHPM
+        case 260:  return "HC Blanc";       // HCJW (Tempo)
+        case 262:  return "HP Blanc";       // HPJW (Tempo)
+        case 264:  return "HC Rouge";       // HCJR (Tempo)
+        case 266:  return "HP Rouge";       // HPJR (Tempo)
+        case 268:  return "EASF07";
+        case 270:  return "EASF08";
+        case 272:  return "EASF09";
+        case 274:  return "EASF10";
+        default:   return "Index " + String(attrId);
+    }
+}
+
+// Couleur associée à chaque tarif
+String getTariffColor(int attrId) {
+    switch (attrId) {
+        case 256:  return "#2980b9";   // Bleu - BASE/HC
+        case 258:  return "#154360";   // Bleu foncé - HP
+        case 260:  return "#bdc3c7";   // Gris clair - HC Blanc
+        case 262:  return "#7f8c8d";   // Gris - HP Blanc
+        case 264:  return "#e74c3c";   // Rouge clair - HC Rouge
+        case 266:  return "#c0392b";   // Rouge foncé - HP Rouge
+        case 268:  return "#f39c12";   // Orange
+        case 270:  return "#d35400";   // Orange foncé
+        case 272:  return "#8e44ad";   // Violet
+        case 274:  return "#6c3483";   // Violet foncé
+        default:   return "#95a5a6";   // Gris par défaut
+    }
+}
+
 void handleLoadDistribChart(AsyncWebServerRequest *request)
 {
-  String type="";
+  String type = "";
   String time = request->arg(static_cast<size_t>(0));
-  if (request->args()>1)
-  {
+  if (request->args() > 1) {
     type = request->arg(static_cast<size_t>(1));
   }
-  
 
-  // Trouver le device
-  DeviceData* dev = nullptr;
+  // Trouver le device ZLinky
+  DeviceData* devZLinky = nullptr;
   for (auto* d : devices) {
-    if (d == nullptr) {
-      log_e("Warning: NULL pointer found in devices vector\n");
-      continue;
-    }
+    if (d == nullptr) continue;
     try {
-      if (d->getDeviceID() == ConfigGeneral.ZLinky) 
-      { 
-        dev = d; 
-        break; 
+      if (d->getDeviceID() == ConfigGeneral.ZLinky) {
+        devZLinky = d;
+        break;
       }
     } catch (...) {
-      log_e("Exception caught while accessing device ID");
       continue;
-    }  
+    }
   }
-  if (!dev) {
+  if (!devZLinky) {
     return request->send(404, "application/json", "[]");
   }
 
-  // Sélectionner la période
-  DeviceEnergyHistory& eh = dev->energyHistory;
-  PeriodData* pd = nullptr;
-  if      (time=="hour")  pd=&eh.hours;
-  else if (time=="day")   pd=&eh.days;
-  else if (time=="month") pd=&eh.months;
-  else if (time=="year")  pd=&eh.years;
-  else                      return request->send(400,"application/json","[]");
+  // Sélectionner la période pour ZLinky
+  DeviceEnergyHistory& ehZLinky = devZLinky->energyHistory;
+  PeriodData* pdZLinky = nullptr;
+  if      (time == "hour")  pdZLinky = &ehZLinky.hours;
+  else if (time == "day")   pdZLinky = &ehZLinky.days;
+  else if (time == "month") pdZLinky = &ehZLinky.months;
+  else if (time == "year")  pdZLinky = &ehZLinky.years;
+  else return request->send(400, "application/json", "[]");
 
   int arrayLength = sizeof(section) / sizeof(section[0]);
 
-  // Calcul de la somme par section
-  std::map<String, long> sums;
-  std::map<String, int> attrib;
-  for (auto &kv : pd->graph) {
+  // ============================================
+  // 1. INDEX TARIFAIRES ZLINKY (bruts)
+  // ============================================
+  std::map<int, long> indexSums;
+
+  for (auto &kv : pdZLinky->graph) {
     ValueMap &vm = kv.second;
-    
     for (size_t i = 2; i < arrayLength; ++i) {
       int attrId = section[i].toInt();
       auto itv = vm.attributes.find(attrId);
-      
       if (itv != vm.attributes.end()) {
-        String l="Index "+String(i-1);
-        sums[l] += itv->second;
-        attrib[l] = attrId;
+        indexSums[attrId] += itv->second;
       }
     }
   }
 
-  //Production
-  long sumProd=0;
-  if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
-  {
-    DeviceData* devProd = nullptr;
+  // ============================================
+  // 2. SOUS-COMPTEURS - Calculer d'abord pour soustraire
+  // ============================================
+  struct SubMeterResult {
+    String alias;
+    String color;
+    long totalWh;
+    float totalEuros;
+    std::map<int, long> perTariff;  // Répartition par index tarifaire
+  };
+  std::vector<SubMeterResult> subMeters;
+
+  for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+    if (!ConfigGeneral.subMeters[i].enabled) continue;
+    if (strlen(ConfigGeneral.subMeters[i].IEEE) == 0) continue;
+
+    DeviceData* devSub = nullptr;
     for (auto* d : devices) {
-      if (d == nullptr) {
-        log_e("Warning: NULL pointer found in devices vector\n");
+      if (d == nullptr) continue;
+      try {
+        if (d->getDeviceID() == ConfigGeneral.subMeters[i].IEEE) {
+          devSub = d;
+          break;
+        }
+      } catch (...) {
         continue;
       }
-      if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
     }
+    if (!devSub) continue;
 
-    DeviceEnergyHistory& ehProd = devProd->energyHistory;
-    PeriodData* pdProd = nullptr;
-    if      (time=="hour")  pdProd=&ehProd.hours;
-    else if (time=="day")   pdProd=&ehProd.days;
-    else if (time=="month") pdProd=&ehProd.months;
-    else if (time=="year")  pdProd=&ehProd.years;
-    
-    for (auto &kv : pdProd->graph) {
-      ValueMap &vm = kv.second;   
-      int attrId = 1;
-      auto itv = vm.attributes.find(attrId);
-      if (itv != vm.attributes.end()) {       
-        sumProd += itv->second;
-      }
-    }
+    DeviceEnergyHistory& ehSub = devSub->energyHistory;
+    PeriodData* pdSub = nullptr;
+    if      (time == "hour")  pdSub = &ehSub.hours;
+    else if (time == "day")   pdSub = &ehSub.days;
+    else if (time == "month") pdSub = &ehSub.months;
+    else if (time == "year")  pdSub = &ehSub.years;
 
-  }
+    if (!pdSub) continue;
 
-  //GAZ      
-  long sumGaz=0;
-  if (strcmp(ConfigGeneral.unitGaz,"Wh")==0)
-  {
+    SubMeterResult result;
+    result.alias = String(ConfigGeneral.subMeters[i].alias);
+    result.color = String(ConfigGeneral.subMeters[i].color);
+    result.totalWh = 0;
+    result.totalEuros = 0;
 
-    if ((strcmp(ConfigGeneral.Gaz,"")!=0))
-    {
-      DeviceData* devGaz = nullptr;
-      for (auto* d : devices) {
-        if (d == nullptr) {
-          log_e("Warning: NULL pointer found in devices vector\n");
-          continue;
-        }
-        try{
-          if (d->getDeviceID() == ConfigGeneral.Gaz) { 
-            devGaz = d; 
-            break; 
-          }
-        }catch(...){
-          log_e("Exception caught while accessing device ID\n");
-          continue;
-        }
-      }
+    float coef = devSub->GetAttributeCoefficient(0x0702, 0);
 
-      DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
-      PeriodData* pdGaz = nullptr;
-      if      (time=="hour")  pdGaz=&ehGaz.hours;
-      else if (time=="day")   pdGaz=&ehGaz.days;
-      else if (time=="month") pdGaz=&ehGaz.months;
-      else if (time=="year")  pdGaz=&ehGaz.years;
-      
-      for (auto &kv : pdGaz->graph) {
-        ValueMap &vm = kv.second;   
-        int attrId = 0;
+    for (auto &kv : pdSub->graph) {
+      ValueMap &vm = kv.second;
+      for (size_t j = 2; j < arrayLength; ++j) {
+        int attrId = section[j].toInt();
         auto itv = vm.attributes.find(attrId);
-        if (itv != vm.attributes.end()) {       
-          sumGaz += itv->second * ConfigGeneral.coeffGaz;
+        if (itv != vm.attributes.end()) {
+          long correctedValue = (long)(itv->second * coef);
+          result.totalWh += correctedValue;
+          result.totalEuros += correctedValue * getTarif(attrId, "energy") / 1000;
+          result.perTariff[attrId] += correctedValue;
         }
       }
+    }
 
+    if (result.totalWh > 0) {
+      subMeters.push_back(result);
+
+      // *** SOUSTRACTION DES SOUS-COMPTEURS DES INDEX TARIFAIRES ***
+      for (auto &pt : result.perTariff) {
+        if (indexSums.find(pt.first) != indexSums.end()) {
+          indexSums[pt.first] -= pt.second;
+          if (indexSums[pt.first] < 0) indexSums[pt.first] = 0;
+        }
+      }
     }
   }
 
-  // Construction du JSON : [ { label: "...", value: ... }, ... ]
+  // ============================================
+  // 3. CONSTRUIRE LE JSON
+  // ============================================
   String json = "[";
   bool first = true;
-  if (strcmp(ConfigGeneral.unitGaz,"Wh")==0)
-  {
-    if (strcmp(ConfigGeneral.Gaz,"")!=0)
-    {
-      if (!first) json += ",";
-      first = false;
-      json += "{\"label\":\"";
-      json += F("Gaz");
-      json += "\",\"value\":";
-      if (type=="euro")
-      {
-        json += String(sumGaz * getTarif(0,"gaz")/1000);
-        json += ",\"unit\":\"€\"";
-      }else{
-        json += String(sumGaz);
-        json += ",\"unit\":\"Wh\"";
-      }  
-      json += "}";
-    }
-  }
-  if ((strcmp(ConfigGeneral.Production,"")!=0) && (strcmp(ConfigGeneral.Production,dev->getDeviceID().c_str())!=0))
-  {
+
+  // 3a. Index tarifaires (maintenant ajustés)
+  for (auto &p : indexSums) {
+    if (p.second <= 0) continue;
+
+    int attrId = p.first;
+    long value = p.second;
+
     if (!first) json += ",";
     first = false;
-    json += "{\"label\":\"";
-    json += F("Production");
-    json += "\",\"value\":";
-    if (type=="euro")
-    {
-      json += String(-sumProd * getTarif(0,"production")/1000);
+
+    json += "{\"label\":\"" + getTariffName(attrId) + "\",\"value\":";
+    if (type == "euro") {
+      json += String(value * getTarif(attrId, "energy") / 1000);
       json += ",\"unit\":\"€\"";
-    }else{
-      json += String(-sumProd);
+    } else {
+      json += String(value);
       json += ",\"unit\":\"Wh\"";
     }
+    json += ",\"color\":\"" + getTariffColor(attrId) + "\"";
+    json += "}";
+  }
+
+  // 3b. Sous-compteurs
+  for (auto &sub : subMeters) {
+    if (!first) json += ",";
+    first = false;
+
+    json += "{\"label\":\"" + sub.alias + "\",\"value\":";
+    if (type == "euro") {
+      json += String(sub.totalEuros);
+      json += ",\"unit\":\"€\"";
+    } else {
+      json += String(sub.totalWh);
+      json += ",\"unit\":\"Wh\"";
+    }
+    json += ",\"color\":\"" + sub.color + "\"";
+    json += "}";
+  }
+
+  // ============================================
+  // 4. GAZ (si en Wh)
+  // ============================================
+  if (strcmp(ConfigGeneral.unitGaz, "Wh") == 0 && strcmp(ConfigGeneral.Gaz, "") != 0) {
+    DeviceData* devGaz = nullptr;
+    for (auto* d : devices) {
+      if (d == nullptr) continue;
+      try {
+        if (d->getDeviceID() == ConfigGeneral.Gaz) {
+          devGaz = d;
+          break;
+        }
+      } catch (...) {
+        continue;
+      }
+    }
+
+    if (devGaz) {
+      DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
+      PeriodData* pdGaz = nullptr;
+      if      (time == "hour")  pdGaz = &ehGaz.hours;
+      else if (time == "day")   pdGaz = &ehGaz.days;
+      else if (time == "month") pdGaz = &ehGaz.months;
+      else if (time == "year")  pdGaz = &ehGaz.years;
+
+      long sumGaz = 0;
+      if (pdGaz) {
+        for (auto &kv : pdGaz->graph) {
+          ValueMap &vm = kv.second;
+          auto itv = vm.attributes.find(0);
+          if (itv != vm.attributes.end()) {
+            sumGaz += itv->second * ConfigGeneral.coeffGaz;
+          }
+        }
+      }
+
+      if (sumGaz > 0) {
+        if (!first) json += ",";
+        first = false;
+
+        json += "{\"label\":\"Gaz\",\"value\":";
+        if (type == "euro") {
+          json += String(sumGaz * getTarif(0, "gaz") / 1000);
+          json += ",\"unit\":\"€\"";
+        } else {
+          json += String(sumGaz);
+          json += ",\"unit\":\"Wh\"";
+        }
+        json += ",\"color\":\"#e67e22\"";
+        json += "}";
+      }
+    }
+  }
+
+  // ============================================
+  // 5. PRODUCTION
+  // ============================================
+  if (strcmp(ConfigGeneral.Production, "") != 0 && 
+      strcmp(ConfigGeneral.Production, devZLinky->getDeviceID().c_str()) != 0) {
     
-    json += "}";
-  }
-  for (auto &p : sums) {
-    if (!first) json += ",";
-    first = false;
-    json += "{\"label\":\"";
-    json += p.first;
-    json += "\",\"value\":";
-    if (type=="euro")
-    {
-      json += String(p.second * getTarif(attrib[p.first],"energy")/1000);
-      json += ",\"unit\":\"€\"";
-    }else{
-      json += String(p.second);
-      json += ",\"unit\":\"Wh\"";
+    DeviceData* devProd = nullptr;
+    for (auto* d : devices) {
+      if (d == nullptr) continue;
+      try {
+        if (d->getDeviceID() == ConfigGeneral.Production) {
+          devProd = d;
+          break;
+        }
+      } catch (...) {
+        continue;
+      }
     }
-    json += "}";
+
+    if (devProd) {
+      DeviceEnergyHistory& ehProd = devProd->energyHistory;
+      PeriodData* pdProd = nullptr;
+      if      (time == "hour")  pdProd = &ehProd.hours;
+      else if (time == "day")   pdProd = &ehProd.days;
+      else if (time == "month") pdProd = &ehProd.months;
+      else if (time == "year")  pdProd = &ehProd.years;
+
+      long sumProd = 0;
+      if (pdProd) {
+        for (auto &kv : pdProd->graph) {
+          ValueMap &vm = kv.second;
+          auto itv = vm.attributes.find(1);
+          if (itv != vm.attributes.end()) {
+            sumProd += itv->second;
+          }
+        }
+      }
+
+      if (sumProd != 0) {
+        if (!first) json += ",";
+        first = false;
+
+        json += "{\"label\":\"Production\",\"value\":";
+        if (type == "euro") {
+          json += String(-sumProd * getTarif(0, "production") / 1000);
+          json += ",\"unit\":\"€\"";
+        } else {
+          json += String(-sumProd);
+          json += ",\"unit\":\"Wh\"";
+        }
+        json += ",\"color\":\"#27ae60\"";
+        json += "}";
+      }
+    }
   }
+
   json += "]";
-
   request->send(200, "application/json", json);
-
 }
 
 void handleLoadPowerChart(AsyncWebServerRequest *request)
@@ -13607,6 +15376,165 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
   request->send(200, "application/json", result);
 }*/
 
+// Helper pour ajouter les données des sous-compteurs au response stream
+// Structure pour stocker les données des sous-compteurs par attribut
+struct SubMeterValues {
+  std::map<int, long> byAttr;  // attrId -> valeur
+  std::map<int, long> total;   // subMeterIndex -> total
+};
+
+// Calcule les valeurs des sous-compteurs pour un point temporel donné
+SubMeterValues getSubMeterValuesForKey(const String& time, const String& keyStr) {
+  SubMeterValues result;
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+  
+  for (int sm = 0; sm < ConfigGeneral.subMeterCount; sm++) {
+    if (!ConfigGeneral.subMeters[sm].enabled) continue;
+    if (strlen(ConfigGeneral.subMeters[sm].IEEE) == 0) continue;
+    
+    // Trouver le device du sous-compteur
+    DeviceData* devSub = nullptr;
+    for (auto* d : devices) {
+      if (d == nullptr) continue;
+      try {
+        if (d->getDeviceID() == ConfigGeneral.subMeters[sm].IEEE) {
+          devSub = d;
+          break;
+        }
+      } catch (...) {
+        continue;
+      }
+    }
+    if (!devSub) continue;
+    
+    // Sélectionner la période
+    DeviceEnergyHistory& ehSub = devSub->energyHistory;
+    PeriodData* pdSub = nullptr;
+    if      (time == "hour")  pdSub = &ehSub.hours;
+    else if (time == "day")   pdSub = &ehSub.days;
+    else if (time == "month") pdSub = &ehSub.months;
+    else if (time == "year")  pdSub = &ehSub.years;
+    
+    if (!pdSub) continue;
+    
+    // Chercher les données pour ce point temporel
+    PsString psKey(keyStr.c_str(), PsramAllocator<char>());
+    auto it = pdSub->graph.find(psKey);
+    if (it != pdSub->graph.end()) {
+      ValueMap& vm = it->second;
+      
+      long smTotal = 0;
+      float coef = devSub->GetAttributeCoefficient(0x0702, 0);
+      // Parcourir tous les attributs tarifaires
+      for (int j = 2; j < arrayLength; j++) {
+        int attrId = atoi(section[j].c_str());
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end() && itv->second > 0) {
+          long correctedValue = (long)(itv->second * coef);
+          // Ajouter à la somme par attribut (pour soustraction du ZLinky)
+          result.byAttr[attrId] += correctedValue;
+          smTotal += correctedValue;
+        }
+      }
+      result.total[sm] = smTotal;
+    }
+  }
+  
+  return result;
+}
+
+// Écrit les données ZLinky (après soustraction) + sous-compteurs + production
+void writeEnergyDataWithSubMeters(AsyncResponseStream* response, 
+                                   PeriodData* pdZLinky, 
+                                   const String& time, 
+                                   const String& keyStr) {
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+  
+  // 1. Obtenir les valeurs des sous-compteurs pour ce point temporel
+  SubMeterValues subValues = getSubMeterValuesForKey(time, keyStr);
+  
+  // 2. Écrire les données ZLinky (avec soustraction des sous-compteurs)
+  PsString psKey(keyStr.c_str(), PsramAllocator<char>());
+  auto it = pdZLinky->graph.find(psKey);
+  if (it != pdZLinky->graph.end()) {
+    ValueMap& vm = it->second;
+    for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
+      int attrId = atoi(section[cntsection].c_str());
+      
+      // Ignorer l'attribut 1 (production) ici - on le traite séparément
+      if (attrId == 1) continue;
+      
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end() && itv->second != 0) {
+        // Soustraire la consommation des sous-compteurs pour cet attribut
+        long value = itv->second;
+        auto itSub = subValues.byAttr.find(attrId);
+        if (itSub != subValues.byAttr.end()) {
+          value -= itSub->second;
+          if (value < 0) value = 0;
+        }
+        
+        if (value != 0) {
+          response->print(",\"");
+          response->print(section[cntsection]);
+          response->print("\":");
+          response->print(value);
+        }
+      }
+    }
+  }
+  
+  // 3. Écrire les données des sous-compteurs
+  for (int sm = 0; sm < ConfigGeneral.subMeterCount; sm++) {
+    if (!ConfigGeneral.subMeters[sm].enabled) continue;
+    
+    auto itTotal = subValues.total.find(sm);
+    if (itTotal != subValues.total.end() && itTotal->second > 0) {
+      response->print(",\"sub_");
+      response->print(sm);
+      response->print("\":");
+      response->print(itTotal->second);
+    }
+  }
+  
+  // 4. Écrire les données de Production (device séparé)
+  if (strcmp(ConfigGeneral.Production, "") != 0) {
+    DeviceData* devProd = nullptr;
+    for (auto* d : devices) {
+      if (d == nullptr) continue;
+      try {
+        if (d->getDeviceID() == ConfigGeneral.Production) {
+          devProd = d;
+          break;
+        }
+      } catch (...) {
+        continue;
+      }
+    }
+    
+    if (devProd) {
+      DeviceEnergyHistory& ehProd = devProd->energyHistory;
+      PeriodData* pdProd = nullptr;
+      if      (time == "hour")  pdProd = &ehProd.hours;
+      else if (time == "day")   pdProd = &ehProd.days;
+      else if (time == "month") pdProd = &ehProd.months;
+      else if (time == "year")  pdProd = &ehProd.years;
+      
+      if (pdProd) {
+        auto itProd = pdProd->graph.find(psKey);
+        if (itProd != pdProd->graph.end()) {
+          ValueMap& vmProd = itProd->second;
+          auto itvProd = vmProd.attributes.find(1);  // Attribut 1 = production
+          if (itvProd != vmProd.attributes.end() && itvProd->second != 0) {
+            response->print(",\"1\":");
+            response->print(itvProd->second);
+          }
+        }
+      }
+    }
+  }
+}
+
 void handleLoadEnergyChart(AsyncWebServerRequest* request) {
   String IEEE = request->arg(static_cast<size_t>(0));
   String time = request->arg(static_cast<size_t>(1));
@@ -13657,20 +15585,8 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
       response->print(tmpi);
       response->print("H\"");
 
-      auto it = pd->graph.find(keyPS);
-      if (it != pd->graph.end()) {
-        ValueMap& vm = it->second;
-        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
-          int attrId = atoi(section[cntsection].c_str());
-          auto itv = vm.attributes.find(attrId);
-          if (itv != vm.attributes.end() && itv->second != 0) {
-            response->print(",\"");
-            response->print(section[cntsection]);
-            response->print("\":");
-            response->print(itv->second);
-          }
-        }
-      }
+      writeEnergyDataWithSubMeters(response, pd, time, tmpi);
+      
       response->print("}");
     }
   }
@@ -13712,20 +15628,8 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
       response->print(tmpm);
       response->print("\"");
 
-      auto it = pd->graph.find(keyPS);
-      if (it != pd->graph.end()) {
-        ValueMap& vm = it->second;
-        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
-          int attrId = atoi(section[cntsection].c_str());
-          auto itv = vm.attributes.find(attrId);
-          if (itv != vm.attributes.end() && itv->second != 0) {
-            response->print(",\"");
-            response->print(section[cntsection]);
-            response->print("\":");
-            response->print(itv->second);
-          }
-        }
-      }
+      // Écrire données ZLinky (après soustraction) + sous-compteurs
+      writeEnergyDataWithSubMeters(response, pd, time, tmpi);
       response->print("}");
       now++;
     }
@@ -13748,20 +15652,8 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
       response->print(y);
       response->print("\"");
 
-      auto it = pd->graph.find(keyPS);
-      if (it != pd->graph.end()) {
-        ValueMap& vm = it->second;
-        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
-          int attrId = atoi(section[cntsection].c_str());
-          auto itv = vm.attributes.find(attrId);
-          if (itv != vm.attributes.end() && itv->second != 0) {
-            response->print(",\"");
-            response->print(section[cntsection]);
-            response->print("\":");
-            response->print(itv->second);
-          }
-        }
-      }
+      // Écrire données ZLinky (après soustraction) + sous-compteurs
+      writeEnergyDataWithSubMeters(response, pd, time, tmpi);
       response->print("}");
     }
   }
@@ -13774,21 +15666,8 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
       response->print(now);
       response->print("\"");
       
-      PsString keyPS(String(now).c_str(), PsramAllocator<char>());
-      auto it = pd->graph.find(keyPS);
-      if (it != pd->graph.end()) {
-        ValueMap& vm = it->second;
-        for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
-          int attrId = atoi(section[cntsection].c_str());
-          auto itv = vm.attributes.find(attrId);
-          if (itv != vm.attributes.end() && itv->second != 0) {
-            response->print(",\"");
-            response->print(section[cntsection]);
-            response->print("\":");
-            response->print(itv->second);
-          }
-        }
-      }
+      // Écrire données ZLinky (après soustraction) + sous-compteurs
+      writeEnergyDataWithSubMeters(response, pd, time, String(now));
       response->print("}");
       now++;
     }
@@ -13830,6 +15709,83 @@ void handleGetAlert(AsyncWebServerRequest *request)
 
   request->send(200, F("text/html"), result);
 }
+
+
+void handleGetPresenceSummary(AsyncWebServerRequest *request) {
+    String dayNum;
+    String deviceId = "all";
+    bool sliding = false;
+    
+    // Nouveau paramètre sliding pour 24h glissantes
+    if (request->hasParam("sliding")) {
+        String slidingVal = request->getParam("sliding")->value();
+        sliding = (slidingVal == "true" || slidingVal == "1");
+        log_d("Presence sliding mode: %s -> %d", slidingVal.c_str(), sliding);
+    }
+    
+    if (request->hasParam("day")) {
+        dayNum = request->getParam("day")->value();
+    } else {
+        extern String Day;
+        dayNum = String(Day.toInt());
+    }
+    
+    if (request->hasParam("device")) {
+        deviceId = request->getParam("device")->value();
+    }
+    
+    String result;
+    
+    if (sliding) {
+        // Mode 24h glissantes - fusionne hier + aujourd'hui
+        log_d("Using 24h sliding mode");
+        if (deviceId == "all") {
+            result = getPresenceSummary24hSliding();
+        } else {
+            result = getPresenceSummary24hSliding(deviceId);
+        }
+    } else {
+        // Mode classique - un seul jour
+        if (deviceId == "all") {
+            result = getPresenceSummaryAll(dayNum);
+        } else {
+            result = getPresenceSummary(deviceId, dayNum);
+        }
+    }
+    
+    request->send(200, F("application/json"), result);
+}
+
+void handleGetPresenceHistory(AsyncWebServerRequest *request) {
+    if (!request->hasParam("device")) {
+        request->send(400, F("application/json"), F("{\"error\":\"Missing device parameter\"}"));
+        return;
+    }
+    
+    String deviceId = request->getParam("device")->value();
+    String result = getPresenceHistory(deviceId);
+    request->send(200, F("application/json"), result);
+}
+
+void handleGetPresenceStatus(AsyncWebServerRequest *request) {
+    String deviceId = "all";
+    
+    if (request->hasParam("device")) {
+        deviceId = request->getParam("device")->value();
+    }
+    
+    bool status = getCurrentPresenceStatus(deviceId);
+    String result = status ? "{\"presence\":true}" : "{\"presence\":false}";
+    request->send(200, F("application/json"), result);
+}
+
+void handleGetPresenceAll(AsyncWebServerRequest *request) {
+    String result = getPresenceAll();
+    request->send(200, F("application/json"), result);
+}
+
+
+
 
 void handleGetRuleStatus(AsyncWebServerRequest *request)
 {
@@ -13948,15 +15904,16 @@ void handleGetDeviceAttrValues(AsyncWebServerRequest *request)
 
 void handleSendMqttDiscover(AsyncWebServerRequest *request)
 {
-  String IEEE,ShortAddr, datas, result;
+  String IEEE, ShortAddr, datas, result;
   int i = 0;
   ShortAddr = request->arg(i);
-  IEEE = GetMacAdrr(ShortAddr.toInt());
+  int shortAddrInt = ShortAddr.toInt();  // Garder pour SendAction
+  IEEE = GetMacAdrr(shortAddrInt);
   IEEE = IEEE.substring(0, 16);
   String model;
-  model = GetModel(IEEE+".json");
+  model = GetModel(IEEE + ".json");
 
-  File DeviceFile = LittleFS.open("/db/"+IEEE+".json" ,"r");
+  File DeviceFile = LittleFS.open("/db/" + IEEE + ".json", "r");
 
   if (!DeviceFile || DeviceFile.isDirectory())
   {
@@ -13964,14 +15921,11 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
   }
   else
   {
-    int DeviceId = GetDeviceId(IEEE+".json");
+    int DeviceId = GetDeviceId(IEEE + ".json");
     if (TemplateExist(DeviceId))
     {
-      /*Template *t;
-      t = GetTemplate(DeviceId, model);*/
-
-      DeviceData* device;
-      for (size_t i = 0; i < devices.size(); i++) 
+      DeviceData *device = nullptr;
+      for (size_t i = 0; i < devices.size(); i++)
       {
         device = devices[i];
         if (device->getDeviceID() == IEEE)
@@ -13979,114 +15933,247 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
           break;
         }
       }
-      TemplateData* t = device->getTemplate();
-      if (!t) {
-          // Template introuvable - logger pour debug
-          Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
-          return; // ou return, selon votre logique
+
+      TemplateData *t = device->getTemplate();
+      if (!t)
+      {
+        Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
+        DeviceFile.close();
+        request->send(200, F("text/html"), "");
+        return;
       }
+
+      // ========== DISCOVERY DES STATES (sensors) - CODE EXISTANT ==========
       for (int i = 0; i < t->StateSize(); i++)
       {
-        if (strlen(t->states[i].mqtt_icon)>0)
+        if (strlen(t->states[i].mqtt_icon) > 0)
         {
-          const char* PROGMEM HA_discovery_msg = "{"
-              "\"name\":\"{{name_prop}}\","
-              "\"unique_id\":\"{{unique_id}}\","
-              "\"device_class\":{{device_class}},"
-              "\"state_class\":{{state_class}},"
-              "{{unit}}"
-              "\"icon\":\"mdi:{{mqtt_icon}}\","
-              "\"state_topic\":\"{{state_topic}}/state\","
-              "\"value_template\":\"{{value}}\","
-              "\"device\": {"
-                  "\"name\":\"LiXee-GW_{{device_name}}\","
-                  "\"sw_version\":\"2.0\","
-                  "\"model\":\"HW V2\","
-                  "\"manufacturer\":\"LiXee\","
-                  "\"identifiers\":[\"LiXee-GW{{device_name}}\"]"
-              "}"
-          "}";
+          const char *PROGMEM HA_discovery_msg = "{"
+                                                  "\"name\":\"{{name_prop}}\","
+                                                  "\"unique_id\":\"{{unique_id}}\","
+                                                  "\"device_class\":{{device_class}},"
+                                                  "\"state_class\":{{state_class}},"
+                                                  "{{unit}}"
+                                                  "\"icon\":\"mdi:{{mqtt_icon}}\","
+                                                  "\"state_topic\":\"{{state_topic}}/state\","
+                                                  "\"value_template\":\"{{value}}\","
+                                                  "\"device\": {"
+                                                  "\"name\":\"LiXee-GW_{{device_name}}\","
+                                                  "\"sw_version\":\"2.0\","
+                                                  "\"model\":\"HW V2\","
+                                                  "\"manufacturer\":\"LiXee\","
+                                                  "\"identifiers\":[\"LiXee-GW{{device_name}}\"]"
+                                                  "}"
+                                                  "}";
 
           datas = FPSTR(HA_discovery_msg);
-          
+
           datas.replace("{{name_prop}}", t->states[i].name);
-          datas.replace("{{unique_id}}", IEEE+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute));
-          if (memcmp(t->states[i].mqtt_device_class,"null",4)==0)
+          datas.replace("{{unique_id}}", IEEE + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute));
+
+          if (memcmp(t->states[i].mqtt_device_class, "null", 4) == 0)
           {
             datas.replace("{{device_class}}", t->states[i].mqtt_device_class);
-          }else{
-            String tmp="\""+String(t->states[i].mqtt_device_class)+"\"";
-            datas.replace("{{device_class}}", tmp); 
           }
-          if (memcmp(t->states[i].mqtt_state_class,"null",4)==0)
+          else
+          {
+            String tmp = "\"" + String(t->states[i].mqtt_device_class) + "\"";
+            datas.replace("{{device_class}}", tmp);
+          }
+
+          if (memcmp(t->states[i].mqtt_state_class, "null", 4) == 0)
           {
             datas.replace("{{state_class}}", t->states[i].mqtt_state_class);
-          }else{
-            String tmp="\""+String(t->states[i].mqtt_state_class)+"\"";
-            datas.replace("{{state_class}}", tmp); 
           }
-          datas.replace("{{mqtt_icon}}", t->states[i].mqtt_icon);
-          if (strlen(t->states[i].unit)>0)
+          else
           {
-            String tmp = "\"unit_of_measurement\":\""+String(t->states[i].unit)+"\",";
+            String tmp = "\"" + String(t->states[i].mqtt_state_class) + "\"";
+            datas.replace("{{state_class}}", tmp);
+          }
+
+          datas.replace("{{mqtt_icon}}", t->states[i].mqtt_icon);
+
+          if (strlen(t->states[i].unit) > 0)
+          {
+            String tmp = "\"unit_of_measurement\":\"" + String(t->states[i].unit) + "\",";
             datas.replace("{{unit}}", tmp);
-          }else{
+          }
+          else
+          {
             datas.replace("{{unit}}", "");
           }
-          
-          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute));
-          if ((String(t->states[i].type)=="numeric") || (String(t->states[i].type)=="float"))
+
+          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT + IEEE + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute));
+
+          if ((String(t->states[i].type) == "numeric") || (String(t->states[i].type) == "float"))
           {
-            if (t->states[i].coefficient!=1)
+            if (t->states[i].coefficient != 1)
             {
-              datas.replace("{{value}}", "{{value_json.value_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+" | float * "+String(t->states[i].coefficient)+"}}");
-            }else{
-              datas.replace("{{value}}", "{{value_json.value_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+"}}");
+              datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + " | float * " + String(t->states[i].coefficient) + "}}");
             }
-          }else{
-            datas.replace("{{value}}", "{{value_json.value_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+"}}");
+            else
+            {
+              datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + "}}");
+            }
           }
-          datas.replace("{{device_name}}", model+"_"+IEEE);
-          String topic = ConfigGeneral.headerMQTT+ IEEE+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute)+"/config";
-          if (model=="ZLinky_TIC")
+          else
+          {
+            datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + "}}");
+          }
+
+          datas.replace("{{device_name}}", model + "_" + IEEE);
+
+          String topic = ConfigGeneral.headerMQTT + IEEE + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + "/config";
+
+          if (model == "ZLinky_TIC")
           {
             const char *tmp;
             bool discoverOk = false;
             tmp = t->states[i].mode;
-            if ((tmp != NULL) && (tmp[0] != '\0')) 
+            if ((tmp != NULL) && (tmp[0] != '\0'))
             {
-              char * pch;
-              pch = strtok ((char*)tmp,";");
+              char *pch;
+              pch = strtok((char *)tmp, ";");
               while (pch != NULL)
               {
                 if (atoi(pch) == ConfigGeneral.LinkyMode)
                 {
-                  discoverOk=true;
+                  discoverOk = true;
                   break;
                 }
-                pch = strtok (NULL, " ;");
+                pch = strtok(NULL, " ;");
               }
-            }else{
-              discoverOk=true;
+            }
+            else
+            {
+              discoverOk = true;
             }
 
             if (discoverOk)
             {
-              mqttClient.publish(topic.c_str(),0,true,datas.c_str());
+              mqttClient.publish(topic.c_str(), 0, true, datas.c_str());
             }
-          }else{
-            mqttClient.publish(topic.c_str(),0,true,datas.c_str());
           }
-          
+          else
+          {
+            mqttClient.publish(topic.c_str(), 0, true, datas.c_str());
+          }
         }
       }
-      // toutes les actions
+
+      // ========== DISCOVERY DES ACTIONS (NOUVEAU) ==========
+      if (t->ActionSize() > 0)
+      {
+        // Chercher si on a des actions ON/OFF pour créer un switch
+        bool hasOnAction = false;
+        bool hasOffAction = false;
+        Action *onAction = nullptr;
+        Action *offAction = nullptr;
+
+        for (int i = 0; i < t->ActionSize(); i++)
+        {
+          Action *a = t->getAction(i);
+          if (!a || !a->visible) continue;
+
+          if (strcasecmp(a->name, "ON") == 0)
+          {
+            hasOnAction = true;
+            onAction = a;
+          }
+          else if (strcasecmp(a->name, "OFF") == 0)
+          {
+            hasOffAction = true;
+            offAction = a;
+          }
+        }
+
+        // Si on a ON et OFF, créer une entité switch
+        if (hasOnAction && hasOffAction && onAction && offAction)
+        {
+          // Dans handleSendMqttDiscover, remplacer le HA_switch_msg par :
+          const char *PROGMEM HA_switch_msg = "{"
+                    "\"name\":\"{{name_prop}}\","
+                    "\"unique_id\":\"{{unique_id}}\","
+                    "\"icon\":\"mdi:power-plug\","
+                    "\"state_topic\":\"{{state_topic}}/state\","
+                    "\"value_template\":\"{{ value_json.value_6_0 }}\","
+                    "\"command_topic\":\"{{command_topic}}\","
+                    "\"payload_on\":\"ON\","
+                    "\"payload_off\":\"OFF\","
+                    "\"state_on\":\"1\","
+                    "\"state_off\":\"0\","
+                    "\"device\": {"
+                        "\"name\":\"LiXee-GW_{{device_name}}\","
+                        "\"sw_version\":\"2.0\","
+                        "\"model\":\"HW V2\","
+                        "\"manufacturer\":\"LiXee\","
+                        "\"identifiers\":[\"LiXee-GW{{device_name}}\"]"
+                    "}"
+                "}";
+
+          datas = FPSTR(HA_switch_msg);
+          datas.replace("{{name_prop}}", model + " Switch");
+          datas.replace("{{unique_id}}", IEEE + "_switch");
+          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT + IEEE + "_6_0");
+          datas.replace("{{command_topic}}", "lixee/cmd/" + IEEE + "/action");
+          datas.replace("{{shortAddr}}", String(shortAddrInt));
+          datas.replace("{{endpoint}}", String(onAction->endpoint));
+          datas.replace("{{command}}", String(onAction->command));
+          datas.replace("{{endpoint_off}}", String(offAction->endpoint));
+          datas.replace("{{command_off}}", String(offAction->command));
+          datas.replace("{{device_name}}", model + "_" + IEEE);
+
+          String topic = "homeassistant/switch/" + IEEE + "_switch/config";
+          mqttClient.publish(topic.c_str(), 0, true, datas.c_str());
+
+          Serial.printf("MQTT Discovery: Switch publié pour %s\n", IEEE.c_str());
+        }
+
+        // Publier les autres actions comme des boutons
+        for (int i = 0; i < t->ActionSize(); i++)
+        {
+          Action *a = t->getAction(i);
+          if (!a || !a->visible) continue;
+
+          // Skip ON/OFF si déjà traités comme switch
+          if (hasOnAction && hasOffAction)
+          {
+            if (strcasecmp(a->name, "ON") == 0 || strcasecmp(a->name, "OFF") == 0)
+              continue;
+          }
+
+          const char *PROGMEM HA_button_msg = "{"
+                                              "\"name\":\"{{name_prop}}\","
+                                              "\"unique_id\":\"{{unique_id}}\","
+                                              "\"command_topic\":\"{{command_topic}}\","
+                                              "\"payload_press\":\"{{action_name}}\","
+                                              "\"device\": {"
+                                              "\"name\":\"LiXee-GW_{{device_name}}\","
+                                              "\"sw_version\":\"2.0\","
+                                              "\"model\":\"HW V2\","
+                                              "\"manufacturer\":\"LiXee\","
+                                              "\"identifiers\":[\"LiXee-GW{{device_name}}\"]"
+                                              "}"
+                                              "}";
+
+          datas = FPSTR(HA_button_msg);
+          datas.replace("{{name_prop}}", String(a->name));
+          datas.replace("{{unique_id}}", IEEE + "_action_" + String(a->name));
+          datas.replace("{{command_topic}}", "lixee/cmd/" + IEEE + "/action");
+          datas.replace("{{action_name}}", String(a->name));  // Payload simple : "TOGGLE"
+          datas.replace("{{device_name}}", model + "_" + IEEE);
+
+          String topic = "homeassistant/button/" + IEEE + "_" + String(a->name) + "/config";
+          mqttClient.publish(topic.c_str(), 0, true, datas.c_str());
+
+          Serial.printf("MQTT Discovery: Button '%s' publié pour %s\n", a->name, IEEE.c_str());
+        }
+      }
     }
   }
   DeviceFile.close();
 
-  result="";
-
+  result = "";
   request->send(200, F("text/html"), result);
 }
 
@@ -14143,6 +16230,126 @@ void handleGetFormattedDate(AsyncWebServerRequest *request)
   String result;
   result = FormattedDate;
   request->send(200, F("text/html"), result);
+}
+
+// Handler pour récupérer la liste des sous-compteurs
+void APIgetSubMeters(AsyncWebServerRequest *request) {
+    String json = "{\"subMeters\":[";
+    
+    for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+        if (i > 0) json += ",";
+        json += "{";
+        json += "\"index\":" + String(i) + ",";
+        json += "\"IEEE\":\"" + String(ConfigGeneral.subMeters[i].IEEE) + "\",";
+        json += "\"alias\":\"" + String(ConfigGeneral.subMeters[i].alias) + "\",";
+        json += "\"color\":\"" + String(ConfigGeneral.subMeters[i].color) + "\",";
+        json += "\"enabled\":" + String(ConfigGeneral.subMeters[i].enabled ? "true" : "false");
+        json += "}";
+    }
+    
+    json += "],\"count\":" + String(ConfigGeneral.subMeterCount) + "}";
+    request->send(200, "application/json", json);
+}
+
+// Handler pour ajouter/modifier un sous-compteur
+void APIsetSubMeter(AsyncWebServerRequest *request) {
+    if (!request->hasArg("IEEE") || !request->hasArg("alias")) {
+        return request->send(400, "text/plain", "Missing parameters");
+    }
+    
+    String IEEE = request->arg("IEEE");
+    String alias = request->arg("alias");
+    String color = request->hasArg("color") ? request->arg("color") : "#3498db";
+    bool enabled = request->hasArg("enabled") ? (request->arg("enabled") == "true") : true;
+    
+    // Chercher si existe déjà
+    int index = -1;
+    for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+        if (strcmp(ConfigGeneral.subMeters[i].IEEE, IEEE.c_str()) == 0) {
+            index = i;
+            break;
+        }
+    }
+    
+    // Nouveau sous-compteur
+    if (index == -1) {
+        if (ConfigGeneral.subMeterCount >= MAX_SUBMETERS) {
+            return request->send(400, "text/plain", "Max submeters reached");
+        }
+        index = ConfigGeneral.subMeterCount++;
+    }
+    
+    // Mettre à jour
+    strncpy(ConfigGeneral.subMeters[index].IEEE, IEEE.c_str(), 19);
+    strncpy(ConfigGeneral.subMeters[index].alias, alias.c_str(), 31);
+    strncpy(ConfigGeneral.subMeters[index].color, color.c_str(), 9);
+    ConfigGeneral.subMeters[index].enabled = enabled;
+    
+    // Sauvegarder la config
+    if (saveSubMetersConfig()) {
+        request->send(200, "text/plain", "OK");
+    } else {
+        request->send(500, "text/plain", "Save failed");
+    }
+    
+    request->send(200, "text/plain", "OK");
+}
+
+// Handler pour supprimer un sous-compteur
+void APIdeleteSubMeter(AsyncWebServerRequest *request) {
+    if (!request->hasArg("IEEE")) {
+        return request->send(400, "text/plain", "Missing IEEE");
+    }
+    
+    String IEEE = request->arg("IEEE");
+    
+    for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+        if (strcmp(ConfigGeneral.subMeters[i].IEEE, IEEE.c_str()) == 0) {
+            // Décaler les suivants
+            for (int j = i; j < ConfigGeneral.subMeterCount - 1; j++) {
+                ConfigGeneral.subMeters[j] = ConfigGeneral.subMeters[j + 1];
+            }
+            ConfigGeneral.subMeterCount--;
+            
+            // Sauvegarder
+            // saveConfigGeneral();
+            
+            return request->send(200, "text/plain", "OK");
+        }
+    }
+    
+    request->send(404, "text/plain", "SubMeter not found");
+}
+
+void APIgetEligibleSubMeters(AsyncWebServerRequest *request) {
+    String json = "[";
+    bool first = true;
+    
+    for (size_t i = 0; i < devices.size(); i++) {
+        DeviceData* device = devices[i];
+        if (device == nullptr) continue;
+        
+        // Vérifier que ce n'est pas le ZLinky principal
+        if (strcmp(device->getDeviceID().c_str(), ConfigGeneral.ZLinky) == 0) continue;
+        
+        // Vérifier que le device a le cluster 0x0702 (SimpleMeter)
+        // On vérifie si l'attribut 0 existe dans le cluster 0702
+        String val = device->getValue(std::string("0702"), std::string("0"));
+        if (val.length() == 0) continue;  // Pas de données énergie
+        
+        if (!first) json += ",";
+        first = false;
+        
+        json += "{";
+        json += "\"IEEE\":\"" + device->getDeviceID() + "\",";
+        json += "\"alias\":\"" + device->getInfo().alias + "\",";
+        json += "\"model\":\"" + device->getInfo().model + "\",";
+        json += "\"manufacturer\":\"" + device->getInfo().manufacturer + "\"";
+        json += "}";
+    }
+    
+    json += "]";
+    request->send(200, "application/json", json);
 }
 
 void APIgetConfig(AsyncWebServerRequest *request)
@@ -14372,13 +16579,13 @@ void APIgetLinky(AsyncWebServerRequest *request)
           result += "\"";
           result += (String)t->states[i].cluster+"_"+(String)t->states[i].attribute;
           result += "\" :";
-          String inifile =IEEE+".json";
+
           if ((memcmp(t->states[i].type,"numeric",7)==0) || (memcmp(t->states[i].type,"float",5)==0) )
           {
-            result +=  GetValueStatus(inifile, t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
+            result +=  GetValueStatus(IEEE, t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
           }else{
             result +="\"";
-            result +=  GetValueStatus(inifile, t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
+            result +=  GetValueStatus(IEEE, t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
             result +="\"";
           }
           
@@ -14638,6 +16845,37 @@ void initWebServer()
     }
     handleConfigWater(request); 
   });
+  serverWeb.on("/getPresenceSummary", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp) {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    handleGetPresenceSummary(request);
+  });
+  
+  serverWeb.on("/getPresenceHistory", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp) {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    handleGetPresenceHistory(request);
+  });
+  
+  serverWeb.on("/getPresenceStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp) {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    handleGetPresenceStatus(request);
+  });
+  
+  serverWeb.on("/getPresenceAll", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp) {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    handleGetPresenceAll(request);
+  });
   serverWeb.on("/getMQTTStatus", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -14733,6 +16971,38 @@ void initWebServer()
     }
   );
 
+  // Dans initWebServer(), ajouter :
+  serverWeb.on("/getSubMeters", HTTP_GET, [](AsyncWebServerRequest *request) {
+      if (ConfigSettings.enableSecureHttp) {
+          if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+              return request->requestAuthentication();
+      }
+      APIgetSubMeters(request);
+  });
+
+  serverWeb.on("/setSubMeter", HTTP_POST, [](AsyncWebServerRequest *request) {
+      if (ConfigSettings.enableSecureHttp) {
+          if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+              return request->requestAuthentication();
+      }
+      APIsetSubMeter(request);
+  });
+
+  serverWeb.on("/deleteSubMeter", HTTP_POST, [](AsyncWebServerRequest *request) {
+      if (ConfigSettings.enableSecureHttp) {
+          if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+              return request->requestAuthentication();
+      }
+      APIdeleteSubMeter(request);
+  });
+
+  serverWeb.on("/getEligibleSubMeters", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (ConfigSettings.enableSecureHttp) {
+      if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+        return request->requestAuthentication();
+    }
+    APIgetEligibleSubMeters(request);
+  });
 
   serverWeb.on("/configWebPush", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -14845,6 +17115,32 @@ void initWebServer()
         return request->requestAuthentication();
     }
     handleToolCreateBackup(request); 
+  });
+
+  serverWeb.on("/deleteBackupFile", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    if (request->hasArg("filename"))
+    {
+      String filename = "/bk/" + request->arg("filename");
+      if (LittleFS.exists(filename))
+      {
+        LittleFS.remove(filename);
+        request->send(200, F("text/plain"), F("OK"));
+      }
+      else
+      {
+        request->send(404, F("text/plain"), F("File not found"));
+      }
+    }
+    else
+    {
+      request->send(400, F("text/plain"), F("Missing filename"));
+    }
   });
   serverWeb.on("/saveDebug", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
@@ -14975,6 +17271,16 @@ void initWebServer()
     }
     handleSaveConfigWater(request); 
   });
+  serverWeb.on("/saveConfigPresence", HTTP_POST, [](AsyncWebServerRequest *request)
+  { 
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigPresence(request); 
+  });
+
   serverWeb.on("/saveConfigMQTT", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (ConfigSettings.enableSecureHttp)
@@ -16017,8 +18323,8 @@ void initWebServer()
 
   serverWeb.begin();
 
-  templateCache.indexTemplates();
-  templateCache.printStats();
+  /*templateCache.indexTemplates();
+  templateCache.printStats();*/
 
   //Update.onProgress(printProgress);
 }
