@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.14"
+#define VERSION "v2.15"
 
 // hardware config64
 #define RESET_ZIGATE 19//4
@@ -25,6 +25,16 @@
 
 #define MAXHEAP 1000000//ESP.getMaxAllocHeap() //(ESP.getFreeHeap() / 2) //96000
 extern String FormattedDate;
+
+
+#define MAX_SUBMETERS 10
+
+struct SubMeterConfig {
+    char IEEE[20];          // Adresse IEEE du device (ex: "00158D0001234567")
+    char alias[32];         // Nom affiché (ex: "Salon", "Cuisine")
+    char color[10];         // Couleur hex pour le donut (ex: "#e74c3c")
+    bool enabled;           // Activé/désactivé
+};
 
 // ma structure configCRC error
 struct ConfigSettingsStruct {
@@ -156,6 +166,10 @@ struct ConfigGeneralStruct {
   char tarifWater[10];
   int scanNumber;
   bool developerMode;
+  SubMeterConfig subMeters[MAX_SUBMETERS];
+  int subMeterCount;  
+  char Presence[20] = "";          // IEEE du capteur de présence
+  bool enablePresenceGraph = true; // Afficher sur le graphique
 };
 
 struct SerialBuffer {
