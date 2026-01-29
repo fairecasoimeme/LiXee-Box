@@ -144,7 +144,57 @@ Tableau de bord complet avec visualisation en temps réel de votre consommation 
 
 #### Tarif et couleurs
 Selon votre abonnement, vous verrez apparaître en première ligne le tarif en cours de votre abonnement mais aussi la couleur du jour ou la couleur du lendemain si vous avez un abonnement Tempo
-![Tarif et couelur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/tariff_tempo_1.png)
+![Tarif et couleur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/tariff_tempo_1.png)
+
+#### Sous-compteurs
+
+##### Présentation
+Les sous-compteurs permettent de suivre en détail la consommation énergétique de vos équipements spécifiques au sein de votre habitat. En associant une prise ou un module connecté Zigbee disposant de la fonction de mesure de consommation (cluster 0x0702), vous pouvez isoler et analyser la consommation de certains postes de dépense énergétique.  
+
+##### Cas d'usage
+
+* **Véhicule électrique** : Suivez précisément la consommation liée à la recharge de votre véhicule et calculez le coût réel de vos trajets.  
+* **Électroménager énergivore** : Identifiez la consommation de votre sèche-linge, lave-linge, four ou réfrigérateur.  
+* **Chauffage d'appoint** : Mesurez l'impact d'un radiateur électrique ou d'une pompe à chaleur sur votre facture.  
+* **Bureau / Informatique** : Évaluez la consommation de votre poste de travail, serveur NAS ou équipement réseau.  
+* **Piscine / Spa** : Suivez la consommation de la pompe de filtration ou du chauffage.  
+  
+##### Fonctionnalités   
+###### Attribution tarifaire automatique
+Les sous-compteurs héritent automatiquement de la période tarifaire en cours (HP/HC, Tempo Bleu/Blanc/Rouge, EJP...) détectée par le ZLinky. Ainsi, la consommation est ventilée selon les mêmes index tarifaires que votre compteur principal, permettant un calcul précis du coût réel.
+###### Visualisation intégrée
+
+**Donut de répartition** : Les sous-compteurs apparaissent dans le graphique de répartition énergétique avec leur couleur personnalisée, aux côtés des index tarifaires du ZLinky.  
+**Graphique d'usage** : Les barres de consommation des sous-compteurs sont affichées et automatiquement soustraites des index tarifaires correspondants pour éviter le double comptage.  
+**Légende détaillée** : Chaque sous-compteur affiche sa consommation en kWh et son équivalent en euros.  
+  
+![sous comptage](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box-sous-compteurs.jpg)
+
+###### Coefficient de conversion
+Chaque sous-compteur peut avoir un coefficient de conversion personnalisé (défini dans le template du device). Cela permet d'adapter l'affichage selon l'unité de mesure du capteur (ex: conversion Wh vers kWh, ou ajustement d'un facteur de calibration).
+
+###### Configuration
+
+* Accédez à la page **Config** --> **Énergie**
+* Dans la section **Sous-compteurs**, cliquez sur **Ajouter**
+* Sélectionnez le device Zigbee disposant de la mesure de consommation
+* Définissez un alias (nom) pour identifier facilement le sous-compteur
+* Choisissez une couleur pour la visualisation dans les graphiques
+* Activez le sous-compteur
+
+###### Données et historique
+Les données des sous-compteurs sont stockées avec le même niveau de granularité que le ZLinky :
+
+* **Horaire** : Consommation heure par heure
+* **Journalier** : Consommation jour par jour sur 30 jours glissants
+* **Mensuel** : Consommation mois par mois sur 12 mois
+* **Annuel** : Historique sur plusieurs années
+
+Les données sont persistées et restaurées automatiquement après un redémarrage.  
+
+###### Compatibilité
+Tout device Zigbee reportant le cluster **Simple Metering (0x0702)** avec l'attribut **Current Summation Delivered (0x0000)** est compatible :
+
 
 ### Production d'énergie et Injection
 
