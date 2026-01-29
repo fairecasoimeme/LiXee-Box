@@ -126,6 +126,73 @@ bool ini_exist(String path)
   }
 }
 
+// ==========================================
+// SAUVEGARDE DES SOUS-COMPTEURS
+// ==========================================
+bool saveSubMetersConfig() {
+    const char* path = "/config/configGeneral.json";
+    const char* tempPath = "/config/tmpFileSubMeters.json";
+    
+    // 1. Lire le fichier existant
+    File fileRead = LittleFS.open(path, "r");
+    if (!fileRead) {
+        log_e("Erreur ouverture configGeneral.json pour subMeters");
+        return false;
+    }
+    
+    SpiRamJsonDocument doc(12000);  // Un peu plus grand pour les sous-compteurs
+    DeserializationError error = deserializeJson(doc, fileRead);
+    fileRead.close();
+    
+    if (error) {
+        log_e("Erreur parsing JSON: %s", error.c_str());
+        return false;
+    }
+    
+    // 2. Supprimer l'ancien tableau subMeters s'il existe
+    if (doc.containsKey("subMeters")) {
+        doc.remove("subMeters");
+    }
+    
+    // 3. Créer le nouveau tableau subMeters
+    JsonArray subMetersArray = doc.createNestedArray("subMeters");
+    
+    for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+        if (strlen(ConfigGeneral.subMeters[i].IEEE) == 0) continue;
+        
+        JsonObject sm = subMetersArray.createNestedObject();
+        sm["IEEE"] = ConfigGeneral.subMeters[i].IEEE;
+        sm["alias"] = ConfigGeneral.subMeters[i].alias;
+        sm["color"] = ConfigGeneral.subMeters[i].color;
+        sm["enabled"] = ConfigGeneral.subMeters[i].enabled;
+    }
+    
+    // 4. Écrire dans fichier temporaire
+    File tpFile = safeOpenFile(tempPath, "w+");
+    if (!tpFile) {
+        log_e("Erreur création fichier temporaire subMeters");
+        return false;
+    }
+    
+    if (serializeJson(doc, tpFile) == 0) {
+        log_e("Erreur écriture JSON subMeters");
+        safeCloseFile(tpFile, tempPath);
+        return false;
+    }
+    
+    safeCloseFile(tpFile, tempPath);
+    
+    // 5. Renommer pour remplacer l'original
+    if (!LittleFS.rename(tempPath, path)) {
+        log_e("Erreur renommage fichier subMeters");
+        return false;
+    }
+    
+    vTaskDelay(10 / portTICK_PERIOD_MS);
+    log_d("SubMeters sauvegardés: %d entrées", ConfigGeneral.subMeterCount);
+    return true;
+}
+
 
 
 

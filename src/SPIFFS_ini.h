@@ -48,6 +48,8 @@ void scanFilesError(void);
 File safeOpenFile(const char *path, const char *mode);
 void safeCloseFile(File &file, const char *path);
 
+bool saveSubMetersConfig();
+
 /*bool   ini_open (String ini_name);
 String ini_read (String section, String key, String def);
 bool   ini_write(String section, String key, String value);

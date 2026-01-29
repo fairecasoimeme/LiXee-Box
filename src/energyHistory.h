@@ -50,3 +50,4 @@ public:
 bool parseDeviceHistory(String IEEE, DeviceEnergyHistory &hist);
 bool saveEnergyHistory(String IEEE,const DeviceEnergyHistory &hist);
 bool addEnergyMeasurement(DeviceEnergyHistory &hist, String section,long value);
+bool addSubMeterMeasurement(DeviceEnergyHistory &hist, int tariffAttrId, long totalValue);

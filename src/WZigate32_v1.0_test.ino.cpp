@@ -51,6 +51,10 @@ extern "C" {
 #include "notificationManager.h"
 
 #include "ConfigResetManager.h"
+
+#include "TemplateCache.h"
+
+
 #define RESET_WINDOW_MS     3000    // Fenêtre de détection
 #define RESET_BOOT_COUNT    3       // Nombre de reboots pour RAZ
 ConfigResetManager resetManager(RESET_WINDOW_MS, RESET_BOOT_COUNT);
@@ -65,6 +69,7 @@ bool wifiServicesStarted = false;
 bool zigbeeInitialized = false;
 
 std::vector<DeviceData*> devices;
+TemplateCache templateCache(true);
 
 bool executeReboot=false;
 bool updatePending = false;
@@ -353,143 +358,316 @@ void delayRebootCallBack()
 }
 
 bool ScanDevicesToRAZ() {
-  // Récupérer l’heure courante
+  // Récupérer l'heure courante
   time_t now = time(nullptr);
   struct tm nowTm;
   localtime_r(&now, &nowTm);
 
+  // Liste des attributs tarifaires pour les sous-compteurs
+  const int tarifAttrs[] = {256, 258, 260, 262, 264, 266, 268, 270, 272, 274};
+  const int tarifAttrsCount = 10;
+  
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+
   // Parcours de tous les devices
   for (DeviceData* device : devices) {
-      String model = device->getInfo().model;
+    String model = device->getInfo().model;
+    String deviceId = device->getDeviceID();
+    
+    // Vérifier si c'est un sous-compteur
+    bool isSubMeterDevice = false;
+    for (int sm = 0; sm < ConfigGeneral.subMeterCount; sm++) {
+      if (ConfigGeneral.subMeters[sm].enabled && 
+          strcmp(ConfigGeneral.subMeters[sm].IEEE, deviceId.c_str()) == 0) {
+        isSubMeterDevice = true;
+        break;
+      }
+    }
+    
+    // Vérifier si c'est le device de production
+    bool isProductionDevice = (strcmp(ConfigGeneral.Production, deviceId.c_str()) == 0);
+
+    // ============================================
+    // RAZ HORAIRE (à chaque heure, minute == 00)
+    // ============================================
+    if (Minute == "00") 
+    {
+      log_e("RAZ energy hour for device %s", deviceId.c_str());
       
-      // On ne gère que ZLinky_TIC et ZiPulses
-      if (model != "ZLinky_TIC" && model != "ZiPulses") 
-          continue;
-
-      //POWER (RAZ de la minute suivante)
-      String currentTime = Hour + ":" + String(Minute.toInt()+1);
-      resetMeasurements(device->powerHistory, currentTime);
-
-      // RAZ périodiques
-      if (Minute == "00") 
-      {
-
-        //ENERGY
-        for (const auto &graphEntry : device->energyHistory.hours.graph) {
-          const PsString &Key = graphEntry.first;
-          const ValueMap &valMap   = graphEntry.second;
-          if (strcmp(Hour.c_str(),Key.c_str())==0)
-          {
-            for (const auto &attrPair : valMap.attributes) {
-              int attrId   = attrPair.first;
-              device->energyHistory.hours.graph[PsString(Hour.c_str())].attributes[attrId] = 0;
-              device->energyHistory.hours.trend.attributes[attrId] = 0;
-              device->energyHistory.hours.data[PsString(Hour.c_str())].attributes[attrId] = device->energyHistory.hours.last.attributes[attrId];
-            }
+      PsString hourKey(Hour.c_str(), PsramAllocator<char>());
+      
+      if (isSubMeterDevice) {
+        // Sous-compteur : RAZ tous les attributs tarifaires
+        for (int i = 0; i < tarifAttrsCount; i++) {
+          int attrId = tarifAttrs[i];
+          device->energyHistory.hours.graph[hourKey].attributes[attrId] = 0;
+          device->energyHistory.hours.trend.attributes[attrId] = 0;
+        }
+      } 
+      else if (isProductionDevice) {
+        // Production : RAZ attribut 1
+        device->energyHistory.hours.graph[hourKey].attributes[1] = 0;
+        device->energyHistory.hours.trend.attributes[1] = 0;
+        // Et aussi les autres attributs existants
+        auto it = device->energyHistory.hours.graph.find(hourKey);
+        if (it != device->energyHistory.hours.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.hours.graph[hourKey].attributes[attrId] = 0;
+            device->energyHistory.hours.trend.attributes[attrId] = 0;
           }
         }
       }
-
-      if ((Hour == "00") && (Minute == "00")) {
-        //Notification Journalière
-        if (ConfigNotif.OverBudget)
-        {
-          int arrayLength = sizeof(section) / sizeof(section[0]);
-          long TotalWh =0;
-          for (auto &kv : device->energyHistory.hours.graph) {
-            ValueMap &vm = kv.second;   
-            for (size_t i = 2; i < arrayLength; ++i) {
-              int attrId = section[i].toInt();
-              auto itv = vm.attributes.find(attrId);
-              if (itv != vm.attributes.end()) {       
-                TotalWh += itv->second;
-              }
-            }
-          }     
-          if (ConfigNotif.OverBudgetThreshold)
-          {
-            int budgetkWh = getkWhBudget(String(ConfigGeneral.ZLinky), "day", ConfigNotif.OverBudgetThreshold);
-            if ( TotalWh > budgetkWh)
-            {
-              String text = "Attention la consommation de ce jour dépasse votre budget prévu - consommé :"+String(TotalWh)+"Wh budget : "+String(budgetkWh)+ "Wh";
-              if (!notifList->isFull()) {
-                  notifList->push(Notification{"💸🚨Dépassement de budget",text , FormattedDate, 3, 0});
-              } else {
-                  notifList->shift();
-                  notifList->push(Notification{"💸🚨Dépassement de budget", text, FormattedDate, 3, 0});
-              }
-              notificationManager.addNotification("💸🚨Dépassement de budget", text, 0);
-            }
+      else {
+        // ZLinky / autres devices : RAZ des attributs existants ou création
+        auto it = device->energyHistory.hours.graph.find(hourKey);
+        if (it != device->energyHistory.hours.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.hours.graph[hourKey].attributes[attrId] = 0;
+            device->energyHistory.hours.trend.attributes[attrId] = 0;
+            device->energyHistory.hours.data[hourKey].attributes[attrId] = 
+                device->energyHistory.hours.last.attributes[attrId];
           }
-        }
-
-        for (const auto &graphEntry : device->energyHistory.days.graph) {
-          const PsString &Key = graphEntry.first;
-          const ValueMap &valMap   = graphEntry.second;
-          if (strcmp(Day.c_str(),Key.c_str())==0)
-          {
-            for (const auto &attrPair : valMap.attributes) {
-              int attrId   = attrPair.first;
-              device->energyHistory.days.graph[PsString(Day.c_str())].attributes[attrId] = 0;
-            }
-          }
-        }
-      }
-
-      if ((Day == "01") && (Hour == "00") && (Minute == "00")) {
-        for (const auto &graphEntry : device->energyHistory.months.graph) {
-          const PsString &Key = graphEntry.first;
-          const ValueMap &valMap   = graphEntry.second;
-          if (strcmp(Month.c_str(),Key.c_str())==0)
-          {
-            for (const auto &attrPair : valMap.attributes) {
-              int attrId   = attrPair.first;
-              device->energyHistory.months.graph[PsString(Month.c_str())].attributes[attrId] = 0;
-            }
-          }
-        }
-      }
-
-      // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
-      time_t lastSeen = device->getLastSeenEpoch();
-
-      if ((now - lastSeen) > 3600) {
-        
-        String textError = "device : "+device->getDeviceID()+" - Pas vu depuis plus de 1 heure";
-        addDebugLog(textError);
-
-        device->setValue(std::string("0B04"),std::string("1295"),std::string("0"));
-        device->setValue(std::string("0B04"),std::string("2319"),std::string("0"));
-        device->setValue(std::string("0B04"),std::string("2575"),std::string("0"));
-
-        addMeasurement(device->powerHistory,1,0);
-        addMeasurement(device->powerHistory,2,0);
-        addMeasurement(device->powerHistory,3,0);
-        addMeasurement(device->powerHistory,1295,0);
-        addMeasurement(device->powerHistory,2319,0);
-        addMeasurement(device->powerHistory,2575,0);
-       
-        if (!device->powerHistory.stats[1295].last) {
-          device->powerHistory.stats[1295].trend = 0;
         } else {
-          device->powerHistory.stats[1295].trend = 0 - device->powerHistory.stats[1295].last;
+          // L'entrée n'existe pas encore, créer avec les attributs standards
+          for (int i = 0; i < arrayLength; i++) {
+            int attrId = section[i].toInt();
+            device->energyHistory.hours.graph[hourKey].attributes[attrId] = 0;
+            device->energyHistory.hours.trend.attributes[attrId] = 0;
+          }
         }
-        device->powerHistory.stats[1295].last = 0;
-
-        if (!device->powerHistory.stats[2319].last) {
-          device->powerHistory.stats[2319].trend = 0;
-        } else {
-          device->powerHistory.stats[2319].trend = 0 - device->powerHistory.stats[2319].last;
-        }
-        device->powerHistory.stats[2319].last = 0;
-
-        if (!device->powerHistory.stats[2575].last) {
-          device->powerHistory.stats[2575].trend = 0;
-        } else {
-          device->powerHistory.stats[2575].trend = 0 - device->powerHistory.stats[2575].last;
-        }
-        device->powerHistory.stats[2575].last = 0;
       }
+    }
+
+    // ============================================
+    // RAZ JOURNALIERE (à minuit, Hour == 00 && Minute == 00)
+    // ============================================
+    if ((Hour == "00") && (Minute == "00")) {
+      
+      // Notification Journalière (uniquement pour ZLinky)
+      if (strcmp(ConfigGeneral.ZLinky, deviceId.c_str()) == 0 && ConfigNotif.OverBudget) {
+        long TotalWh = 0;
+        for (auto &kv : device->energyHistory.hours.graph) {
+          ValueMap &vm = kv.second;   
+          for (size_t i = 2; i < arrayLength; ++i) {
+            int attrId = section[i].toInt();
+            auto itv = vm.attributes.find(attrId);
+            if (itv != vm.attributes.end()) {       
+              TotalWh += itv->second;
+            }
+          }
+        }     
+        if (ConfigNotif.OverBudgetThreshold) {
+          int budgetkWh = getkWhBudget(String(ConfigGeneral.ZLinky), "day", ConfigNotif.OverBudgetThreshold);
+          if (TotalWh > budgetkWh) {
+            String text = "Attention la consommation de ce jour dépasse votre budget prévu - consommé :" + 
+                          String(TotalWh) + "Wh budget : " + String(budgetkWh) + "Wh";
+            if (!notifList->isFull()) {
+              notifList->push(Notification{"💸🚨Dépassement de budget", text, FormattedDate, 3, 0});
+            } else {
+              notifList->shift();
+              notifList->push(Notification{"💸🚨Dépassement de budget", text, FormattedDate, 3, 0});
+            }
+            notificationManager.addNotification("💸🚨Dépassement de budget", text, 0);
+          }
+        }
+      }
+
+      // RAZ du jour courant
+      log_e("RAZ energy day for device %s", deviceId.c_str());
+      
+      PsString dayKey(Day.c_str(), PsramAllocator<char>());
+      
+      if (isSubMeterDevice) {
+        // Sous-compteur : RAZ tous les attributs tarifaires
+        for (int i = 0; i < tarifAttrsCount; i++) {
+          int attrId = tarifAttrs[i];
+          device->energyHistory.days.graph[dayKey].attributes[attrId] = 0;
+          device->energyHistory.days.trend.attributes[attrId] = 0;
+        }
+      }
+      else if (isProductionDevice) {
+        // Production : RAZ attribut 1 et autres existants
+        device->energyHistory.days.graph[dayKey].attributes[1] = 0;
+        device->energyHistory.days.trend.attributes[1] = 0;
+        auto it = device->energyHistory.days.graph.find(dayKey);
+        if (it != device->energyHistory.days.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.days.graph[dayKey].attributes[attrId] = 0;
+            device->energyHistory.days.trend.attributes[attrId] = 0;
+          }
+        }
+      }
+      else {
+        // ZLinky / autres devices
+        auto it = device->energyHistory.days.graph.find(dayKey);
+        if (it != device->energyHistory.days.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.days.graph[dayKey].attributes[attrId] = 0;
+            device->energyHistory.days.trend.attributes[attrId] = 0;
+          }
+        } else {
+          // L'entrée n'existe pas encore, créer avec les attributs standards
+          for (int i = 0; i < arrayLength; i++) {
+            int attrId = section[i].toInt();
+            device->energyHistory.days.graph[dayKey].attributes[attrId] = 0;
+            device->energyHistory.days.trend.attributes[attrId] = 0;
+          }
+        }
+      }
+    }
+
+    // ============================================
+    // RAZ MENSUELLE (1er du mois à minuit)
+    // ============================================
+    if ((Day == "01") && (Hour == "00") && (Minute == "00")) {
+      log_e("RAZ energy month for device %s", deviceId.c_str());
+      
+      PsString monthKey(Month.c_str(), PsramAllocator<char>());
+      
+      if (isSubMeterDevice) {
+        // Sous-compteur : RAZ tous les attributs tarifaires
+        for (int i = 0; i < tarifAttrsCount; i++) {
+          int attrId = tarifAttrs[i];
+          device->energyHistory.months.graph[monthKey].attributes[attrId] = 0;
+          device->energyHistory.months.trend.attributes[attrId] = 0;
+        }
+      }
+      else if (isProductionDevice) {
+        // Production : RAZ attribut 1 et autres existants
+        device->energyHistory.months.graph[monthKey].attributes[1] = 0;
+        device->energyHistory.months.trend.attributes[1] = 0;
+        auto it = device->energyHistory.months.graph.find(monthKey);
+        if (it != device->energyHistory.months.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.months.graph[monthKey].attributes[attrId] = 0;
+            device->energyHistory.months.trend.attributes[attrId] = 0;
+          }
+        }
+      }
+      else {
+        // ZLinky / autres devices
+        auto it = device->energyHistory.months.graph.find(monthKey);
+        if (it != device->energyHistory.months.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.months.graph[monthKey].attributes[attrId] = 0;
+            device->energyHistory.months.trend.attributes[attrId] = 0;
+          }
+        } else {
+          // L'entrée n'existe pas encore, créer avec les attributs standards
+          for (int i = 0; i < arrayLength; i++) {
+            int attrId = section[i].toInt();
+            device->energyHistory.months.graph[monthKey].attributes[attrId] = 0;
+            device->energyHistory.months.trend.attributes[attrId] = 0;
+          }
+        }
+      }
+    }
+
+    // ============================================
+    // RAZ ANNUELLE (1er janvier à minuit)
+    // ============================================
+    if ((Month == "01") && (Day == "01") && (Hour == "00") && (Minute == "00")) {
+      log_e("RAZ energy year for device %s", deviceId.c_str());
+      
+      PsString yearKey(Year.c_str(), PsramAllocator<char>());
+      
+      if (isSubMeterDevice) {
+        // Sous-compteur : RAZ tous les attributs tarifaires
+        for (int i = 0; i < tarifAttrsCount; i++) {
+          int attrId = tarifAttrs[i];
+          device->energyHistory.years.graph[yearKey].attributes[attrId] = 0;
+          device->energyHistory.years.trend.attributes[attrId] = 0;
+        }
+      }
+      else if (isProductionDevice) {
+        // Production : RAZ attribut 1 et autres existants
+        device->energyHistory.years.graph[yearKey].attributes[1] = 0;
+        device->energyHistory.years.trend.attributes[1] = 0;
+        auto it = device->energyHistory.years.graph.find(yearKey);
+        if (it != device->energyHistory.years.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.years.graph[yearKey].attributes[attrId] = 0;
+            device->energyHistory.years.trend.attributes[attrId] = 0;
+          }
+        }
+      }
+      else {
+        // ZLinky / autres devices
+        auto it = device->energyHistory.years.graph.find(yearKey);
+        if (it != device->energyHistory.years.graph.end()) {
+          for (const auto &attrPair : it->second.attributes) {
+            int attrId = attrPair.first;
+            device->energyHistory.years.graph[yearKey].attributes[attrId] = 0;
+            device->energyHistory.years.trend.attributes[attrId] = 0;
+          }
+        } else {
+          // L'entrée n'existe pas encore, créer avec les attributs standards
+          for (int i = 0; i < arrayLength; i++) {
+            int attrId = section[i].toInt();
+            device->energyHistory.years.graph[yearKey].attributes[attrId] = 0;
+            device->energyHistory.years.trend.attributes[attrId] = 0;
+          }
+        }
+      }
+    }
+
+    // ============================================
+    // POWER RAZ - Uniquement pour ZLinky_TIC
+    // ============================================
+    if (model != "ZLinky_TIC") 
+      continue;
+
+    // POWER (RAZ de la minute suivante)
+    String currentTime = Hour + ":" + String(Minute.toInt() + 1);
+    resetMeasurements(device->powerHistory, currentTime);
+
+    // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
+    time_t lastSeen = device->getLastSeenEpoch();
+
+    if ((now - lastSeen) > 3600) {
+      
+      String textError = "device : " + deviceId + " - Pas vu depuis plus de 1 heure";
+      addDebugLog(textError);
+
+      device->setValue(std::string("0B04"), std::string("1295"), std::string("0"));
+      device->setValue(std::string("0B04"), std::string("2319"), std::string("0"));
+      device->setValue(std::string("0B04"), std::string("2575"), std::string("0"));
+
+      addMeasurement(device->powerHistory, 1, 0);
+      addMeasurement(device->powerHistory, 2, 0);
+      addMeasurement(device->powerHistory, 3, 0);
+      addMeasurement(device->powerHistory, 1295, 0);
+      addMeasurement(device->powerHistory, 2319, 0);
+      addMeasurement(device->powerHistory, 2575, 0);
+     
+      if (!device->powerHistory.stats[1295].last) {
+        device->powerHistory.stats[1295].trend = 0;
+      } else {
+        device->powerHistory.stats[1295].trend = 0 - device->powerHistory.stats[1295].last;
+      }
+      device->powerHistory.stats[1295].last = 0;
+
+      if (!device->powerHistory.stats[2319].last) {
+        device->powerHistory.stats[2319].trend = 0;
+      } else {
+        device->powerHistory.stats[2319].trend = 0 - device->powerHistory.stats[2319].last;
+      }
+      device->powerHistory.stats[2319].last = 0;
+
+      if (!device->powerHistory.stats[2575].last) {
+        device->powerHistory.stats[2575].trend = 0;
+      } else {
+        device->powerHistory.stats[2575].trend = 0 - device->powerHistory.stats[2575].last;
+      }
+      device->powerHistory.stats[2575].last = 0;
+    }
   }
 
   return true;
@@ -594,18 +772,28 @@ DEBUG_PRINTLN(F("config_write OK"));
 
   log_e("Sauvegarde de tous les devices");
   for (auto d : devices) {
-      d->saveToFile();
-      if (d->getInfo().model=="ZLinky_TIC")
-      {
-        savePowerHistory(d->getDeviceID(),d->powerHistory);  
-        saveEnergyHistory(d->getDeviceID(),d->energyHistory);
-      }  
+    d->saveToFile();
+    if (d->getInfo().model=="ZLinky_TIC")
+    {
+      savePowerHistory(d->getDeviceID(),d->powerHistory);  
+      saveEnergyHistory(d->getDeviceID(),d->energyHistory);
+    }  
 
-      if (d->getInfo().model=="ZiPulses")
-      {
-        saveEnergyHistory(d->getDeviceID(),d->energyHistory);
-      }
-  } 
+    if (d->getInfo().model=="ZiPulses")
+    {
+      saveEnergyHistory(d->getDeviceID(),d->energyHistory);
+    }
+    
+    // === SOUS-COMPTEURS ===
+    // Vérifier si ce device est un sous-compteur configuré
+    for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+        if (ConfigGeneral.subMeters[i].enabled && 
+            strcmp(ConfigGeneral.subMeters[i].IEEE, d->getDeviceID().c_str()) == 0) {
+            saveEnergyHistory(d->getDeviceID(), d->energyHistory);
+            break;
+        }
+    }
+  }
   log_e("ScanDevicesToRAZ");
   ScanDevicesToRAZ();
 }
@@ -1132,13 +1320,15 @@ bool reset_provisioned = true; // When true the library will automatically delet
 
 
 void onMqttConnect(bool sessionPresent) {
-  DEBUG_PRINTLN(F("Connected to MQTT."));
-  DEBUG_PRINT(F("Session present: "));
-  DEBUG_PRINTLN(sessionPresent);
+  Serial.println(F("=== MQTT CONNECTED ==="));
   extern unsigned long lastConnectionTest;
   lastConnectionTest = millis();
   mqttResetReconnectionFlag();
 
+  // S'abonner aux topics de commande LiXee
+  const char* cmdTopic = "lixee/cmd/#";
+  uint16_t packetId = mqttClient.subscribe(cmdTopic, 0);
+  Serial.printf("MQTT: Subscribed to '%s' (packetId=%d)\n", cmdTopic, packetId);
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
@@ -1161,21 +1351,86 @@ void onMqttUnsubscribe(uint16_t packetId) {
 }
 
 void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties properties, size_t len, size_t index, size_t total) {
-  DEBUG_PRINTLN(F("Publish received."));
-  DEBUG_PRINT(F("  topic: "));
-  DEBUG_PRINTLN(topic);
-  DEBUG_PRINT(F("  qos: "));
-  DEBUG_PRINTLN(properties.qos);
-  DEBUG_PRINT(F("  dup: "));
-  DEBUG_PRINTLN(properties.dup);
-  DEBUG_PRINT(F("  retain: "));
-  DEBUG_PRINTLN(properties.retain);
-  DEBUG_PRINT(F("  len: "));
-  DEBUG_PRINTLN(len);
-  DEBUG_PRINT(F("  index: "));
-  DEBUG_PRINTLN(index);
-  DEBUG_PRINT(F("  total: "));
-  DEBUG_PRINTLN(total);
+  
+  Serial.println(F("=== MQTT MESSAGE ==="));
+  Serial.printf("  topic: %s\n", topic);
+  
+  char payloadBuffer[64];
+  size_t copyLen = (len < sizeof(payloadBuffer) - 1) ? len : sizeof(payloadBuffer) - 1;
+  memcpy(payloadBuffer, payload, copyLen);
+  payloadBuffer[copyLen] = '\0';
+  
+  Serial.printf("  payload: %s\n", payloadBuffer);
+
+  String topicStr = String(topic);
+
+  // Topics de commande LiXee : lixee/cmd/{IEEE}/switch ou lixee/cmd/{IEEE}/action
+  if (topicStr.startsWith("lixee/cmd/"))
+  {
+    Serial.println("MQTT: Commande LiXee détectée!");
+    
+    // Parser le topic : lixee/cmd/{IEEE}/switch ou lixee/cmd/{IEEE}/action
+    // Extraire l'IEEE
+    String subTopic = topicStr.substring(10);  // Après "lixee/cmd/"
+    int slashPos = subTopic.indexOf('/');
+    
+    if (slashPos <= 0) {
+      Serial.println("MQTT: Format topic invalide");
+      return;
+    }
+    
+    String IEEE = subTopic.substring(0, slashPos);
+    String cmdType = subTopic.substring(slashPos + 1);  // "switch" ou "action"
+    
+    Serial.printf("MQTT: IEEE=%s cmdType=%s action=%s\n", IEEE.c_str(), cmdType.c_str(), payloadBuffer);
+    
+    // Trouver le device correspondant
+    DeviceData* device = nullptr;
+    for (size_t i = 0; i < devices.size(); i++) {
+      if (devices[i]->getDeviceID() == IEEE) {
+        device = devices[i];
+        break;
+      }
+    }
+    
+    if (!device) {
+      Serial.printf("MQTT: Device %s non trouvé!\n", IEEE.c_str());
+      return;
+    }
+    
+    // Récupérer le shortAddr
+    int shortAddr = device->getInfo().shortAddr.toInt();
+    Serial.printf("MQTT: shortAddr=%d\n", shortAddr);
+    
+    // Récupérer le template pour trouver l'action
+    TemplateData* t = device->getTemplate();
+    if (!t) {
+      Serial.println("MQTT: Template non trouvé!");
+      return;
+    }
+    
+    // Chercher l'action correspondante au payload (ON, OFF, TOGGLE, etc.)
+    Action* actionFound = nullptr;
+    for (int i = 0; i < t->ActionSize(); i++) {
+      Action* a = t->getAction(i);
+      if (a && strcasecmp(a->name, payloadBuffer) == 0) {
+        actionFound = a;
+        break;
+      }
+    }
+    
+    if (!actionFound) {
+      Serial.printf("MQTT: Action '%s' non trouvée dans le template!\n", payloadBuffer);
+      return;
+    }
+    
+    Serial.printf("MQTT: Action trouvée - command=%d endpoint=%d value=%d\n", 
+                  actionFound->command, actionFound->endpoint, actionFound->value);
+    
+    // Exécuter l'action
+    SendAction(actionFound->command, shortAddr, actionFound->endpoint, String(actionFound->value));
+    Serial.println("MQTT: Action exécutée!");
+  }
 }
 
 void onMqttPublish(uint16_t packetId) {
@@ -1266,6 +1521,16 @@ void loadAllDevices(const char* dirPath) {
           {
             parseDeviceHistory(dev->getDeviceID(),dev->energyHistory);
           }  
+
+          // === SOUS-COMPTEURS : charger l'historique ===
+          for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+              if (ConfigGeneral.subMeters[i].enabled && 
+                  strcmp(ConfigGeneral.subMeters[i].IEEE, dev->getDeviceID().c_str()) == 0) {
+                  parseDeviceHistory(dev->getDeviceID(), dev->energyHistory);
+                  break;
+              }
+          }
+
           devices.push_back(dev);
         }
         log_w("apres Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
@@ -1441,6 +1706,41 @@ bool loadConfigGeneral() {
   ConfigNotif.UnderVoltageThreshold = (int)doc["UnderVoltageThreshold"];
   ConfigNotif.PEJP = (int)doc["PEJP"];
   ConfigNotif.RedColor = (int)doc["RedColor"];
+
+  // === SOUS-COMPTEURS ===
+  ConfigGeneral.subMeterCount = 0;  // Initialiser à 0
+  
+  if (doc.containsKey("subMeters")) {
+    JsonArray subMetersArray = doc["subMeters"].as<JsonArray>();
+    
+    for (JsonObject sm : subMetersArray) {
+      if (ConfigGeneral.subMeterCount >= MAX_SUBMETERS) break;
+      
+      int i = ConfigGeneral.subMeterCount;
+      strlcpy(ConfigGeneral.subMeters[i].IEEE, sm["IEEE"] | "", sizeof(ConfigGeneral.subMeters[i].IEEE));
+      strlcpy(ConfigGeneral.subMeters[i].alias, sm["alias"] | "", sizeof(ConfigGeneral.subMeters[i].alias));
+      strlcpy(ConfigGeneral.subMeters[i].color, sm["color"] | "#3498db", sizeof(ConfigGeneral.subMeters[i].color));
+      ConfigGeneral.subMeters[i].enabled = sm["enabled"] | true;
+      
+      // Incrémenter seulement si IEEE n'est pas vide
+      if (strlen(ConfigGeneral.subMeters[i].IEEE) > 0) {
+        ConfigGeneral.subMeterCount++;
+      }
+    }
+  }
+
+  //PRESENCE
+  if (doc.containsKey("Presence")) {
+    strlcpy(ConfigGeneral.Presence, doc["Presence"], sizeof(ConfigGeneral.Presence));
+  } else {
+    ConfigGeneral.Presence[0] = '\0';
+  }
+  
+  if (doc.containsKey("enablePresenceGraph")) {
+    ConfigGeneral.enablePresenceGraph = doc["enablePresenceGraph"].as<bool>();
+  } else {
+    ConfigGeneral.enablePresenceGraph = true; // Par défaut activé
+  }
 
   configFile.close();
   return true;
@@ -1832,7 +2132,9 @@ void setup(void)
   //WifiReconnectTimer = xTimerCreate("WifiTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(reconnectWifi));
 
   log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
+  
+  templateCache.indexTemplates();
+  templateCache.printStats();
 
   loadAllDevices("/db");
 
@@ -2021,7 +2323,7 @@ void sendTreatment()
   {
     log_d("Priority send");
     sendZigbeeCmd(PrioritycommandList->shift());
-    vTaskDelay(50);
+    vTaskDelay(100);
   }
   if (!commandList->isEmpty())
   {

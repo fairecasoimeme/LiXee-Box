@@ -52,6 +52,17 @@ void initializeSimpleMeterDeviceCache() {
     simpleMeterCacheInitialized = true;
 }
 
+// Fonction helper pour vérifier si un device est un sous-compteur
+bool isSubMeter(const String& deviceId) {  
+    for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {     
+        if (ConfigGeneral.subMeters[i].enabled && 
+            strcmp(ConfigGeneral.subMeters[i].IEEE, deviceId.c_str()) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Fonction helper pour trouver rapidement un device
 DeviceData* findSimpleMeterDevice(const String& deviceId) {
     if (!simpleMeterCacheInitialized) {
@@ -141,6 +152,61 @@ void publishSimpleMeterData(const SimpleMeterData& data, const String& inifile) 
     }
 }
 
+// Fonction pour récupérer l'attribut ID correspondant à la période tarifaire actuelle
+int getCurrentTariffAttributeId() {
+    // Récupérer le device ZLinky
+    DeviceData* zlinkyDevice = findSimpleMeterDevice(ConfigGeneral.ZLinky);
+    if (!zlinkyDevice) {
+        return 256;  // Par défaut, attribut BASE/HC
+    }
+    
+    // Récupérer la période tarifaire (cluster FF66, attribut 16 = 0x0010)
+    String ptec = zlinkyDevice->getValue(std::string("FF66"), std::string("16"));
+    if (ptec.length() == 0) {
+        return 256;  // Par défaut
+    }
+    
+    ptec.trim();
+    ptec.toUpperCase();
+    
+    // Mapping PTEC -> Attribut ID
+    // BASE / HC / Heures Creuses / HN (EJP) -> 256
+    if (ptec.startsWith("BASE") || ptec.startsWith("TH") || 
+        ptec == "HC.." || ptec.startsWith("HEURE") && ptec.indexOf("CREUSE") >= 0 ||
+        ptec == "HN.." || ptec.startsWith("HCJB") || ptec.startsWith("EJPHN")) {
+        return 256;
+    }
+    
+    // HP / Heures Pleines / PM (EJP Pointe Mobile) -> 258
+    if (ptec == "HP.." || ptec.startsWith("HEURE") && ptec.indexOf("PLEINE") >= 0 ||
+        ptec == "PM.." || ptec.startsWith("HPJB") || ptec.startsWith("EJPHPM")) {
+        return 258;
+    }
+    
+    // Tempo Blanc HC -> 260
+    if (ptec.startsWith("HCJW")) {
+        return 260;
+    }
+    
+    // Tempo Blanc HP -> 262
+    if (ptec.startsWith("HPJW")) {
+        return 262;
+    }
+    
+    // Tempo Rouge HC -> 264
+    if (ptec.startsWith("HCJR")) {
+        return 264;
+    }
+    
+    // Tempo Rouge HP -> 266
+    if (ptec.startsWith("HPJR")) {
+        return 266;
+    }
+    
+    // Par défaut
+    return 256;
+}
+
 // Fonction centralisée pour mettre à jour les valeurs des devices avec gestion des index
 void updateSimpleMeterDeviceValue(const SimpleMeterData& data) {
     DeviceData* device = findSimpleMeterDevice(data.deviceId);
@@ -160,14 +226,43 @@ void updateSimpleMeterDeviceValue(const SimpleMeterData& data) {
                     std::string(data.value.c_str()));
     
     // Ajout aux mesures d'énergie si numérique
-    if (data.isNumeric) {
-        addEnergyMeasurement(device->energyHistory, data.attributeStr, data.numericValue);
+    if (data.attribute == 0 && data.isNumeric) {
+      
+        bool isZLinky = (strcmp(ConfigGeneral.ZLinky, data.deviceId.c_str()) == 0);
+        bool isSubMeterDevice = isSubMeter(data.deviceId);
+       
+        if (isZLinky) {
+            // ZLinky : stocker dans attribut 0 (comportement original)
+            addEnergyMeasurement(device->energyHistory, data.attributeStr, data.numericValue);
+        }
+        else if (isSubMeterDevice) {
+            // Sous-compteur : stocker dans l'attribut correspondant à la période tarifaire
+            int tariffAttrId = getCurrentTariffAttributeId();
+            //float coef = device->GetAttributeCoefficient(0x0702, data.attribute);
+            //long correctedValue = (long)(data.numericValue * coef);
+            addSubMeterMeasurement(device->energyHistory, tariffAttrId,  data.numericValue);
+        }
+    }
+    
+    // === NOUVEAU : Cas Production (attribut 1) ===
+    if (data.attribute == 1 && data.isNumeric) {
+        bool isProduction = (strcmp(ConfigGeneral.Production, data.deviceId.c_str()) == 0);
+        if (isProduction) {
+            addEnergyMeasurement(device->energyHistory, data.attributeStr, data.numericValue);
+        }
+    }
         
-        // Mise à jour des index si applicable
-        for (uint8_t i = 0; i < 11; ++i) {
-            if (data.attribute == INDEX_ID_LIST[i]) {
-                device->updateIndex(i, data.numericValue);
-                break;
+    // Cas spécial ZLinky avec index multiples (existant, inchangé)
+    if (strcmp(ConfigGeneral.ZLinky, data.deviceId.c_str()) == 0) {
+        if (data.isNumeric && data.attribute != 0) {
+            addEnergyMeasurement(device->energyHistory, data.attributeStr, data.numericValue);
+            
+            // Mise à jour des index
+            for (uint8_t i = 0; i < 11; ++i) {
+                if (data.attribute == INDEX_ID_LIST[i]) {
+                    device->updateIndex(i, data.numericValue);
+                    break;
+                }
             }
         }
     }

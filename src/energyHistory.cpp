@@ -243,6 +243,63 @@ bool saveEnergyHistory(String IEEE,const DeviceEnergyHistory &hist)
 }
 
 
+
+// Fonction spéciale pour les sous-compteurs
+// - Calcule le delta par rapport à la dernière valeur totale (attribut 0)
+// - Accumule ce delta dans l'attribut tarifaire dans le graph
+bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
+                            int tariffAttrId,
+                            long totalValue)
+{
+    if (totalValue == 0 || Year == "") {
+        return false;
+    }
+    
+    // Récupérer la dernière valeur totale (stockée dans attribut 0)
+    long lastTotal = hist.hours.last.attributes[0];
+    
+    // Calculer le delta
+    long delta = 0;
+    if (lastTotal > 0 && totalValue > lastTotal) {
+        delta = totalValue - lastTotal;
+    }
+    
+    // Mettre à jour la valeur totale dans l'attribut 0
+    hist.hours.data[PsString(Hour.c_str())].attributes[0] = totalValue;
+    hist.days.data[PsString(Day.c_str())].attributes[0] = totalValue;
+    hist.months.data[PsString(Month.c_str())].attributes[0] = totalValue;
+    hist.years.data[PsString(Year.c_str())].attributes[0] = totalValue;
+    hist.hours.last.attributes[0] = totalValue;
+    hist.days.last.attributes[0] = totalValue;
+    hist.months.last.attributes[0] = totalValue;
+    hist.years.last.attributes[0] = totalValue;
+    
+    // Si pas de delta, rien à accumuler dans le tarif
+    if (delta <= 0) {
+        return true;
+    }
+    
+    // Accumuler le delta dans l'attribut tarifaire (graph seulement)
+    // Hours
+    hist.hours.graph[PsString(Hour.c_str())].attributes[tariffAttrId] += delta;
+    hist.hours.trend.attributes[tariffAttrId] = delta;
+    
+    // Days
+    hist.days.graph[PsString(Day.c_str())].attributes[tariffAttrId] += delta;
+    hist.days.trend.attributes[tariffAttrId] += delta;
+    
+    // Months
+    hist.months.graph[PsString(Month.c_str())].attributes[tariffAttrId] += delta;
+    hist.months.trend.attributes[tariffAttrId] += delta;
+    
+    // Years
+    hist.years.graph[PsString(Year.c_str())].attributes[tariffAttrId] += delta;
+    hist.years.trend.attributes[tariffAttrId] += delta;
+    
+    return true;
+}
+
+
 // Exemple de fonction
 // - "year", "month", "day", "hour" : chaines (par ex "2023","09","01","13") 
 // - "section" : par ex "256", "1295", etc. 
