@@ -79,30 +79,38 @@ void SendClusterSpecificCommand(int shortAddr, int endpoint, int cluster,
                                  int commandId, uint16_t manufacturerCode, uint8_t value)
 {
     Packet trame;
-    trame.cmd = 0x0530;  // Cluster-specific command
-    trame.len = 14;
+    trame.cmd = 0x0530;
     
-    uint8_t datas[14];
-    datas[0] = 0x02;                              // Address mode
+    uint8_t datas[18];
+    
+    // Header APS
+    datas[0] = 0x02;                              // Address mode: short
     datas[1] = (shortAddr >> 8) & 0xFF;           // Short addr MSB
     datas[2] = shortAddr & 0xFF;                  // Short addr LSB
     datas[3] = 0x01;                              // Src endpoint
     datas[4] = endpoint;                          // Dst endpoint
     datas[5] = (cluster >> 8) & 0xFF;             // Cluster MSB
     datas[6] = cluster & 0xFF;                    // Cluster LSB
-    datas[7] = 0x01;                              // Direction (client to server)
-    datas[8] = (manufacturerCode != 0) ? 0x01 : 0x00;  // Manufacturer specific flag
-    datas[9] = (manufacturerCode >> 8) & 0xFF;    // Manufacturer code MSB
-    datas[10] = manufacturerCode & 0xFF;          // Manufacturer code LSB
-    datas[11] = 0x00;                             // Command ID (toujours 0x00 pour setMode)
-    datas[12] = 0x01;                             // Payload length
-    datas[13] = value;                            // Payload (mode)
+    datas[7] = 0x01;                              // Profile ID MSB (0x0104 = HA)
+    datas[8] = 0x04;                              // Profile ID LSB
+    datas[9] = 0x02;                              // Security mode
+    datas[10] = 0x00;                             // Radius (0 = use max)
+    datas[11] = 0x06;                             // Data length = 6 bytes (ZCL frame)
     
+    // ZCL Frame (6 octets)
+    datas[12] = 0x05;                             // Frame Control: cluster-specific (01) + mfr-specific (04)
+    datas[13] = manufacturerCode & 0xFF;          // Manufacturer code LSB (0x8B)
+    datas[14] = (manufacturerCode >> 8) & 0xFF;   // Manufacturer code MSB (0x12)
+    datas[15] = 0x00;                             // Sequence number (la Zigate peut le remplacer)
+    datas[16] = commandId;                        // Command ID (0x00 = setMode)
+    datas[17] = value;                            // Payload: mode (0-5)
+    
+    trame.len = 18;
     memcpy(trame.datas, datas, trame.len);
     commandList->push(trame);
     
-    log_i("ClusterCmd: addr=%04X ep=%d cluster=%04X cmd=00 mfr=%04X val=%02X", 
-          shortAddr, endpoint, cluster, manufacturerCode, value);
+    log_i("ClusterCmd: addr=%04X ep=%d cluster=%04X cmd=%02X mfr=%04X val=%02X", 
+          shortAddr, endpoint, cluster, commandId, manufacturerCode, value);
 }
 
 void SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
@@ -3108,7 +3116,7 @@ void getConfigReport(uint8_t shortAddr[2], int device_id, String model)
         SendConfigReport(shortAddr, cluster, attribut, rType, rMin, rMax, rTimeout, rChange);
         
         // Petit délai pour éviter la saturation
-        vTaskDelay(pdMS_TO_TICKS(1));
+        vTaskDelay(pdMS_TO_TICKS(10));
       }
       
     } catch (...) {
@@ -3166,7 +3174,7 @@ void getBind(uint64_t mac, int device_id, String model)
           while (pch != NULL)
           {
             SendBind(mac,atoi(pch));
-            vTaskDelay(pdMS_TO_TICKS(1));
+            vTaskDelay(pdMS_TO_TICKS(10));
             pch = strtok (NULL, " ;");
           }
         }
