@@ -27,7 +27,8 @@ extern CircularBuffer<Notification, 10> *notifList;
 
 // Déclaration externe de SendAction (définie dans zigbee.cpp)
 extern void SendAction(int command, int ShortAddr, int endpoint, String tmpValue);
-
+extern void SendClusterSpecificCommand(int shortAddr, int endpoint, int cluster, 
+                                        int commandId, uint16_t manufacturerCode, uint8_t value);
 // ============================================================================
 // HELPERS TEMPORELS
 // ============================================================================
@@ -843,21 +844,29 @@ void RulesManager::executeAction(const ActionRule& act, const Rule& rule) {
             if (actionNameStr.equalsIgnoreCase(String(tpl->actions[i].name))) {
                 // Action trouvée dans le template
                 int command  = (act.command >= 0) ? act.command : (int)tpl->actions[i].command;
-                
-                // Utiliser l'endpoint de la règle (prioritaire) ou celui du template
                 int endpoint = (act.endpoint > 0) ? act.endpoint : (int)tpl->actions[i].endpoint;
-                
-                // Utiliser la value du template
                 String value = String(tpl->actions[i].value);
                 
                 // Récupérer l'adresse courte du device
                 String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
                 
-                // Exécuter l'action via SendAction
-                SendAction(command, shortAddr.toInt(), endpoint, value);
-                
-                log_w("Action exec: device=%s action='%s' cmd=%d ep=%d val=%s",
-                      act.IEEE.c_str(), actionNameStr.c_str(), command, endpoint, value.c_str());
+                // ===== GESTION COMMANDE CLUSTER-SPECIFIC (400) =====
+                if (command == 400) {
+                    int cluster = tpl->actions[i].cluster;
+                    uint16_t mfrCode = tpl->actions[i].manufacturerCode;
+                    uint8_t val = (uint8_t)value.toInt();
+                    
+                    SendClusterSpecificCommand(shortAddr.toInt(), endpoint, cluster, 0x00, mfrCode, val);
+                    
+                    log_w("Action exec: device=%s action='%s' cluster=0x%04X mfr=0x%04X val=%d",
+                          act.IEEE.c_str(), actionNameStr.c_str(), cluster, mfrCode, val);
+                } else {
+                    // Commande standard
+                    SendAction(command, shortAddr.toInt(), endpoint, value);
+                    
+                    log_w("Action exec: device=%s action='%s' cmd=%d ep=%d val=%s",
+                          act.IEEE.c_str(), actionNameStr.c_str(), command, endpoint, value.c_str());
+                }
                 
                 actionFound = true;
                 break;
