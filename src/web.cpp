@@ -14164,42 +14164,38 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("refreshDeviceValues();");
   
   // Fonction de lecture d'attribut avec support manufacturer specific
-  result += F("function readAttribute(shortAddr, endpoint, cluster, attr, spanId, mfrCode) {");
-  result += F("  var btn = event.target; btn.classList.add('pending');");
+  result += F("function readAttribute(btnElement, shortAddr, endpoint, cluster, attr, spanId, mfrCode) {");
+  result += F("  if(btnElement) btnElement.classList.add('pending');");
   result += F("  var url = '/ZigbeeReadAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr;");
   result += F("  if(mfrCode && mfrCode > 0) { url += '&mfr=' + mfrCode; }");
   result += F("  fetch(url)");
   result += F("  .then(r => r.json()).then(d => {");
-  result += F("    btn.classList.remove('pending');");
+  result += F("    if(btnElement) btnElement.classList.remove('pending');");
   result += F("    if(d.success) {");
-  result += F("      btn.classList.add('success');");
-  result += F("      setTimeout(() => btn.classList.remove('success'), 2000);");
+  result += F("      if(btnElement) { btnElement.classList.add('success'); setTimeout(() => btnElement.classList.remove('success'), 2000); }");
   result += F("    } else {");
-  result += F("      btn.classList.add('error');");
-  result += F("      setTimeout(() => btn.classList.remove('error'), 3000);");
+  result += F("      if(btnElement) { btnElement.classList.add('error'); setTimeout(() => btnElement.classList.remove('error'), 3000); }");
   result += F("    }");
-  result += F("  }).catch(e => { btn.classList.remove('pending'); btn.classList.add('error'); });");
+  result += F("  }).catch(e => { if(btnElement) { btnElement.classList.remove('pending'); btnElement.classList.add('error'); } });");
   result += F("}");
   
   // Fonction d'écriture d'attribut avec support manufacturer specific
-  result += F("function writeAttribute(shortAddr, endpoint, cluster, attr, type, inputId, mfrCode) {");
-  result += F("  var inp = document.getElementById(inputId); var btn = event.target;");
-  result += F("  btn.classList.add('pending');");
+  result += F("function writeAttribute(btnElement, shortAddr, endpoint, cluster, attr, type, inputId, mfrCode) {");
+  result += F("  var inp = document.getElementById(inputId);");
+  result += F("  if(btnElement) btnElement.classList.add('pending');");
   result += F("  var url = '/ZigbeeWriteAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr + '&type=' + type + '&value=' + encodeURIComponent(inp.value);");
   result += F("  if(mfrCode && mfrCode > 0) { url += '&mfr=' + mfrCode; }");
   result += F("  fetch(url)");
   result += F("  .then(r => r.json()).then(d => {");
-  result += F("    btn.classList.remove('pending');");
+  result += F("    if(btnElement) btnElement.classList.remove('pending');");
   result += F("    if(d.success) {");
-  result += F("      btn.classList.add('success');");
-  result += F("      setTimeout(function() { btn.classList.remove('success'); }, 2000);");
-  result += F("      setTimeout(function() { readAttribute(shortAddr, endpoint, cluster, attr, inputId, mfrCode); }, 500);");
+  result += F("      if(btnElement) { btnElement.classList.add('success'); setTimeout(function() { btnElement.classList.remove('success'); }, 2000); }");
+  result += F("      setTimeout(function() { readAttribute(null, shortAddr, endpoint, cluster, attr, inputId, mfrCode); }, 500);");
   result += F("    } else {");
-  result += F("      btn.classList.add('error');");
-  result += F("      setTimeout(function() { btn.classList.remove('error'); }, 3000);");
+  result += F("      if(btnElement) { btnElement.classList.add('error'); setTimeout(function() { btnElement.classList.remove('error'); }, 3000); }");
   result += F("      alert('Erreur: ' + (d.error || 'Echec'));");
   result += F("    }");
-  result += F("  }).catch(function(e) { btn.classList.remove('pending'); btn.classList.add('error'); });");
+  result += F("  }).catch(function(e) { if(btnElement) { btnElement.classList.remove('pending'); btnElement.classList.add('error'); } });");
   result += F("}");
   
   // Variables pour l'édition du titre
@@ -14439,7 +14435,7 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       result += F("<td data-label='' class='actions-cell'>");
       
       // Bouton lecture avec manufacturer code
-      result += F("<button class='btn-read' onclick=\"readAttribute(");
+      result += F("<button class='btn-read' onclick=\"readAttribute(this, ");
       result += String(shortAddr);
       result += F(", ");
       result += String(endpoint);
@@ -14455,7 +14451,7 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       
       // Bouton écriture si writable avec manufacturer code
       if (t->states[i].writable) {
-        result += F("<button class='btn-write' onclick=\"writeAttribute(");
+        result += F("<button class='btn-write' onclick=\"writeAttribute(this, ");
         result += String(shortAddr);
         result += F(", ");
         result += String(endpoint);
