@@ -3625,39 +3625,141 @@ R"HTML(
             updateMarkAllButton();
           }, 10000);
         });
+
+        let isFirstLoad = true;
+        let lastDataHash = '';
         async function loadNotifications(page = 1) {
             try {
-                document.getElementById('loadingMessage').style.display = 'block';
-                document.getElementById('notificationsTable').style.display = 'none';
-                document.getElementById('errorMessage').style.display = 'none';
-                document.getElementById('pagination').style.display = 'none';
-               
+                const isPageChange = (page !== currentPage);
+                
+                // Afficher le loading seulement au premier chargement ou changement de page
+                if (isFirstLoad || isPageChange) {
+                    document.getElementById('loadingMessage').style.display = 'block';
+                    document.getElementById('notificationsTable').style.display = 'none';
+                    document.getElementById('errorMessage').style.display = 'none';
+                    document.getElementById('pagination').style.display = 'none';
+                }
+              
                 const response = await fetch(`/api/notifications?page=${page}&limit=${itemsPerPage}`);
                 const data = await response.json();
                 
-                // Vérifier si les notifications ont des IDs
-                if (data.notifications && data.notifications.length > 0) {
-                    data.notifications.forEach((notif, index) => {
+                // Créer un hash pour détecter les changements
+                const newHash = JSON.stringify(data.notifications);
+                
+                // Ne mettre à jour que si les données ont changé
+                if (newHash !== lastDataHash || isFirstLoad || isPageChange) {
+                    lastDataHash = newHash;
+                    
+                    currentPage = page;
+                    totalItems = data.total;
+                    totalPages = Math.ceil(totalItems / itemsPerPage);
 
-                    });
+                    updatePaginationInfo(data);
+                    displayNotifications(data.notifications);
+                    createPagination();
                 }
-
-                currentPage = page;
-                totalItems = data.total;
-                totalPages = Math.ceil(totalItems / itemsPerPage);
-
-                updatePaginationInfo(data);
-                displayNotifications(data.notifications);
-                createPagination();
 
                 document.getElementById('loadingMessage').style.display = 'none';
                 document.getElementById('notificationsTable').style.display = 'table';
                 document.getElementById('pagination').style.display = 'flex';
+                
+                isFirstLoad = false;
 
             } catch (error) {
                 console.error('Erreur chargement notifications:', error);
-                showError('Erreur lors du chargement des notifications');
+                if (isFirstLoad) {
+                    showError('Erreur lors du chargement des notifications');
+                }
             }
+        }
+
+        // Mise à jour intelligente : ne modifie que les lignes changées
+        function updateNotificationsTable(notifications) {
+            const tbody = document.getElementById('notificationsBody');
+            
+            if (notifications.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 50px; color: #666;">📭 Aucune notification</td></tr>';
+                return;
+            }
+
+            // Créer un map des lignes existantes par ID
+            const existingRows = {};
+            tbody.querySelectorAll('tr[data-notif-id]').forEach(row => {
+                existingRows[row.dataset.notifId] = row;
+            });
+
+            const newIds = new Set();
+            
+            notifications.forEach((notif, index) => {
+                const notifId = typeof notif.id !== 'undefined' ? notif.id : ((currentPage - 1) * itemsPerPage + index);
+                newIds.add(String(notifId));
+                
+                const rowHtml = createNotificationRowHtml(notif, notifId);
+                
+                if (existingRows[notifId]) {
+                    // Mettre à jour seulement si le contenu a changé
+                    const existingRow = existingRows[notifId];
+                    if (existingRow.dataset.hash !== hashNotif(notif)) {
+                        existingRow.innerHTML = rowHtml;
+                        existingRow.dataset.hash = hashNotif(notif);
+                    }
+                } else {
+                    // Nouvelle notification : l'ajouter
+                    const row = document.createElement('tr');
+                    row.setAttribute('data-notif-id', notifId);
+                    row.dataset.hash = hashNotif(notif);
+                    row.innerHTML = rowHtml;
+                    tbody.appendChild(row);
+                }
+            });
+            
+            // Supprimer les lignes qui n'existent plus
+            tbody.querySelectorAll('tr[data-notif-id]').forEach(row => {
+                if (!newIds.has(row.dataset.notifId)) {
+                    row.remove();
+                }
+            });
+            
+            // Réordonner si nécessaire
+            const rows = Array.from(tbody.querySelectorAll('tr[data-notif-id]'));
+            notifications.forEach((notif, index) => {
+                const notifId = typeof notif.id !== 'undefined' ? notif.id : ((currentPage - 1) * itemsPerPage + index);
+                const row = tbody.querySelector(`tr[data-notif-id="${notifId}"]`);
+                if (row && rows[index] !== row) {
+                    tbody.insertBefore(row, rows[index]);
+                }
+            });
+        }
+
+        function hashNotif(notif) {
+            return `${notif.viewed}-${notif.type}-${notif.title}-${notif.message}`;
+        }
+
+        function createNotificationRowHtml(notif, notifId) {
+            const typeLabels = { 0: 'Info', 1: 'Attention', 2: 'Erreur' };
+            return `
+                <td>
+                    <div class="notification-title">
+                    <span class="type-badge type-${notif.type}">
+                        ${typeLabels[notif.type] || 'Inconnu'}
+                    </span>
+                    &nbsp;${escapeHtml(notif.title)}
+                    </div>
+                    <div class="notification-message">${escapeHtml(notif.message)}</div>
+                </td>
+                <td class="notification-date">${escapeHtml(notif.timeStamp)}</td>
+                <td>
+                    <span class="${notif.viewed ? 'status-viewed' : 'status-unread'}">
+                        ${notif.viewed ? '✅ Lu' : '🚨 Non lu'}
+                    </span>
+                </td>
+                <td>
+                    <div class="action-buttons">
+                        ${!notif.viewed ? `<button class="btn btn-small success" onclick="markAsRead(${notifId})">...</button>` : ''}
+                        <button class="btn btn-small danger" onclick="deleteNotification(${notifId})">...</button>
+                    </div>
+                </td>
+            `;
         }
 
         function displayNotifications(notifications) {
