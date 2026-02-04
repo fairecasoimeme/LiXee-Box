@@ -6,6 +6,7 @@
 #include "device.h"
 
 extern std::vector<DeviceData*> devices;
+extern ConfigGeneralStruct ConfigGeneral;
 extern String FormattedDate;
 extern String Hour;
 extern String Day;
@@ -614,10 +615,21 @@ void presenceResetHour(int dayNum, int hourNum) {
 // ============================================================================
 
 void handleOccupancyChange(const String& deviceId, const String& model, uint8_t occupancy) {
-    if (!isPresenceSensor(model)) {
+    // Vérifier si c'est le capteur de présence configuré dans les settings
+    String devKey = deviceId.substring(0, 16);
+    String configuredIEEE = String(ConfigGeneral.Presence);
+
+    bool isConfigured = (configuredIEEE.length() > 0 && devKey == configuredIEEE);
+
+    // Accepter soit le capteur configuré, soit un modèle reconnu
+    if (!isConfigured && !isPresenceSensor(model)) {
         return;
     }
-    
+
     bool occupied = (occupancy & 0x01) != 0;
-    presenceRecordEvent(deviceId, occupied);
+
+    // Enregistrer uniquement les présences positives pour marquer l'heure
+    if (occupied) {
+        presenceRecordEvent(deviceId, true);
+    }
 }
