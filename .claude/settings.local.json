@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc:*)",
+      "Bash(pio run -e esp32s3)",
+      "Bash(where:*)",
+      "Bash(dir \"%USERPROFILE%\\\\.platformio\\\\penv\\\\Scripts\\\\pio*\")",
+      "Bash(cmd /c \"where pio 2>NUL || where platformio 2>NUL || dir /s /b %USERPROFILE%\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe 2>NUL\")",
+      "Bash(cmd /c \"if exist C:\\\\Users\\\\akila\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe \\(echo FOUND\\) else \\(echo NOT_FOUND\\)\")",
+      "Bash(cmd /c \"dir /s /b C:\\\\Users\\\\akila\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe 2>NUL & dir /s /b C:\\\\Users\\\\akila\\\\.platformio\\\\packages\\\\tool-pio\\\\pio.exe 2>NUL & dir /s /b C:\\\\Users\\\\akila\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\*\\\\Scripts\\\\pio.exe 2>NUL & dir /s /b C:\\\\Users\\\\akila\\\\AppData\\\\Roaming\\\\Python\\\\*\\\\Scripts\\\\pio.exe 2>NUL\")",
+      "Bash(cmd /c \"cd /d C:\\\\Users\\\\akila\\\\Documents\\\\PlatformIO\\\\Projects\\\\smart-home\\\\LiXee-WebMQTT-Gateway && C:\\\\Users\\\\akila\\\\.platformio\\\\penv\\\\Scripts\\\\pio.exe run -e esp32s3 2>&1\")",
+      "Bash(C:/Users/akila/.platformio/penv/Scripts/pio.exe run:*)"
+    ]
+  }
+}

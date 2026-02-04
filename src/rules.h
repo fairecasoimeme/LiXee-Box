@@ -75,11 +75,14 @@ struct ActionRule {
 // Règle complète stockée en PSRAM
 struct Rule {
     PsString      name;
-    TriggerConfig trigger; 
-    std::vector<TimeRange,   PsramAllocator<TimeRange>>   timeRanges; 
+    bool          enabled;
+    TriggerConfig trigger;
+    std::vector<TimeRange,   PsramAllocator<TimeRange>>   timeRanges;
     std::vector<Condition,   PsramAllocator<Condition>>   conditions;
     std::vector<ActionRule,  PsramAllocator<ActionRule>>  actions;
     std::vector<ActionRule,  PsramAllocator<ActionRule>>  elseActions;
+
+    Rule() : enabled(true) {}
 };
 
 // Manager de règles, stocke toutes les règles en PSRAM

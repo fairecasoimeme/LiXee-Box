@@ -244,6 +244,9 @@ bool RulesManager::loadFromFile(const char* path) {
         // Nom
         rule.name = PsString(r["name"] | "", PsramAllocator<char>());
 
+        // Activé/désactivé (rétro-compatible : true par défaut)
+        rule.enabled = r["enabled"] | true;
+
         JsonObject triggerObj = r["trigger"].as<JsonObject>();
         rule.trigger.mode = PsString(triggerObj["mode"] | "timer", PsramAllocator<char>());
         rule.trigger.IEEE = PsString(triggerObj["IEEE"] | "", PsramAllocator<char>());
@@ -739,6 +742,7 @@ void RulesManager::evaluateRule(const Rule& rule) {
 // Applique toutes les règles et exécute les actions si besoin
 void RulesManager::applyRules() {
     for (const auto& rule : rules_) {
+        if (!rule.enabled) continue; // Règle désactivée
         if (rule.trigger.mode != "timer" && rule.trigger.mode.length() > 0) {
             continue; // Ignorer EVENT
         }
@@ -761,6 +765,7 @@ int RulesManager::getStatusRule(const char* name) const {
 
 void RulesManager::applyRulesOnEvent(const char* IEEE, int cluster, int attribute) {
     for (const auto& rule : rules_) {
+        if (!rule.enabled) continue; // Règle désactivée
         if (rule.trigger.mode != "event") continue;
         
         if (rule.trigger.IEEE == IEEE &&

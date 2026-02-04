@@ -1978,7 +1978,7 @@ const char HTTP_CONFIG_RULES[] PROGMEM = R"rawstring(
         if (!confirm('Voulez-vous vraiment supprimer la règle "' + ruleName + '" ?')) {
           return;
         }
-        
+
         $.ajax({
           url: '/api/rules/delete',
           type: 'POST',
@@ -1990,6 +1990,24 @@ const char HTTP_CONFIG_RULES[] PROGMEM = R"rawstring(
           },
           error: function(xhr) {
             alert('Erreur lors de la suppression : ' + xhr.responseText);
+          }
+        });
+      }
+
+      function toggleRule(ruleName, cb) {
+        $.ajax({
+          url: '/api/rules/toggle',
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ name: ruleName, enabled: cb.checked }),
+          success: function() {
+            var row = $(cb).closest('tr');
+            if (cb.checked) { row.find('.rule-name').removeClass('text-muted'); }
+            else { row.find('.rule-name').addClass('text-muted'); }
+          },
+          error: function(xhr) {
+            alert('Erreur : ' + xhr.responseText);
+            cb.checked = !cb.checked;
           }
         });
       }
@@ -2006,10 +2024,17 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
     <div class="card-body">
       <form id="ruleForm">
         <input type="hidden" id="oldRuleName">
-        
+
         <div class="mb-4">
           <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
           <input class='form-control' id='ruleName' type='text' required>
+        </div>
+
+        <div class="mb-4">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="ruleEnabled" checked>
+            <label class="form-check-label fw-bold" for="ruleEnabled">Règle activée</label>
+          </div>
         </div>
 
         <div class="mb-4">
@@ -2361,6 +2386,7 @@ function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
 
 function loadRule(rule){
   $('#oldRuleName').val(rule.name);$('#ruleName').val(rule.name);
+  $('#ruleEnabled').prop('checked',rule.enabled!==false);
   if(rule.trigger){$('#triggerMode').val(rule.trigger.mode||'timer');onTriggerModeChange();if(rule.trigger.mode==='event'){$('#triggerDevice').val(rule.trigger.IEEE);onTriggerDeviceChange();setTimeout(function(){$('#triggerCluster').val(rule.trigger.cluster);onTriggerClusterChange();setTimeout(function(){$('#triggerAttribute').val(rule.trigger.attribute)},100)},100)}}
   if(rule.timeRanges)rule.timeRanges.forEach(function(tr){addTimeRange(tr)});
   if(rule.conditions&&rule.conditions.length>0)rule.conditions.forEach(function(c){addCondition(c)});else addCondition();
@@ -2372,7 +2398,7 @@ function loadRule(rule){
 
 $('#ruleForm').on('submit',function(e){
   e.preventDefault();
-  var rule={oldName:$('#oldRuleName').val(),name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
+  var rule={oldName:$('#oldRuleName').val(),name:$('#ruleName').val(),enabled:$('#ruleEnabled').is(':checked'),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
   
   $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
   
@@ -2394,10 +2420,17 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
   <div class='card mx-auto shadow-sm'>
     <div class="card-body">
       <form id="ruleForm">
-        
+
         <div class="mb-4">
           <label for='ruleName' class="form-label fw-bold">Nom de la règle</label>
           <input class='form-control' id='ruleName' type='text' required>
+        </div>
+
+        <div class="mb-4">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="ruleEnabled" checked>
+            <label class="form-check-label fw-bold" for="ruleEnabled">Règle activée</label>
+          </div>
         </div>
 
         <div class="mb-4">
@@ -2623,7 +2656,7 @@ function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
 
 $('#ruleForm').on('submit',function(e){
   e.preventDefault();
-  var rule={name:$('#ruleName').val(),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
+  var rule={name:$('#ruleName').val(),enabled:$('#ruleEnabled').is(':checked'),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
   $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
   $('.condition-item').each(function(){rule.conditions.push(collectConditionData($(this)))});
   if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}
@@ -8123,6 +8156,7 @@ void handleConfigRules(AsyncWebServerRequest *request)
   rulesList+=F("<thead>");
     rulesList+=F("<tr>");
       rulesList+=F("<th scope='col'>Nom</th>");
+      rulesList+=F("<th scope='col' width='60px;'>Actif</th>");
       rulesList+=F("<th scope='col' width='50px;'>Etat</th>");
       rulesList+=F("<th scope='col' width='150px;'>Dernière Date</th>");
       rulesList+=F("<th scope='col' width='100px;'>Actions</th>");
@@ -8139,9 +8173,16 @@ void handleConfigRules(AsyncWebServerRequest *request)
     if (!rule) continue;
     exist++;
     rulesList+=F("<tr>");
-      rulesList+=F("<td scope='row'>");
+      rulesList+=F("<td scope='row'><span class='rule-name");
+      if (!rule->enabled) rulesList+=F(" text-muted");
+      rulesList+=F("'>");
         rulesList+=rule->name.c_str();
-      rulesList+=F("</td>");
+      rulesList+=F("</span></td>");
+      rulesList+=F("<td><div class='form-check form-switch'><input class='form-check-input' type='checkbox' onchange='toggleRule(\"");
+      rulesList+=rule->name.c_str();
+      rulesList+=F("\", this)'");
+      if (rule->enabled) rulesList+=F(" checked");
+      rulesList+=F("></div></td>");
       rulesList+=F("<td>");
         int status = rulesManager.getStatusRule(rule->name.c_str());
         js += F("getRuleStatus('");
@@ -8367,6 +8408,7 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
       // Remplacer la règle
       JsonObject rule = rules[i];
       rule["name"] = newName;
+      rule["enabled"] = doc["enabled"] | true;
 
       //Remplacer le trigger
       rule.remove("trigger");
@@ -8561,6 +8603,80 @@ void APIDeleteRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, si
   request->send(200, "text/plain", "Règle supprimée");
 }
 
+// API pour activer/désactiver une règle
+void APIToggleRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+{
+  static String jsonBuffer;
+
+  if (index == 0) {
+    jsonBuffer = "";
+    jsonBuffer.reserve(total);
+  }
+
+  for (size_t i = 0; i < len; i++) {
+    jsonBuffer += (char)data[i];
+  }
+
+  if (index + len < total) {
+    return;
+  }
+
+  SpiRamJsonDocument doc(10000);
+  DeserializationError error = deserializeJson(doc, jsonBuffer);
+  jsonBuffer = "";
+
+  if (error) {
+    request->send(400, "text/plain", "JSON invalide");
+    return;
+  }
+
+  String ruleName = doc["name"].as<String>();
+  bool enabled = doc["enabled"] | true;
+
+  if (ruleName.length() == 0) {
+    request->send(400, "text/plain", "Nom de règle manquant");
+    return;
+  }
+
+  File file = LittleFS.open("/config/rules.json", FILE_READ);
+  SpiRamJsonDocument rulesDoc(100000);
+
+  if (file) {
+    deserializeJson(rulesDoc, file);
+    file.close();
+  } else {
+    request->send(500, "text/plain", "Impossible d'ouvrir rules.json");
+    return;
+  }
+
+  JsonArray rules = rulesDoc["rules"];
+  bool found = false;
+  for (size_t i = 0; i < rules.size(); i++) {
+    if (rules[i]["name"].as<String>() == ruleName) {
+      rules[i]["enabled"] = enabled;
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    request->send(404, "text/plain", "Règle non trouvée");
+    return;
+  }
+
+  file = LittleFS.open("/config/rules.json", FILE_WRITE);
+  if (!file) {
+    request->send(500, "text/plain", "Erreur d'écriture");
+    return;
+  }
+  serializeJson(rulesDoc, file);
+  file.close();
+
+  rulesManager.loadFromFile("/config/rules.json");
+
+  request->send(200, "text/plain", enabled ? "Règle activée" : "Règle désactivée");
+}
+
 // Handler pour afficher la page
 void handleAddRule(AsyncWebServerRequest *request)
 {
@@ -8658,7 +8774,8 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
   JsonObject newRule = rules.createNestedObject();
   
   newRule["name"] = ruleName;
-  
+  newRule["enabled"] = doc["enabled"] | true;
+
   // Trigger
   JsonObject trigger = newRule.createNestedObject("trigger");
   JsonObject triggerDoc = doc["trigger"].as<JsonObject>();
@@ -17045,14 +17162,27 @@ void initWebServer()
       APIEditRule(request, data, len, index, total);
     }
   );
+  serverWeb.on("/api/rules/toggle", HTTP_POST,
+    [](AsyncWebServerRequest *request){},
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+    {
+      if (ConfigSettings.enableSecureHttp)
+      {
+        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
+          return request->requestAuthentication();
+      }
+      APIToggleRule(request, data, len, index, total);
+    }
+  );
   serverWeb.on("/addRule", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
         return request->requestAuthentication();
     }
-    handleAddRule(request); 
+    handleAddRule(request);
   });
 
   serverWeb.on("/api/rules/add", HTTP_POST, 
