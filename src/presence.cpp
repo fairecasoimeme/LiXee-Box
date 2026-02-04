@@ -506,12 +506,20 @@ void presenceResetDay(int dayNum) {
     for (JsonPair kv : devicesObj) {
         JsonObject deviceObj = kv.value().as<JsonObject>();
         
-        if (deviceObj.containsKey("days") && deviceObj["days"].containsKey(dayKey)) {
-            // Réinitialiser le jour avec des zéros
-            JsonArray dayArray = deviceObj["days"][dayKey].as<JsonArray>();
-            for (int i = 0; i < 24; i++) {
-                dayArray[i] = 0;
+        if (deviceObj.containsKey("days")) {
+            JsonObject daysObj = deviceObj["days"].as<JsonObject>();
+            
+            // Supprimer l'ancien jour s'il existe
+            if (daysObj.containsKey(dayKey)) {
+                daysObj.remove(dayKey);
             }
+            
+            // Créer un nouveau tableau avec 24 zéros
+            JsonArray dayArray = daysObj.createNestedArray(dayKey);
+            for (int i = 0; i < 24; i++) {
+                dayArray.add(0);
+            }
+            
             modified = true;
             log_i("Reset presence day %d for device %s", dayNum, kv.key().c_str());
         }
@@ -521,6 +529,85 @@ void presenceResetDay(int dayNum) {
         savePresenceFile(doc);
     }
 }
+
+void presenceResetHour(int dayNum, int hourNum) {
+    if (hourNum < 0 || hourNum > 23) return;
+    if (dayNum < 1 || dayNum > 31) return;
+    
+    String dayKey = String(dayNum);
+    
+    DynamicJsonDocument doc(8192);
+    if (!loadPresenceFile(doc)) {
+        return;
+    }
+    
+    // Créer la structure "devices" si elle n'existe pas
+    if (!doc.containsKey("devices")) {
+        doc.createNestedObject("devices");
+    }
+    
+    JsonObject devicesObj = doc["devices"].as<JsonObject>();
+    bool modified = false;
+    
+    // Parcourir tous les devices
+    for (JsonPair kv : devicesObj) {
+        JsonObject deviceObj = kv.value().as<JsonObject>();
+        
+        // Créer "days" si n'existe pas
+        if (!deviceObj.containsKey("days")) {
+            deviceObj.createNestedObject("days");
+        }
+        
+        JsonObject daysObj = deviceObj["days"].as<JsonObject>();
+        
+        // Si le jour n'existe pas, le créer avec 24 zéros
+        if (!daysObj.containsKey(dayKey)) {
+            JsonArray dayArray = daysObj.createNestedArray(dayKey);
+            for (int i = 0; i < 24; i++) {
+                dayArray.add(0);
+            }
+            modified = true;
+            log_i("Created presence day %d for device %s", dayNum, kv.key().c_str());
+        } 
+        else {
+            JsonArray dayArray = daysObj[dayKey].as<JsonArray>();
+            
+            // Si le tableau n'a pas 24 éléments, le recréer proprement
+            if (dayArray.size() != 24) {
+                // Sauvegarder les valeurs existantes
+                int existingValues[24] = {0};
+                int existingSize = dayArray.size();
+                for (int i = 0; i < existingSize && i < 24; i++) {
+                    existingValues[i] = dayArray[i].as<int>();
+                }
+                
+                // Supprimer et recréer
+                daysObj.remove(dayKey);
+                JsonArray newDayArray = daysObj.createNestedArray(dayKey);
+                for (int i = 0; i < 24; i++) {
+                    if (i == hourNum) {
+                        newDayArray.add(0);  // RAZ de l'heure demandée
+                    } else {
+                        newDayArray.add(existingValues[i]);  // Conserver les autres
+                    }
+                }
+                modified = true;
+                log_i("Fixed and reset presence hour %d for day %d, device %s", hourNum, dayNum, kv.key().c_str());
+            }
+            else {
+                // Tableau OK, juste remettre l'heure à zéro
+                dayArray[hourNum] = 0;
+                modified = true;
+            }
+        }
+    }
+    
+    if (modified) {
+        savePresenceFile(doc);
+        log_i("Reset presence hour %d for day %d", hourNum, dayNum);
+    }
+}
+
 
 // ============================================================================
 // FONCTION D'INTÉGRATION AVEC ZIGBEE

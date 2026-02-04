@@ -50,6 +50,8 @@ bool getCurrentPresenceStatus(const String& deviceId = "all");
 
 // Réinitialiser un jour (appelé au changement de jour à minuit)
 void presenceResetDay(int dayNum);
+// Réinitialiser une heure spécifique (appelé à chaque changement d'heure)
+void presenceResetHour(int dayNum, int hourNum);
 
 // Fonction d'intégration avec Zigbee
 void handleOccupancyChange(const String& deviceId, const String& model, uint8_t occupancy);

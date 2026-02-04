@@ -45,6 +45,7 @@ extern "C" {
 #include "device.h"
 #include "powerHistory.h"
 #include "energyHistory.h"
+#include "presence.h"
 
 #include "smart_wifi_manager.h"
 #include "mqtt.h"
@@ -368,6 +369,15 @@ bool ScanDevicesToRAZ() {
   const int tarifAttrsCount = 10;
   
   int arrayLength = sizeof(section) / sizeof(section[0]);
+
+  // ============================================
+  // RAZ PRÉSENCE (UNE SEULE FOIS, AVANT LA BOUCLE)
+  // ============================================
+  if (Minute == "00") 
+  {
+      // RAZ présence pour l'heure courante
+      presenceResetHour(Day.toInt(), Hour.toInt());
+  }
 
   // Parcours de tous les devices
   for (DeviceData* device : devices) {
