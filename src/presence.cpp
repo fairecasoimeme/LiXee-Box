@@ -130,7 +130,7 @@ void presenceRecordEvent(const String& deviceId, bool occupied) {
     }
     
     // Charger le fichier
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     loadPresenceFile(doc);
     
     // S'assurer que l'objet "devices" existe
@@ -185,7 +185,7 @@ void presenceRecordEvent(const String& deviceId, bool occupied) {
 // ============================================================================
 
 String getPresenceSummary(const String& deviceId, const String& dayNum) {
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     
     // Initialiser avec des zéros
     int hours[24] = {0};
@@ -217,7 +217,7 @@ String getPresenceSummary(const String& deviceId, const String& dayNum) {
 }
 
 String getPresenceSummaryAll(const String& dayNum) {
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     
     // Initialiser avec des zéros
     int combined[24] = {0};
@@ -259,7 +259,7 @@ String getPresenceSummaryAll(const String& dayNum) {
 // Exemple : à 9h30 le 20, on affiche de 10h le 19 à 9h le 20
 
 String getPresenceSummary24hSliding() {
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     
     int currentDay = Day.toInt();    // 1-31
     int currentHour = Hour.toInt();  // 0-23
@@ -346,7 +346,7 @@ String getPresenceSummary24hSliding() {
 
 // Version avec device spécifique
 String getPresenceSummary24hSliding(const String& deviceId) {
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     
     int currentDay = Day.toInt();
     int currentHour = Hour.toInt();
@@ -431,7 +431,7 @@ String getPresenceSummary24hSliding(const String& deviceId) {
 }
 
 String getPresenceHistory(const String& deviceId) {
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     StaticJsonDocument<2048> result;
     
     String devKey = deviceId.substring(0, 16);
@@ -451,7 +451,7 @@ String getPresenceHistory(const String& deviceId) {
 }
 
 String getPresenceAll() {
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     
     if (loadPresenceFile(doc)) {
         String output;
@@ -495,7 +495,7 @@ bool getCurrentPresenceStatus(const String& deviceId) {
 void presenceResetDay(int dayNum) {
     String dayKey = String(dayNum);
     
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     if (!loadPresenceFile(doc) || !doc.containsKey("devices")) {
         return;
     }
@@ -537,7 +537,7 @@ void presenceResetHour(int dayNum, int hourNum) {
     
     String dayKey = String(dayNum);
     
-    DynamicJsonDocument doc(8192);
+    SpiRamJsonDocument doc(16384);
     if (!loadPresenceFile(doc)) {
         return;
     }
@@ -619,7 +619,10 @@ void handleOccupancyChange(const String& deviceId, const String& model, uint8_t 
     String devKey = deviceId.substring(0, 16);
     String configuredIEEE = String(ConfigGeneral.Presence);
 
-    bool isConfigured = (configuredIEEE.length() > 0 && devKey == configuredIEEE);
+    bool isConfigured = (configuredIEEE.length() > 0 && devKey.equalsIgnoreCase(configuredIEEE));
+
+    log_d("Occupancy: dev=%s config=%s isConfigured=%d model=%s occ=%d",
+          devKey.c_str(), configuredIEEE.c_str(), isConfigured, model.c_str(), occupancy);
 
     // Accepter soit le capteur configuré, soit un modèle reconnu
     if (!isConfigured && !isPresenceSensor(model)) {
