@@ -262,11 +262,14 @@ void handleAttribute535(const String& inifile, uint8_t* datas, int len) {
     // Gestion délestage si dépassement
     if (status.depassement_ref_pow) {
         if (ConfigNotif.SubscribedPower) {
-            handleNotification("🚨⚡Surconsommation", 
+            handleNotification("🚨⚡Surconsommation",
                               " Dépassement de la puissance souscrite", 2);
         }
         handleDelestage();
     }
+
+    // Publier les tarifs/couleurs MQTT (STGE contient les couleurs en mode standard)
+    publishLinkyTariffInfo(deviceId);
 }
 
 void handleAttribute768(const String& inifile, uint8_t* datas, int len) {
@@ -328,27 +331,33 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
     updateDeviceValue(deviceId, attribute, tmp);
     
     // Gestions spécifiques selon l'attribut
-    if (attribute == 1 && ConfigNotif.ColorTomorrow && 
+    if (attribute == 1 && ConfigNotif.ColorTomorrow &&
         (strcmp(ConfigGeneral.ZLinky, deviceId.c_str()) == 0)) {
-        
+
         if ((oldColor != tmp.c_str()) && (oldColor != "")) {
-            handleNotification("🕓💵Couleur du lendemain", 
+            handleNotification("🕓💵Couleur du lendemain",
                               "Couleur : " + tmp, 1);
         }
         oldColor = tmp.c_str();
     }
+
+    // Attribut 1 (DEMAIN) : mettre à jour la couleur demain en mode historique
+    if (attribute == 1) {
+        publishLinkyTariffInfo(deviceId);
+    }
+
     //Notification PEJP
     if (attribute == 4)
     {
         if (ConfigNotif.PEJP && (strcmp(ConfigGeneral.ZLinky,inifile.substring(0,16).c_str()) == 0 ))
         {
             if ((oldPEJP != tmp.c_str()) && (oldPEJP!=""))
-            { 
+            {
 
             String text ="Préavis EJP : "+tmp+" min";
-            handleNotification("⚡Préavis début EJP", 
+            handleNotification("⚡Préavis début EJP",
                               text, 1);
-               
+
             }
             oldPEJP = tmp.c_str();
         }
@@ -361,17 +370,173 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
             if ((oldPriceChange != tmp.c_str()) && (oldPriceChange!=""))
             {
                 String text ="--> tarif : "+tmp;
-                handleNotification("🕓💵 Changement de tarif", 
+                handleNotification("🕓💵 Changement de tarif",
                                 text,0);
             }
             oldPriceChange = tmp.c_str();
         }
+
+        // Attribut 16 (PTEC) : publier tarif/couleurs MQTT
+        publishLinkyTariffInfo(deviceId);
     }
     // Autres notifications similaires...
 }
 
+// ============================================================================
+// PUBLICATION MQTT DES TARIFS ET COULEURS LINKY
+// ============================================================================
+// Publie 3 entités MQTT dédiées : tarif_actuel, couleur_jour, couleur_demain
+// Source principale : cluster FF66 attribut 16 (PTEC, compatible config report)
+// Sources complémentaires : STGE (attr 535) pour couleurs standard, DEMAIN (attr 1)
+
+static String lastPublishedTarif;
+static String lastPublishedCouleurJour;
+static String lastPublishedCouleurDemain;
+
+void publishLinkyTariffInfo(const String& deviceId) {
+    // Vérifier que c'est le Linky configuré
+    if (strcmp(ConfigGeneral.ZLinky, deviceId.c_str()) != 0) return;
+
+    // Vérifier que MQTT HA est activé et connecté
+    if (!ConfigSettings.enableMqtt || !ConfigGeneral.HAMQTT || !mqttClient.connected()) return;
+
+    // Trouver le device
+    DeviceData* device = findDevice(deviceId);
+    if (!device) return;
+
+    String tarif = "";
+    String couleurJour = "";
+    String couleurDemain = "";
+
+    // Lire l'attribut 16 (PTEC) — source principale
+    String ptec = device->getValue(std::string("FF66"), std::string("16"));
+    ptec.trim();
+
+    if (ptec.length() == 0) return; // Pas encore de donnée
+
+    if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2)) {
+        // =====================================================
+        // Mode Historique : décoder le code PTEC
+        // =====================================================
+        String ptecUpper = ptec;
+        ptecUpper.toUpperCase();
+
+        if (ptecUpper.startsWith("TH")) {
+            tarif = "Base";
+        }
+        else if (ptecUpper == "HC.." || (ptecUpper.startsWith("HC") && ptecUpper.indexOf("JB") < 0 && ptecUpper.indexOf("JW") < 0 && ptecUpper.indexOf("JR") < 0)) {
+            tarif = "Heures Creuses";
+        }
+        else if (ptecUpper == "HP.." || (ptecUpper.startsWith("HP") && ptecUpper.indexOf("JB") < 0 && ptecUpper.indexOf("JW") < 0 && ptecUpper.indexOf("JR") < 0)) {
+            tarif = "Heures Pleines";
+        }
+        else if (ptecUpper == "HN.." || ptecUpper.startsWith("EJPHN")) {
+            tarif = "Heures Normales";
+        }
+        else if (ptecUpper == "PM.." || ptecUpper.startsWith("EJPHPM")) {
+            tarif = "Pointe Mobile";
+        }
+        // Tempo
+        else if (ptecUpper.startsWith("HCJB")) {
+            tarif = "HC Bleu";
+            couleurJour = "BLEU";
+        }
+        else if (ptecUpper.startsWith("HPJB")) {
+            tarif = "HP Bleu";
+            couleurJour = "BLEU";
+        }
+        else if (ptecUpper.startsWith("HCJW")) {
+            tarif = "HC Blanc";
+            couleurJour = "BLANC";
+        }
+        else if (ptecUpper.startsWith("HPJW")) {
+            tarif = "HP Blanc";
+            couleurJour = "BLANC";
+        }
+        else if (ptecUpper.startsWith("HCJR")) {
+            tarif = "HC Rouge";
+            couleurJour = "ROUGE";
+        }
+        else if (ptecUpper.startsWith("HPJR")) {
+            tarif = "HP Rouge";
+            couleurJour = "ROUGE";
+        }
+        else {
+            tarif = ptec; // Fallback : valeur brute
+        }
+
+        // Couleur demain : lire attribut 1 (DEMAIN) — mode historique Tempo
+        if (couleurJour.length() > 0) {
+            String demain = device->getValue(std::string("FF66"), std::string("1"));
+            demain.trim();
+            demain.toUpperCase();
+            if (demain.startsWith("BLEU")) {
+                couleurDemain = "BLEU";
+            } else if (demain.startsWith("BLAN")) {
+                couleurDemain = "BLANC";
+            } else if (demain.startsWith("ROUG")) {
+                couleurDemain = "ROUGE";
+            }
+        }
+    }
+    else {
+        // =====================================================
+        // Mode Standard : attribut 16 = libellé texte
+        // =====================================================
+        tarif = ptec;
+
+        // Couleurs via STGE (attribut 535)
+        String stge = device->getValue(std::string("FF66"), std::string("535"));
+        if (stge.length() >= 4) {
+            auto status = parseStatusRegister(stge);
+
+            if (status.tempo_jour != "UNDEF") {
+                couleurJour = status.tempo_jour;
+            }
+            if (status.tempo_demain != "UNDEF") {
+                couleurDemain = status.tempo_demain;
+            }
+        }
+    }
+
+    // Anti-spam : ne publier que si une valeur a changé
+    bool changed = false;
+    if (tarif != lastPublishedTarif) changed = true;
+    if (couleurJour != lastPublishedCouleurJour) changed = true;
+    if (couleurDemain != lastPublishedCouleurDemain) changed = true;
+
+    if (!changed) return;
+
+    // Publier les 3 entités MQTT
+    String header = String(ConfigGeneral.headerMQTT);
+
+    if (tarif != lastPublishedTarif) {
+        String topic = header + deviceId + "_tarif_actuel/state";
+        String payload = "{\"tarif_actuel\":\"" + tarif + "\"}";
+        mqttClient.publish(topic.c_str(), 0, true, payload.c_str());
+        lastPublishedTarif = tarif;
+        log_d("MQTT Tarif: %s", tarif.c_str());
+    }
+
+    if (couleurJour != lastPublishedCouleurJour) {
+        String topic = header + deviceId + "_couleur_jour/state";
+        String payload = "{\"couleur_jour\":\"" + couleurJour + "\"}";
+        mqttClient.publish(topic.c_str(), 0, true, payload.c_str());
+        lastPublishedCouleurJour = couleurJour;
+        log_d("MQTT Couleur jour: %s", couleurJour.c_str());
+    }
+
+    if (couleurDemain != lastPublishedCouleurDemain) {
+        String topic = header + deviceId + "_couleur_demain/state";
+        String payload = "{\"couleur_demain\":\"" + couleurDemain + "\"}";
+        mqttClient.publish(topic.c_str(), 0, true, payload.c_str());
+        lastPublishedCouleurDemain = couleurDemain;
+        log_d("MQTT Couleur demain: %s", couleurDemain.c_str());
+    }
+}
+
 // Fonction principale optimisée
-void lixeeClusterManage(String inifile, int attribute, uint8_t datatype, 
+void lixeeClusterManage(String inifile, int attribute, uint8_t datatype,
                        int len, char* datas) {
     // Cast vers uint8_t* pour plus de clarté
     uint8_t* data = reinterpret_cast<uint8_t*>(datas);

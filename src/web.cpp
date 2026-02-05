@@ -16390,6 +16390,55 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
           Serial.printf("MQTT Discovery: Button '%s' publié pour %s\n", a->name, IEEE.c_str());
         }
       }
+
+      // ========== DISCOVERY DES ENTITÉS TARIF/COULEUR LINKY ==========
+      if (model == "ZLinky_TIC")
+      {
+        String deviceBlock = "{\"name\":\"LiXee-GW_" + model + "_" + IEEE + "\","
+                             "\"sw_version\":\"2.0\","
+                             "\"model\":\"HW V2\","
+                             "\"manufacturer\":\"LiXee\","
+                             "\"identifiers\":[\"LiXee-GW" + model + "_" + IEEE + "\"]}";
+
+        // 1. Tarif actuel
+        {
+          String payload = "{\"name\":\"Tarif actuel\","
+                          "\"unique_id\":\"" + IEEE + "_tarif_actuel\","
+                          "\"icon\":\"mdi:currency-eur\","
+                          "\"state_topic\":\"" + String(ConfigGeneral.headerMQTT) + IEEE + "_tarif_actuel/state\","
+                          "\"value_template\":\"{{ value_json.tarif_actuel }}\","
+                          "\"device\":" + deviceBlock + "}";
+          String topic = "homeassistant/sensor/" + IEEE + "_tarif_actuel/config";
+          mqttClient.publish(topic.c_str(), 0, true, payload.c_str());
+          Serial.printf("MQTT Discovery: Tarif actuel publié pour %s\n", IEEE.c_str());
+        }
+
+        // 2. Couleur du jour
+        {
+          String payload = "{\"name\":\"Couleur du jour\","
+                          "\"unique_id\":\"" + IEEE + "_couleur_jour\","
+                          "\"icon\":\"mdi:palette\","
+                          "\"state_topic\":\"" + String(ConfigGeneral.headerMQTT) + IEEE + "_couleur_jour/state\","
+                          "\"value_template\":\"{{ value_json.couleur_jour }}\","
+                          "\"device\":" + deviceBlock + "}";
+          String topic = "homeassistant/sensor/" + IEEE + "_couleur_jour/config";
+          mqttClient.publish(topic.c_str(), 0, true, payload.c_str());
+          Serial.printf("MQTT Discovery: Couleur jour publié pour %s\n", IEEE.c_str());
+        }
+
+        // 3. Couleur de demain
+        {
+          String payload = "{\"name\":\"Couleur de demain\","
+                          "\"unique_id\":\"" + IEEE + "_couleur_demain\","
+                          "\"icon\":\"mdi:calendar-today\","
+                          "\"state_topic\":\"" + String(ConfigGeneral.headerMQTT) + IEEE + "_couleur_demain/state\","
+                          "\"value_template\":\"{{ value_json.couleur_demain }}\","
+                          "\"device\":" + deviceBlock + "}";
+          String topic = "homeassistant/sensor/" + IEEE + "_couleur_demain/config";
+          mqttClient.publish(topic.c_str(), 0, true, payload.c_str());
+          Serial.printf("MQTT Discovery: Couleur demain publié pour %s\n", IEEE.c_str());
+        }
+      }
     }
   }
   DeviceFile.close();
