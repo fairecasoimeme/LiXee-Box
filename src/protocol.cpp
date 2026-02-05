@@ -1829,12 +1829,12 @@ bool ScanDeviceToPoll() {
       last = p.last;
       p.last = last - 1;
 
-      if (last <= 0) 
+      if (last <= 0)
       {
         // Lancement de la requête
-        log_d("Lancement de la requête / sht: %d - cluster: %d - attr: %d", shortAddr, cluster, attribut);
-        // Envoi du paquet
-        SendAttributeRead(shortAddr,device->getInfo().endpoint.toInt(), cluster, attribut);
+        log_d("Lancement de la requête / sht: %d - cluster: %d - attr: %d - mfr: 0x%04X", shortAddr, cluster, attribut, p.manufacturerCode);
+        // Envoi du paquet (avec manufacturer code si cluster manufacturer-specific)
+        SendAttributeRead(shortAddr,device->getInfo().endpoint.toInt(), cluster, attribut, p.manufacturerCode);
         p.last = p.poll;
       }
     }

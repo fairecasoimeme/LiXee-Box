@@ -297,7 +297,7 @@ void SendBasicDescription(uint8_t shortAddr[2], uint8_t endpoint)
     commandList->push(trame);
 }
 
-void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type, int rmin, int rmax, int rtimeout, uint8_t rchange)
+void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type, int rmin, int rmax, int rtimeout, uint8_t rchange, uint16_t manufacturerCode)
 {
     Packet trame;
     trame.cmd=0x0120;
@@ -319,9 +319,9 @@ void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type,
     datas[5]= (cluster >>8) & 0xFF;
     datas[6]= cluster & 0xFF ;
     datas[7]= 0x00;
-    datas[8]= 0x00;
-    datas[9]= 0x00;
-    datas[10]= 0x00;
+    datas[8]= (manufacturerCode != 0) ? 0x01 : 0x00;
+    datas[9]= (manufacturerCode >> 8) & 0xFF;
+    datas[10]= manufacturerCode & 0xFF;
     datas[11]= 0x01;
     datas[12]= 0x00;
     datas[13]= type;
@@ -2832,12 +2832,19 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
                   int attribut = (int)temp[model][0]["status"][i]["attribut"];
                   int poll = (int)temp[model][0]["status"][i]["poll"];
 
+                  // Lecture optionnelle du manufacturer code pour clusters manufacturer-specific
+                  uint16_t mfrCode = 0;
+                  if (temp[model][0]["status"][i].containsKey("manufacturerSpecific")) {
+                    mfrCode = (uint16_t)strtol(temp[model][0]["status"][i]["manufacturerSpecific"], 0, 16);
+                  }
+
                   // Mise à jour de la liste poll de l'objet DeviceData
                   DeviceData::PollItem newItem;
                   newItem.cluster = String(cluster); // conversion de l'entier en String
                   newItem.attribut = attribut;
                   newItem.poll = poll;
                   newItem.last = 1;
+                  newItem.manufacturerCode = mfrCode;
                   device->getPollList().push_back(newItem);
 
                 }
@@ -3080,7 +3087,11 @@ void getConfigReport(uint8_t shortAddr[2], int device_id, String model)
       int rMax = (int)reportItem["max"];
       int rTimeout = reportItem.containsKey("timeout") ? (int)reportItem["timeout"] : 0;
       uint8_t rChange = (uint8_t)reportItem["change"];
-      
+      uint16_t mfrCode = 0;
+      if (reportItem.containsKey("manufacturerSpecific")) {
+        mfrCode = (uint16_t)strtol(reportItem["manufacturerSpecific"], 0, 16);
+      }
+
       bool sendReport = false;
 
       if (model == "ZLinky_TIC") {
@@ -3112,8 +3123,8 @@ void getConfigReport(uint8_t shortAddr[2], int device_id, String model)
       }
 
       if (sendReport) {
-        log_d("Sending config report: cluster=0x%04X, attr=0x%04X", cluster, attribut);
-        SendConfigReport(shortAddr, cluster, attribut, rType, rMin, rMax, rTimeout, rChange);
+        log_d("Sending config report: cluster=0x%04X, attr=0x%04X, mfr=0x%04X", cluster, attribut, mfrCode);
+        SendConfigReport(shortAddr, cluster, attribut, rType, rMin, rMax, rTimeout, rChange, mfrCode);
         
         // Petit délai pour éviter la saturation
         vTaskDelay(pdMS_TO_TICKS(10));

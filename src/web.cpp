@@ -6315,6 +6315,12 @@ void handleDashboard(AsyncWebServerRequest *request)
             dashboard += t->actions[i].endpoint;
             dashboard += ",";
             dashboard += t->actions[i].value;
+            if (t->actions[i].command == 400) {
+              dashboard += ",";
+              dashboard += String(t->actions[i].cluster);
+              dashboard += ",";
+              dashboard += String(t->actions[i].manufacturerCode);
+            }
             dashboard += ");\" class='btn btn-primary mb-2'>";
             dashboard += t->actions[i].name;
             dashboard += F("</button>&nbsp;");
@@ -7883,6 +7889,12 @@ void handleStatusDevices(AsyncWebServerRequest *request)
           result += String(t->actions[i].endpoint);
           result += ",";
           result += String(t->actions[i].value);
+          if (t->actions[i].command == 400) {
+            result += F(",");
+            result += String(t->actions[i].cluster);
+            result += F(",");
+            result += String(t->actions[i].manufacturerCode);
+          }
           result += F(");\" class='btn-action'>");
           result += t->actions[i].name;
           result += F("</button>");

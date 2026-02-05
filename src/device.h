@@ -61,6 +61,7 @@ public:
         uint32_t attribut;  // int/uint à adapter si besoin
         uint32_t poll;
         uint32_t last;
+        uint16_t manufacturerCode = 0;  // Code fabricant pour clusters manufacturer-specific (ex: FC41 Legrand = 0x1021)
     };
 
     struct IndexData {
