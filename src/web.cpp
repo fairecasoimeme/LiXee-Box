@@ -2102,6 +2102,9 @@ const char HTTP_EDIT_RULE_JS[] PROGMEM = R"rawstring(
 <script>
 var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
 
+var clusterNames={'0000':'Basic','0001':'Power','0003':'Identify','0004':'Groups','0005':'Scenes','0006':'On/Off','0008':'Level Control','000A':'Time','0019':'OTA Upgrade','0020':'Poll Control','0100':'Shade Config','0101':'Door Lock','0102':'Window Covering','0201':'Thermostat','0202':'Fan Control','0300':'Color Control','0400':'Illuminance','0402':'Temperature','0403':'Pressure','0405':'Humidity','0406':'Occupancy','0500':'IAS Zone','0502':'IAS WD','0702':'Simple Metering','0B04':'Electrical Measurement','0B05':'Diagnostics','1000':'Touchlink','EF00':'Tuya','FC11':'Sonoff Custom','FF66':'LiXee'};
+function clusterLabel(hex){var n=clusterNames[hex];return n?'0x'+hex+' - '+n:'0x'+hex}
+
 $(document).ready(function(){
   $.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});
   $.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})
@@ -2157,7 +2160,7 @@ function onTriggerDeviceChange(){
   var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];
   if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;
   var clAdded={};
-  td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})
+  td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})
 }
 
 function onTriggerClusterChange(){
@@ -2278,7 +2281,7 @@ function loadConditionData(c,data){
 }
 
 function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
-function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})}
 function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
 function removeCondition(id){$('[data-id="'+id+'"]').remove()}
 
@@ -2498,6 +2501,9 @@ const char HTTP_ADD_RULE_JS[] PROGMEM = R"rawstring(
 <script>
 var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
 
+var clusterNames={'0000':'Basic','0001':'Power','0003':'Identify','0004':'Groups','0005':'Scenes','0006':'On/Off','0008':'Level Control','000A':'Time','0019':'OTA Upgrade','0020':'Poll Control','0100':'Shade Config','0101':'Door Lock','0102':'Window Covering','0201':'Thermostat','0202':'Fan Control','0300':'Color Control','0400':'Illuminance','0402':'Temperature','0403':'Pressure','0405':'Humidity','0406':'Occupancy','0500':'IAS Zone','0502':'IAS WD','0702':'Simple Metering','0B04':'Electrical Measurement','0B05':'Diagnostics','1000':'Touchlink','EF00':'Tuya','FC11':'Sonoff Custom','FF66':'LiXee'};
+function clusterLabel(hex){var n=clusterNames[hex];return n?'0x'+hex+' - '+n:'0x'+hex}
+
 $(document).ready(function(){
   $.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});
   $.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})
@@ -2512,7 +2518,7 @@ function getDeviceActions(ieee){if(!ieee||!devices[ieee]||!devices[ieee].INFO)re
 function hasCluster0006(ieee){if(!ieee||!devices[ieee]||!devices[ieee].INFO)return false;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return false;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return false;return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})}
 
 function onTriggerModeChange(){var mode=$('#triggerMode').val();if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}}
-function onTriggerDeviceChange(){var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onTriggerDeviceChange(){var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})}
 function onTriggerClusterChange(){var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
 
 function addTimeRange(data){var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';$('#timeRangesContainer').append(html);if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}}
@@ -2595,7 +2601,7 @@ function loadConditionData(c,data){
 }
 
 function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
-function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">0x'+clStr+'</option>');clAdded[clStr]=!0}})}
+function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})}
 function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
 function removeCondition(id){$('[data-id="'+id+'"]').remove()}
 
@@ -8295,20 +8301,20 @@ void handleEditRule(AsyncWebServerRequest *request)
   String ruleJson;
   serializeJson(ruleToEdit, ruleJson);
 
-  // Générer la page HTML avec le formulaire pré-rempli
-  String result;
+  // Générer la page HTML avec le formulaire pré-rempli (PSRAM pour éviter le dépassement heap)
+  PSRAMString result(100000);
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_EDIT_RULE_HTML);
   result += FPSTR(HTTP_EDIT_RULE_JS);
   result += F("<script>var ruleToEdit = ");
-  result += ruleJson;
+  result += ruleJson.c_str();
   result += F(";</script>");
-  result += footer();
+  result += footer().c_str();
   result += F("</html>");
 
-  request->send(200, "text/html", result);
+  request->send(200, "text/html", result.c_str());
 }
 
 void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
