@@ -1,19 +1,54 @@
 {
-  "default": [
+  " Contactor": [
     {
       "status": [
         {
           "name": "On/Off",
           "cluster": "0006",
           "attribut": 0,
+          "mqtt_device_class": null,
+          "mqtt_icon": "power-plug",
+          "mqtt_state_class": null,
           "visible": 1,
           "poll": 1
         },
         {
-          "name": "Energy",
+          "name": "Etat contacteur",
+          "cluster": "000F",
+          "attribut": 85,
+          "mqtt_device_class": null,
+          "mqtt_icon": "electric-switch",
+          "mqtt_state_class": null,
+          "visible": 1,
+          "poll": 10
+        },
+        {
+          "name": "Statut Auto",
+          "cluster": "FC41",
+          "attribut": 0,
+          "manufacturerSpecific": "0x1021",
+          "mqtt_device_class": null,
+          "mqtt_icon": "auto-fix",
+          "mqtt_state_class": null,
+          "visible": 1,
+          "poll": 10
+        },
+        {
+          "name": "Etat Auto On/Off",
+          "cluster": "FC41",
+          "attribut": 1,
+          "manufacturerSpecific": "0x1021",
+          "mqtt_device_class": null,
+          "mqtt_icon": "toggle-switch",
+          "mqtt_state_class": null,
+          "visible": 1,
+          "poll": 10
+        },
+        {
+          "name": "Puissance",
           "cluster": "0B04",
           "attribut": 1291,
-          "mqtt_device_class": "apparent_power",
+          "mqtt_device_class": "power",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
           "type": "numeric",
@@ -24,26 +59,29 @@
           "unit": "W"
         },
         {
-          "name": "Voltage",
+          "name": "Tension",
           "cluster": "0B04",
           "attribut": 1285,
-          "mqtt_device_class": "apparent_power",
-          "mqtt_icon": "lightning-bolt",
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
           "mqtt_state_class": "measurement",
           "type": "numeric",
           "visible": 1,
           "unit": "V"
         },
         {
-          "name": "Intensité",
+          "name": "Intensite",
           "cluster": "0B04",
           "attribut": 1288,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
           "type": "numeric",
           "visible": 1,
           "unit": "mA"
         },
         {
-          "name": "Consumption",
+          "name": "Consommation",
           "cluster": "0702",
           "attribut": 0,
           "mqtt_device_class": "energy",
@@ -56,14 +94,23 @@
           "unit": "Wh"
         }
       ],
-      "bind": "6;1794;2820;65382",
+      "bind": "6;15;1794;2820;64577",
       "report": [
         {
           "cluster": "0006",
           "attribut": 0,
-          "type": 33,
-          "min": 60,
-          "max": 61,
+          "type": 16,
+          "min": 10,
+          "max": 60,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "000F",
+          "attribut": 85,
+          "type": 16,
+          "min": 1,
+          "max": 60,
           "timeout": 0,
           "change": 1
         },
@@ -72,34 +119,54 @@
           "attribut": 0,
           "type": 37,
           "min": 60,
-          "max": 61,
+          "max": 300,
           "timeout": 0,
           "change": 1
         },
         {
           "cluster": "0B04",
           "attribut": 1291,
-          "type": 41,
-          "min": 60,
-          "max": 61,
+          "type": 37,
+          "min": 10,
+          "max": 60,
           "timeout": 0,
           "change": 1
         },
         {
           "cluster": "0B04",
           "attribut": 1285,
-          "type": 33,
+          "type": 37,
           "min": 60,
-          "max": 61,
+          "max": 300,
           "timeout": 0,
           "change": 1
         },
         {
           "cluster": "0B04",
           "attribut": 1288,
-          "type": 33,
+          "type": 37,
           "min": 60,
-          "max": 61,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "FC41",
+          "attribut": 0,
+          "manufacturerSpecific": "0x1021",
+          "type": 48,
+          "min": 1,
+          "max": 60,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "FC41",
+          "attribut": 1,
+          "manufacturerSpecific": "0x1021",
+          "type": 16,
+          "min": 1,
+          "max": 60,
           "timeout": 0,
           "change": 1
         }
@@ -124,6 +191,33 @@
           "command": 146,
           "endpoint": 1,
           "value": 2,
+          "visible": 1
+        },
+        {
+          "name": "FORCE ON",
+          "command": 400,
+          "endpoint": 1,
+          "cluster": "FC41",
+          "manufacturerSpecific": "0x1021",
+          "value": 2,
+          "visible": 1
+        },
+        {
+          "name": "AUTO",
+          "command": 400,
+          "endpoint": 1,
+          "cluster": "FC41",
+          "manufacturerSpecific": "0x1021",
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "FORCE OFF",
+          "command": 400,
+          "endpoint": 1,
+          "cluster": "FC41",
+          "manufacturerSpecific": "0x1021",
+          "value": 0,
           "visible": 1
         }
       ]
