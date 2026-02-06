@@ -99,6 +99,17 @@ extern uint32_t u32OtaFileTotalImage;
 
 int TimedFiFo;
 
+// --- Protection timing appairage ---
+// Délai minimum (ms) après réception du Device Announce (0x004D) avant d'envoyer
+// des commandes au device (bind, config report, read attributes).
+// Le processus de join Zigbee nécessite ~500ms pour le Transport Key,
+// on ajoute une marge de sécurité.
+#define JOIN_SAFETY_DELAY_MS 1500
+
+// Map shortAddr -> timestamp millis() de réception du Device Announce
+#include <map>
+static std::map<int, unsigned long> joiningDevices;
+
 IPAddress parse_ip_address(const char *str) {
     IPAddress result;    
     int index = 0;
@@ -1392,8 +1403,26 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           //Traitement spécifique seloin modèle
           SpecificTreatment(ShortAddr,endpoint.toInt(), model);
           log_d("SpecificTreatment");
-         
-          vTaskDelay(100);
+
+          // --- Délai de sécurité appairage ---
+          // Vérifier que suffisamment de temps s'est écoulé depuis le Device Announce (0x004D)
+          // pour que le Transport Key soit terminé (processus de sécurité Zigbee)
+          auto joinIt = joiningDevices.find(SA);
+          if (joinIt != joiningDevices.end()) {
+            unsigned long elapsed = millis() - joinIt->second;
+            if (elapsed < JOIN_SAFETY_DELAY_MS) {
+              unsigned long remaining = JOIN_SAFETY_DELAY_MS - elapsed;
+              log_d("Join safety delay: waiting %lums more for device 0x%04X (elapsed: %lums)", remaining, SA, elapsed);
+              alertList->push(Alert{"Waiting join security...", 0});
+              vTaskDelay(pdMS_TO_TICKS(remaining));
+            } else {
+              log_d("Join safety delay OK for device 0x%04X (elapsed: %lums)", SA, elapsed);
+            }
+            // Nettoyage de l'entrée
+            joiningDevices.erase(joinIt);
+          }
+
+          vTaskDelay(pdMS_TO_TICKS(500)); // Délai supplémentaire post-join
           alertList->push(Alert{"Bind waiting...", 0});
           getBind(macInt,DeviceId,model);
           log_d("getBind");
@@ -1474,6 +1503,10 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         
         log_d("Node Joined : %02X%02X ",protocol.payload[0],protocol.payload[1]);
 
+        // Enregistrer le timestamp du Device Announce pour le délai de sécurité
+        joiningDevices[ShortAddr] = millis();
+        log_d("Device Announce registered for 0x%04X - waiting %dms before interaction", ShortAddr, JOIN_SAFETY_DELAY_MS);
+
         for (i=2;i<10;i++)
         {
           mac[i-2]=protocol.payload[i];
@@ -1485,7 +1518,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         {
           snprintf(lqi, 3,"%02X",protocol.payload[i]);
         }
-       
+
         //Add dans la base
         String adMac;
         adMac = getMacAddress(mac);
@@ -1493,7 +1526,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         String alertMsg = "<div align='center'><strong>"+String(tmp)+"</strong><br>(<span id='newDevice'>"+adMac+"</span>)</div>";
         alertList->push(Alert{alertMsg, 3});
         String path = adMac+".json";
-        
+
         WriteIni ini ;
         ini.i[0].section ="INFO";
         ini.i[0].key = "shortAddr";
@@ -1509,7 +1542,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
         if (deviceExist(adMac))
         {
-          for (size_t i = 0; i < devices.size(); i++) 
+          for (size_t i = 0; i < devices.size(); i++)
           {
             DeviceData* device = devices[i];
             if (device->getDeviceID() == adMac)
@@ -1528,23 +1561,67 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           if (dev->loadFromFile()) {
             devices.push_back(dev);
           }
-        }  
-        
+        }
+
         //ini_write(path,"INFO","shortAddr",String(ShortAddr));
         //ini_write(path,"INFO","LQI",String(lqi));
-    
-        //Demande Active Request
+
+        //Demande Active Request — différé pour laisser le temps au Transport Key
         if (protocol.payload[11]>0)
         {
+          log_d("Delaying Active Request for 0x%04X (%dms safety delay)", ShortAddr, JOIN_SAFETY_DELAY_MS);
+          vTaskDelay(pdMS_TO_TICKS(JOIN_SAFETY_DELAY_MS));
           Packet trame;
           trame.cmd=0x0045;
           trame.len=0x0002;
           memcpy(trame.datas,protocol.payload,2);
-          log_d("Active Req : %s",String(ShortAddr)); 
+          log_d("Active Req : %s",String(ShortAddr));
           commandList->push(trame);
           //PrioritycommandList->push(trame);
         }
 
+      }
+      break;
+      case 0x8703:
+      {
+        // E_SL_MSG_NWK_STATUS_INDICATION — Indication de statut réseau Zigbee
+        // Payload: [0-1] ShortAddr, [2] NWK Status, [3] LQI
+        uint16_t nwkAddr = (uint8_t)protocol.payload[0] * 256 + (uint8_t)protocol.payload[1];
+        uint8_t nwkStatus = (uint8_t)protocol.payload[2];
+
+        const char* statusStr;
+        switch (nwkStatus) {
+          case 0x00: statusStr = "NO_ROUTE_AVAILABLE"; break;
+          case 0x01: statusStr = "TREE_LINK_FAILURE"; break;
+          case 0x02: statusStr = "NON_TREE_LINK_FAILURE"; break;
+          case 0x0B: statusStr = "SOURCE_ROUTE_FAILURE"; break;
+          case 0x0C: statusStr = "MANY_TO_ONE_ROUTE_FAILURE"; break;
+          case 0x11: statusStr = "INVALID_REQUEST"; break;
+          case 0xD0: statusStr = "ROUTE_DISCOVERY_FAILED"; break;
+          case 0xD1: statusStr = "ROUTE_ERROR"; break;
+          case 0xD3: statusStr = "FRAME_NOT_BUFFERED"; break;
+          default:   statusStr = "UNKNOWN"; break;
+        }
+        log_e("NWK Status: device 0x%04X - 0x%02X (%s)", nwkAddr, nwkStatus, statusStr);
+      }
+      break;
+      case 0x9999:
+      {
+        // Extended Status Callback — codes d'erreur de sécurité Zigbee
+        // Ces erreurs sont normales pendant le processus d'appairage (entre
+        // l'Association Request et la fin du Transport Key ~500ms plus tard)
+        uint8_t statusCode = (uint8_t)protocol.payload[0];
+
+        // Codes attendus pendant l'appairage :
+        // 0xC1 = ZPS_XS_E_CCM_INVALID_ERROR - erreur CCM (chiffrement invalide)
+        // 0xC2 = ZPS_XS_E_UNKNOWN_SRC_ADDR - adresse source inconnue
+        // 0xC3 = ZPS_XS_E_NO_KEY_DESCRIPTOR - pas de descripteur de clé
+        // 0xC6 = ZPS_XS_E_NULL_EXT_ADDR - adresse IEEE pas encore dans la table
+        if (statusCode == 0xC1 || statusCode == 0xC2 || statusCode == 0xC3 || statusCode == 0xC6) {
+          log_d("Extended Status 0x%02X during join process (normal, ignored)", statusCode);
+        } else {
+          log_e("Extended Status Callback: 0x%02X", statusCode);
+        }
       }
       break;
     default:
@@ -1553,8 +1630,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       break;
   }
 
-  
-  
+
+
 }
 
 String getMacAddress(uint8_t mac[9])
