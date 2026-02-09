@@ -71,6 +71,45 @@ L'appareil peut être configuré via un site web local
 - Sauvegarde/restauration de configuration
 - Mode développeur pour le débogage
 
+## 🚀 Installation et Configuration
+
+### Configuration Initiale
+
+#### À partir de la v2.2a
+
+avec **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
+Veuillez télécharger l'application pour procéder 
+<table><tr><td><a target="_blank" href="https://play.google.com/store/apps/details?id=com.lixee.assist" style="display: inline-block;">
+  <img width="150px" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
+       alt="Get it on Google Play" 
+      />
+</a></td><td>
+    <a target="_blank" href="https://apps.apple.com/us/app/lixee-assist/id6747671219?itscg=30200&itsct=apps_box_badge&mttnsubad=6747671219" style="display: inline-block;">
+    <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/fr-fr?releaseDate=1751500800" alt="Download on the App Store" style="width: 150px; vertical-align: middle; object-fit: contain;" />
+    </a></td></tr></table>
+
+Scannez simplement l'appareil (avec BLE) et complétez l'appairage avec vos identifiants WiFi locaux
+
+#### **⚠️(OBSOLETE)** Avant la v2.2a 
+Avec un navigateur web
+1. **Alimentation** : Branchez l'appareil sur une alimentation USB
+2. **WiFi** : Scannez les réseaux WiFi disponibles avec votre mobile/ordinateur
+3. **Connexion** : Connectez-vous au SSID `LIXEEGW-XXXX` (XXXX = partie de l'adresse MAC)
+4. **Authentification** : Mot de passe par défaut `adminXXXX` (XXXX = suffixe du SSID)
+5. **Configuration** : Ouvrez `http://lixee-gw` dans votre navigateur
+6. **WiFi Principal** : Configurez votre réseau WiFi principal
+7. **Redémarrage** : L'appareil redémarre et se connecte à votre réseau
+
+## Remise à zéro (à partir de v2.13)
+
+Pour repasser la LiXee-Box en mode bluetooth pour association avec **LiXee-Assist** :
+
+1. Brancher la **LiXee-Box**
+2. Attendre 3 secondes
+3. Débrancher **la LiXee-Box**
+
+Répéter l'opération 3 fois et la LiXee-Box sera réinitialisée
+
 ## Mise à Jour du Firmware
 
 ### A partir de l'interface Web
@@ -432,44 +471,6 @@ Les notifications permettent d'être informé ou alerté des évènements de vot
 
 #### Exemple d'évènements
 ![Evènements](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Notifications.png)
-
-## 🚀 Installation et Configuration
-
-### Configuration Initiale
-
-#### À partir de la v2.2a
-
-avec **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
-Veuillez télécharger l'application pour procéder 
-<table><tr><td><a target="_blank" href="https://play.google.com/store/apps/details?id=com.lixee.assist" style="display: inline-block;">
-  <img width="150px" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
-       alt="Get it on Google Play" 
-      />
-</a></td><td>
-    <a target="_blank" href="https://apps.apple.com/us/app/lixee-assist/id6747671219?itscg=30200&itsct=apps_box_badge&mttnsubad=6747671219" style="display: inline-block;">
-    <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/fr-fr?releaseDate=1751500800" alt="Download on the App Store" style="width: 150px; vertical-align: middle; object-fit: contain;" />
-    </a></td></tr></table>
-
-Scannez simplement l'appareil (avec BLE) et complétez l'appairage avec vos identifiants WiFi locaux
-
-#### Avant la v2.2a
-Avec un navigateur web
-1. **Alimentation** : Branchez l'appareil sur une alimentation USB
-2. **WiFi** : Scannez les réseaux WiFi disponibles avec votre mobile/ordinateur
-3. **Connexion** : Connectez-vous au SSID `LIXEEGW-XXXX` (XXXX = partie de l'adresse MAC)
-4. **Authentification** : Mot de passe par défaut `adminXXXX` (XXXX = suffixe du SSID)
-5. **Configuration** : Ouvrez `http://lixee-gw` dans votre navigateur
-6. **WiFi Principal** : Configurez votre réseau WiFi principal
-7. **Redémarrage** : L'appareil redémarre et se connecte à votre réseau
-
-### Configuration Zigbee
-
-1. Allez dans le menu **Réseau** → **Zigbee**
-2. Cliquez sur **Ajouter un Appareil** pour démarrer l'appairage (30 secondes)
-3. La LED bleue clignote lentement pendant l'appairage
-4. Exécutez la procédure d'appairage sur votre appareil Zigbee
-   
-⚠️ **Si un appareil est appairé, une alerte verte apparaît. Vous pouvez rafraîchir pour voir les propriétés de l'appareil.**  
 
 ## 📦 Appareils Compatibles (à partir de la v2.12)
 
