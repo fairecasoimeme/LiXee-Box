@@ -1112,17 +1112,106 @@
           "name": "On/Off",
           "cluster": "0006",
           "attribut": 0,
-          "visible": 1
+          "mqtt_device_class": null,
+          "mqtt_icon": "power-plug",
+          "mqtt_state_class": null,
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Puissance",
+          "cluster": "0B04",
+          "attribut": 1291,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 8000,
+          "unit": "W"
+        },
+        {
+          "name": "Tension",
+          "cluster": "0B04",
+          "attribut": 1285,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "V"
+        },
+        {
+          "name": "Intensite",
+          "cluster": "0B04",
+          "attribut": 1288,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "mA"
+        },
+        {
+          "name": "Consommation",
+          "cluster": "0702",
+          "attribut": 0,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 10,
+          "jauge": "text",
+          "unit": "Wh"
         }
       ],
-      "bind": "6",
+      "bind": "6;15;1794;2820",
       "report": [
         {
           "cluster": "0006",
           "attribut": 0,
+          "type": 16,
+          "min": 10,
+          "max": 60,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0702",
+          "attribut": 0,
+          "type": 37,
+          "min": 60,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1291,
+          "type": 37,
+          "min": 10,
+          "max": 60,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1285,
           "type": 33,
           "min": 60,
-          "max": 61,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1288,
+          "type": 33,
+          "min": 60,
+          "max": 300,
           "timeout": 0,
           "change": 1
         }
@@ -1132,19 +1221,22 @@
           "name": "ON",
           "command": 146,
           "endpoint": 1,
-          "value": 1
+          "value": 1,
+          "visible": 1
         },
         {
           "name": "OFF",
           "command": 146,
           "endpoint": 1,
-          "value": 0
+          "value": 0,
+          "visible": 1
         },
         {
           "name": "TOGGLE",
           "command": 146,
           "endpoint": 1,
-          "value": 2
+          "value": 2,
+          "visible": 1
         }
       ]
     }
