@@ -35,6 +35,7 @@
 #include "rules.h"
 #include "microtar.h"
 #include "device.h"
+#include "zigate_flasher.h"
 #include "notificationManager.h"
 #include "TemplateData.h"
 #include "TemplateCache.h"
@@ -300,9 +301,14 @@ const char HTTP_MENU[] PROGMEM =
    "</svg>"
    " Securité"
    "</a>"
-   
-  
-   
+   "<a class='dropdown-item' href='/configTunnel'>"
+   "<svg style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' xmlns='http://www.w3.org/2000/svg'>"
+   "  <path d='M12 2L2 7l10 5 10-5-10-5z'/>"
+   "  <path d='M2 17l10 5 10-5'/>"
+   "  <path d='M2 12l10 5 10-5'/>"
+   "</svg>"
+   " Tunnel"
+   "</a>"
    "</div>"
    "</li>"
    "<li class='nav-item' id='Tools'>"
@@ -1917,7 +1923,132 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
             "<button type='button' onclick='cmd(\"SetChannelMask\",document.getElementById(\"SetMaskChannel\").value);' class='btn btn-primary'>Set Channel</button><br> "
           "</div>"
         "</div>"
-      "</div>"  
+      "</div>"
+      "<h5 class='card-title mb-4 mt-4'>Firmware ZiGate</h5>"
+      "<div class='card mx-auto shadow-sm'>"
+        "<div class='card-body'>"
+          "<div class='mb-3'>"
+            "<p>Mise à jour du firmware de la ZiGate+ (JN5189)</p>"
+            "<div class='alert alert-info'>"
+              "<strong>Mode Manuel:</strong> Avant de lancer le flash, mettez la ZiGate en mode bootloader:<br>"
+              "<ol class='mb-0'>"
+                "<li>Maintenez le bouton <b>FLASH</b> de la ZiGate</li>"
+                "<li>Appuyez brièvement sur <b>RESET</b> tout en maintenant FLASH</li>"
+                "<li>Relâchez le bouton FLASH après 1 seconde</li>"
+                "<li>Lancez le flash ci-dessous</li>"
+              "</ol>"
+            "</div>"
+            "<form method='POST' action='/flashZigate' enctype='multipart/form-data' id='zigate_flash_form'>"
+              "<div class='row'>"
+                "<div class='col-md-6 mb-3'>"
+                  "<label for='zigatefw' class='form-label'>Fichier firmware (.bin)</label>"
+                  "<input class='form-control' type='file' id='zigatefw' name='zigatefw' accept='.bin' required>"
+                "</div>"
+                "<div class='col-md-3 mb-3'>"
+                  "<label for='zigateBaud' class='form-label'>Vitesse</label>"
+                  "<select class='form-select' id='zigateBaud' name='baudrate'>"
+                    "<option value='38400'>38400</option>"
+                    "<option value='115200' selected>115200</option>"
+                    "<option value='230400'>230400</option>"
+                    "<option value='460800'>460800</option>"
+                    "<option value='921600'>921600</option>"
+                    "<option value='1000000'>1000000</option>"
+                  "</select>"
+                "</div>"
+                "<div class='col-md-3 mb-3'>"
+                  "<label for='zigateMode' class='form-label'>Mode</label>"
+                  "<select class='form-select' id='zigateMode' name='mode'>"
+                    "<option value='gpio' selected>GPIO Auto</option>"
+                    "<option value='manual'>Manuel</option>"
+                  "</select>"
+                "</div>"
+              "</div>"
+              "<div class='d-flex justify-content-between align-items-center'>"
+                "<button type='submit' class='btn btn-warning' id='btnFlashZigate' onclick='return startZigateFlash();'>"
+                  "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-cpu' viewBox='0 0 16 16'>"
+                    "<path d='M5 0a.5.5 0 0 1 .5.5V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2A2.5 2.5 0 0 1 14 4.5h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14a2.5 2.5 0 0 1-2.5 2.5v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14A2.5 2.5 0 0 1 2 11.5H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2A2.5 2.5 0 0 1 4.5 2V.5A.5.5 0 0 1 5 0m-.5 3A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13h7a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 11.5 3h-7zM5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5v-3zM6.5 6a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5h-3z'/>"
+                  "</svg>"
+                  " Flasher"
+                "</button>"
+                "<span id='zigateFlashStatus'></span>"
+              "</div>"
+            "</form>"
+            "<div id='zigateFlashProgress' style='display:none;' class='mt-3'>"
+              "<div class='progress'>"
+                "<div id='zigateProgressBar' class='progress-bar progress-bar-striped progress-bar-animated' role='progressbar' style='width: 0%'>0%</div>"
+              "</div>"
+              "<p id='zigateFlashMsg' class='mt-2 text-muted'></p>"
+            "</div>"
+          "</div>"
+        "</div>"
+      "</div>"
+      "<script>"
+        "function startZigateFlash() {"
+          "var fileInput = document.getElementById('zigatefw');"
+          "var baudSelect = document.getElementById('zigateBaud');"
+          "var modeSelect = document.getElementById('zigateMode');"
+          "if (!fileInput.files.length) { alert('Sélectionnez un fichier firmware'); return false; }"
+          "var msg = modeSelect.value === 'manual' ? "
+            "'IMPORTANT: Avez-vous mis la ZiGate en mode bootloader ?\\n\\n"
+            "1. Maintenir FLASH\\n2. Appuyer RESET\\n3. Relâcher FLASH\\n\\nContinuer ?' : "
+            "'Le flash va interrompre le réseau Zigbee. Continuer ?';"
+          "if (!confirm(msg)) return false;"
+          "document.getElementById('btnFlashZigate').disabled = true;"
+          "document.getElementById('zigateFlashProgress').style.display = 'block';"
+          "document.getElementById('zigateFlashStatus').innerHTML = '<span class=\"text-info\">Upload en cours...</span>';"
+          "var formData = new FormData();"
+          "formData.append('zigatefw', fileInput.files[0]);"
+          "var baudRate = baudSelect.value;"
+          "var mode = modeSelect.value;"
+          "var xhr = new XMLHttpRequest();"
+          "xhr.open('POST', '/flashZigate?baudrate=' + baudRate + '&mode=' + mode, true);"
+          "xhr.upload.onprogress = function(e) {"
+            "if (e.lengthComputable) {"
+              "var pct = Math.round((e.loaded / e.total) * 50);"
+              "document.getElementById('zigateProgressBar').style.width = pct + '%';"
+              "document.getElementById('zigateProgressBar').textContent = 'Upload: ' + pct*2 + '%';"
+            "}"
+          "};"
+          "xhr.onload = function() {"
+            "if (xhr.status === 200) {"
+              "document.getElementById('zigateFlashStatus').innerHTML = '<span class=\"text-info\">Flash en cours...</span>';"
+              "pollZigateFlashStatus();"
+            "} else {"
+              "document.getElementById('zigateFlashStatus').innerHTML = '<span class=\"text-danger\">Erreur: ' + xhr.responseText + '</span>';"
+              "document.getElementById('btnFlashZigate').disabled = false;"
+            "}"
+          "};"
+          "xhr.onerror = function() {"
+            "document.getElementById('zigateFlashStatus').innerHTML = '<span class=\"text-danger\">Erreur réseau</span>';"
+            "document.getElementById('btnFlashZigate').disabled = false;"
+          "};"
+          "xhr.send(formData);"
+          "return false;"
+        "}"
+        "function pollZigateFlashStatus() {"
+          "fetch('/zigateFlashStatus').then(r => r.json()).then(data => {"
+            "document.getElementById('zigateProgressBar').style.width = (50 + data.progress/2) + '%';"
+            "document.getElementById('zigateProgressBar').textContent = data.progress + '%';"
+            "document.getElementById('zigateFlashMsg').textContent = data.message;"
+            "if (data.status === 'flashing') {"
+              "setTimeout(pollZigateFlashStatus, 500);"
+            "} else if (data.status === 'success') {"
+              "document.getElementById('zigateProgressBar').classList.remove('progress-bar-animated');"
+              "document.getElementById('zigateProgressBar').classList.add('bg-success');"
+              "document.getElementById('zigateFlashStatus').innerHTML = '<span class=\"text-success\">Flash terminé !</span>';"
+              "document.getElementById('btnFlashZigate').disabled = false;"
+            "} else {"
+              "document.getElementById('zigateProgressBar').classList.remove('progress-bar-animated');"
+              "document.getElementById('zigateProgressBar').classList.add('bg-danger');"
+              "document.getElementById('zigateFlashStatus').innerHTML = '<span class=\"text-danger\">' + data.message + '</span>';"
+              "document.getElementById('btnFlashZigate').disabled = false;"
+            "}"
+          "}).catch(e => {"
+            "document.getElementById('zigateFlashStatus').innerHTML = '<span class=\"text-danger\">Erreur communication</span>';"
+            "document.getElementById('btnFlashZigate').disabled = false;"
+          "});"
+        "}"
+      "</script>"
     "</div>"
   "</div>"    ;
 
@@ -2833,7 +2964,45 @@ $('#ruleForm').on('submit',function(e){
       }
       </code></pre>
     </div>
-          
+
+ )";
+
+ const char HTTP_CONFIG_TUNNEL[] PROGMEM = R"(
+    <div class='container p-4'>
+      <h4 class='card-title mb-4'>Config Tunnel (Reverse Proxy)</h4>
+      <div class='card mx-auto shadow-sm' >
+        <div class="card-body">
+          <form method='POST' action='saveConfigTunnel'>
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="enableTunnel" name='enableTunnel' {{checkedTunnel}}>
+            <label class="form-check-label" for="enableTunnel">Activer le Tunnel</label>
+          </div>
+          <div class="mb-3">
+            <label for='tunnelClientId' class="form-label">Client ID</label>
+            <input class='form-control' id='tunnelClientId' type='text' name='tunnelClientId' value='{{tunnelClientId}}' placeholder='ex: mon-gateway-001'>
+            <div class="form-text">Identifiant unique de ce client pour le serveur tunnel</div>
+          </div>
+          <div class="mb-3">
+            <label for='tunnelToken' class="form-label">Token d'authentification</label>
+            <input class='form-control' id='tunnelToken' type='password' name='tunnelToken' value='{{tunnelToken}}'>
+            <div class="form-text">Token secret fourni par le serveur tunnel</div>
+          </div>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
+          </div>
+          </form>
+          <div style='color:red'>{{error}}</div>
+        </div>
+      </div>
+      <br>
+      <div class='card mx-auto shadow-sm'>
+        <div class="card-body">
+          <h5>Information</h5>
+          <p>Le tunnel permet d'accéder à votre gateway depuis Internet via un serveur reverse proxy, sans avoir à ouvrir de ports sur votre box Internet.</p>
+          <p>Une fois configuré et activé, votre gateway sera accessible via l'URL fournie par le service tunnel.</p>
+        </div>
+      </div>
+    </div>
  )";
 
  const char HTTP_CONFIG_MARSTEK[] PROGMEM = R"(
@@ -9400,6 +9569,120 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
 
   request->send(200, "text/html", result);
 }
+
+void handleConfigTunnel(AsyncWebServerRequest *request)
+{
+  String result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_TUNNEL);
+  result += footer();
+  result += F("</html>");
+
+  result.replace("{{FormattedDate}}", FormattedDate);
+
+  if (ConfigGeneral.enableTunnel)
+  {
+    result.replace("{{checkedTunnel}}", "Checked");
+  }
+  else
+  {
+    result.replace("{{checkedTunnel}}", "");
+  }
+
+  result.replace("{{tunnelClientId}}", String(ConfigGeneral.tunnelClientId));
+
+  if (String(ConfigGeneral.tunnelToken) != "")
+  {
+    result.replace("{{tunnelToken}}", "********");
+  }
+  else
+  {
+    result.replace("{{tunnelToken}}", "");
+  }
+
+  String error = "";
+  if (request->arg("error").toInt() > 0)
+  {
+    if ((request->arg("error").toInt() & 1) == 1)
+    {
+      error = "Erreur : Client ID requis quand le tunnel est activé.";
+    }
+    if ((request->arg("error").toInt() & 2) == 2)
+    {
+      error = "Erreur : Token requis quand le tunnel est activé.";
+    }
+  }
+  result.replace("{{error}}", error);
+
+  request->send(200, "text/html", result);
+}
+
+void handleSaveConfigTunnel(AsyncWebServerRequest *request)
+{
+  String path = "configGeneral.json";
+  String enableTunnel;
+  bool saveOk = true;
+  uint8_t error = 0;
+
+  String clientId = request->arg("tunnelClientId");
+  String token = request->arg("tunnelToken");
+
+  // Validation si le tunnel est activé
+  if (request->arg("enableTunnel") == "on")
+  {
+    if (clientId == "")
+    {
+      saveOk = false;
+      error = error + 1;
+    }
+    if (token == "" && String(ConfigGeneral.tunnelToken) == "")
+    {
+      saveOk = false;
+      error = error + 2;
+    }
+  }
+
+  if (saveOk)
+  {
+    if (request->arg("enableTunnel") == "on")
+    {
+      enableTunnel = "1";
+      ConfigGeneral.enableTunnel = true;
+    }
+    else
+    {
+      enableTunnel = "0";
+      ConfigGeneral.enableTunnel = false;
+    }
+    config_write(path, "enableTunnel", enableTunnel);
+
+    if (request->arg("tunnelClientId"))
+    {
+      strlcpy(ConfigGeneral.tunnelClientId, request->arg("tunnelClientId").c_str(), sizeof(ConfigGeneral.tunnelClientId));
+      config_write(path, "tunnelClientId", String(request->arg("tunnelClientId")));
+    }
+
+    // Ne pas écraser le token si on reçoit ********
+    if (token != "********" && token != "")
+    {
+      strlcpy(ConfigGeneral.tunnelToken, token.c_str(), sizeof(ConfigGeneral.tunnelToken));
+      config_write(path, "tunnelToken", token);
+    }
+
+    AsyncWebServerResponse *response = request->beginResponse(302);
+    response->addHeader(F("Location"), F("/configTunnel"));
+    request->send(response);
+  }
+  else
+  {
+    AsyncWebServerResponse *response = request->beginResponse(302);
+    response->addHeader(F("Location"), "/configTunnel?error=" + String(error));
+    request->send(response);
+  }
+}
+
 void handleConfigMarstek(AsyncWebServerRequest *request)
 {
   String result;
@@ -10084,6 +10367,189 @@ void handleDoUploadHistory(AsyncWebServerRequest *request, const String& filenam
   }
 }
 
+// ============================================================================
+// ZiGate Flash Handlers
+// ============================================================================
+
+// Structure to track flash progress
+struct ZigateFlashProgress {
+  bool active;
+  int progress;
+  String status;   // "idle", "uploading", "flashing", "success", "error"
+  String message;
+  uint8_t* firmwareBuffer;
+  size_t firmwareSize;
+  size_t firmwareAllocated;
+  uint32_t baudRate;
+  bool gpioMode;  // true = GPIO auto, false = manual mode
+};
+
+static ZigateFlashProgress zigateFlash = {false, 0, "idle", "", nullptr, 0, 0, 115200, true};
+
+void handleZigateFlashUpload(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
+  if (!index) {
+    // First chunk - get parameters and allocate buffer in PSRAM
+    zigateFlash.active = true;
+    zigateFlash.status = "uploading";
+    zigateFlash.progress = 0;
+    zigateFlash.message = "Réception du firmware...";
+    zigateFlash.firmwareSize = 0;
+
+    // Get baudrate from URL parameter
+    if (request->hasParam("baudrate")) {
+      zigateFlash.baudRate = request->getParam("baudrate")->value().toInt();
+      if (zigateFlash.baudRate < 9600 || zigateFlash.baudRate > 1000000) {
+        zigateFlash.baudRate = 115200;  // Default
+      }
+    } else {
+      zigateFlash.baudRate = 115200;
+    }
+
+    // Get mode from URL parameter
+    if (request->hasParam("mode")) {
+      zigateFlash.gpioMode = (request->getParam("mode")->value() == "gpio");
+    } else {
+      zigateFlash.gpioMode = false;  // Default to manual mode
+    }
+
+    DEBUG_PRINTLN("ZiGate flash: baudrate=" + String(zigateFlash.baudRate) + ", gpioMode=" + String(zigateFlash.gpioMode));
+
+    // Allocate in PSRAM - max 1MB for firmware
+    size_t allocSize = request->contentLength();
+    if (allocSize == 0 || allocSize > 1024 * 1024) {
+      allocSize = 512 * 1024; // Default 512KB
+    }
+
+    zigateFlash.firmwareBuffer = (uint8_t*)ps_malloc(allocSize);
+    if (!zigateFlash.firmwareBuffer) {
+      zigateFlash.status = "error";
+      zigateFlash.message = "Erreur allocation mémoire";
+      return;
+    }
+    zigateFlash.firmwareAllocated = allocSize;
+    DEBUG_PRINTLN("ZiGate flash: allocated " + String(allocSize) + " bytes");
+  }
+
+  if (zigateFlash.firmwareBuffer && len > 0) {
+    // Check bounds
+    if (zigateFlash.firmwareSize + len <= zigateFlash.firmwareAllocated) {
+      memcpy(zigateFlash.firmwareBuffer + zigateFlash.firmwareSize, data, len);
+      zigateFlash.firmwareSize += len;
+
+      // Update progress (upload phase = 0-50%)
+      if (request->contentLength() > 0) {
+        zigateFlash.progress = (zigateFlash.firmwareSize * 50) / request->contentLength();
+      }
+    }
+  }
+
+  if (final) {
+    if (!zigateFlash.firmwareBuffer || zigateFlash.firmwareSize == 0) {
+      zigateFlash.status = "error";
+      zigateFlash.message = "Firmware vide ou invalide";
+      request->send(400, "text/plain", "Firmware invalide");
+      return;
+    }
+
+    DEBUG_PRINTLN("ZiGate flash: received " + String(zigateFlash.firmwareSize) + " bytes");
+
+    // Start flash process in a separate task
+    zigateFlash.status = "flashing";
+    zigateFlash.message = "Démarrage du flash...";
+    zigateFlash.progress = 50;
+
+    // Create flash task
+    xTaskCreatePinnedToCore(
+      [](void* param) {
+        // Initialize flasher
+        if (!zigateFlasher) {
+          zigateFlasher = new ZigateFlasher();
+        }
+
+        // Configure flasher with parameters from web request
+        zigateFlasher->setBaudRate(zigateFlash.baudRate);
+        zigateFlasher->setGpioControl(zigateFlash.gpioMode);
+
+        log_i("ZiGate Flasher config: baudRate=%d, gpioMode=%s",
+              zigateFlash.baudRate, zigateFlash.gpioMode ? "true" : "false");
+
+        ZigateFlashStatus status = zigateFlasher->init();
+        if (status != ZigateFlashStatus::OK) {
+          zigateFlash.status = "error";
+          zigateFlash.message = "Erreur init: " + String(zigateFlasher->getLastError());
+          goto cleanup;
+        }
+
+        if (zigateFlash.gpioMode) {
+          zigateFlash.message = "Connexion au bootloader (GPIO)...";
+        } else {
+          zigateFlash.message = "Connexion au bootloader (manuel)...";
+        }
+        zigateFlash.progress = 55;
+
+        status = zigateFlasher->connect();
+        if (status != ZigateFlashStatus::OK) {
+          zigateFlash.status = "error";
+          zigateFlash.message = "Erreur connexion: " + String(zigateFlasher->getLastError());
+          goto cleanup;
+        }
+
+        zigateFlash.message = "Flash en cours...";
+
+        // Flash with progress callback
+        status = zigateFlasher->flash(
+          zigateFlash.firmwareBuffer,
+          zigateFlash.firmwareSize,
+          [](int percent, const char* msg) {
+            zigateFlash.progress = 55 + (percent * 40 / 100); // 55-95%
+            if (msg) zigateFlash.message = msg;
+          }
+        );
+
+        if (status == ZigateFlashStatus::OK) {
+          zigateFlash.status = "success";
+          zigateFlash.message = "Flash terminé avec succès!";
+          zigateFlash.progress = 100;
+        } else {
+          zigateFlash.status = "error";
+          zigateFlash.message = "Erreur flash: " + String(zigateFlasher->getLastError());
+        }
+
+      cleanup:
+        // Free firmware buffer
+        if (zigateFlash.firmwareBuffer) {
+          free(zigateFlash.firmwareBuffer);
+          zigateFlash.firmwareBuffer = nullptr;
+        }
+        zigateFlash.firmwareSize = 0;
+        zigateFlash.firmwareAllocated = 0;
+        zigateFlash.active = false;
+
+        vTaskDelete(NULL);
+      },
+      "zigateFlash",
+      8192,
+      NULL,
+      1,
+      NULL,
+      0  // Run on core 0
+    );
+
+    request->send(200, "text/plain", "Flash démarré");
+  }
+}
+
+void handleZigateFlashStatus(AsyncWebServerRequest *request) {
+  String json = "{";
+  json += "\"status\":\"" + zigateFlash.status + "\",";
+  json += "\"progress\":" + String(zigateFlash.progress) + ",";
+  json += "\"message\":\"" + zigateFlash.message + "\"";
+  json += "}";
+
+  request->send(200, "application/json", json);
+}
+
+// ============================================================================
 
 void handleToolCreateBackup(AsyncWebServerRequest *request)
 {
@@ -17300,13 +17766,23 @@ void initWebServer()
   });
 
   serverWeb.on("/configWebPush", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
     }
-    handleConfigWebPush(request); 
+    handleConfigWebPush(request);
+  });
+
+  serverWeb.on("/configTunnel", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleConfigTunnel(request);
   });
   serverWeb.on("/configMarstek", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -17595,23 +18071,33 @@ void initWebServer()
     handleSaveConfigHTTP(request); 
   });
   serverWeb.on("/saveConfigWebPush", HTTP_POST, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
     }
-    handleSaveConfigWebPush(request); 
+    handleSaveConfigWebPush(request);
+  });
+
+  serverWeb.on("/saveConfigTunnel", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleSaveConfigTunnel(request);
   });
 
   serverWeb.on("/saveConfigMarstek", HTTP_POST, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (ConfigSettings.enableSecureHttp)
     {
       if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
         return request->requestAuthentication();
     }
-    handleSaveConfigMarstek(request); 
+    handleSaveConfigMarstek(request);
   });
   serverWeb.on("/saveConfigUDPClient", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
@@ -17898,6 +18384,31 @@ void initWebServer()
           handleDoUploadOTA(request, filename, index, data, len, final);
         }
   );
+
+  // ZiGate Flash routes
+  serverWeb.on("/flashZigate", HTTP_POST,
+    [](AsyncWebServerRequest *request) {},
+    [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
+                  size_t len, bool final)
+        {
+          if (ConfigSettings.enableSecureHttp)
+          {
+            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+              return request->requestAuthentication();
+          }
+          handleZigateFlashUpload(request, filename, index, data, len, final);
+        }
+  );
+
+  serverWeb.on("/zigateFlashStatus", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (ConfigSettings.enableSecureHttp)
+    {
+      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
+        return request->requestAuthentication();
+    }
+    handleZigateFlashStatus(request);
+  });
 
   serverWeb.on("/readFile", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
