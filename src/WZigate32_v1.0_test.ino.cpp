@@ -54,7 +54,8 @@ extern "C" {
 #include "ConfigResetManager.h"
 
 #include "TemplateCache.h"
-
+#include "zigate_flasher.h"
+#include "tunnel.h"
 
 #define RESET_WINDOW_MS     3000    // Fenêtre de détection
 #define RESET_BOOT_COUNT    3       // Nombre de reboots pour RAZ
@@ -68,6 +69,9 @@ bool oldProdZero = false;
 
 bool wifiServicesStarted = false;
 bool zigbeeInitialized = false;
+
+// Tunnel reverse proxy
+LiXeeBoxTunnel* tunnel = nullptr;
 
 std::vector<DeviceData*> devices;
 TemplateCache templateCache(true);
@@ -1177,42 +1181,48 @@ void SerialTask(void *pvParameters) {
         vTaskDelete(NULL);
         return;
     }
-    
+
     log_i("✅ SerialTask démarrée avec buffer DRAM");
-    
+
     while (true) {
         esp_task_wdt_reset();
-        
+
+        // SUSPEND processing during ZiGate flash operation
+        if (zigateFlashInProgress) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
         // LECTURE PLUS AGRESSIVE
         size_t available = Serial1.available();
         if (available > 0) {
             // Limiter pour éviter monopole CPU mais être plus réactif
             size_t toRead = (available > 1024) ? 1024 : available;
             size_t bytesRead = Serial1.readBytes(rxBuffer, toRead);
-            
+
             if (bytesRead > 0) {
                 // Parser avec la nouvelle fonction
                 parseRawDataPersistent(rxBuffer, bytesRead);
-                
+
                 if (ConfigSettings.enableDebug && bytesRead < 50) {
                     log_v("📥 Lu %d bytes", bytesRead);
                 }
             }
         }
-        
+
         // DÉLAI RÉDUIT pour plus de réactivité
         vTaskDelay(pdMS_TO_TICKS(2)); // AU LIEU DE 10ms
-        
+
         // NOUVEAU : Monitoring périodique
         static uint32_t lastMonitor = 0;
         if (millis() - lastMonitor > 30000) {
             UBaseType_t stackFree = uxTaskGetStackHighWaterMark(NULL);
             log_i("📊 SerialTask - Stack libre: %d, Available: %d", stackFree, Serial1.available());
-            
+
             if (stackFree < 2048) {
                 log_e("⚠️ Stack SerialTask critique!");
             }
-            
+
             lastMonitor = millis();
         }
     }
@@ -1752,6 +1762,11 @@ bool loadConfigGeneral() {
     ConfigGeneral.enablePresenceGraph = true; // Par défaut activé
   }
 
+  // Tunnel (reverse proxy)
+  ConfigGeneral.enableTunnel = (int)doc["enableTunnel"];
+  strlcpy(ConfigGeneral.tunnelToken, doc["tunnelToken"] | "", sizeof(ConfigGeneral.tunnelToken));
+  strlcpy(ConfigGeneral.tunnelClientId, doc["tunnelClientId"] | "", sizeof(ConfigGeneral.tunnelClientId));
+
   configFile.close();
   return true;
 }
@@ -1921,6 +1936,23 @@ void initWiFiServices() {
   if (ConfigSettings.enableMarstek && strcmp(ConfigGeneral.ZLinky, "") != 0) {
     udpProcess();
     tcpProcess();
+  }
+
+  // Tunnel reverse proxy
+  if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0) {
+    // Construire l'URL du tunnel avec token et clientId
+    String tunnelUrl = "wss://proxy.lixee-box.fr/tunnel?token=";
+    tunnelUrl += ConfigGeneral.tunnelToken;
+    if (strlen(ConfigGeneral.tunnelClientId) > 0) {
+      tunnelUrl += "&clientId=";
+      tunnelUrl += ConfigGeneral.tunnelClientId;
+    }
+
+    // Créer et démarrer le tunnel
+    tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
+    tunnel->begin();
+    Serial.println("[Tunnel] Service tunnel activé");
+    addDebugLog("Tunnel reverse proxy activé");
   }
 }
 
@@ -2329,6 +2361,11 @@ void setup(void)
 
 void sendTreatment()
 {
+  // Skip sending commands during ZiGate flash operation
+  if (zigateFlashInProgress) {
+    return;
+  }
+
   if (!PrioritycommandList->isEmpty())
   {
     log_d("Priority send");
@@ -2398,6 +2435,11 @@ void loop(void)
   if (smartWiFi.isConnected() && !wifiServicesStarted) {
       initWiFiServices();
       wifiServicesStarted = true;
+  }
+
+  // Loop du tunnel reverse proxy
+  if (tunnel != nullptr) {
+      tunnel->loop();
   }
 
   // === INITIALISATION ZIGBEE (après services WiFi) ===
