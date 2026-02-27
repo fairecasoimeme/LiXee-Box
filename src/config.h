@@ -9,11 +9,11 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.16"
+#define VERSION "v2.17a"
 
 // hardware config64
-#define RESET_ZIGATE 19//4
-#define FLASH_ZIGATE 40//33
+#define RESET_ZIGATE 40//4
+#define FLASH_ZIGATE 39//33
 #define LED_PIN 3
 #define PRODUCTION 1
 #define FLASH 0
@@ -170,6 +170,11 @@ struct ConfigGeneralStruct {
   int subMeterCount;  
   char Presence[20] = "";          // IEEE du capteur de présence
   bool enablePresenceGraph = true; // Afficher sur le graphique
+
+  // Tunnel (reverse proxy)
+  bool enableTunnel = false;
+  char tunnelToken[128] = "";
+  char tunnelClientId[64] = "";
 };
 
 struct SerialBuffer {
@@ -299,7 +304,15 @@ struct SpiRamAllocator {
   }
 
   void* reallocate(void* pointer, size_t new_size) {
-    return realloc(pointer, new_size);  // Réallouer si nécessaire
+    // ps_realloc n'existe pas sur ESP32, on fait ps_malloc + memcpy + free
+    // realloc() standard peut migrer silencieusement de PSRAM vers le heap
+    void* new_ptr = ps_malloc(new_size);
+    if (!new_ptr) new_ptr = malloc(new_size);
+    if (new_ptr && pointer) {
+      memcpy(new_ptr, pointer, new_size);  // ArduinoJson gère les tailles
+      free(pointer);
+    }
+    return new_ptr;
   }
 };
 
@@ -378,12 +391,59 @@ public:
         return *this;
     }
     
-    // Fonction replace comme String normale
-    void replace(const String& find, const String& replace) {
-        String temp(buffer);
-        temp.replace(find, replace);
-        clear();
-        append(temp.c_str());
+    // Fonction replace native — travaille directement sur le buffer PSRAM
+    // sans copie intermédiaire vers un String heap
+    void replace(const String& find, const String& replaceWith) {
+        const char* f = find.c_str();
+        const char* r = replaceWith.c_str();
+        size_t fLen = find.length();
+        size_t rLen = replaceWith.length();
+        if (fLen == 0) return;
+
+        // Comptage des occurrences pour calculer la taille finale
+        size_t count = 0;
+        const char* pos = buffer;
+        while ((pos = strstr(pos, f)) != nullptr) { count++; pos += fLen; }
+        if (count == 0) return;
+
+        // Calcul de la nouvelle taille (cast signé pour éviter underflow si rLen < fLen)
+        size_t newLen = (size_t)((ssize_t)len + (ssize_t)count * ((ssize_t)rLen - (ssize_t)fLen));
+
+        // Réécriture dans un buffer temporaire PSRAM de la taille exacte
+        char* tmp = (char*)ps_malloc(newLen + 1);
+        if (!tmp) tmp = (char*)malloc(newLen + 1);
+        if (!tmp) return;
+
+        char* dst = tmp;
+        const char* src = buffer;
+        const char* found;
+        while ((found = strstr(src, f)) != nullptr) {
+            size_t chunk = found - src;
+            memcpy(dst, src, chunk);
+            dst += chunk;
+            memcpy(dst, r, rLen);
+            dst += rLen;
+            src = found + fLen;
+        }
+        // Copier le reste
+        size_t tail = len - (src - buffer);
+        memcpy(dst, src, tail);
+        dst[tail] = '\0';
+
+        // Si le résultat est plus grand que le buffer actuel, on réalloue en PSRAM
+        if (newLen + 1 > capacity) {
+            size_t newCap = (newLen + 1) * 2;
+            char* newBuf = (char*)ps_malloc(newCap);
+            if (!newBuf) newBuf = (char*)malloc(newCap);
+            if (!newBuf) { free(tmp); return; }
+            free(buffer);
+            buffer = newBuf;
+            capacity = newCap;
+        }
+
+        memcpy(buffer, tmp, newLen + 1);
+        len = newLen;
+        free(tmp);
     }
     
     // Fonctions utiles
@@ -396,9 +456,14 @@ private:
         if (!str) return;
         size_t strLen = strlen(str);
         if (len + strLen >= capacity) {
-            // Agrandir si nécessaire
-            capacity = (len + strLen + 1) * 2;
-            buffer = (char*)realloc(buffer, capacity);
+            size_t newCap = (len + strLen + 1) * 2;
+            char* newBuf = (char*)ps_malloc(newCap);
+            if (!newBuf) newBuf = (char*)malloc(newCap);
+            if (!newBuf) return;
+            memcpy(newBuf, buffer, len);
+            free(buffer);
+            buffer = newBuf;
+            capacity = newCap;
         }
         strcpy(buffer + len, str);
         len += strLen;

@@ -248,7 +248,9 @@ public:
         }
         
         // Parser pour ce modèle spécifique
-        TemplateData* parsedData = new TemplateData();
+        void* mem = ps_malloc(sizeof(TemplateData));
+        if (!mem) mem = malloc(sizeof(TemplateData));
+        TemplateData* parsedData = new (mem) TemplateData();
         if (!parsedData->parseFromJson(it->second->jsonData, modelName)) {
             delete parsedData;
             return nullptr;

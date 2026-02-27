@@ -8,6 +8,7 @@
 
 #include <WiFi.h>
 #include <ArduinoJson.h>
+#include "config.h"
 #include <functional>
 
 class TunnelClient {

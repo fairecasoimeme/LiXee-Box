@@ -4,6 +4,7 @@
  */
 
 #include "TunnelClient.h"
+#include "config.h"  // For SpiRamJsonDocument
 #include <mbedtls/base64.h>
 
 TunnelClient::TunnelClient(const char* host, uint16_t port, const char* path,
@@ -177,7 +178,7 @@ void TunnelClient::sendWebSocketFrame(const String& payload) {
 }
 
 void TunnelClient::sendAuthentication() {
-    DynamicJsonDocument doc(512);
+    SpiRamJsonDocument doc(512);
     doc["type"] = "auth";
     doc["device_id"] = _deviceId;
     doc["token"] = _authToken;
@@ -190,7 +191,7 @@ void TunnelClient::sendAuthentication() {
 }
 
 void TunnelClient::sendPong() {
-    DynamicJsonDocument doc(64);
+    SpiRamJsonDocument doc(64);
     doc["type"] = "pong";
     
     String json;
@@ -201,7 +202,7 @@ void TunnelClient::sendPong() {
 void TunnelClient::sendHttpResponse(const char* requestId, int statusCode,
                                     const char* contentType, const String& body) {
     // Utiliser DynamicJsonDocument
-    DynamicJsonDocument doc(body.length() + 512);
+    SpiRamJsonDocument doc(body.length() + 512);
     doc["type"] = "http_response";
     doc["request_id"] = requestId;
     doc["status_code"] = statusCode;
@@ -217,7 +218,7 @@ void TunnelClient::sendHttpResponse(const char* requestId, int statusCode,
 
 void TunnelClient::handleMessage(const String& payload) {
     // Utiliser DynamicJsonDocument pour les gros messages
-    DynamicJsonDocument doc(4096);
+    SpiRamJsonDocument doc(4096);
     DeserializationError error = deserializeJson(doc, payload);
     
     if (error) {

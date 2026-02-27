@@ -14,6 +14,7 @@
 #include "WiFi.h"
 
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncMqttClient.h>
@@ -39,8 +40,10 @@
 #include "notificationManager.h"
 #include "TemplateData.h"
 #include "TemplateCache.h"
+#include "tunnel.h"
 
 extern std::vector<DeviceData*> devices;
+extern LiXeeBoxTunnel* tunnel;
 
 extern SemaphoreHandle_t file_Mutex;
 
@@ -63,6 +66,210 @@ extern bool executeReboot;
 extern bool updatePending ;
 
 extern NotificationManager notificationManager;
+
+// ==================== Session Management ====================
+struct SessionInfo {
+    char token[33];          // 32 hex chars + null
+    unsigned long createdAt; // millis()
+    bool active;
+};
+
+static const int MAX_SESSIONS = 4;
+static SessionInfo sessions[MAX_SESSIONS] = {};
+static const unsigned long SESSION_TIMEOUT = 24UL * 3600UL * 1000UL; // 24h
+
+String generateSessionToken() {
+    char token[33];
+    for (int i = 0; i < 16; i++) {
+        sprintf(token + i*2, "%02x", (uint8_t)esp_random());
+    }
+    token[32] = 0;
+    return String(token);
+}
+
+String createSession() {
+    int oldest = 0;
+    unsigned long oldestTime = ULONG_MAX;
+    for (int i = 0; i < MAX_SESSIONS; i++) {
+        if (!sessions[i].active) { oldest = i; break; }
+        if (sessions[i].createdAt < oldestTime) {
+            oldestTime = sessions[i].createdAt;
+            oldest = i;
+        }
+    }
+    String token = generateSessionToken();
+    strlcpy(sessions[oldest].token, token.c_str(), 33);
+    sessions[oldest].createdAt = millis();
+    sessions[oldest].active = true;
+    return token;
+}
+
+bool isValidSession(const String& token) {
+    if (token.length() == 0) return false;
+    for (int i = 0; i < MAX_SESSIONS; i++) {
+        if (sessions[i].active && token == sessions[i].token) {
+            if (millis() - sessions[i].createdAt > SESSION_TIMEOUT) {
+                sessions[i].active = false;
+                return false;
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+void deleteSession(const String& token) {
+    for (int i = 0; i < MAX_SESSIONS; i++) {
+        if (sessions[i].active && token == sessions[i].token) {
+            sessions[i].active = false;
+        }
+    }
+}
+
+String getSessionCookie(AsyncWebServerRequest *request) {
+    if (request->hasHeader("Cookie")) {
+        String cookies = request->header("Cookie");
+        int idx = cookies.indexOf("session=");
+        if (idx >= 0) {
+            int end = cookies.indexOf(';', idx);
+            if (end < 0) end = cookies.length();
+            return cookies.substring(idx + 8, end);
+        }
+    }
+    return "";
+}
+
+bool checkAuth(AsyncWebServerRequest *request) {
+    if (!ConfigSettings.enableSecureHttp) return true;
+
+    // 1. Check session cookie
+    String token = getSessionCookie(request);
+    if (isValidSession(token)) return true;
+
+    // 2. Fallback: Basic Auth pour les clients API en accès direct uniquement
+    //    - Pas de fallback pour les requêtes tunnel (127.0.0.1) : seul le cookie compte
+    //    - Pas de Digest Auth : le navigateur le cache et empêche le logout
+    if (request->client()->remoteIP() != IPAddress(127, 0, 0, 1)) {
+        if (request->hasHeader("Authorization")) {
+            String authHeader = request->header("Authorization");
+            if (authHeader.startsWith("Basic ")) {
+                if (request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP)) return true;
+            }
+        }
+    }
+
+    // 3. Not authenticated - determine response type
+    bool isAjax = request->hasHeader("X-Requested-With") ||
+                  (request->hasHeader("Accept") &&
+                   request->header("Accept").indexOf("application/json") >= 0);
+
+    if (isAjax) {
+        request->send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    } else {
+        request->redirect("/login");
+    }
+    return false;
+}
+// ==================== End Session Management ====================
+
+// ==================== Tunnel Activation (async) ====================
+struct TunnelActivation {
+    bool pending;       // Le handler a posé une demande
+    bool processing;    // En cours de traitement dans loop()
+    bool done;          // Résultat disponible
+    bool success;
+    char code[7];
+    unsigned long requestTime;  // millis() quand pending a été posé
+    String error;
+    String deviceId;
+    void reset() { pending = false; processing = false; done = false; success = false; code[0] = 0; requestTime = 0; error = ""; deviceId = ""; }
+};
+static TunnelActivation tunnelActivation = {};
+
+// Appelée depuis loop() dans le main .ino
+void processTunnelActivation() {
+    if (!tunnelActivation.pending || tunnelActivation.processing) return;
+    // Attendre 2s pour que la réponse {"status":"pending"} soit renvoyée au navigateur via le tunnel
+    if (millis() - tunnelActivation.requestTime < 2000) return;
+    tunnelActivation.pending = false;
+    tunnelActivation.processing = true;
+
+    Serial.printf("[Tunnel] Activation avec code: %s\n", tunnelActivation.code);
+
+    WiFiClientSecure secClient;
+    secClient.setInsecure();
+    HTTPClient http;
+    String url = "https://remote.lixee-box.fr/api/activate?code=" + String(tunnelActivation.code);
+    http.begin(secClient, url);
+    http.setTimeout(10000);
+
+    int httpCode = http.GET();
+
+    if (httpCode != 200) {
+        http.end();
+        tunnelActivation.success = false;
+        tunnelActivation.error = "Erreur de connexion au serveur, vérifiez votre connexion internet";
+        tunnelActivation.done = true;
+        tunnelActivation.processing = false;
+        Serial.printf("[Tunnel] Activation échouée: HTTP %d\n", httpCode);
+        return;
+    }
+
+    String body = http.getString();
+    http.end();
+
+    SpiRamJsonDocument doc(1024);
+    if (deserializeJson(doc, body) != DeserializationError::Ok) {
+        tunnelActivation.success = false;
+        tunnelActivation.error = "Réponse invalide du serveur";
+        tunnelActivation.done = true;
+        tunnelActivation.processing = false;
+        return;
+    }
+
+    if (!doc["success"].as<bool>()) {
+        tunnelActivation.success = false;
+        tunnelActivation.error = doc["error"].as<String>();
+        tunnelActivation.done = true;
+        tunnelActivation.processing = false;
+        return;
+    }
+
+    // Succès : sauvegarder et activer
+    String deviceId = doc["deviceId"].as<String>();
+    String token = doc["token"].as<String>();
+
+    strlcpy(ConfigGeneral.tunnelClientId, deviceId.c_str(), sizeof(ConfigGeneral.tunnelClientId));
+    strlcpy(ConfigGeneral.tunnelToken, token.c_str(), sizeof(ConfigGeneral.tunnelToken));
+    ConfigGeneral.enableTunnel = true;
+
+    String cfgPath = "configGeneral.json";
+    config_write(cfgPath, "tunnelClientId", deviceId);
+    config_write(cfgPath, "tunnelToken", token);
+    config_write(cfgPath, "enableTunnel", "1");
+
+    // Hot reload tunnel
+    if (tunnel != nullptr) {
+        tunnel->stop();
+        delete tunnel;
+        tunnel = nullptr;
+    }
+    String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=" + token;
+    if (strlen(ConfigGeneral.tunnelClientId) > 0) {
+        tunnelUrl += "&clientId=";
+        tunnelUrl += ConfigGeneral.tunnelClientId;
+    }
+    tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
+    tunnel->begin();
+
+    tunnelActivation.success = true;
+    tunnelActivation.deviceId = deviceId;
+    tunnelActivation.done = true;
+    tunnelActivation.processing = false;
+    Serial.println("[Tunnel] Activé via code d'activation");
+    addDebugLog("Tunnel activé via code");
+}
+// ==================== End Tunnel Activation ====================
 
 int maxDayOfTheMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 String section[12] = { "0", "1", "256", "258" , "260", "262", "264" ,"266", "268", "270", "272", "274"};
@@ -106,12 +313,13 @@ const char HTTP_SHELLY_EMULE[] PROGMEM =
 
 "}";
 
-const char HTTP_HEADER[] PROGMEM = 
+const char HTTP_HEADER[] PROGMEM =
     "<head>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
     "<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
     //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
     "<script type='text/javascript' src='web/js/functions.min.js'></script>"
+    "<script>$(document).ajaxError(function(e,x){if(x.status===401)window.location.href='/login';});</script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
@@ -125,14 +333,12 @@ const char HTTP_HEADER[] PROGMEM =
         "border-radius: 1rem;"
         "box-shadow: 0 4px 6px rgba(0,0,0,0.05);"
       "}"
-      
     "</style>"
      "</head>";
 
 
-const char HTTP_HEADERGRAPH[] PROGMEM = 
+const char HTTP_HEADERGRAPH[] PROGMEM =
     "<head>"
-    
     "<script type='text/javascript' src='web/js/raphael-min.js'></script>"
     "<script type='text/javascript' src='web/js/morris.min.js'></script>"
     "<script type='text/javascript' src='web/js/chart.umd.min.js'></script>"
@@ -143,6 +349,7 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
     "<script type='text/javascript' src='web/js/presence.min.js'></script>"
     "<script src='https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js'></script>"
+    "<script>$(document).ajaxError(function(e,x){if(x.status===401)window.location.href='/login';});</script>"
     "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
     "<link href='web/css/energy.css' rel='stylesheet' type='text/css' />"
@@ -160,9 +367,18 @@ const char HTTP_MENU[] PROGMEM =
    "<div class='AlertNotif' style='display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "<div class='AboutMaj' style='display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</button>"
-   "<a class='navbar-brand p-0 me-0 me-lg-2' href='/' style='margin-right:0px;'>"
-   "  <div style='display:block-inline;float:left;'><img width='70px' src='web/img/logo.png'> </div>"
-   "  <div style='float:left;display:block-inline;font-size:16px;font-weight:bold;padding:10px 10px 10px 10px;'> Box</div>"
+   "<a class='navbar-brand p-0 me-0 me-lg-2' href='/' style='margin-right:0px;text-decoration:none;'>"
+   "  <div style='display:flex;align-items:center;'>"
+   "    <img width='70px' src='web/img/logo.png'>"
+   "    <span style='font-size:16px;font-weight:bold;padding-left:10px;padding-top:15px;'> Box</span>"
+   "  </div>"
+   "  <div style='width:13px;font-size:11px;color:#6c757d;text-align:center;margin-top:10px;'>"
+   "    <svg xmlns='http://www.w3.org/2000/svg' width='11' height='11' fill='currentColor' viewBox='0 0 16 16'>"
+   "      <path d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z'/>"
+   "      <path d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0'/>"
+   "    </svg> "
+   "    <span id='FormattedDate'>{{FormattedDate}}</span>"
+   "  </div>"
    "</a>"
    "<div id='navbarNavDropdown' class='collapse navbar-collapse justify-content-center'>"
    "<ul class='navbar-nav mc-auto mb-2 mb-lg-0'>"
@@ -361,17 +577,18 @@ const char HTTP_MENU[] PROGMEM =
    " Mise à jour"
    "<div class='AboutMaj' style='display: none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;  '></div>"
    "</a>"
+   "<div class='dropdown-divider logoutItem' style='display:none'></div>"
+   "<a class='dropdown-item logoutItem' href='/logout' style='display:none'>"
+   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' viewBox='0 0 16 16'>"
+   "  <path fill-rule='evenodd' d='M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z'/>"
+   "  <path fill-rule='evenodd' d='M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z'/>"
+   "</svg>"
+   " Déconnexion"
+   "</a>"
    "</div>"
    "</li>"
    "</ul></div></div>"
    "</nav>"
-   "<div style='display:block;text-align:right;font-size:12px;'>"
-   "      <svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-clock' viewBox='0 0 16 16'>"
-   "            <path d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z'/>"
-   "            <path d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0'/>"
-   "      </svg> "
-   "    <span id='FormattedDate' style='padding:20 20 0 0;'>{{FormattedDate}}</span>"
-   "</div>"
    ""
    "<div id='alert' style='display:none;' class='alert alert-success' role='alert'>"
    "</div>";
@@ -1924,7 +2141,7 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"
-      "<h5 class='card-title mb-4 mt-4'>Firmware ZiGate</h5>"
+      /*"<h5 class='card-title mb-4 mt-4'>Firmware ZiGate</h5>"
       "<div class='card mx-auto shadow-sm'>"
         "<div class='card-body'>"
           "<div class='mb-3'>"
@@ -2048,7 +2265,7 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
             "document.getElementById('btnFlashZigate').disabled = false;"
           "});"
         "}"
-      "</script>"
+      "</script>"*/
     "</div>"
   "</div>"    ;
 
@@ -2887,23 +3104,24 @@ $('#ruleForm').on('submit',function(e){
 
  const char HTTP_CONFIG_HTTP[] PROGMEM = R"(
     <div class='container p-4'>
-      <h4 class='card-title mb-4'>Config Securité</h4>
+      <h4 class='card-title mb-4'>Accès sécurisé</h4>
       <div class='card mx-auto shadow-sm' >
-        <div class="card-body"> 
+        <div class="card-body">
           <form method='POST' action='saveConfigHTTP'>
           <div class="form-check form-switch mb-3">
             <input class="form-check-input" type="checkbox" id="enableSecureHttp" name='enableSecureHttp' {{checkedHttp}}>
-            <label class="form-check-label" for="enableSecureHttp">Activer authentification HTTP</label>
+            <label class="form-check-label" for="enableSecureHttp">Activer l'accès sécurisé</label>
           </div>
           <div class="mb-3">
-            <label for='userHTTP' class="form-label">Identifiant HTTP</label>
+            <label for='userHTTP' class="form-label">Identifiant</label>
             <input class='form-control' id='userHTTP' type='text' name='userHTTP' value='{{userHTTP}}' style='{{userborder}}'>
           </div>
           <div class="mb-3">
-            <label for='passHTTP' class="form-label">Mot de passe HTTP</label>
+            <label for='passHTTP' class="form-label">Mot de passe</label>
             <input class='form-control' id='passHTTP' type='password' name='passHTTP' value='{{passHTTP}}' style='{{passborder}}'>
           </div>
-          <br>
+          <small class='text-muted'>La session reste active pendant 24 heures. Les clients API peuvent aussi utiliser l'authentification Basic.</small>
+          <br><br>
           <div class="d-flex justify-content-end">
             <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
           </div>
@@ -2913,6 +3131,78 @@ $('#ruleForm').on('submit',function(e){
       </div>
     </div>
  )";
+
+const char HTTP_LOGIN[] PROGMEM = R"(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>Box - Connexion</title>
+  <link href='web/css/bootstrap.min.css' rel='stylesheet'>
+  <style>
+    body {
+      background-color: #f7f9fc;
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-card {
+      width: 100%;
+      max-width: 400px;
+      border-radius: 1rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+    }
+    .login-logo {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+    .login-logo img {
+      height: 48px;
+    }
+  </style>
+</head>
+<body>
+  <div class='card login-card'>
+    <div class='card-body p-4'>
+      <div class='login-logo'>
+        <img src='web/img/logo.png' alt='Box' onerror="this.style.display='none'">
+        <h4 class='mt-2'>Box</h4>
+      </div>
+      <div id='error' class='alert alert-danger {{errorDisplay}}'>{{errorMsg}}</div>
+      <form method='POST' action='/login'>
+        <div class='mb-3'>
+          <label for='user' class='form-label'>Identifiant</label>
+          <input class='form-control' id='user' type='text' name='user' required autofocus>
+        </div>
+        <div class='mb-3'>
+          <label for='pass' class='form-label'>Mot de passe</label>
+          <div class='input-group'>
+            <input class='form-control' id='pass' type='password' name='pass' required>
+            <button class='btn btn-outline-secondary' type='button' id='togglePass' tabindex='-1'>
+              <svg id='eyeIcon' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' viewBox='0 0 16 16'>
+                <path d='M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z'/>
+                <path d='M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z'/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button type='submit' class='btn btn-warning w-100 btn-lg'>Se connecter</button>
+      </form>
+    </div>
+  </div>
+  <script>
+    document.getElementById('togglePass').addEventListener('click',function(){
+      var p=document.getElementById('pass'),e=document.getElementById('eyeIcon');
+      if(p.type==='password'){p.type='text';e.innerHTML='<path d="M13.359 11.238C15.06 9.72 16 8 16 8s-3-5.5-8-5.5a7.028 7.028 0 0 0-2.79.588l.77.771A5.944 5.944 0 0 1 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.134 13.134 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755-.165.165-.337.328-.517.486l.708.709z"/><path d="M11.297 9.176a3.5 3.5 0 0 0-4.474-4.474l.823.823a2.5 2.5 0 0 1 2.829 2.829l.822.822zm-2.943 1.299l.822.822a3.5 3.5 0 0 1-4.474-4.474l.823.823a2.5 2.5 0 0 0 2.829 2.829z"/><path d="M3.35 5.47c-.18.16-.353.322-.518.487A13.134 13.134 0 0 0 1.172 8l.195.288c.335.48.83 1.12 1.465 1.755C4.121 11.332 5.881 12.5 8 12.5c.716 0 1.39-.133 2.02-.36l.77.772A7.029 7.029 0 0 1 8 13.5C3 13.5 0 8 0 8s.939-1.721 2.641-3.238l.708.709z"/><path d="M13.646 14.354l-12-12 .708-.708 12 12-.708.708z"/>';}
+      else{p.type='password';e.innerHTML='<path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z"/><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z"/>';}
+    });
+  </script>
+</body>
+</html>
+)";
 
  const char HTTP_CONFIG_WEBPUSH[] PROGMEM = R"(
     <div class='container p-4'>
@@ -2969,40 +3259,182 @@ $('#ruleForm').on('submit',function(e){
 
  const char HTTP_CONFIG_TUNNEL[] PROGMEM = R"(
     <div class='container p-4'>
-      <h4 class='card-title mb-4'>Config Tunnel (Reverse Proxy)</h4>
-      <div class='card mx-auto shadow-sm' >
-        <div class="card-body">
-          <form method='POST' action='saveConfigTunnel'>
-          <div class="form-check form-switch mb-3">
-            <input class="form-check-input" type="checkbox" id="enableTunnel" name='enableTunnel' {{checkedTunnel}}>
-            <label class="form-check-label" for="enableTunnel">Activer le Tunnel</label>
+      <h4 class='card-title mb-4'>Config Tunnel (Accès distant)</h4>
+
+      <div class='card mx-auto shadow-sm mb-3'>
+        <div class='card-body'>
+          <h5 class='card-title'>Activation rapide</h5>
+          <div class='d-flex align-items-center gap-2 mb-3'>
+            <span id='tunnelBadge' class='badge {{badgeClass}}'>{{badgeText}}</span>
+            {{tunnelRemoteWarning}}
           </div>
-          <div class="mb-3">
-            <label for='tunnelClientId' class="form-label">Client ID</label>
-            <input class='form-control' id='tunnelClientId' type='text' name='tunnelClientId' value='{{tunnelClientId}}' placeholder='ex: mon-gateway-001'>
-            <div class="form-text">Identifiant unique de ce client pour le serveur tunnel</div>
+          <div class='d-flex justify-content-center align-items-center gap-2 mb-3'>
+            <div class='d-flex gap-1' id='codeInputs'>
+              <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
+              <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
+              <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
+              <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
+              <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
+              <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
+            </div>
+            <button class='btn btn-warning' type='button' id='btnActivate' style='height:48px'>Activer</button>
           </div>
-          <div class="mb-3">
-            <label for='tunnelToken' class="form-label">Token d'authentification</label>
-            <input class='form-control' id='tunnelToken' type='password' name='tunnelToken' value='{{tunnelToken}}'>
-            <div class="form-text">Token secret fourni par le serveur tunnel</div>
-          </div>
-          <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
-          </div>
+          <div id='activateStatus' class='d-none'></div>
+          <hr>
+          <form method='POST' action='saveConfigTunnel' id='formToggle'>
+            <div class='form-check form-switch'>
+              <input class='form-check-input' type='checkbox' id='enableTunnel' name='enableTunnel' {{checkedTunnel}}>
+              <label class='form-check-label' for='enableTunnel'>Tunnel actif</label>
+            </div>
+            <input type='hidden' name='tunnelClientId' value='{{tunnelClientId}}'>
+            <input type='hidden' name='tunnelToken' value='{{tunnelToken}}'>
+            <noscript><button type='submit' class='btn btn-warning btn-sm mt-2'>Enregistrer</button></noscript>
           </form>
-          <div style='color:red'>{{error}}</div>
         </div>
       </div>
-      <br>
+
+      <div class='card mx-auto shadow-sm mb-3'>
+        <div class='card-body'>
+          <details>
+            <summary class='h5' style='cursor:pointer'>Connexion manuelle (avancé)</summary>
+            <form method='POST' action='saveConfigTunnel' class='mt-3'>
+              <div class='form-check form-switch mb-3'>
+                <input class='form-check-input' type='checkbox' name='enableTunnel' {{checkedTunnelManual}}>
+                <label class='form-check-label'>Activer le Tunnel</label>
+              </div>
+              <div class='mb-3'>
+                <label class='form-label'>Client ID</label>
+                <input class='form-control' type='text' name='tunnelClientId' value='{{tunnelClientId}}'>
+              </div>
+              <div class='mb-3'>
+                <label class='form-label'>Token</label>
+                <input class='form-control' type='password' name='tunnelToken' value='{{tunnelToken}}'>
+              </div>
+              <button type='submit' class='btn btn-warning'>Enregistrer</button>
+            </form>
+          </details>
+        </div>
+      </div>
+
       <div class='card mx-auto shadow-sm'>
-        <div class="card-body">
-          <h5>Information</h5>
-          <p>Le tunnel permet d'accéder à votre gateway depuis Internet via un serveur reverse proxy, sans avoir à ouvrir de ports sur votre box Internet.</p>
-          <p>Une fois configuré et activé, votre gateway sera accessible via l'URL fournie par le service tunnel.</p>
+        <div class='card-body'>
+          <h5>Comment activer le tunnel ?</h5>
+          <ol>
+            <li>Rendez-vous sur <a href='https://remote.lixee-box.fr' target='_blank'>remote.lixee-box.fr</a> et créez un compte.</li>
+            <li>Ajoutez un nouveau dispositif depuis votre tableau de bord.</li>
+            <li>Cliquez sur "Générer un code d'activation" pour obtenir un code à 6 chiffres.</li>
+            <li>Entrez ce code ci-dessus et cliquez "Activer".</li>
+            <li>Votre gateway sera alors accessible à distance sans ouvrir de ports sur votre box Internet.</li>
+          </ol>
         </div>
       </div>
+
+      <div style='color:red'>{{error}}</div>
     </div>
+
+    <script>
+    document.getElementById('enableTunnel').addEventListener('change', function() {
+      document.getElementById('formToggle').submit();
+    });
+
+    // Gestion des 6 inputs individuels
+    var digits = document.querySelectorAll('.digit-input');
+    digits.forEach(function(inp, i) {
+      inp.addEventListener('input', function() {
+        this.value = this.value.replace(/[^0-9]/g, '');
+        if (this.value.length === 1 && i < 5) digits[i+1].focus();
+      });
+      inp.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && this.value === '' && i > 0) {
+          digits[i-1].focus(); digits[i-1].value = '';
+        }
+      });
+      inp.addEventListener('paste', function(e) {
+        e.preventDefault();
+        var txt = (e.clipboardData||window.clipboardData).getData('text').replace(/[^0-9]/g, '');
+        for (var j = 0; j < 6 && j < txt.length; j++) digits[j].value = txt[j];
+        if (txt.length >= 6) digits[5].focus();
+        else if (txt.length > 0) digits[txt.length-1].focus();
+      });
+    });
+
+    function getCode() {
+      var c = '';
+      digits.forEach(function(d) { c += d.value; });
+      return c;
+    }
+
+    document.getElementById('btnActivate').addEventListener('click', function() {
+      var code = getCode();
+      if (!/^\d{6}$/.test(code)) {
+        showStatus('Veuillez entrer un code à 6 chiffres', 'danger');
+        return;
+      }
+      var btn = this;
+      btn.disabled = true;
+      showStatus('<span class="spinner-border spinner-border-sm"></span> Activation en cours...', 'warning');
+      fetch('/api/tunnelActivate?code=' + code)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.status === 'pending' || data.status === 'processing') {
+            pollActivation(btn);
+          } else if (data.status === 'error') {
+            showStatus(data.error || 'Erreur', 'danger');
+            btn.disabled = false;
+          }
+        })
+        .catch(function() {
+          showStatus('Erreur de connexion', 'danger');
+          btn.disabled = false;
+        });
+    });
+
+    function pollActivation(btn) {
+      var fails = 0;
+      var iv = setInterval(function() {
+        fetch('/api/tunnelActivateStatus')
+          .then(function(r) { return r.json(); })
+          .then(function(d) {
+            fails = 0;
+            if (d.status === 'done') {
+              clearInterval(iv);
+              if (d.success) {
+                showStatus('Tunnel activé avec succès !', 'success');
+                setTimeout(function() { location.reload(); }, 2000);
+              } else {
+                showStatus(d.error || 'Erreur inconnue', 'danger');
+                btn.disabled = false;
+              }
+            }
+          })
+          .catch(function() {
+            fails++;
+            if (fails >= 15) {
+              clearInterval(iv);
+              showStatus('Erreur de connexion', 'danger');
+              btn.disabled = false;
+            }
+          });
+      }, 1000);
+    }
+
+    function showStatus(msg, type) {
+      var el = document.getElementById('activateStatus');
+      el.className = 'alert alert-' + type + ' py-2';
+      el.innerHTML = msg;
+    }
+
+    function pollStatus() {
+      fetch('/api/tunnelStatus').then(function(r){return r.json();}).then(function(d) {
+        var b = document.getElementById('tunnelBadge');
+        if (d.connected) { b.className='badge bg-success'; b.textContent='Connecté'; }
+        else if (d.enabled) { b.className='badge bg-warning text-dark'; b.textContent='Déconnecté'; }
+        else { b.className='badge bg-secondary'; b.textContent='Désactivé'; }
+      }).catch(function(){});
+    }
+    pollStatus();
+    setInterval(pollStatus, 5000);
+    </script>
  )";
 
  const char HTTP_CONFIG_MARSTEK[] PROGMEM = R"(
@@ -3222,10 +3654,10 @@ const char HTTP_TARIFF_CARD[] PROGMEM = R"rawstring(
       <div class='row align-items-center'>
         <div class='col-auto'>
           <div class='d-flex align-items-center'>
-            <svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' fill='currentColor' class='me-2' viewBox='0 0 16 16'><path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/></svg>
-            <div>
-              <small style='opacity:0.8;'>Tarif en cours</small>
-              <h5 class='mb-0 fw-bold' id='tariff-name'>---</h5>
+            <svg xmlns='http://www.w3.org/2000/svg' style="width:40px;" width='28' height='28' fill='currentColor' class='me-2' viewBox='0 0 16 16'><path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z'/></svg>
+            <div style="width:400px;">
+              <span style='opacity:0.8;font-size:0.85rem;'>Tarif en cours : </span>
+              <span class='fw-bold' style='font-size:1.15rem;' id='tariff-name'>---</span>
             </div>
           </div>
         </div>
@@ -3264,7 +3696,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
   <div class='col-12'>
     <div class='card p-4' id='label-energy'>
       <h5 class='card-title'>Etiquette énergétique</h5>
-      <div class='card-body'>
+      <div class='card-body p-0'>
         <div class="energy-bars-horizontal">
           <div class="energy-bar-horizontal A" data-class="A">
             <span class="bar-label-horizontal">A</span>
@@ -4810,7 +5242,9 @@ const char HTTP_NOTIF_ALERT[] PROGMEM = R"(
 String footer()
 {
   String result="";
-  
+  if (ConfigSettings.enableSecureHttp) {
+    result += "<style>.logoutItem{display:block!important}</style>";
+  }
   result +="<br><hr>";
   result +="<div align='center' style='font-size:12px;'>";
   result +=    "Copyright : LiXee 2025 - version : "+ String(VERSION);
@@ -4824,7 +5258,9 @@ String footer()
 String footerAssist()
 {
   String result="";
-  
+  if (ConfigSettings.enableSecureHttp) {
+    result += "<style>.logoutItem{display:block!important}</style>";
+  }
   result +="<br><hr>";
   result +="<div align='center' style='font-size:12px;'>";
   result +=    "Copyright : LiXee 2025 - version : "+ String(VERSION);
@@ -5048,7 +5484,7 @@ Template* GetTemplate(int deviceId, String model)
     }
     else
     {
-      DynamicJsonDocument temp(MAXHEAP);
+      SpiRamJsonDocument temp(MAXHEAP);
       deserializeJson(temp, tpFile);
       tpFile.close();
       int i = 0;
@@ -5846,17 +6282,20 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
       
       if (section[cntsection] != "1") // Exclure EAIT
       {
+        int sectionInt = String(section[cntsection]).toInt();
+        // Appel unique au cache — réutilisé pour JsonEuros et labels
+        String sectionName = GetNameStatus(97, "0702", sectionInt, "ZLinky_TIC");
         JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{";
-        JsonEuros += "\"name\":\"" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "\",";
+        JsonEuros += "\"name\":\"" + sectionName + "\",";
         JsonEuros += "\"coeff\":1,";
-        JsonEuros += "\"price\":" + String(getTarif(String(section[cntsection]).toInt(), "energy")) + ",";
+        JsonEuros += "\"price\":" + String(getTarif(sectionInt, "energy")) + ",";
         JsonEuros += "\"abo\":" + String(ConfigGeneral.tarifAbo) + ",";
         JsonEuros += "\"taxe\":" + String(ConfigGeneral.tarifCSPE) + ",";
         JsonEuros += "\"taxe2\":" + String(ConfigGeneral.tarifCTA) + ",";
         JsonEuros += "\"unit\":\"Wh\"}";
-        
+
         ykeys += sep + "'" + String(section[cntsection]) + "'";
-        labels += sep + "'" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "'";
+        labels += sep + "'" + sectionName + "'";
         i++;
       }
     }
@@ -7068,9 +7507,10 @@ String getPresenceJavaScript(String time) {
     return js;
 }
 
+#ifndef USE_ENERGY_V2
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
-  
+
   PSRAMString result(500000);
   result = F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
@@ -7529,8 +7969,10 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
   request->send(200, "text/html", result.c_str());
 }
+#endif // !USE_ENERGY_V2
 
-/*void writeHelpIcon(AsyncResponseStream* response, const char* popupId) {
+#ifdef USE_ENERGY_V2
+void writeHelpIcon(AsyncResponseStream* response, const char* popupId) {
     response->printf(
         "<a href='javascript:void(0)' onclick='showPopup(\"%s\")' "
         "class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>"
@@ -7657,11 +8099,7 @@ void writePowerGauges(AsyncResponseStream* response, bool isTriphase, bool hasPr
 
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
-    if (ConfigSettings.enableSecureHttp) {
-        if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP)) {
-            return request->requestAuthentication();
-        }
-    }
+    if (!checkAuth(request)) return;
 
     unsigned long startTime = millis();
     
@@ -7855,7 +8293,8 @@ function preventCanvasZoom(canvasId) {
     request->send(response);
     
     log_d("handleStatusEnergy took %lu ms", millis() - startTime);
-}*/
+}
+#endif // USE_ENERGY_V2
 
 // ============================================================
 // JavaScript Masonry - PROGMEM
@@ -9582,13 +10021,39 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
 
   result.replace("{{FormattedDate}}", FormattedDate);
 
+  // Badge statut tunnel
+  bool tunnelConnected = (tunnel != nullptr && tunnel->isConnected());
+  if (tunnelConnected) {
+    result.replace("{{badgeClass}}", "bg-success");
+    result.replace("{{badgeText}}", "Connecté");
+  } else if (ConfigGeneral.enableTunnel) {
+    result.replace("{{badgeClass}}", "bg-warning text-dark");
+    result.replace("{{badgeText}}", "Déconnecté");
+  } else {
+    result.replace("{{badgeClass}}", "bg-secondary");
+    result.replace("{{badgeText}}", "Désactivé");
+  }
+
+  // Toggle tunnel + protection accès distant
+  bool viaTunnelPage = (request->client()->remoteIP() == IPAddress(127, 0, 0, 1));
   if (ConfigGeneral.enableTunnel)
   {
-    result.replace("{{checkedTunnel}}", "Checked");
+    if (viaTunnelPage) {
+      result.replace("{{checkedTunnel}}", "checked disabled");
+      result.replace("{{checkedTunnelManual}}", "checked disabled");
+      result.replace("{{tunnelRemoteWarning}}",
+        "<small class='text-warning'>Le tunnel ne peut être désactivé qu'à partir de l'adresse IP locale.</small>");
+    } else {
+      result.replace("{{checkedTunnel}}", "Checked");
+      result.replace("{{checkedTunnelManual}}", "Checked");
+      result.replace("{{tunnelRemoteWarning}}", "");
+    }
   }
   else
   {
     result.replace("{{checkedTunnel}}", "");
+    result.replace("{{checkedTunnelManual}}", "");
+    result.replace("{{tunnelRemoteWarning}}", "");
   }
 
   result.replace("{{tunnelClientId}}", String(ConfigGeneral.tunnelClientId));
@@ -9613,6 +10078,10 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
     {
       error = "Erreur : Token requis quand le tunnel est activé.";
     }
+    if ((request->arg("error").toInt() & 4) == 4)
+    {
+      error = "Impossible de désactiver le tunnel depuis un accès distant.";
+    }
   }
   result.replace("{{error}}", error);
 
@@ -9625,6 +10094,15 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
   String enableTunnel;
   bool saveOk = true;
   uint8_t error = 0;
+
+  // Empêcher la désactivation du tunnel depuis le tunnel lui-même
+  bool viaTunnel = (request->client()->remoteIP() == IPAddress(127, 0, 0, 1));
+  if (viaTunnel && request->arg("enableTunnel") != "on") {
+    AsyncWebServerResponse *response = request->beginResponse(302);
+    response->addHeader(F("Location"), F("/configTunnel?error=4"));
+    request->send(response);
+    return;
+  }
 
   String clientId = request->arg("tunnelClientId");
   String token = request->arg("tunnelToken");
@@ -9669,6 +10147,28 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
     {
       strlcpy(ConfigGeneral.tunnelToken, token.c_str(), sizeof(ConfigGeneral.tunnelToken));
       config_write(path, "tunnelToken", token);
+    }
+
+    // Hot reload du tunnel : arrêter l'ancien, démarrer le nouveau si activé
+    if (tunnel != nullptr) {
+      tunnel->stop();
+      delete tunnel;
+      tunnel = nullptr;
+      Serial.println("[Tunnel] Service tunnel arrêté");
+      addDebugLog("Tunnel reverse proxy arrêté");
+    }
+
+    if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0) {
+      String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
+      tunnelUrl += ConfigGeneral.tunnelToken;
+      if (strlen(ConfigGeneral.tunnelClientId) > 0) {
+        tunnelUrl += "&clientId=";
+        tunnelUrl += ConfigGeneral.tunnelClientId;
+      }
+      tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
+      tunnel->begin();
+      Serial.println("[Tunnel] Service tunnel activé");
+      addDebugLog("Tunnel reverse proxy activé");
     }
 
     AsyncWebServerResponse *response = request->beginResponse(302);
@@ -12795,7 +13295,7 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
   if (action == "save")
   {
     // Validation du JSON avant écriture
-    DynamicJsonDocument doc(content.length() + 256);
+    SpiRamJsonDocument doc(content.length() + 256);
     DeserializationError error = deserializeJson(doc, content);
     
     if (error)
@@ -13160,7 +13660,6 @@ void handleSaveDatabase(AsyncWebServerRequest *request)
 void handleReadfile(AsyncWebServerRequest *request)
 {
   String result;
-  result.reserve(MAXHEAP);
   int i = 0;
   String repertory = request->arg(i);
   String filename = "/" + repertory + "/" + request->arg(1);
@@ -14498,7 +14997,7 @@ void handleSaveWifi(AsyncWebServerRequest *request)
 
     const char *path = "/config/configWifi.json";
     StringConfig = "{\"enableDHCP\":" + enableDHCP + ",\"ssid\":\"" + ssid + "\",\"pass\":\"" + pass + "\",\"ip\":\"" + ipAddress + "\",\"mask\":\"" + ipMask + "\",\"gw\":\"" + ipGW + "\",\"tcpListenPort\":\"" + tcpListenPort + "\"}";
-    StaticJsonDocument<512> jsonBuffer;
+    SpiRamJsonDocument jsonBuffer(512);
     SpiRamJsonDocument doc(MAXHEAP);
     deserializeJson(doc, StringConfig);
 
@@ -16143,15 +16642,16 @@ SubMeterValues getSubMeterValuesForKey(const String& time, const String& keyStr)
 }
 
 // Écrit les données ZLinky (après soustraction) + sous-compteurs + production
-void writeEnergyDataWithSubMeters(AsyncResponseStream* response, 
-                                   PeriodData* pdZLinky, 
-                                   const String& time, 
+// Version String& — utilisée par handleLoadEnergyChart pour garantir Content-Length
+void writeEnergyDataWithSubMeters(String& out,
+                                   PeriodData* pdZLinky,
+                                   const String& time,
                                    const String& keyStr) {
   int arrayLength = sizeof(section) / sizeof(section[0]);
-  
+
   // 1. Obtenir les valeurs des sous-compteurs pour ce point temporel
   SubMeterValues subValues = getSubMeterValuesForKey(time, keyStr);
-  
+
   // 2. Écrire les données ZLinky (avec soustraction des sous-compteurs)
   PsString psKey(keyStr.c_str(), PsramAllocator<char>());
   auto it = pdZLinky->graph.find(psKey);
@@ -16159,58 +16659,46 @@ void writeEnergyDataWithSubMeters(AsyncResponseStream* response,
     ValueMap& vm = it->second;
     for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
       int attrId = atoi(section[cntsection].c_str());
-      
-      // Ignorer l'attribut 1 (production) ici - on le traite séparément
       if (attrId == 1) continue;
-      
       auto itv = vm.attributes.find(attrId);
       if (itv != vm.attributes.end() && itv->second != 0) {
-        // Soustraire la consommation des sous-compteurs pour cet attribut
         long value = itv->second;
         auto itSub = subValues.byAttr.find(attrId);
         if (itSub != subValues.byAttr.end()) {
           value -= itSub->second;
           if (value < 0) value = 0;
         }
-        
         if (value != 0) {
-          response->print(",\"");
-          response->print(section[cntsection]);
-          response->print("\":");
-          response->print(value);
+          out += ",\"";
+          out += section[cntsection];
+          out += "\":";
+          out += String(value);
         }
       }
     }
   }
-  
+
   // 3. Écrire les données des sous-compteurs
   for (int sm = 0; sm < ConfigGeneral.subMeterCount; sm++) {
     if (!ConfigGeneral.subMeters[sm].enabled) continue;
-    
     auto itTotal = subValues.total.find(sm);
     if (itTotal != subValues.total.end() && itTotal->second > 0) {
-      response->print(",\"sub_");
-      response->print(sm);
-      response->print("\":");
-      response->print(itTotal->second);
+      out += ",\"sub_";
+      out += String(sm);
+      out += "\":";
+      out += String(itTotal->second);
     }
   }
-  
+
   // 4. Écrire les données de Production (device séparé)
   if (strcmp(ConfigGeneral.Production, "") != 0) {
     DeviceData* devProd = nullptr;
     for (auto* d : devices) {
       if (d == nullptr) continue;
       try {
-        if (d->getDeviceID() == ConfigGeneral.Production) {
-          devProd = d;
-          break;
-        }
-      } catch (...) {
-        continue;
-      }
+        if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
+      } catch (...) { continue; }
     }
-    
     if (devProd) {
       DeviceEnergyHistory& ehProd = devProd->energyHistory;
       PeriodData* pdProd = nullptr;
@@ -16218,20 +16706,30 @@ void writeEnergyDataWithSubMeters(AsyncResponseStream* response,
       else if (time == "day")   pdProd = &ehProd.days;
       else if (time == "month") pdProd = &ehProd.months;
       else if (time == "year")  pdProd = &ehProd.years;
-      
       if (pdProd) {
         auto itProd = pdProd->graph.find(psKey);
         if (itProd != pdProd->graph.end()) {
           ValueMap& vmProd = itProd->second;
-          auto itvProd = vmProd.attributes.find(1);  // Attribut 1 = production
+          auto itvProd = vmProd.attributes.find(1);
           if (itvProd != vmProd.attributes.end() && itvProd->second != 0) {
-            response->print(",\"1\":");
-            response->print(itvProd->second);
+            out += ",\"1\":";
+            out += String(itvProd->second);
           }
         }
       }
     }
   }
+}
+
+// Ancienne version AsyncResponseStream* conservée pour compatibilité
+void writeEnergyDataWithSubMeters(AsyncResponseStream* response,
+                                   PeriodData* pdZLinky,
+                                   const String& time,
+                                   const String& keyStr) {
+  String tmp;
+  tmp.reserve(512);
+  writeEnergyDataWithSubMeters(tmp, pdZLinky, time, keyStr);
+  response->print(tmp);
 }
 
 void handleLoadEnergyChart(AsyncWebServerRequest* request) {
@@ -16240,10 +16738,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
 
   DeviceData* dev = nullptr;
   for (auto* d : devices) {
-    if (d->getDeviceID() == IEEE) {
-      dev = d;
-      break;
-    }
+    if (d->getDeviceID() == IEEE) { dev = d; break; }
   }
   if (!dev) {
     request->send(404, "application/json", "[]");
@@ -16252,60 +16747,49 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
 
   DeviceEnergyHistory& eh = dev->energyHistory;
   PeriodData* pd = nullptr;
-
-  if (time == "hour") pd = &eh.hours;
-  else if (time == "day") pd = &eh.days;
+  if      (time == "hour")  pd = &eh.hours;
+  else if (time == "day")   pd = &eh.days;
   else if (time == "month") pd = &eh.months;
-  else if (time == "year") pd = &eh.years;
+  else if (time == "year")  pd = &eh.years;
   else {
     request->send(400, "application/json", "[]");
     return;
   }
 
   esp_task_wdt_reset();
-  // Créer un stream pour écrire directement dans la réponse
-  AsyncResponseStream *response = request->beginResponseStream("application/json");
-  
-  int arrayLength = sizeof(section) / sizeof(section[0]);
-  response->print("[");
+
+  // Construction dans un String — garantit Content-Length dans la réponse HTTP,
+  // ce qui évite le chunked encoding et assure la compatibilité avec le tunnel.
+  String result;
+  result.reserve(8192);
+  result = "[";
 
   if (time == "hour") {
     int now = Hour.toInt();
     for (int i = 0; i < 24; i++) {
-      if (i > 0) response->print(",");
-      
+      if (i > 0) result += ",";
       now++;
       if (now > 23) now = 0;
-      
       String tmpi = now < 10 ? "0" + String(now) : String(now);
-      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
-      
-      response->print("{\"y\":\"");
-      response->print(tmpi);
-      response->print("H\"");
-
-      writeEnergyDataWithSubMeters(response, pd, time, tmpi);
-      
-      response->print("}");
+      result += "{\"y\":\"";
+      result += tmpi;
+      result += "H\"";
+      writeEnergyDataWithSubMeters(result, pd, time, tmpi);
+      result += "}";
     }
   }
   else if (time == "day") {
     int now = Day.toInt();
     int reste = 30 - now;
     int lastNbDayMonth = (Month.toInt() - 2 > 0) ? maxDayOfTheMonth[Month.toInt() - 2] : 31;
-    
     if (reste > 0) now = (lastNbDayMonth - reste) + 1;
     else if (reste < 0) now = 2;
     else now = 1;
 
     for (int i = 0; i < 30; i++) {
-      if (i > 0) response->print(",");
-      
+      if (i > 0) result += ",";
       if (reste > 0 && now > lastNbDayMonth) now = 1;
-      
       String tmpi = now < 10 ? "0" + String(now) : String(now);
-      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
-      
       String tmpm;
       if (i > now) {
         tmpm = Month;
@@ -16320,63 +16804,51 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
           }
         }
       }
-      
-      response->print("{\"y\":\"");
-      response->print(tmpi);
-      response->print("/");
-      response->print(tmpm);
-      response->print("\"");
-
-      // Écrire données ZLinky (après soustraction) + sous-compteurs
-      writeEnergyDataWithSubMeters(response, pd, time, tmpi);
-      response->print("}");
+      result += "{\"y\":\"";
+      result += tmpi;
+      result += "/";
+      result += tmpm;
+      result += "\"";
+      writeEnergyDataWithSubMeters(result, pd, time, tmpi);
+      result += "}";
       now++;
     }
   }
   else if (time == "month") {
     int now = Month.toInt();
     for (int i = 0; i < 12; i++) {
-      if (i > 0) response->print(",");
-      
+      if (i > 0) result += ",";
       now++;
       if (now > 12) now = 1;
-      
       String tmpi = now < 10 ? "0" + String(now) : String(now);
-      PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
       String y = (i < now) ? String(Year.toInt() - 1) : Year;
-      
-      response->print("{\"y\":\"");
-      response->print(tmpi);
-      response->print("/");
-      response->print(y);
-      response->print("\"");
-
-      // Écrire données ZLinky (après soustraction) + sous-compteurs
-      writeEnergyDataWithSubMeters(response, pd, time, tmpi);
-      response->print("}");
+      result += "{\"y\":\"";
+      result += tmpi;
+      result += "/";
+      result += y;
+      result += "\"";
+      writeEnergyDataWithSubMeters(result, pd, time, tmpi);
+      result += "}";
     }
   }
   else if (time == "year") {
     int now = Year.toInt() - 10;
     for (int i = 0; i < 11; i++) {
-      if (i > 0) response->print(",");
-      
-      response->print("{\"y\":\"");
-      response->print(now);
-      response->print("\"");
-      
-      // Écrire données ZLinky (après soustraction) + sous-compteurs
-      writeEnergyDataWithSubMeters(response, pd, time, String(now));
-      response->print("}");
+      if (i > 0) result += ",";
+      result += "{\"y\":\"";
+      result += String(now);
+      result += "\"";
+      writeEnergyDataWithSubMeters(result, pd, time, String(now));
+      result += "}";
       now++;
     }
   }
-  
-  response->print("]");
+
+  result += "]";
 
   esp_task_wdt_reset();
 
-  request->send(response);
+  request->send(200, "application/json", result);
 }
 
 void handleLoadLabelEnergy(AsyncWebServerRequest *request)
@@ -17479,206 +17951,222 @@ void handleGetUpdateStatusAuto(AsyncWebServerRequest *request) {
 
 void initWebServer()
 {
+  // ==================== Login / Logout Routes ====================
+  serverWeb.on("/login", HTTP_GET, [](AsyncWebServerRequest *request) {
+    // If already authenticated, redirect to home
+    if (ConfigSettings.enableSecureHttp) {
+      String token = getSessionCookie(request);
+      if (isValidSession(token)) {
+        request->redirect("/");
+        return;
+      }
+    }
+    String page = FPSTR(HTTP_LOGIN);
+    if (request->hasArg("error")) {
+        page.replace("{{errorDisplay}}", "");
+        page.replace("{{errorMsg}}", "Identifiant ou mot de passe incorrect");
+    } else {
+        page.replace("{{errorDisplay}}", "d-none");
+        page.replace("{{errorMsg}}", "");
+    }
+    request->send(200, "text/html", page);
+  });
+
+  serverWeb.on("/login", HTTP_POST, [](AsyncWebServerRequest *request) {
+    String user = request->arg("user");
+    String pass = request->arg("pass");
+
+    if (user == ConfigGeneral.userHTTP && pass == ConfigGeneral.passHTTP) {
+        String token = createSession();
+        AsyncWebServerResponse *response = request->beginResponse(303);
+        response->addHeader("Location", "/");
+        response->addHeader("Set-Cookie",
+            "session=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400");
+        request->send(response);
+    } else {
+        AsyncWebServerResponse *response = request->beginResponse(303);
+        response->addHeader("Location", "/login?error=1");
+        request->send(response);
+    }
+  });
+
+  serverWeb.on("/logout", HTTP_GET, [](AsyncWebServerRequest *request) {
+    String token = getSessionCookie(request);
+    if (token.length() > 0) deleteSession(token);
+
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader("Location", "/login");
+    response->addHeader("Set-Cookie", "session=; Path=/; Max-Age=0");
+    request->send(response);
+  });
+  // ==================== End Login / Logout Routes ====================
 
   // serverWeb.on("/", handleRoot);
   serverWeb.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
-    handleRoot(request); 
+  {
+    if (!checkAuth(request)) return;
+    handleRoot(request);
   });
   serverWeb.on("/dashboard", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     //request->client()->setRxTimeout(15);
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleDashboard(request);
   });
   serverWeb.on("/statusEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleStatusEnergy(request); 
   });
 
-  serverWeb.on("/api/tariff", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
+  // ==================== Tunnel API ====================
+  serverWeb.on("/api/tunnelStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!checkAuth(request)) return;
+    String json = "{\"enabled\":";
+    json += ConfigGeneral.enableTunnel ? "true" : "false";
+    json += ",\"connected\":";
+    json += (tunnel != nullptr && tunnel->isConnected()) ? "true" : "false";
+    json += "}";
+    request->send(200, "application/json", json);
+  });
+
+  serverWeb.on("/api/tunnelActivate", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!checkAuth(request)) return;
+
+    String code = request->arg("code");
+    if (code.length() != 6) {
+      request->send(200, "application/json", "{\"status\":\"error\",\"error\":\"Code invalide\"}");
+      return;
     }
-    handleAPITariff(request); 
+    // Vérifier qu'une activation n'est pas déjà en cours
+    if (tunnelActivation.pending || tunnelActivation.processing) {
+      request->send(200, "application/json", "{\"status\":\"processing\"}");
+      return;
+    }
+    tunnelActivation.reset();
+    strlcpy(tunnelActivation.code, code.c_str(), sizeof(tunnelActivation.code));
+    tunnelActivation.requestTime = millis();
+    tunnelActivation.pending = true;
+    request->send(200, "application/json", "{\"status\":\"pending\"}");
+  });
+
+  serverWeb.on("/api/tunnelActivateStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!checkAuth(request)) return;
+    if (tunnelActivation.done) {
+      String json = "{\"status\":\"done\",\"success\":";
+      json += tunnelActivation.success ? "true" : "false";
+      if (tunnelActivation.success) {
+        json += ",\"deviceId\":\"" + tunnelActivation.deviceId + "\"";
+      } else {
+        json += ",\"error\":\"" + tunnelActivation.error + "\"";
+      }
+      json += "}";
+      request->send(200, "application/json", json);
+      tunnelActivation.reset();
+    } else if (tunnelActivation.processing || tunnelActivation.pending) {
+      request->send(200, "application/json", "{\"status\":\"processing\"}");
+    } else {
+      request->send(200, "application/json", "{\"status\":\"idle\"}");
+    }
+  });
+
+  serverWeb.on("/api/tariff", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPITariff(request);
   });
 
 
   serverWeb.on("/statusNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleStatusNetwork(request);
   });
   serverWeb.on("/statusDevices", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleStatusDevices(request); 
   });
   serverWeb.on("/configGeneral", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigGeneral(request); 
   });
   serverWeb.on("/configZigbee", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigZigbee(request); 
   });
   serverWeb.on("/configHorloge", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigHorloge(request); 
   });
   serverWeb.on("/configEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigEnergy(request); 
   });
   serverWeb.on("/configGaz", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigGaz(request); 
   });
   serverWeb.on("/configWater", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigWater(request); 
   });
   serverWeb.on("/getPresenceSummary", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp) {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetPresenceSummary(request);
   });
   
   serverWeb.on("/getPresenceHistory", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp) {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetPresenceHistory(request);
   });
   
   serverWeb.on("/getPresenceStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp) {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetPresenceStatus(request);
   });
   
   serverWeb.on("/getPresenceAll", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp) {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetPresenceAll(request);
   });
   serverWeb.on("/getMQTTStatus", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetMQTTStatus(request); 
   });
   serverWeb.on("/configMQTT", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigMQTT(request); 
   });
   serverWeb.on("/configHTTP", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigHTTP(request); 
   });
   serverWeb.on("/configRules", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigRules(request); 
   });
   serverWeb.on("/editRule", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
-    handleEditRule(request); 
+    if (!checkAuth(request)) return;
+    handleEditRule(request);
   });
   serverWeb.on("/api/rules/delete", HTTP_POST, 
     [](AsyncWebServerRequest *request){},
     NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
     { 
-      if (ConfigSettings.enableSecureHttp)
-      {
-        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-          return request->requestAuthentication();
-      }
+      if (!checkAuth(request)) return;
       APIDeleteRule(request, data, len, index, total);
     }
   );
@@ -17687,11 +18175,7 @@ void initWebServer()
     NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
     { 
-      if (ConfigSettings.enableSecureHttp)
-      {
-        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-          return request->requestAuthentication();
-      }
+      if (!checkAuth(request)) return;
       APIEditRule(request, data, len, index, total);
     }
   );
@@ -17700,21 +18184,13 @@ void initWebServer()
     NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
     {
-      if (ConfigSettings.enableSecureHttp)
-      {
-        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-          return request->requestAuthentication();
-      }
+      if (!checkAuth(request)) return;
       APIToggleRule(request, data, len, index, total);
     }
   );
   serverWeb.on("/addRule", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleAddRule(request);
   });
 
@@ -17723,178 +18199,106 @@ void initWebServer()
     NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
     { 
-      if (ConfigSettings.enableSecureHttp)
-      {
-        if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-          return request->requestAuthentication();
-      }
+      if (!checkAuth(request)) return;
       APIAddRule(request, data, len, index, total);
     }
   );
 
   // Dans initWebServer(), ajouter :
   serverWeb.on("/getSubMeters", HTTP_GET, [](AsyncWebServerRequest *request) {
-      if (ConfigSettings.enableSecureHttp) {
-          if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-              return request->requestAuthentication();
-      }
+      if (!checkAuth(request)) return;
       APIgetSubMeters(request);
   });
 
   serverWeb.on("/setSubMeter", HTTP_POST, [](AsyncWebServerRequest *request) {
-      if (ConfigSettings.enableSecureHttp) {
-          if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-              return request->requestAuthentication();
-      }
+      if (!checkAuth(request)) return;
       APIsetSubMeter(request);
   });
 
   serverWeb.on("/deleteSubMeter", HTTP_POST, [](AsyncWebServerRequest *request) {
-      if (ConfigSettings.enableSecureHttp) {
-          if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-              return request->requestAuthentication();
-      }
+      if (!checkAuth(request)) return;
       APIdeleteSubMeter(request);
   });
 
   serverWeb.on("/getEligibleSubMeters", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp) {
-      if (!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetEligibleSubMeters(request);
   });
 
   serverWeb.on("/configWebPush", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigWebPush(request);
   });
 
   serverWeb.on("/configTunnel", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigTunnel(request);
   });
   serverWeb.on("/configMarstek", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigMarstek(request); 
   });
   
   serverWeb.on("/configUdpClient", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigUdpClient(request); 
   });
   serverWeb.on("/configNotifMail", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigNotificationMail(request); 
   });
   serverWeb.on("/configWiFi", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigWifi(request); 
   });
   
   serverWeb.on("/configDevices", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigDevices(request); 
   });
   serverWeb.on("/configDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigDevice(request); 
   });
   serverWeb.on("/assistDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleAssistDevice(request); 
   });
 
   serverWeb.on("/downloadUpdate", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     request->send(200,"text/plain","starting download");
     updatePending = true;
   });
   serverWeb.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleToolUpdate(request); 
   });
   serverWeb.on("/backup", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleToolBackup(request); 
   });
   serverWeb.on("/createBackupFile", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleToolCreateBackup(request); 
   });
 
   serverWeb.on("/deleteBackupFile", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     if (request->hasArg("filename"))
     {
       String filename = "/bk/" + request->arg("filename");
@@ -17915,237 +18319,137 @@ void initWebServer()
   });
   serverWeb.on("/saveDebug", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveDebug(request);  
   });
   serverWeb.on("/saveFileConfig", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfig(request);  
   });
   serverWeb.on("/saveFileDevice", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveDevice(request); 
   });
   serverWeb.on("/saveFileHistory", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveHistory(request); 
   });
   
 
   serverWeb.on("/saveFileTemplates", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveTemplates(request); 
   });
   serverWeb.on("/saveFileRules", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveRules(request); 
   });
   
   serverWeb.on("/saveFileJavascript", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveJavascript(request); 
   });
   serverWeb.on("/saveFileDatabase", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveDatabase(request); 
   });
   serverWeb.on("/saveConfigGeneral", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigGeneral(request); 
   });
   serverWeb.on("/saveConfigHorloge", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigHorloge(request); 
   });
   serverWeb.on("/saveConfigLinky", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigLinky(request); 
   });
   serverWeb.on("/saveConfigProduction", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigProduction(request); 
   });
   serverWeb.on("/saveConfigGaz", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigGaz(request); 
   });
   serverWeb.on("/saveConfigWater", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigWater(request); 
   });
   serverWeb.on("/saveConfigPresence", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigPresence(request); 
   });
 
   serverWeb.on("/saveConfigMQTT", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigMQTT(request); 
   });
   serverWeb.on("/saveConfigHTTP", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigHTTP(request); 
   });
   serverWeb.on("/saveConfigWebPush", HTTP_POST, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigWebPush(request);
   });
 
   serverWeb.on("/saveConfigTunnel", HTTP_POST, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigTunnel(request);
   });
 
   serverWeb.on("/saveConfigMarstek", HTTP_POST, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigMarstek(request);
   });
   serverWeb.on("/saveConfigUDPClient", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigUDPClient(request); 
   });
 
   serverWeb.on("/saveConfigNotificationMail", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigNotificationMail(request); 
   });
 
   serverWeb.on("/saveConfigParameter", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigParameter(request); 
   });
 
   serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveConfigNotification(request); 
   });
 
   serverWeb.on("/saveWifi", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSaveWifi(request); 
   });
 
@@ -18287,48 +18591,28 @@ void initWebServer()
 
   serverWeb.on("/notifications", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleNotifications(request); 
   });
 
   serverWeb.on("/tools", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleTools(request); 
   });
   serverWeb.on("/logs", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLogs(request); 
   });
   serverWeb.on("/reboot", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleReboot(request); 
   });
   serverWeb.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleToolUpdate(request); 
   });
   serverWeb.on("/doUpdate", HTTP_POST,
@@ -18336,11 +18620,7 @@ void initWebServer()
     [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
                   size_t len, bool final) 
         {
-          if (ConfigSettings.enableSecureHttp)
-          {
-            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-              return request->requestAuthentication();
-          }
+          if (!checkAuth(request)) return;
           handleDoUpdate(request, filename, index, data, len, final);
         }
   );
@@ -18349,11 +18629,7 @@ void initWebServer()
     [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
                   size_t len, bool final) 
         {
-          if (ConfigSettings.enableSecureHttp)
-          {
-            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-              return request->requestAuthentication();
-          }
+          if (!checkAuth(request)) return;
           handleDoRestore(request, filename, index, data, len, final);
         }
   );
@@ -18362,11 +18638,7 @@ void initWebServer()
     [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
                   size_t len, bool final) 
         {
-          if (ConfigSettings.enableSecureHttp)
-          {
-            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-              return request->requestAuthentication();
-          }
+          if (!checkAuth(request)) return;
           handleDoUploadHistory(request, filename, index, data, len, final);
         }
   );
@@ -18376,11 +18648,7 @@ void initWebServer()
     [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
                   size_t len, bool final) 
         {
-          if (ConfigSettings.enableSecureHttp)
-          {
-            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-              return request->requestAuthentication();
-          }
+          if (!checkAuth(request)) return;
           handleDoUploadOTA(request, filename, index, data, len, final);
         }
   );
@@ -18391,501 +18659,285 @@ void initWebServer()
     [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
                   size_t len, bool final)
         {
-          if (ConfigSettings.enableSecureHttp)
-          {
-            if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-              return request->requestAuthentication();
-          }
+          if (!checkAuth(request)) return;
           handleZigateFlashUpload(request, filename, index, data, len, final);
         }
   );
 
   serverWeb.on("/zigateFlashStatus", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleZigateFlashStatus(request);
   });
 
   serverWeb.on("/readFile", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleReadfile(request); 
   });
   serverWeb.on("/getLogBuffer", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLogBuffer(request); 
   });
   serverWeb.on("/scanNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleScanNetwork(request); 
   });
   serverWeb.on("/cmdClearConsole", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleClearConsole(request); 
   });
   serverWeb.on("/cmdGetVersion", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetVersion(request); 
   });
 
   serverWeb.on("/cmdErasePDM", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleErasePDM(request); 
   });
   serverWeb.on("/cmdStartNwk", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleStartNwk(request); 
   });
 
   serverWeb.on("/cmdSetLed", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSetLed(request); 
   });
   serverWeb.on("/cmdSetChannelMask", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSetChannelMask(request); 
   });
   serverWeb.on("/cmdPermitJoin", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handlePermitJoin(request); 
   });
 
   serverWeb.on("/cmdPermitJoinAssist", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handlePermitJoinAssist(request); 
   });
   serverWeb.on("/cmdRawMode", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleRawMode(request); 
   });
   serverWeb.on("/cmdRawModeOff", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleRawModeOff(request); 
   });
   serverWeb.on("/cmdActiveReq", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleActiveReq(request); 
   });
   serverWeb.on("/cmdReset", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleReset(request); 
   });
   serverWeb.on("/cmdNetwork", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleNetwork(request); 
   });
   serverWeb.on("/configFiles", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleConfigFiles(request); 
   });
   serverWeb.on("/debugFiles", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleDebugFiles(request); 
   });
   serverWeb.on("/fsbrowser", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleFSbrowser(request); 
   });
   serverWeb.on("/fsbrowserBackup", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleFSbrowserBackup(request); 
   });
   serverWeb.on("/hst", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleHistory(request); 
   });
   serverWeb.on("/tp", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleTemplates(request); 
   });
    serverWeb.on("/rules", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleRules(request); 
   });
    serverWeb.on("/generateNotif", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGenerateNotif(request); 
   });
   
   serverWeb.on("/javascript", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleJavascript(request); 
   });
   serverWeb.on("/createDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleCreateDevice(request); 
   });
   serverWeb.on("/createHistory", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleCreateHistory(request); 
   });
   serverWeb.on("/ota", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleOTA(request); 
   });
   serverWeb.on("/createTemplate", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleCreateTemplate(request); 
   });
   serverWeb.on("/ZigbeeAction", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleZigbeeAction(request); 
   });
   serverWeb.on("/ZigbeeWriteAttribut", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleZigbeeWriteattribut(request); 
   });
   serverWeb.on("/ZigbeeReadAttribut", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleZigbeeReadattribut(request); 
   });
   serverWeb.on("/ZigbeeSendRequest", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleZigbeeSendRequest(request); 
   });
   serverWeb.on("/loadLinkyDatas", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadLinkyDatas(request); 
   });
   serverWeb.on("/loadGaugeDashboard", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadGaugeDashboard(request); 
   });
   serverWeb.on("/loadPowerGaugeAbo", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadPowerGaugeAbo(request); 
   });
   serverWeb.on("/loadPowerGaugeTimeDay", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadPowerGaugeTimeDay(request); 
   });
   serverWeb.on("/refreshGaugeAbo", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleRefreshGaugeAbo(request); 
   });
   serverWeb.on("/refreshLabel", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleRefreshLabel(request);
   });             
   serverWeb.on("/loadPowerTrend", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadPowerTrend(request); 
   });
 
   serverWeb.on("/loadDatasTrend", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadDatasTrend(request); 
   });
 
   serverWeb.on("/loadTotalEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadTotalEnergy(request); 
   });
 
   serverWeb.on("/loadPowerChart", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadPowerChart(request); 
   });
   serverWeb.on("/loadEnergyChart", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadEnergyChart(request); 
   });
 
   serverWeb.on("/loadDistributionChart", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadDistribChart(request); 
   });
  
   serverWeb.on("/loadLabelEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleLoadLabelEnergy(request); 
   });
   serverWeb.on("/deleteDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleDeleteDevice(request); 
   });
   serverWeb.on("/getDeviceValue", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetDeviceValue(request); 
   });
   serverWeb.on("/getDeviceAttrValues", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetDeviceAttrValues(request); 
   });
   serverWeb.on("/getRuleStatus", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetRuleStatus(request); 
   });
   serverWeb.on("/getAlert", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetAlert(request); 
   });
 
   serverWeb.on("/OTAUpdateBar", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     String result="-2";
     String IEEE = request->arg("id");
     for (size_t i = 0; i < devices.size(); i++) 
@@ -18910,89 +18962,53 @@ void initWebServer()
 
   serverWeb.on("/getFormattedDate", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetFormattedDate(request); 
   });
   serverWeb.on("/sendMqttDiscover", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSendMqttDiscover(request); 
   });
   serverWeb.on("/help", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleHelp(request); 
   });
   serverWeb.on("/poll", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     
     handlePoll(request);
   });
 
   serverWeb.on("/shelly", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleShelly(request); 
   });
 
 
   serverWeb.on("/getSystem", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetSystem(request); 
     
   });
   serverWeb.on("/setAlias", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleSetAlias(request); 
   });
   serverWeb.on("/setConfigWiFi", HTTP_POST, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APISetConfigWiFi(request); 
     
   });
   serverWeb.on("/setResetDevice", HTTP_POST, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APISetResetDevice(request); 
     
   });
@@ -19001,101 +19017,62 @@ void initWebServer()
 
   serverWeb.on("/getConfig", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetConfig(request); 
     
   });
 
   serverWeb.on("/getDevices", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetDevices(request); 
     
   });
   serverWeb.on("/getDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetDevice(request); 
     
   });
   serverWeb.on("/getEnergyDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetEnergyDevice(request); 
     
   });
   serverWeb.on("/getPowerDevice", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetPowerDevice(request); 
     
   });
   
   serverWeb.on("/getLinky", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetLinky(request); 
     
   });
 
   serverWeb.on("/getTemplates", HTTP_GET, [](AsyncWebServerRequest *request)
   {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     APIgetTemplates(request); 
     
   });
 
   serverWeb.on("/getUpdateStatusManuel", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetUpdateStatusManuel(request);
   });
   
   serverWeb.on("/getUpdateStatusAuto", HTTP_GET, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp)
-    {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP) )
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     handleGetUpdateStatusAuto(request);
   });
 
   serverWeb.on("/resetUpdateStatus", HTTP_POST, [](AsyncWebServerRequest *request) {
-    if (ConfigSettings.enableSecureHttp) {
-      if(!request->authenticate(ConfigGeneral.userHTTP, ConfigGeneral.passHTTP))
-        return request->requestAuthentication();
-    }
+    if (!checkAuth(request)) return;
     updateStatus.statusManuel = "";
     updateStatus.statusAuto = "";
     updateStatus.progressAuto = -1;

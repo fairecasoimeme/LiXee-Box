@@ -215,7 +215,9 @@ PsychicMqttClient &PsychicMqttClient::onMessage(OnMessageUserCallback callback)
 
 PsychicMqttClient &PsychicMqttClient::onTopic(const char *topic, int qos, OnMessageUserCallback callback)
 {
-  OnMessageUserCallback_t subscription = {strcpy((char *)malloc(strlen(topic) + 1), topic), qos, callback};
+  char* topicCopy = (char *)ps_malloc(strlen(topic) + 1);
+  if (!topicCopy) topicCopy = (char *)malloc(strlen(topic) + 1);
+  OnMessageUserCallback_t subscription = {strcpy(topicCopy, topic), qos, callback};
   _onMessageUserCallbacks.push_back(subscription);
   if (_connected)
     subscribe(topic, qos);
@@ -472,12 +474,14 @@ void PsychicMqttClient::_onMessage(esp_mqtt_event_handle_t &event)
   {
     ESP_LOGV(TAG, "MQTT_EVENT_DATA_MULTIPART_FIRST");
     // Allocate memory for the buffer
-    _buffer = (char *)malloc(event->total_data_len + 1);
+    _buffer = (char *)ps_malloc(event->total_data_len + 1);
+    if (!_buffer) _buffer = (char *)malloc(event->total_data_len + 1);
     // Copy the characters from even->data to _buffer
     strncpy(_buffer, (char *)event->data, event->data_len);
 
     // Store the topic for later use, as it is only sent with the first message
-    _topic = (char *)malloc(event->topic_len + 1);
+    _topic = (char *)ps_malloc(event->topic_len + 1);
+    if (!_topic) _topic = (char *)malloc(event->topic_len + 1);
     strncpy(_topic, (char *)event->topic, event->topic_len);
     _topic[event->topic_len] = '\0';
   }

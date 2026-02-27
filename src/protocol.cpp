@@ -18,6 +18,8 @@
 #include "energymeter.h" 
 
 #include "device.h"
+#include "TemplateCache.h"
+extern TemplateCache templateCache;
 
 extern std::vector<DeviceData*> devices;
 
@@ -131,43 +133,21 @@ IPAddress parse_ip_address(const char *str) {
     return result;
 }
 
-String GetNameStatus(int deviceId,String cluster, int attribut, String model)
+String GetNameStatus(int deviceId, String cluster, int attribut, String model)
 {
-    //String path = "/tp/"+(String)deviceId+".json";
-    const char* path ="/tp/";
-    const char* extension =".json";
-    char name_with_extension[64];
-    strcpy(name_with_extension,path);
-    strcat(name_with_extension,String(deviceId).c_str());
-    strcat(name_with_extension,extension);
-    File tpFile = LittleFS.open(name_with_extension, FILE_READ);
-    if (!tpFile || tpFile.isDirectory()) 
-    {
-      log_e("failed open");
-      
-    }else
-    {
-      SpiRamJsonDocument temp(MAXHEAP);
-      deserializeJson(temp,tpFile);
-      tpFile.close();
-      
-      int i=0;     
-      if (temp.containsKey(model))
-      {
-          JsonArray StatusArray = temp[model][0]["status"].as<JsonArray>();
-          for(JsonVariant v : StatusArray) 
-          {
-            if ((temp[model][0]["status"][i]["cluster"].as<String>()==cluster) && (temp[model][0]["status"][i]["attribut"].as<int>()==attribut))
-            {
-              return temp[model][0]["status"][i]["name"].as<String>();
-            }
-            i++;
-            vTaskDelay(1);
-          }
-      }
-          
-    }  
-    return "";  
+    // Utilise le TemplateCache (déjà chargé en PSRAM au démarrage)
+    // au lieu d'ouvrir/parser le fichier LittleFS à chaque appel
+    String filename = String(deviceId) + ".json";
+    TemplateData* tmpl = templateCache.get(filename, model);
+    if (!tmpl) return "";
+
+    unsigned int clusterInt = (unsigned int)strtoul(cluster.c_str(), nullptr, 16);
+    for (const auto& s : tmpl->states) {
+        if (s.cluster == clusterInt && s.attribute == (unsigned int)attribut) {
+            return String(s.name);
+        }
+    }
+    return "";
 }
 
 String GetValueFromShortAddr(int shortAddr,int cluster, int attribute, String value)

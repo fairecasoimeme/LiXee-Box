@@ -202,8 +202,8 @@ String NTPClient::getFullFormattedTime() {
   /* uint8_t seconds = ti->tm_sec;
    String secondStr = seconds < 10 ? "0" + String(seconds) : String(seconds);*/
 
-   return yearStr + "-" + monthStr + "-" + dayStr + " " +
-          hoursStr + ":" + minuteStr;// + ":" + secondStr;
+   return dayStr + "/" + monthStr + "/" + yearStr + " " +
+          hoursStr + ":" + minuteStr;
 }
 
 int NTPClient::getYear() {

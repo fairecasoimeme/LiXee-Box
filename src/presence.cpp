@@ -432,7 +432,7 @@ String getPresenceSummary24hSliding(const String& deviceId) {
 
 String getPresenceHistory(const String& deviceId) {
     SpiRamJsonDocument doc(16384);
-    StaticJsonDocument<2048> result;
+    SpiRamJsonDocument result(2048);
     
     String devKey = deviceId.substring(0, 16);
     

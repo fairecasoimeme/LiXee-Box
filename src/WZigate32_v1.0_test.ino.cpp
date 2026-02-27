@@ -56,6 +56,7 @@ extern "C" {
 #include "TemplateCache.h"
 #include "zigate_flasher.h"
 #include "tunnel.h"
+#include "mbedtls/platform.h"
 
 #define RESET_WINDOW_MS     3000    // Fenêtre de détection
 #define RESET_BOOT_COUNT    3       // Nombre de reboots pour RAZ
@@ -175,7 +176,6 @@ void performDetailedAnalysis() {
     //const char* json_hours = R"({"hours":{"trend":{"256":0,"258":0}...}})";
     //const char* json_minutes = R"({"datas":[{"y":"13:46","519":0...}]})";
     String r;
-    r.reserve(MAXHEAP);
     String filename = "/hst/pwr_00158d0006204fcf.json";
     File file = LittleFS.open(filename, "r");
     if (!file || file.isDirectory())
@@ -282,6 +282,7 @@ String modeWiFi="STA";
 extern int ZiGateMode;
 extern int TimedFiFo;
 extern String section[12];
+extern void processTunnelActivation();
 
 #define BAUD_RATE 115200
 #define TCP_LISTEN_PORT 9999
@@ -639,7 +640,16 @@ bool ScanDevicesToRAZ() {
       continue;
 
     // POWER (RAZ de la minute suivante)
-    String currentTime = Hour + ":" + String(Minute.toInt() + 1);
+    int nextMin = Minute.toInt() + 1;
+    String nextHour = Hour;
+    if (nextMin > 59) {
+      nextMin = 0;
+      int h = Hour.toInt() + 1;
+      if (h > 23) h = 0;
+      nextHour = h < 10 ? "0" + String(h) : String(h);
+    }
+    String nextMinStr = nextMin < 10 ? "0" + String(nextMin) : String(nextMin);
+    String currentTime = nextHour + ":" + nextMinStr;
     resetMeasurements(device->powerHistory, currentTime);
 
     // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
@@ -1941,7 +1951,7 @@ void initWiFiServices() {
   // Tunnel reverse proxy
   if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0) {
     // Construire l'URL du tunnel avec token et clientId
-    String tunnelUrl = "wss://proxy.lixee-box.fr/tunnel?token=";
+    String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
     tunnelUrl += ConfigGeneral.tunnelToken;
     if (strlen(ConfigGeneral.tunnelClientId) > 0) {
       tunnelUrl += "&clientId=";
@@ -2037,8 +2047,25 @@ void blinkLed(uint8_t times, uint16_t delayMs) {
     }
 }
 
+// Custom PSRAM allocator for mbedTLS - moves SSL buffers (~32KB) from heap to PSRAM
+static void* mbedtls_psram_calloc(size_t n, size_t size) {
+    void* p = ps_calloc(n, size);
+    if (!p) p = calloc(n, size);  // fallback to heap
+    return p;
+}
+static void mbedtls_psram_free(void* ptr) {
+    free(ptr);  // free() handles both heap and PSRAM
+}
+
 void setup(void)
-{  
+{
+  // Redirect mbedTLS allocations to PSRAM BEFORE any SSL connection
+  mbedtls_platform_set_calloc_free(mbedtls_psram_calloc, mbedtls_psram_free);
+
+  // Route large malloc() calls (>4KB) to PSRAM automatically
+  // This fixes libraries (WebSocketsClient, etc.) that use malloc() internally
+  heap_caps_malloc_extmem_enable(4096);
+
   ZiGateMode=PRODUCTION;
   initTempSensor();
 
@@ -2441,6 +2468,9 @@ void loop(void)
   if (tunnel != nullptr) {
       tunnel->loop();
   }
+
+  // Traitement async de l'activation tunnel
+  processTunnelActivation();
 
   // === INITIALISATION ZIGBEE (après services WiFi) ===
   if (wifiServicesStarted && !zigbeeInitialized) {

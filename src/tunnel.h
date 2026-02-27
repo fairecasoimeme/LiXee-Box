@@ -1,21 +1,21 @@
 /*
  * LiXeeBoxTunnel - Reverse proxy tunnel client for ESP32
  *
- * Connects to proxy.lixee-box.fr via WebSocket and forwards
+ * Connects to remote.lixee-box.fr via WebSocket and forwards
  * HTTP requests to the local AsyncWebServer.
+ *
+ * Supports up to MAX_CONCURRENT parallel HTTP requests via
+ * a non-blocking state machine (no multi-threading needed).
  *
  * Usage:
  *   #include "LiXeeBoxTunnel.h"
  *
  *   AsyncWebServer server(80);
- *   LiXeeBoxTunnel tunnel("wss://proxy.lixee-box.fr/tunnel?token=YOUR_TOKEN");
+ *   LiXeeBoxTunnel tunnel("wss://remote.lixee-box.fr/tunnel?token=YOUR_TOKEN");
  *
  *   void setup() {
- *     // Setup your web server routes
  *     server.on("/", HTTP_GET, [](AsyncWebServerRequest *r){ r->send(200, "text/html", "<h1>Hello</h1>"); });
  *     server.begin();
- *
- *     // Start tunnel after WiFi is connected
  *     tunnel.begin();
  *   }
  *
@@ -27,10 +27,6 @@
 #ifndef LIXEEBOX_TUNNEL_H
 #define LIXEEBOX_TUNNEL_H
 
-// Disable WebSockets debug output for performance
-// #define DEBUG_WEBSOCKETS(...) Serial.printf(__VA_ARGS__)
-// #define WEBSOCKETS_LOGLEVEL 4
-
 #include <Arduino.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -40,14 +36,87 @@
 #include "config.h"  // For SpiRamJsonDocument
 #include <utility>
 #include <vector>
-
-// Lightweight WebSocket client (built-in, no extra lib needed)
 #include <WebSocketsClient.h>
+
+static const int MAX_CONCURRENT = 6;
+static const size_t MAX_BODY_SIZE = 300000;  // 300KB max per response
+static const unsigned long SLOT_TIMEOUT_MS = 15000;  // 15s per slot max
+
+// State machine for a single tunneled HTTP request
+struct TunnelSlot {
+    enum State {
+        IDLE,              // Slot available
+        CONNECT_SEND,      // Connect to local server + send HTTP request
+        WAIT_RESPONSE,     // Waiting for first byte of response
+        READ_HEADERS,      // Reading HTTP response headers
+        READ_BODY_KNOWN,   // Reading body with known Content-Length
+        READ_BODY_CHUNKED, // Reading chunked body
+        READ_BODY_CLOSE,   // Reading body until connection close
+        READY_TO_SEND      // Body complete, waiting to send via WebSocket
+    };
+
+    State state = IDLE;
+    unsigned long stateStartTime = 0;
+
+    // Request data (from proxy)
+    String reqId;
+    String method;
+    String path;
+    String headersJson;
+    String bodyB64;  // Base64-encoded request body from proxy
+
+    // Local HTTP connection
+    WiFiClient localClient;
+
+    // Response parsing
+    int statusCode = 200;
+    int contentLength = -1;
+    bool isChunked = false;
+    std::vector<std::pair<String, String>> respHeaders;
+    String partialLine;       // Incremental line buffer for header parsing
+    bool statusLineParsed = false;
+
+    // Body accumulation (PSRAM)
+    uint8_t* bodyBuffer = nullptr;
+    size_t bodyLen = 0;
+    size_t bodyCapacity = 0;
+
+    // Chunked transfer state
+    int chunkRemaining = 0;       // Bytes remaining in current chunk
+    bool chunkNeedSize = true;    // Expecting a chunk size line
+    String chunkSizeLine;
+    bool chunkTrailerCR = false;  // Expecting trailing \r\n after chunk data
+
+    void reset() {
+        state = IDLE;
+        localClient.stop();
+        reqId = "";
+        method = "";
+        path = "";
+        headersJson = "";
+        bodyB64 = "";
+        statusCode = 200;
+        contentLength = -1;
+        isChunked = false;
+        respHeaders.clear();
+        partialLine = "";
+        statusLineParsed = false;
+        if (bodyBuffer) { free(bodyBuffer); bodyBuffer = nullptr; }
+        bodyLen = 0;
+        bodyCapacity = 0;
+        chunkRemaining = 0;
+        chunkNeedSize = true;
+        chunkSizeLine = "";
+        chunkTrailerCR = false;
+        stateStartTime = 0;
+    }
+};
 
 class LiXeeBoxTunnel {
 public:
     LiXeeBoxTunnel(const char* tunnelUrl, uint16_t localPort = 80)
-        : _localPort(localPort), _connected(false), _lastReconnect(0), _lastHeartbeat(0) {
+        : _localPort(localPort), _connected(false), _sending(false),
+          _lastReconnect(0), _lastHeartbeat(0) {
         parseTunnelUrl(tunnelUrl);
     }
 
@@ -56,19 +125,13 @@ public:
         Serial.println("[Tunnel] Host: " + _host);
         Serial.println("[Tunnel] Path: " + _path);
 
-        // Set event handler FIRST (before begin)
         _ws.onEvent([this](WStype_t type, uint8_t* payload, size_t length) {
             this->onWsEvent(type, payload, length);
         });
 
-        // Use beginSslWithCA with NULL CA to enable insecure mode
         _ws.beginSslWithCA(_host.c_str(), 443, _path.c_str(), nullptr, "lixeebox");
-
-        // Reconnection settings
-        _ws.setReconnectInterval(10000);  // Increased to 10 seconds
-
-        // Enable WebSocket-level heartbeat (ping every 15s, timeout 5s, 2 retries)
-        _ws.enableHeartbeat(15000, 5000, 2);
+        _ws.setReconnectInterval(10000);
+        _ws.enableHeartbeat(30000, 20000, 3);
 
         Serial.println("[Tunnel] WebSocket configuration complete, waiting for connection...");
     }
@@ -76,10 +139,19 @@ public:
     void loop() {
         _ws.loop();
 
+        if (!_connected) return;
+
+        // Process all active slots (non-blocking)
+        for (int i = 0; i < MAX_CONCURRENT; i++) {
+            if (_slots[i].state != TunnelSlot::IDLE) {
+                processSlot(_slots[i]);
+            }
+        }
+
         // Send application-level heartbeat every 25 seconds
-        if (_connected && millis() - _lastHeartbeat > 25000) {
+        if (millis() - _lastHeartbeat > 25000) {
             _lastHeartbeat = millis();
-            DynamicJsonDocument hb(256);
+            SpiRamJsonDocument hb(256);
             hb["type"] = "heartbeat";
             hb["uptime"] = millis() / 1000;
             hb["freeHeap"] = ESP.getFreeHeap();
@@ -87,8 +159,24 @@ public:
             String hbStr;
             serializeJson(hb, hbStr);
             _ws.sendTXT(hbStr);
-            Serial.println("[Tunnel] Heartbeat sent");
+            // Log active slots count
+            int active = 0;
+            for (int i = 0; i < MAX_CONCURRENT; i++) {
+                if (_slots[i].state != TunnelSlot::IDLE) active++;
+            }
+            Serial.printf("[Tunnel] Heartbeat - heap: %u, psram: %u, active_slots: %d\n",
+                          ESP.getFreeHeap(), ESP.getFreePsram(), active);
         }
+    }
+
+    void stop() {
+        Serial.println("[Tunnel] Stopping...");
+        _connected = false;
+        for (int i = 0; i < MAX_CONCURRENT; i++) {
+            _slots[i].reset();
+        }
+        _ws.disconnect();
+        Serial.println("[Tunnel] Stopped");
     }
 
     bool isConnected() { return _connected; }
@@ -101,14 +189,15 @@ private:
     String _path;
     uint16_t _localPort;
     bool _connected;
+    bool _sending;  // True when a slot is currently doing sendTXT
     unsigned long _lastReconnect;
     unsigned long _lastHeartbeat;
     String _deviceId;
     String _subdomain;
+    TunnelSlot _slots[MAX_CONCURRENT];
 
     void parseTunnelUrl(const char* url) {
         String u(url);
-        // Remove wss://
         if (u.startsWith("wss://")) u = u.substring(6);
         else if (u.startsWith("ws://")) u = u.substring(5);
 
@@ -126,56 +215,42 @@ private:
         switch (type) {
             case WStype_CONNECTED:
                 Serial.println("[Tunnel] WebSocket CONNECTED!");
-                if (payload) {
-                    Serial.printf("[Tunnel] Server URL: %s\n", payload);
-                }
+                if (payload) Serial.printf("[Tunnel] Server URL: %s\n", payload);
                 _connected = true;
                 break;
 
             case WStype_DISCONNECTED:
                 Serial.println("[Tunnel] WebSocket DISCONNECTED");
                 _connected = false;
+                // Reset all active slots
+                for (int i = 0; i < MAX_CONCURRENT; i++) {
+                    _slots[i].reset();
+                }
                 break;
 
             case WStype_TEXT:
-                Serial.printf("[Tunnel] Received TEXT (%d bytes)\n", length);
                 handleMessage((char*)payload, length);
                 break;
 
             case WStype_BIN:
-                Serial.printf("[Tunnel] Received BIN (%d bytes)\n", length);
                 break;
 
             case WStype_PING:
-                Serial.println("[Tunnel] Received PING");
-                break;
-
             case WStype_PONG:
-                Serial.println("[Tunnel] Received PONG");
                 break;
 
             case WStype_ERROR:
                 Serial.println("[Tunnel] ERROR!");
-                if (payload) {
-                    Serial.printf("[Tunnel] Error details: %s\n", payload);
-                }
-                break;
-
-            case WStype_FRAGMENT_TEXT_START:
-            case WStype_FRAGMENT_BIN_START:
-            case WStype_FRAGMENT:
-            case WStype_FRAGMENT_FIN:
-                Serial.println("[Tunnel] Fragment received");
+                if (payload) Serial.printf("[Tunnel] Error: %s\n", payload);
                 break;
 
             default:
-                Serial.printf("[Tunnel] Unknown event type: %d\n", type);
                 break;
         }
     }
 
     void handleMessage(char* payload, size_t length) {
-        DynamicJsonDocument doc(2048);
+        SpiRamJsonDocument doc(2048);
         DeserializationError err = deserializeJson(doc, payload, length);
         if (err) {
             Serial.println("[Tunnel] JSON parse error: " + String(err.c_str()));
@@ -190,8 +265,7 @@ private:
             _subdomain = doc["subdomain"].as<String>();
             Serial.println("[Tunnel] Registered as " + _deviceId + " (" + _subdomain + ")");
 
-            // Send device info
-            DynamicJsonDocument info(512);
+            SpiRamJsonDocument info(512);
             info["type"] = "info";
             JsonObject data = info["data"].to<JsonObject>();
             data["firmware"] = "LiXeeBoxTunnel/1.0";
@@ -203,48 +277,136 @@ private:
             _ws.sendTXT(infoStr);
         }
         else if (strcmp(type, "http_request") == 0) {
-            handleHttpRequest(doc);
+            const char* reqId = doc["reqId"];
+            const char* method = doc["method"];
+            const char* path = doc["path"];
+            if (!reqId || !method || !path) return;
+
+            // Find a free slot
+            int freeSlot = -1;
+            for (int i = 0; i < MAX_CONCURRENT; i++) {
+                if (_slots[i].state == TunnelSlot::IDLE) {
+                    freeSlot = i;
+                    break;
+                }
+            }
+
+            if (freeSlot < 0) {
+                Serial.printf("[Tunnel] WARN: All %d slots busy, rejecting %s %s\n",
+                              MAX_CONCURRENT, method, path);
+                sendErrorResponse(reqId, 503, "Server busy");
+                return;
+            }
+
+            // PSRAM guard
+            if (ESP.getFreePsram() < 200000) {
+                Serial.printf("[Tunnel] WARN: PSRAM low (%u), rejecting request\n", ESP.getFreePsram());
+                sendErrorResponse(reqId, 503, "Low memory");
+                return;
+            }
+
+            TunnelSlot& slot = _slots[freeSlot];
+            slot.reqId = reqId;
+            slot.method = method;
+            slot.path = path;
+
+            slot.headersJson = "";
+            if (doc.containsKey("headers")) {
+                serializeJson(doc["headers"], slot.headersJson);
+            }
+            slot.bodyB64 = doc["body"].isNull() ? "" : doc["body"].as<String>();
+
+            slot.state = TunnelSlot::CONNECT_SEND;
+            slot.stateStartTime = millis();
+
+            Serial.printf("[Tunnel] [%d] Queued: %s %s (reqId: %s)\n",
+                          freeSlot, method, path, reqId);
         }
     }
 
-    void handleHttpRequest(JsonDocument& doc) {
-        const char* reqId = doc["reqId"];
-        const char* method = doc["method"];
-        const char* path = doc["path"];
+    // ---- State machine: advance one slot by one step (non-blocking) ----
 
-        if (!reqId || !method || !path) return;
+    void processSlot(TunnelSlot& slot) {
+        // Watchdog: timeout any slot that's been active too long
+        if (slot.state != TunnelSlot::IDLE && slot.state != TunnelSlot::READY_TO_SEND) {
+            if (millis() - slot.stateStartTime > SLOT_TIMEOUT_MS) {
+                Serial.printf("[Tunnel] Slot timeout (state=%d, reqId=%s)\n",
+                              slot.state, slot.reqId.c_str());
+                sendErrorResponse(slot.reqId.c_str(), 504, "Gateway timeout");
+                slot.reset();
+                return;
+            }
+        }
 
-        String reqIdStr = String(reqId);  // Save reqId as String before doc is reused
-        Serial.printf("[Tunnel] %s %s (reqId: %s)\n", method, path, reqId);
+        switch (slot.state) {
+            case TunnelSlot::CONNECT_SEND:
+                processConnectSend(slot);
+                break;
+            case TunnelSlot::WAIT_RESPONSE:
+                processWaitResponse(slot);
+                break;
+            case TunnelSlot::READ_HEADERS:
+                processReadHeaders(slot);
+                break;
+            case TunnelSlot::READ_BODY_KNOWN:
+                processReadBodyKnown(slot);
+                break;
+            case TunnelSlot::READ_BODY_CHUNKED:
+                processReadBodyChunked(slot);
+                break;
+            case TunnelSlot::READ_BODY_CLOSE:
+                processReadBodyClose(slot);
+                break;
+            case TunnelSlot::READY_TO_SEND:
+                processReadyToSend(slot);
+                break;
+            default:
+                break;
+        }
+    }
 
-        // Make local HTTP request to AsyncWebServer
-        WiFiClient localClient;
-        if (!localClient.connect("127.0.0.1", _localPort, 5000)) {
-            sendErrorResponse(reqIdStr.c_str(), 502, "Cannot connect to local server");
+    // State: CONNECT_SEND - Connect to local server and send HTTP request
+    void processConnectSend(TunnelSlot& slot) {
+        if (!slot.localClient.connect("127.0.0.1", _localPort, 1000)) {
+            Serial.printf("[Tunnel] [%s] Cannot connect to local server\n", slot.reqId.c_str());
+            sendErrorResponse(slot.reqId.c_str(), 502, "Cannot connect to local server");
+            slot.reset();
             return;
         }
 
         // Build HTTP request
-        String request = String(method) + " " + String(path) + " HTTP/1.1\r\n";
+        String request = slot.method + " " + slot.path + " HTTP/1.1\r\n";
         request += "Host: 127.0.0.1\r\n";
         request += "Connection: close\r\n";
 
         // Forward relevant headers
-        JsonObject headers = doc["headers"].as<JsonObject>();
-        for (JsonPair kv : headers) {
-            String key = kv.key().c_str();
-            key.toLowerCase();
-            if (key == "content-type" || key == "content-length" ||
-                key == "accept" || key == "accept-encoding" ||
-                key == "cookie" || key == "authorization") {
-                request += String(kv.key().c_str()) + ": " + kv.value().as<String>() + "\r\n";
+        bool hasContentType = false;
+        if (slot.headersJson.length() > 2) {
+            SpiRamJsonDocument hdrs(2048);
+            if (deserializeJson(hdrs, slot.headersJson) == DeserializationError::Ok) {
+                JsonObject headers = hdrs.as<JsonObject>();
+                for (JsonPair kv : headers) {
+                    String key = kv.key().c_str();
+                    key.toLowerCase();
+                    // Skip content-length: le tunnel le recalcule depuis le body décodé
+                    if (key == "content-length") continue;
+                    if (key == "content-type" ||
+                        key == "accept" || key == "accept-encoding" ||
+                        key == "cookie" || key == "authorization" ||
+                        key == "x-requested-with" || key == "origin" || key == "referer") {
+                        request += String(kv.key().c_str()) + ": " + kv.value().as<String>() + "\r\n";
+                        if (key == "content-type") hasContentType = true;
+                    }
+                }
             }
         }
 
         // Body
-        if (!doc["body"].isNull()) {
-            String bodyB64 = doc["body"].as<String>();
-            String body = base64Decode(bodyB64);
+        if (slot.bodyB64.length() > 0) {
+            String body = base64Decode(slot.bodyB64);
+            if (!hasContentType) {
+                request += "Content-Type: application/x-www-form-urlencoded\r\n";
+            }
             request += "Content-Length: " + String(body.length()) + "\r\n";
             request += "\r\n";
             request += body;
@@ -252,171 +414,384 @@ private:
             request += "\r\n";
         }
 
-        localClient.print(request);
+        slot.localClient.print(request);
+        // Free request data no longer needed
+        slot.headersJson = "";
+        slot.bodyB64 = "";
 
-        // Read response with timeout - use yield() to let AsyncWebServer process
-        unsigned long start = millis();
-        unsigned long lastWsLoop = millis();
-        while (!localClient.available() && millis() - start < 30000) {
-            yield();
-            delay(10);
-            // Call _ws.loop() every 500ms to handle pings and keep connection alive
-            if (millis() - lastWsLoop > 500) {
-                _ws.loop();
-                lastWsLoop = millis();
+        slot.state = TunnelSlot::WAIT_RESPONSE;
+        slot.stateStartTime = millis();
+    }
+
+    // State: WAIT_RESPONSE - Wait for first byte from local server
+    void processWaitResponse(TunnelSlot& slot) {
+        if (slot.localClient.available()) {
+            slot.state = TunnelSlot::READ_HEADERS;
+            slot.stateStartTime = millis();
+            slot.partialLine = "";
+            slot.statusLineParsed = false;
+        }
+    }
+
+    // State: READ_HEADERS - Read HTTP response headers incrementally
+    void processReadHeaders(TunnelSlot& slot) {
+        int bytesProcessed = 0;
+        while (slot.localClient.available() && bytesProcessed < 1024) {
+            char c = slot.localClient.read();
+            bytesProcessed++;
+
+            if (c == '\n') {
+                // Remove trailing \r
+                if (slot.partialLine.endsWith("\r")) {
+                    slot.partialLine.remove(slot.partialLine.length() - 1);
+                }
+
+                if (!slot.statusLineParsed) {
+                    // Parse status line: "HTTP/1.1 200 OK"
+                    int spaceIdx = slot.partialLine.indexOf(' ');
+                    if (spaceIdx > 0) {
+                        slot.statusCode = slot.partialLine.substring(spaceIdx + 1).toInt();
+                    }
+                    slot.statusLineParsed = true;
+                }
+                else if (slot.partialLine.length() == 0) {
+                    // Empty line = end of headers
+                    Serial.printf("[Tunnel] [%s] Response status: %d, CL: %d, Chunked: %s\n",
+                                  slot.reqId.c_str(), slot.statusCode, slot.contentLength,
+                                  slot.isChunked ? "yes" : "no");
+
+                    // Transition to body reading
+                    if (slot.contentLength > 0) {
+                        // Allocate body buffer
+                        size_t allocSize = min((size_t)slot.contentLength, MAX_BODY_SIZE);
+                        slot.bodyBuffer = (uint8_t*)ps_malloc(allocSize);
+                        if (!slot.bodyBuffer) slot.bodyBuffer = (uint8_t*)malloc(allocSize);
+                        if (!slot.bodyBuffer) {
+                            Serial.printf("[Tunnel] [%s] Failed to allocate %u bytes\n",
+                                          slot.reqId.c_str(), allocSize);
+                            sendErrorResponse(slot.reqId.c_str(), 500, "Out of memory");
+                            slot.reset();
+                            return;
+                        }
+                        slot.bodyCapacity = allocSize;
+                        slot.bodyLen = 0;
+                        slot.state = TunnelSlot::READ_BODY_KNOWN;
+                    } else if (slot.isChunked) {
+                        // Start with 16KB buffer, will grow as needed
+                        slot.bodyBuffer = (uint8_t*)ps_malloc(16384);
+                        if (!slot.bodyBuffer) slot.bodyBuffer = (uint8_t*)malloc(16384);
+                        if (!slot.bodyBuffer) {
+                            sendErrorResponse(slot.reqId.c_str(), 500, "Out of memory");
+                            slot.reset();
+                            return;
+                        }
+                        slot.bodyCapacity = 16384;
+                        slot.bodyLen = 0;
+                        slot.chunkNeedSize = true;
+                        slot.chunkRemaining = 0;
+                        slot.chunkSizeLine = "";
+                        slot.chunkTrailerCR = false;
+                        slot.state = TunnelSlot::READ_BODY_CHUNKED;
+                    } else if (slot.contentLength == 0) {
+                        // No body
+                        slot.state = TunnelSlot::READY_TO_SEND;
+                    } else {
+                        // Unknown length, read until close
+                        slot.bodyBuffer = (uint8_t*)ps_malloc(16384);
+                        if (!slot.bodyBuffer) slot.bodyBuffer = (uint8_t*)malloc(16384);
+                        if (!slot.bodyBuffer) {
+                            sendErrorResponse(slot.reqId.c_str(), 500, "Out of memory");
+                            slot.reset();
+                            return;
+                        }
+                        slot.bodyCapacity = 16384;
+                        slot.bodyLen = 0;
+                        slot.state = TunnelSlot::READ_BODY_CLOSE;
+                    }
+                    slot.stateStartTime = millis();
+                    return;
+                }
+                else {
+                    // Parse header line
+                    int colonIdx = slot.partialLine.indexOf(':');
+                    if (colonIdx > 0) {
+                        String hKey = slot.partialLine.substring(0, colonIdx);
+                        String hVal = slot.partialLine.substring(colonIdx + 1);
+                        hVal.trim();
+                        hKey.trim();
+
+                        String hKeyLower = hKey;
+                        hKeyLower.toLowerCase();
+
+                        if (hKeyLower == "transfer-encoding") {
+                            String hValLower = hVal;
+                            hValLower.toLowerCase();
+                            if (hValLower.indexOf("chunked") >= 0) {
+                                slot.isChunked = true;
+                            }
+                        }
+                        if (hKeyLower == "content-length") {
+                            slot.contentLength = hVal.toInt();
+                        }
+                        if (hKeyLower != "connection" && hKeyLower != "transfer-encoding") {
+                            slot.respHeaders.push_back({hKey, hVal});
+                        }
+                    }
+                }
+                slot.partialLine = "";
+            } else {
+                slot.partialLine += c;
             }
         }
+    }
 
-        if (!localClient.available()) {
-            sendErrorResponse(reqIdStr.c_str(), 504, "Local server timeout");
-            localClient.stop();
+    // State: READ_BODY_KNOWN - Read body with known Content-Length
+    void processReadBodyKnown(TunnelSlot& slot) {
+        int remaining = slot.contentLength - slot.bodyLen;
+        if (remaining <= 0) {
+            slot.state = TunnelSlot::READY_TO_SEND;
+            slot.localClient.stop();
             return;
         }
 
-        // Parse HTTP response
-        String statusLine = localClient.readStringUntil('\n');
-        int statusCode = 200;
-        int spaceIdx = statusLine.indexOf(' ');
-        if (spaceIdx > 0) {
-            statusCode = statusLine.substring(spaceIdx + 1).toInt();
+        int avail = slot.localClient.available();
+        if (avail <= 0) return;
+
+        int toRead = min(avail, remaining);
+        // Read in bulk
+        int r = slot.localClient.read(slot.bodyBuffer + slot.bodyLen, toRead);
+        if (r > 0) {
+            slot.bodyLen += r;
+            slot.stateStartTime = millis();  // Reset timeout on data received
         }
 
-        // Read headers
-        String line;
-        int contentLength = -1;
-        std::vector<std::pair<String, String>> headerList;
-
-        while (true) {
-            line = localClient.readStringUntil('\n');
-            line.trim();
-            if (line.length() == 0) break;
-
-            int colonIdx = line.indexOf(':');
-            if (colonIdx > 0) {
-                String hKey = line.substring(0, colonIdx);
-                String hVal = line.substring(colonIdx + 1);
-                hVal.trim();
-                hKey.trim();
-
-                String hKeyLower = hKey;
-                hKeyLower.toLowerCase();
-                if (hKeyLower != "transfer-encoding" && hKeyLower != "connection") {
-                    headerList.push_back({hKey, hVal});
-                }
-                if (hKeyLower == "content-length") {
-                    contentLength = hVal.toInt();
-                }
-            }
+        if ((int)slot.bodyLen >= slot.contentLength) {
+            Serial.printf("[Tunnel] [%s] Body complete: %u/%d bytes\n",
+                          slot.reqId.c_str(), slot.bodyLen, slot.contentLength);
+            slot.state = TunnelSlot::READY_TO_SEND;
+            slot.localClient.stop();
         }
-
-        Serial.printf("[Tunnel] Response status: %d, Content-Length: %d\n", statusCode, contentLength);
-
-        // Read body
-        String bodyBase64 = "";
-        if (contentLength > 0) {
-            // Allocate in PSRAM for large responses
-            uint8_t* buf = nullptr;
-            if (contentLength > 32000 && ESP.getFreePsram() > (size_t)(contentLength + 50000)) {
-                buf = (uint8_t*)ps_malloc(contentLength);
-                Serial.printf("[Tunnel] Allocated %d bytes in PSRAM for body\n", contentLength);
-            } else {
-                buf = (uint8_t*)malloc(contentLength);
-            }
-
-            if (buf) {
-                int bytesRead = 0;
-                unsigned long lastWsLoop = millis();
-                start = millis();
-                while (bytesRead < contentLength && millis() - start < 30000) {
-                    if (localClient.available()) {
-                        int r = localClient.read(buf + bytesRead, contentLength - bytesRead);
-                        if (r > 0) bytesRead += r;
-                    } else {
-                        yield();
-                        delay(1);
-                    }
-                    // Call _ws.loop() every 500ms to handle pings and keep connection alive
-                    if (millis() - lastWsLoop > 500) {
-                        _ws.loop();
-                        lastWsLoop = millis();
-                    }
-                }
-                Serial.printf("[Tunnel] Read %d/%d bytes from local server\n", bytesRead, contentLength);
-                if (bytesRead > 0) {
-                    bodyBase64 = base64::encode(buf, bytesRead);
-                }
-                free(buf);
-            } else {
-                Serial.printf("[Tunnel] ERROR: Failed to allocate %d bytes for body!\n", contentLength);
-            }
-        } else if (contentLength == -1) {
-            // Chunked or read until close
-            std::vector<uint8_t> bodyBuf;
-            bodyBuf.reserve(8192);
-            unsigned long lastWsLoop = millis();
-            start = millis();
-            while (millis() - start < 30000) {
-                if (localClient.available()) {
-                    uint8_t b = localClient.read();
-                    bodyBuf.push_back(b);
-                    start = millis();
-                } else if (!localClient.connected()) {
-                    break;
-                } else {
-                    yield();
-                    delay(1);
-                }
-                // Call _ws.loop() every 500ms to handle pings and keep connection alive
-                if (millis() - lastWsLoop > 500) {
-                    _ws.loop();
-                    lastWsLoop = millis();
-                }
-            }
-            if (!bodyBuf.empty()) {
-                Serial.printf("[Tunnel] Read %d bytes (chunked)\n", bodyBuf.size());
-                bodyBase64 = base64::encode(bodyBuf.data(), bodyBuf.size());
-            }
-        }
-
-        localClient.stop();
-
-        // Build JSON response MANUALLY to avoid ArduinoJson buffer corruption
-        Serial.printf("[Tunnel] Building JSON manually, body base64 size: %d\n", bodyBase64.length());
-
-        String* respStr = new String();
-        respStr->reserve(bodyBase64.length() + 2048);
-
-        *respStr = "{\"type\":\"http_response\",\"reqId\":\"";
-        *respStr += reqIdStr;
-        *respStr += "\",\"status\":";
-        *respStr += String(statusCode);
-        *respStr += ",\"headers\":{";
-
-        // Add headers
-        bool firstHeader = true;
-        for (const auto& h : headerList) {
-            if (!firstHeader) *respStr += ",";
-            *respStr += "\"";
-            *respStr += escapeJsonString(h.first);
-            *respStr += "\":\"";
-            *respStr += escapeJsonString(h.second);
-            *respStr += "\"";
-            firstHeader = false;
-        }
-
-        *respStr += "},\"body\":\"";
-        *respStr += bodyBase64;
-        *respStr += "\"}";
-
-        Serial.printf("[Tunnel] Response JSON size: %d bytes\n", respStr->length());
-
-        _ws.sendTXT(*respStr);
-        Serial.printf("[Tunnel] Response sent: %d (%d bytes)\n", statusCode, respStr->length());
-
-        delete respStr;
     }
 
-    // Helper to escape special characters in JSON strings
+    // Grow body buffer (for chunked/close modes)
+    bool growBodyBuffer(TunnelSlot& slot, size_t needed) {
+        if (slot.bodyLen + needed <= slot.bodyCapacity) return true;
+        if (slot.bodyLen + needed > MAX_BODY_SIZE) return false;
+
+        size_t newCap = max(slot.bodyCapacity * 2, slot.bodyLen + needed);
+        if (newCap > MAX_BODY_SIZE) newCap = MAX_BODY_SIZE;
+
+        uint8_t* newBuf = (uint8_t*)ps_malloc(newCap);
+        if (!newBuf) newBuf = (uint8_t*)malloc(newCap);
+        if (!newBuf) return false;
+
+        if (slot.bodyBuffer && slot.bodyLen > 0) {
+            memcpy(newBuf, slot.bodyBuffer, slot.bodyLen);
+        }
+        if (slot.bodyBuffer) free(slot.bodyBuffer);
+        slot.bodyBuffer = newBuf;
+        slot.bodyCapacity = newCap;
+        return true;
+    }
+
+    // State: READ_BODY_CHUNKED - Read chunked transfer encoding incrementally
+    void processReadBodyChunked(TunnelSlot& slot) {
+        int bytesProcessed = 0;
+
+        while (slot.localClient.available() && bytesProcessed < 2048) {
+            if (slot.chunkTrailerCR) {
+                // Consume trailing \r\n after chunk data
+                char c = slot.localClient.read();
+                bytesProcessed++;
+                if (c == '\n') {
+                    slot.chunkTrailerCR = false;
+                    slot.chunkNeedSize = true;
+                    slot.chunkSizeLine = "";
+                }
+                // Skip \r silently
+                continue;
+            }
+
+            if (slot.chunkNeedSize) {
+                // Reading chunk size line
+                char c = slot.localClient.read();
+                bytesProcessed++;
+                if (c == '\n') {
+                    // Parse chunk size
+                    int semi = slot.chunkSizeLine.indexOf(';');
+                    if (semi >= 0) slot.chunkSizeLine = slot.chunkSizeLine.substring(0, semi);
+                    slot.chunkSizeLine.trim();
+                    slot.chunkRemaining = (int)strtol(slot.chunkSizeLine.c_str(), nullptr, 16);
+
+                    if (slot.chunkRemaining == 0) {
+                        // Last chunk
+                        Serial.printf("[Tunnel] [%s] Chunked body complete: %u bytes\n",
+                                      slot.reqId.c_str(), slot.bodyLen);
+                        slot.state = TunnelSlot::READY_TO_SEND;
+                        slot.localClient.stop();
+                        return;
+                    }
+                    slot.chunkNeedSize = false;
+                } else if (c != '\r') {
+                    slot.chunkSizeLine += c;
+                }
+                continue;
+            }
+
+            // Reading chunk data
+            int avail = slot.localClient.available();
+            int toRead = min(avail, slot.chunkRemaining);
+            if (toRead <= 0) break;
+
+            if (!growBodyBuffer(slot, toRead)) {
+                Serial.printf("[Tunnel] [%s] Body too large, truncating at %u bytes\n",
+                              slot.reqId.c_str(), slot.bodyLen);
+                slot.state = TunnelSlot::READY_TO_SEND;
+                slot.localClient.stop();
+                return;
+            }
+
+            int r = slot.localClient.read(slot.bodyBuffer + slot.bodyLen, toRead);
+            if (r > 0) {
+                slot.bodyLen += r;
+                slot.chunkRemaining -= r;
+                bytesProcessed += r;
+                slot.stateStartTime = millis();
+            }
+
+            if (slot.chunkRemaining <= 0) {
+                // Chunk data complete, expect trailing \r\n
+                slot.chunkTrailerCR = true;
+            }
+        }
+    }
+
+    // State: READ_BODY_CLOSE - Read until connection closes
+    void processReadBodyClose(TunnelSlot& slot) {
+        int avail = slot.localClient.available();
+
+        if (avail > 0) {
+            if (!growBodyBuffer(slot, avail)) {
+                Serial.printf("[Tunnel] [%s] Body too large, truncating at %u bytes\n",
+                              slot.reqId.c_str(), slot.bodyLen);
+                slot.state = TunnelSlot::READY_TO_SEND;
+                slot.localClient.stop();
+                return;
+            }
+
+            int r = slot.localClient.read(slot.bodyBuffer + slot.bodyLen, avail);
+            if (r > 0) {
+                slot.bodyLen += r;
+                slot.stateStartTime = millis();
+            }
+        }
+
+        if (!slot.localClient.connected() && !slot.localClient.available()) {
+            Serial.printf("[Tunnel] [%s] Body complete (close): %u bytes\n",
+                          slot.reqId.c_str(), slot.bodyLen);
+            slot.state = TunnelSlot::READY_TO_SEND;
+            slot.localClient.stop();
+        }
+    }
+
+    // State: READY_TO_SEND - Base64 encode body and send via WebSocket
+    void processReadyToSend(TunnelSlot& slot) {
+        // Only one slot can send at a time (WebSocketsClient is not thread-safe)
+        if (_sending) return;
+        _sending = true;
+
+        Serial.printf("[Tunnel] [%s] Encoding + sending (%u bytes body)\n",
+                      slot.reqId.c_str(), slot.bodyLen);
+
+        // Base64 encode body into PSRAM
+        char* b64Buf = nullptr;
+        size_t b64Len = 0;
+
+        if (slot.bodyBuffer && slot.bodyLen > 0) {
+            size_t b64MaxLen = 4 * ((slot.bodyLen + 2) / 3) + 1;
+            b64Buf = (char*)ps_malloc(b64MaxLen);
+            if (!b64Buf) b64Buf = (char*)malloc(b64MaxLen);
+
+            if (b64Buf) {
+                size_t written = 0;
+                int ret = mbedtls_base64_encode((unsigned char*)b64Buf, b64MaxLen, &written,
+                                                 slot.bodyBuffer, slot.bodyLen);
+                if (ret == 0) {
+                    b64Len = written;
+                    b64Buf[b64Len] = '\0';
+                } else {
+                    Serial.printf("[Tunnel] [%s] base64 encode failed: %d\n", slot.reqId.c_str(), ret);
+                    free(b64Buf);
+                    b64Buf = nullptr;
+                }
+            }
+            // Free raw body - no longer needed
+            free(slot.bodyBuffer);
+            slot.bodyBuffer = nullptr;
+            slot.bodyLen = 0;
+        }
+
+        // Build JSON response
+        String jsonHeader;
+        jsonHeader.reserve(512);
+        jsonHeader = "{\"type\":\"http_response\",\"reqId\":\"";
+        jsonHeader += slot.reqId;
+        jsonHeader += "\",\"status\":";
+        jsonHeader += String(slot.statusCode);
+        jsonHeader += ",\"headers\":{";
+
+        bool firstHeader = true;
+        for (const auto& h : slot.respHeaders) {
+            if (!firstHeader) jsonHeader += ",";
+            jsonHeader += "\"";
+            jsonHeader += escapeJsonString(h.first);
+            jsonHeader += "\":\"";
+            jsonHeader += escapeJsonString(h.second);
+            jsonHeader += "\"";
+            firstHeader = false;
+        }
+        jsonHeader += "},\"body\":\"";
+
+        // Assemble final response in PSRAM
+        size_t totalLen = jsonHeader.length() + b64Len + 2;
+        char* respBuf = (char*)ps_malloc(totalLen + 1);
+        if (!respBuf) respBuf = (char*)malloc(totalLen + 1);
+
+        if (respBuf) {
+            size_t offset = 0;
+            memcpy(respBuf + offset, jsonHeader.c_str(), jsonHeader.length());
+            offset += jsonHeader.length();
+            if (b64Buf && b64Len > 0) {
+                memcpy(respBuf + offset, b64Buf, b64Len);
+                offset += b64Len;
+            }
+            memcpy(respBuf + offset, "\"}", 2);
+            offset += 2;
+            respBuf[offset] = '\0';
+
+            if (b64Buf) { free(b64Buf); b64Buf = nullptr; }
+
+            // Process pending pings/pongs before sending
+            _ws.loop();
+
+            _ws.sendTXT((uint8_t*)respBuf, offset);
+
+            Serial.printf("[Tunnel] [%s] Response sent: %d (%u bytes)\n",
+                          slot.reqId.c_str(), slot.statusCode, offset);
+            free(respBuf);
+        } else {
+            Serial.printf("[Tunnel] [%s] Failed to allocate %u bytes for response\n",
+                          slot.reqId.c_str(), totalLen);
+            if (b64Buf) free(b64Buf);
+            sendErrorResponse(slot.reqId.c_str(), 500, "Out of memory");
+        }
+
+        slot.reset();
+        _sending = false;
+    }
+
+    // ---- Utility methods ----
+
     String escapeJsonString(const String& input) {
         String output;
         output.reserve(input.length() + 10);
@@ -444,7 +819,7 @@ private:
     }
 
     void sendErrorResponse(const char* reqId, int status, const char* message) {
-        DynamicJsonDocument doc(2048);
+        SpiRamJsonDocument doc(512);
         doc["type"] = "http_response";
         doc["reqId"] = reqId;
         doc["status"] = status;
@@ -456,21 +831,18 @@ private:
     }
 
     String base64Decode(const String& input) {
-        // Decode using mbedtls
         size_t outputLen = 0;
-        // First call to get required length
         mbedtls_base64_decode(nullptr, 0, &outputLen,
                               (const unsigned char*)input.c_str(), input.length());
-
         if (outputLen == 0) return "";
 
-        unsigned char* buf = (unsigned char*)malloc(outputLen + 1);
+        unsigned char* buf = (unsigned char*)ps_malloc(outputLen + 1);
+        if (!buf) buf = (unsigned char*)malloc(outputLen + 1);
         if (!buf) return "";
 
         size_t actualLen = 0;
         int ret = mbedtls_base64_decode(buf, outputLen, &actualLen,
                                         (const unsigned char*)input.c_str(), input.length());
-
         if (ret != 0) {
             free(buf);
             return "";

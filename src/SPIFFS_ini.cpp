@@ -929,7 +929,7 @@ using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;*/
     }
     size_t filesize = file.size();
 
-    DynamicJsonDocument doc(MAXHEAP);
+    SpiRamJsonDocument doc(MAXHEAP);
 
     if (filesize > 0)
     {
