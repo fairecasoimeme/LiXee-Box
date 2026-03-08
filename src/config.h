@@ -304,14 +304,9 @@ struct SpiRamAllocator {
   }
 
   void* reallocate(void* pointer, size_t new_size) {
-    // ps_realloc n'existe pas sur ESP32, on fait ps_malloc + memcpy + free
-    // realloc() standard peut migrer silencieusement de PSRAM vers le heap
-    void* new_ptr = ps_malloc(new_size);
-    if (!new_ptr) new_ptr = malloc(new_size);
-    if (new_ptr && pointer) {
-      memcpy(new_ptr, pointer, new_size);  // ArduinoJson gère les tailles
-      free(pointer);
-    }
+    // heap_caps_realloc connaît la taille de l'ancien bloc en interne
+    void* new_ptr = heap_caps_realloc(pointer, new_size, MALLOC_CAP_SPIRAM);
+    if (!new_ptr) new_ptr = realloc(pointer, new_size);
     return new_ptr;
   }
 };
