@@ -3268,6 +3268,7 @@ const char HTTP_LOGIN[] PROGMEM = R"(
             <span id='tunnelBadge' class='badge {{badgeClass}}'>{{badgeText}}</span>
             {{tunnelRemoteWarning}}
           </div>
+          <div id='tunnelUrlBox'>{{tunnelUrl}}</div>
           <div class='d-flex justify-content-center align-items-center gap-2 mb-3'>
             <div class='d-flex gap-1' id='codeInputs'>
               <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
@@ -3427,9 +3428,17 @@ const char HTTP_LOGIN[] PROGMEM = R"(
     function pollStatus() {
       fetch('/api/tunnelStatus').then(function(r){return r.json();}).then(function(d) {
         var b = document.getElementById('tunnelBadge');
-        if (d.connected) { b.className='badge bg-success'; b.textContent='Connecté'; }
-        else if (d.enabled) { b.className='badge bg-warning text-dark'; b.textContent='Déconnecté'; }
-        else { b.className='badge bg-secondary'; b.textContent='Désactivé'; }
+        var u = document.getElementById('tunnelUrlBox');
+        if (d.connected) {
+          b.className='badge bg-success'; b.textContent='Connecté';
+          if (d.url) {
+            u.innerHTML="<div class='mb-3'><small class='text-muted'>URL :</small> <a href='"+d.url+"' target='_blank'>"+d.url+"</a></div>";
+          }
+        } else {
+          u.innerHTML='';
+          if (d.enabled) { b.className='badge bg-warning text-dark'; b.textContent='Déconnecté'; }
+          else { b.className='badge bg-secondary'; b.textContent='Désactivé'; }
+        }
       }).catch(function(){});
     }
     pollStatus();
@@ -8297,6 +8306,273 @@ function preventCanvasZoom(canvasId) {
 #endif // USE_ENERGY_V2
 
 // ============================================================
+// PAGE TV — /statusEnergyTV
+// Dashboard plein écran optimisé télécommande
+// Hors de tout #ifdef — toujours compilé
+// ============================================================
+/*void handleStatusEnergyTV(AsyncWebServerRequest *request)
+{
+    if (!checkAuth(request)) return;
+
+    bool hasZLinky = (strcmp(ConfigGeneral.ZLinky, "") != 0);
+    const char* ieee = ConfigGeneral.ZLinky;
+
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+
+    // ── HEAD ──────────────────────────────────────────────
+    response->print(F(
+        "<!DOCTYPE html><html lang='fr'><head>"
+        "<meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>LiXee TV</title>"
+        "<script src='web/js/chart.umd.min.js'></script>"
+        "<style>"
+        ":root{"
+          "--bg:#0d1117;--card:#161b22;--card2:#1c2128;"
+          "--accent:#58a6ff;--green:#3fb950;--orange:#d29922;--red:#f85149;"
+          "--text:#e6edf3;--sub:#8b949e;--border:#30363d;"
+          "--radius:16px;--gap:18px;"
+        "}"
+        "*{box-sizing:border-box;margin:0;padding:0}"
+        "html,body{width:100%;height:100%;background:var(--bg);color:var(--text);"
+          "font-family:'Segoe UI',Arial,sans-serif;overflow:hidden}"
+        "#app{display:grid;height:100vh;padding:var(--gap);"
+          "grid-template-rows:auto 1fr auto auto;"
+          "grid-template-columns:1fr 1fr 1fr;"
+          "gap:var(--gap)}"
+        "#hdr{grid-column:1/4;display:flex;align-items:center;justify-content:space-between;"
+          "padding:10px 18px;background:var(--card);border-radius:var(--radius);"
+          "border:1px solid var(--border)}"
+        "#hdr .logo{font-size:22px;font-weight:700;color:var(--accent)}"
+        "#hdr .date{font-size:18px;color:var(--sub)}"
+        "#hdr .rinfo{font-size:16px;color:var(--sub)}"
+        ".tile{background:var(--card);border-radius:var(--radius);border:2px solid var(--border);"
+          "padding:22px 20px;display:flex;flex-direction:column;justify-content:space-between;"
+          "transition:border-color .15s,box-shadow .15s;outline:none;cursor:default}"
+        ".tile.focused,.tile:focus{border-color:var(--accent);"
+          "box-shadow:0 0 0 3px rgba(88,166,255,.25)}"
+        ".tlbl{font-size:16px;color:var(--sub);text-transform:uppercase;"
+          "letter-spacing:.08em;margin-bottom:8px}"
+        ".tval{font-size:52px;font-weight:700;line-height:1;color:var(--text)}"
+        ".tunit{font-size:22px;font-weight:400;color:var(--sub);margin-left:4px}"
+        ".tsub{font-size:16px;color:var(--sub);margin-top:8px}"
+        ".tico{font-size:32px;margin-bottom:6px}"
+        "#tile-tarif .tval{font-size:34px}"
+        ".tbadge{display:inline-block;padding:6px 16px;border-radius:30px;"
+          "font-size:20px;font-weight:700;margin-top:10px}"
+        ".tempo-bleu{background:#1565c0;color:#fff}"
+        ".tempo-blanc{background:#e0e0e0;color:#222}"
+        ".tempo-rouge{background:#c62828;color:#fff}"
+        ".tempo-undef{background:var(--card2);color:var(--sub)}"
+        "#tile-chart{grid-column:1/4;background:var(--card);"
+          "border-radius:var(--radius);border:2px solid var(--border);padding:18px 20px}"
+        "#tile-chart.focused,#tile-chart:focus{border-color:var(--accent);"
+          "box-shadow:0 0 0 3px rgba(88,166,255,.25)}"
+        "#tile-chart canvas{max-height:200px}"
+        "#ftr{grid-column:1/4;display:flex;align-items:center;justify-content:center;gap:32px;"
+          "padding:8px;font-size:14px;color:var(--sub)}"
+        "#ftr kbd{background:var(--card2);border:1px solid var(--border);"
+          "border-radius:6px;padding:2px 8px;font-size:13px;margin:0 4px}"
+        "#rbar{position:fixed;bottom:0;left:0;height:3px;background:var(--accent);"
+          "width:100%;transform-origin:left;transition:transform 1s linear}"
+        "</style></head>"
+    ));
+
+    // ── BODY ──────────────────────────────────────────────
+    response->print(F("<body><div id='app'>"));
+
+    response->print(F(
+        "<div id='hdr'>"
+          "<span class='logo'>&#x26A1; LiXee</span>"
+          "<span class='date' id='hdr-date'>--/--/---- --:--</span>"
+          "<span class='rinfo'>Actualisation dans <b id='countdown'>30</b>s</span>"
+        "</div>"
+    ));
+
+    response->print(F(
+        "<div class='tile focused' id='tile-power' tabindex='0'>"
+          "<div class='tico'>&#x26A1;</div>"
+          "<div class='tlbl'>Puissance instantan&eacute;e</div>"
+          "<div><span class='tval' id='power-val'>---</span><span class='tunit'>W</span></div>"
+          "<div class='tsub' id='power-sub'>Abonnement : --- VA</div>"
+        "</div>"
+    ));
+
+    response->print(F(
+        "<div class='tile' id='tile-today' tabindex='0'>"
+          "<div class='tico'>&#x1F4C5;</div>"
+          "<div class='tlbl'>Consommation du jour</div>"
+          "<div><span class='tval' id='today-val'>---</span><span class='tunit'>kWh</span></div>"
+          "<div class='tsub'>&nbsp;</div>"
+        "</div>"
+    ));
+
+    response->print(F(
+        "<div class='tile' id='tile-tarif' tabindex='0'>"
+          "<div class='tico'>&#x1F3F7;</div>"
+          "<div class='tlbl'>Tarif en cours</div>"
+          "<div class='tval' id='tarif-val'>---</div>"
+          "<div id='tempo-today' class='tbadge tempo-undef' style='display:none'></div>"
+          "<div style='margin-top:12px;font-size:15px;color:var(--sub)'>"
+            "Demain : "
+            "<span id='tempo-tomorrow' class='tbadge tempo-undef' style='display:none'></span>"
+            "<span id='demain-label' style='color:var(--sub)'>---</span>"
+          "</div>"
+        "</div>"
+    ));
+
+    response->print(F(
+        "<div class='tile' id='tile-chart' tabindex='0'>"
+          "<div class='tlbl'>Puissance 24h</div>"
+          "<canvas id='powerChart'></canvas>"
+        "</div>"
+    ));
+
+    response->print(F(
+        "<div id='ftr'>"
+          "<span><kbd>&lt; &gt;</kbd> Naviguer</span>"
+          "<span><kbd>OK</kbd> Retour : <kbd>Back</kbd></span>"
+        "</div>"
+    ));
+
+    response->print(F("</div><div id='rbar'></div>"));
+
+    // ── JAVASCRIPT ────────────────────────────────────────
+    response->print(F("<script>"));
+    response->printf("var TV_IEEE='%s';", hasZLinky ? ieee : "");
+
+    response->print(F(
+        "function tvGet(id){return document.getElementById(id);}"
+        "function tvClock(){"
+          "var d=new Date();"
+          "var p=function(n){return ('0'+n).slice(-2);};"
+          "tvGet('hdr-date').textContent=p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+"
+            "' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());"
+        "}"
+        "tvClock();setInterval(tvClock,1000);"
+    ));
+
+    response->print(F(
+        "var tvTiles=['tile-power','tile-today','tile-tarif','tile-chart'];"
+        "var tvIdx=0;"
+        "function tvFocus(i){"
+          "tvTiles.forEach(function(id){tvGet(id).classList.remove('focused');});"
+          "tvIdx=i;var el=tvGet(tvTiles[tvIdx]);el.classList.add('focused');el.focus();"
+        "}"
+        "document.addEventListener('keydown',function(e){"
+          "if(e.key==='ArrowRight'||e.key==='ArrowDown'){tvFocus((tvIdx+1)%tvTiles.length);e.preventDefault();}"
+          "else if(e.key==='ArrowLeft'||e.key==='ArrowUp'){tvFocus((tvIdx-1+tvTiles.length)%tvTiles.length);e.preventDefault();}"
+          "else if(e.key==='Backspace'||e.key==='BrowserBack'){window.location.href='/statusEnergy';e.preventDefault();}"
+        "});"
+        "tvFocus(0);"
+    ));
+
+    response->print(F(
+        "var tvChart=null;"
+        "function tvInitChart(){"
+          "var ctx=tvGet('powerChart').getContext('2d');"
+          "tvChart=new Chart(ctx,{type:'line',data:{labels:[],datasets:[{"
+            "label:'W',data:[],borderColor:'#58a6ff',backgroundColor:'rgba(88,166,255,0.12)',"
+            "borderWidth:2,pointRadius:0,fill:true,tension:0.3}]},"
+            "options:{responsive:true,maintainAspectRatio:false,animation:false,"
+              "plugins:{legend:{display:false}},"
+              "scales:{x:{ticks:{color:'#8b949e',maxTicksLimit:12},grid:{color:'#21262d'}},"
+                "y:{ticks:{color:'#8b949e'},grid:{color:'#21262d'}}}"
+          "}});"
+        "}"
+    ));
+
+    response->print(F(
+        "function tvLoadPower(){"
+          "if(!TV_IEEE)return;"
+          "var xhr=new XMLHttpRequest();"
+          "xhr.onload=function(){if(xhr.status===200){"
+            "var p=xhr.responseText.trim().split(';');"
+            "if(p.length>=2){"
+              "tvGet('power-val').textContent=Math.round(parseFloat(p[0])||0);"
+              "tvGet('power-sub').textContent='Abonnement : '+Math.round(parseFloat(p[1])||0)+' VA';"
+            "}"
+          "}};"
+          "xhr.open('GET','loadPowerGaugeAbo?IEEE='+encodeURIComponent(TV_IEEE)+'&attribute=1295&time=hour',true);"
+          "xhr.send();"
+        "}"
+    ));
+
+    response->print(F(
+        "function tvLoadChart(){"
+          "if(!TV_IEEE)return;"
+          "var xhr=new XMLHttpRequest();"
+          "xhr.onload=function(){if(xhr.status===200){try{"
+            "var j=JSON.parse(xhr.responseText);var datas=j.datas||[];"
+            "var lbl=[],val=[];"
+            "datas.forEach(function(pt){"
+              "lbl.push(pt.y||'');"
+              "var v=pt['1295'];"
+              "if(v===undefined){for(var k in pt){if(k!=='y'&&!isNaN(parseInt(k))){v=pt[k];break;}}}"
+              "val.push(v||0);"
+            "});"
+            "if(tvChart){tvChart.data.labels=lbl;tvChart.data.datasets[0].data=val;tvChart.update();}"
+          "}catch(ex){}}};"
+          "xhr.open('GET','loadPowerChart?IEEE='+encodeURIComponent(TV_IEEE)+'&attribute=1295',true);"
+          "xhr.send();"
+        "}"
+    ));
+
+    response->print(F(
+        "function tvLoadTariff(){"
+          "var xhr=new XMLHttpRequest();"
+          "xhr.onload=function(){if(xhr.status===200){try{"
+            "var d=JSON.parse(xhr.responseText);"
+            "if(!d.show){tvGet('tarif-val').textContent='N/A';return;}"
+            "tvGet('tarif-val').textContent=d.tariff||'---';"
+            "var te=tvGet('tempo-today'),tr=tvGet('tempo-tomorrow'),dl=tvGet('demain-label');"
+            "if(d.isTempo){"
+              "te.style.display='inline-block';te.className='tbadge '+d.today.class;te.textContent=d.today.label;"
+              "if(d.tomorrow.class!=='tempo-undef'){"
+                "tr.style.display='inline-block';tr.className='tbadge '+d.tomorrow.class;tr.textContent=d.tomorrow.label;"
+                "dl.style.display='none';"
+              "}else{tr.style.display='none';dl.textContent='Non d\\u00e9fini';}"
+            "}else{te.style.display='none';tr.style.display='none';dl.textContent='';}"
+          "}catch(ex){}}};"
+          "xhr.open('GET','api/tariff',true);xhr.send();"
+        "}"
+    ));
+
+    response->print(F(
+        "function tvLoadEnergy(){"
+          "if(!TV_IEEE)return;"
+          "var xhr=new XMLHttpRequest();"
+          "xhr.onload=function(){if(xhr.status===200){try{"
+            "var datas=JSON.parse(xhr.responseText);var total=0;"
+            "if(datas.length>0){var last=datas[datas.length-1];"
+              "for(var k in last){if(k!=='y'){var v=parseFloat(last[k]);if(!isNaN(v)&&v>0)total+=v;}}"
+            "}"
+            "tvGet('today-val').textContent=(total/1000).toFixed(2);"
+          "}catch(ex){}}};"
+          "xhr.open('GET','loadEnergyChart?IEEE='+encodeURIComponent(TV_IEEE)+'&time=day',true);"
+          "xhr.send();"
+        "}"
+    ));
+
+    response->print(F(
+        "var TV_SEC=30,tvSec=TV_SEC,tvBar=tvGet('rbar');"
+        "function tvTick(){"
+          "tvSec--;tvGet('countdown').textContent=tvSec;"
+          "tvBar.style.transform='scaleX('+(tvSec/TV_SEC)+')';"
+          "if(tvSec<=0){tvSec=TV_SEC;tvAll();}"
+        "}"
+        "function tvAll(){tvLoadPower();tvLoadTariff();tvLoadEnergy();tvLoadChart();}"
+        "tvInitChart();tvAll();"
+        "setInterval(tvTick,1000);"
+        "setInterval(tvLoadPower,10000);"
+    ));
+
+    response->print(F("</script></body></html>"));
+    request->send(response);
+}*/
+
+// ============================================================
 // JavaScript Masonry - PROGMEM
 // ============================================================
 const char HTTP_SCRIPT_MASONRY[] PROGMEM = R"rawliteral(
@@ -9920,7 +10196,7 @@ void handleConfigNotificationMail(AsyncWebServerRequest *request)
   result.replace("{{servSMTP}}", String(ConfigGeneral.servSMTP));
   result.replace("{{portSMTP}}", String(ConfigGeneral.portSMTP));
   result.replace("{{userSMTP}}", String(ConfigGeneral.userSMTP));
-  result.replace("{{passSMTP}}", String(ConfigGeneral.passSMTP));
+  result.replace("{{passSMTP}}", strlen(ConfigGeneral.passSMTP) > 0 ? "********" : "");
 
   request->send(200, "text/html", result);
 }
@@ -10026,12 +10302,21 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
   if (tunnelConnected) {
     result.replace("{{badgeClass}}", "bg-success");
     result.replace("{{badgeText}}", "Connecté");
+    String subdomain = tunnel->getSubdomain();
+    if (subdomain.length() > 0) {
+      String tunnelFullUrl = "https://" + subdomain;
+      result.replace("{{tunnelUrl}}", "<div class='mb-3'><small class='text-muted'>URL :</small> <a href='" + tunnelFullUrl + "' target='_blank'>" + tunnelFullUrl + "</a></div>");
+    } else {
+      result.replace("{{tunnelUrl}}", "");
+    }
   } else if (ConfigGeneral.enableTunnel) {
     result.replace("{{badgeClass}}", "bg-warning text-dark");
     result.replace("{{badgeText}}", "Déconnecté");
+    result.replace("{{tunnelUrl}}", "");
   } else {
     result.replace("{{badgeClass}}", "bg-secondary");
     result.replace("{{badgeText}}", "Désactivé");
+    result.replace("{{tunnelUrl}}", "");
   }
 
   // Toggle tunnel + protection accès distant
@@ -13189,7 +13474,12 @@ void handleSaveDevice(AsyncWebServerRequest *request)
   {
     uint8_t i = 0;
 
-    String filename = "/db/" + request->arg(i) +".json";
+    String arg0 = request->arg(i);
+    if (arg0.indexOf("..") >= 0) {
+      request->send(400, F("text/plain"), F("Invalid path"));
+      return;
+    }
+    String filename = "/db/" + arg0 +".json";
     String content = request->arg(1);
     String action = request->arg(2);
 
@@ -13662,7 +13952,12 @@ void handleReadfile(AsyncWebServerRequest *request)
   String result;
   int i = 0;
   String repertory = request->arg(i);
-  String filename = "/" + repertory + "/" + request->arg(1);
+  String arg1 = request->arg(1);
+  if (repertory.indexOf("..") >= 0 || arg1.indexOf("..") >= 0) {
+    request->send(400, F("text/plain"), F("Invalid path"));
+    return;
+  }
+  String filename = "/" + repertory + "/" + arg1;
   DEBUG_PRINTLN(filename);
   File file = LittleFS.open(filename, "r");
 
@@ -13675,9 +13970,11 @@ void handleReadfile(AsyncWebServerRequest *request)
   size_t fileSize = file.size();
   // Allocation d'un buffer dans la PSRAM avec heap_caps_malloc 
   char* buffer = (char*) heap_caps_malloc(fileSize + 1, MALLOC_CAP_SPIRAM); 
-  if (!buffer) { 
-    Serial.println("Erreur d'allocation dans la PSRAM"); 
-    file.close(); 
+  if (!buffer) {
+    Serial.println("Erreur d'allocation dans la PSRAM");
+    file.close();
+    request->send(500, F("text/plain"), F("Memory allocation error"));
+    return;
   }
 
   size_t readBytes = file.readBytes(buffer, fileSize); 
@@ -14856,7 +15153,7 @@ void handleSaveConfigNotificationMail(AsyncWebServerRequest *request)
     config_write(path, "userSMTP", String(request->arg("userSMTP")));
   }
 
-  if (request->arg("passSMTP"))
+  if (request->arg("passSMTP") && request->arg("passSMTP") != "********")
   {
     strlcpy(ConfigGeneral.passSMTP, request->arg("passSMTP").c_str(), sizeof(ConfigGeneral.passSMTP));
     config_write(path, "passSMTP", String(request->arg("passSMTP")));
@@ -17203,16 +17500,20 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
             tmp = t->states[i].mode;
             if ((tmp != NULL) && (tmp[0] != '\0'))
             {
-              char *pch;
-              pch = strtok((char *)tmp, ";");
-              while (pch != NULL)
-              {
-                if (atoi(pch) == ConfigGeneral.LinkyMode)
+              char *modeCopy = strdup(tmp);
+              if (modeCopy) {
+                char *pch;
+                pch = strtok(modeCopy, ";");
+                while (pch != NULL)
                 {
-                  discoverOk = true;
-                  break;
+                  if (atoi(pch) == ConfigGeneral.LinkyMode)
+                  {
+                    discoverOk = true;
+                    break;
+                  }
+                  pch = strtok(NULL, " ;");
                 }
-                pch = strtok(NULL, " ;");
+                free(modeCopy);
               }
             }
             else
@@ -17511,8 +17812,6 @@ void APIsetSubMeter(AsyncWebServerRequest *request) {
     } else {
         request->send(500, "text/plain", "Save failed");
     }
-    
-    request->send(200, "text/plain", "OK");
 }
 
 // Handler pour supprimer un sous-compteur
@@ -17532,8 +17831,8 @@ void APIdeleteSubMeter(AsyncWebServerRequest *request) {
             ConfigGeneral.subMeterCount--;
             
             // Sauvegarder
-            // saveConfigGeneral();
-            
+            saveSubMetersConfig();
+
             return request->send(200, "text/plain", "OK");
         }
     }
@@ -17776,18 +18075,22 @@ void APIgetLinky(AsyncWebServerRequest *request)
         const char *tmp;
         bool discoverOk = false;
         tmp = t->states[i].mode;
-        if ((tmp != NULL) && (tmp[0] != '\0')) 
+        if ((tmp != NULL) && (tmp[0] != '\0'))
         {
-          char * pch;
-          pch = strtok ((char*)tmp,";");
-          while (pch != NULL)
-          {
-            if (atoi(pch) == ConfigGeneral.LinkyMode)
+          char *modeCopy = strdup(tmp);
+          if (modeCopy) {
+            char * pch;
+            pch = strtok(modeCopy, ";");
+            while (pch != NULL)
             {
-              discoverOk=true;
-              break;
+              if (atoi(pch) == ConfigGeneral.LinkyMode)
+              {
+                discoverOk=true;
+                break;
+              }
+              pch = strtok(NULL, " ;");
             }
-            pch = strtok (NULL, " ;");
+            free(modeCopy);
           }
         }else{
           discoverOk=true;
@@ -18014,18 +18317,32 @@ void initWebServer()
     handleDashboard(request);
   });
   serverWeb.on("/statusEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handleStatusEnergy(request); 
+    handleStatusEnergy(request);
   });
+  /*serverWeb.on("/statusEnergyTV", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleStatusEnergyTV(request);
+  });*/
 
   // ==================== Tunnel API ====================
   serverWeb.on("/api/tunnelStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
+    bool connected = (tunnel != nullptr && tunnel->isConnected());
     String json = "{\"enabled\":";
     json += ConfigGeneral.enableTunnel ? "true" : "false";
     json += ",\"connected\":";
-    json += (tunnel != nullptr && tunnel->isConnected()) ? "true" : "false";
+    json += connected ? "true" : "false";
+    if (connected) {
+      String sub = tunnel->getSubdomain();
+      if (sub.length() > 0) {
+        json += ",\"url\":\"https://";
+        json += sub;
+        json += "\"";
+      }
+    }
     json += "}";
     request->send(200, "application/json", json);
   });
@@ -18301,7 +18618,12 @@ void initWebServer()
     if (!checkAuth(request)) return;
     if (request->hasArg("filename"))
     {
-      String filename = "/bk/" + request->arg("filename");
+      String argFilename = request->arg("filename");
+      if (argFilename.indexOf("..") >= 0) {
+        request->send(400, F("text/plain"), F("Invalid path"));
+        return;
+      }
+      String filename = "/bk/" + argFilename;
       if (LittleFS.exists(filename))
       {
         LittleFS.remove(filename);
@@ -18455,6 +18777,7 @@ void initWebServer()
 
   // API: Obtenir les notifications (avec pagination)
   serverWeb.on("/api/notifications", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
     int page = request->hasParam("page") ? request->getParam("page")->value().toInt() : 1;
     int limit = request->hasParam("limit") ? request->getParam("limit")->value().toInt() : 10;
     
@@ -18470,8 +18793,11 @@ void initWebServer()
   });
   
   // API: Ajouter une notification
-  serverWeb.on("/api/notifications", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+  serverWeb.on("/api/notifications", HTTP_POST, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
+  }, NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+      if (!checkAuth(request)) return;
       SpiRamJsonDocument doc(1024);
       DeserializationError error = deserializeJson(doc, (char*)data);
       
@@ -18500,6 +18826,7 @@ void initWebServer()
   
   // API: Marquer comme lu - Route simplifiée
   serverWeb.on("/api/notifications/read", HTTP_PUT, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
     if (!request->hasParam("id")) {
       log_e("Erreur markAsRead: paramètre id manquant");
       request->send(400, "application/json", "{\"error\":\"Paramètre id manquant\"}");
@@ -18520,7 +18847,7 @@ void initWebServer()
 
   // API: Marquer TOUTES les notifications comme lues - NOUVEAU
   serverWeb.on("/api/notifications/read-all", HTTP_PUT, [](AsyncWebServerRequest *request){
-    
+    if (!checkAuth(request)) return;
     bool success = notificationManager.markAllAsViewed();
     
     if (success) {
@@ -18534,6 +18861,7 @@ void initWebServer()
   
   // API: Supprimer une notification - Route simplifiée
   serverWeb.on("/api/notifications/delete", HTTP_DELETE, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
     if (!request->hasParam("id")) {
       log_e("Erreur deleteNotification: paramètre id manquant");
       request->send(400, "application/json", "{\"error\":\"Paramètre id manquant\"}");
@@ -18555,12 +18883,14 @@ void initWebServer()
   
   // API: Statistiques
   serverWeb.on("/api/stats", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
     String json = notificationManager.getStatsJson();
     request->send(200, "application/json", json);
   });
   
   // API: Debug - Lister les notifications avec leurs index
   serverWeb.on("/api/debug", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
     SpiRamJsonDocument doc(2048);
     JsonArray array = doc.createNestedArray("notifications");
     
@@ -18584,6 +18914,7 @@ void initWebServer()
   
   // API: Vider toutes les notifications
   serverWeb.on("/api/notifications/clear", HTTP_DELETE, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
     notificationManager.clearAll();
     notificationManager.saveToFile();
     request->send(200, "application/json", "{\"success\":true}");
@@ -19099,7 +19430,10 @@ void initWebServer()
   serverWeb.serveStatic("/web/img/ziwifi32.gif", LittleFS, "/web/img/ziwifi32.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/zlinky.gif", LittleFS, "/web/img/zlinky.gif").setCacheControl("max-age=600");
   serverWeb.serveStatic("/web/img/", LittleFS, "/web/img/").setCacheControl("max-age=600");*/
-  serverWeb.serveStatic("/web/backup.tar", LittleFS, "/bk/backup.tar");
+  serverWeb.on("/web/backup.tar", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
+    request->send(LittleFS, "/bk/backup.tar", "application/x-tar");
+  });
   serverWeb.serveStatic("/web", LittleFS, "/web")
     .setCacheControl("max-age=604800, immutable");
   serverWeb.onNotFound(handleNotFound);
