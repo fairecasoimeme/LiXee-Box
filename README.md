@@ -327,7 +327,7 @@ Le tunnel permet d'accéder à votre LiXee-Box depuis Internet, sans avoir besoi
 
 ### Fonctionnement
 
-La LiXee-Box établit une connexion WebSocket sortante vers le serveur `remote.lixee-box.fr`. Ce serveur relaye les requêtes HTTP entrantes vers votre LiXee-Box, qui les traite localement et renvoie les réponses. Votre box Internet n'a besoin d'aucune configuration particulière (pas de NAT, pas de port forwarding).
+La LiXee-Box établit une connexion WebSocket sortante vers le serveur [`remote.lixee-box.fr`](https://remote.lixee-box.fr). Ce serveur relaye les requêtes HTTP entrantes vers votre LiXee-Box, qui les traite localement et renvoie les réponses. Votre box Internet n'a besoin d'aucune configuration particulière (pas de NAT, pas de port forwarding).
 
 ### Activation
 
