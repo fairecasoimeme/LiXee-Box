@@ -28,6 +28,7 @@ Cette application fonctionne avec :
 ## Cas d'Usage Typiques
 
 - **Relais longue distance** : Linky (ZLinky) ↔ Zigbee ↔ LiXee-Box ↔ WiFi ↔ MQTT ↔ Home-Assistant/Jeedom/Domoticz
+- **Accès distant** : Accédez à votre LiXee-Box depuis Internet via un tunnel sécurisé, sans ouverture de ports
 - **Passerelle cloud** : Relayer les données des appareils Zigbee vers des services web via API
 - **Gestion énergétique avancée** : Surveillance, délestage de charge, routage énergétique
 
@@ -58,6 +59,7 @@ L'appareil peut être configuré via un site web local
 - **MQTT** : Serveur/port/utilisateur/mot de passe personnalisables
 - **MQTT Discovery** compatible avec Home Assistant
 - **WebPush API** : URL/utilisateur/mot de passe
+- **Tunnel d'accès distant** : Accès sécurisé à la LiXee-Box depuis Internet sans ouverture de ports (reverse proxy WebSocket)
 
 ### ⚡ Gestion de l'Énergie
 - Règles automatisées pour le délestage de charge et le routage énergétique
@@ -65,6 +67,13 @@ L'appareil peut être configuré via un site web local
 - Gestion de la production et distribution d'énergie
 - Gestion tarifaire pour l'énergie, la production, le gaz et l'eau
 - Gestion avancée chauffage / froid (en cours)
+
+### 🔒 Sécurité
+- Authentification par sessions (token 32 caractères, durée 24h, max 4 sessions simultanées)
+- Page de connexion dédiée avec redirection automatique
+- Compatibilité Basic Auth pour les clients API
+- Masquage des mots de passe et tokens dans l'interface
+- Protection contre le path traversal
 
 ### 🔄 Mises à Jour et Maintenance
 
@@ -311,6 +320,33 @@ Voici les conditions permettant de détecter une surproduction sur votre Linky
 Si ce cas arrive, vous aurez sur le graphique de puissance les données d'injection.
 
 ![Injection](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Injection_autoconsommation.PNG)
+
+## 🌍 Tunnel d'accès distant (à partir de la v2.17)
+
+Le tunnel permet d'accéder à votre LiXee-Box depuis Internet, sans avoir besoin d'ouvrir de ports sur votre box Internet. La connexion passe par un reverse proxy WebSocket sécurisé.
+
+### Fonctionnement
+
+La LiXee-Box établit une connexion WebSocket sortante vers le serveur `remote.lixee-box.fr`. Ce serveur relaye les requêtes HTTP entrantes vers votre LiXee-Box, qui les traite localement et renvoie les réponses. Votre box Internet n'a besoin d'aucune configuration particulière (pas de NAT, pas de port forwarding).
+
+### Activation
+
+1. Accédez à la page **Config** → **Tunnel**
+2. Entrez le code d'activation à 6 chiffres fourni par LiXee
+3. Cliquez sur **Activer**
+4. Lorsque le statut passe à **Connecté**, l'URL d'accès distant s'affiche automatiquement
+
+Une section **Configuration avancée** repliable permet également une connexion manuelle avec vos propres identifiants (subdomain, token).
+
+### Caractéristiques
+
+* Jusqu'à **6 requêtes HTTP simultanées** grâce à une architecture non-bloquante à machine d'état
+* **Heartbeat** automatique pour maintenir la connexion active
+* **Hot-reload** : le tunnel redémarre automatiquement après modification de la configuration
+* L'URL d'accès distant est de la forme `https://<votre-id>.lixee-box.fr`
+* La désactivation du tunnel est protégée lorsqu'on y accède depuis l'accès distant (pour éviter de se couper l'accès)
+
+---
 
 ## Les règles (automatismes)
 
@@ -1044,8 +1080,9 @@ Merci à tous les auteurs des bibliothèques tierces utilisées dans ce projet :
 * [paulstoffregen/Time](https://github.com/PaulStoffregen/Time)
 * [marvinroger/AsyncMqttClient](https://github.com/marvinroger/async-mqtt-client)
 * [arkhipenko/TaskScheduler](https://github.com/arkhipenko/TaskScheduler)
-* [me-no-dev/AsyncTCP](https://github.com/me-no-dev/AsyncTCP)
-* [me-no-dev/ESPAsyncWebServer](https://github.com/me-no-dev/ESPAsyncWebServer)
+* [ESP32Async/AsyncTCP](https://github.com/ESP32Async/AsyncTCP)
+* [ESP32Async/ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer)
+* [Links2004/WebSockets](https://github.com/Links2004/arduinoWebSockets)
 
 Merci à [ZigStar](https://github.com/mercenaruss) pour la mise à jour OTA
 
