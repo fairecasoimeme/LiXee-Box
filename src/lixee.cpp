@@ -123,7 +123,9 @@ void handleDelestage() {
     String delestage = config_read("configGeneral.json", "delestage");
     if (delestage.length() > 0 && delestage == "null")  return;
     
-    char* pch = strtok((char*)delestage.c_str(), ",");
+    char* buf = strdup(delestage.c_str());
+    if (!buf) return;
+    char* pch = strtok(buf, ",");
     while (pch != NULL) {
         DeviceData* device = findDevice(String(pch));
         if (device) {
@@ -136,6 +138,7 @@ void handleDelestage() {
         }
         pch = strtok(NULL, ",");
     }
+    free(buf);
 }
 
 // Gestionnaires spécialisés pour chaque type d'attribut
@@ -228,9 +231,14 @@ void handleAttribute519(const String& inifile, uint8_t* datas, int len) {
 }
 
 void handleAttribute535(const String& inifile, uint8_t* datas, int len) {
+    if (len < 1) return;
     int size = datas[0];
+    if (size > 8 || size + 1 > len) {
+        log_e("handleAttribute535: invalid size %d (len=%d)", size, len);
+        return;
+    }
     char STGE[9];
-    
+
     for(int i = 0; i < size; i++) {
         STGE[i] = datas[i + 1];
     }
@@ -303,15 +311,18 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
     String tmp = "";
     
     if (datatype == 66) {
+        if (len < 1) return;
         int size = datas[0];
+        if (size + 1 > len) size = len - 1;
         for(int i = 0; i < size; i++) {
             if(datas[i + 1] > 0) {
                 tmp += (char)datas[i + 1];
             }
         }
     } else if ((datatype == 0x21) || (datatype == 0x29)) {
+        if (len < 2) return;
         char value[5];
-        sprintf(value, "%02X%02X", datas[1], datas[0]);
+        snprintf(value, sizeof(value), "%02X%02X", datas[1], datas[0]);
         tmp = String(value);
     } else {
         char value[3];

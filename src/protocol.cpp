@@ -528,7 +528,7 @@ void datasManage(char packet[256],int count)
     if (protocol.chksum == CRC)
     {
       DecodePayload(protocol,count); 
-      memset(packet,0,0);
+      memset(packet,0,sizeof(packet));
     }else{   
       crcErrorCount++;
       uint32_t now = millis();
@@ -559,13 +559,13 @@ void datasManage(char packet[256],int count)
         DEBUG_PRINT(tmpP);
         DEBUG_PRINT(F(" "));
       }
-      memset(packet,0,0);
+      memset(packet,0,sizeof(packet));
       addDebugLog(F("CRC error"));
       log_w("CRC error : ");
     }
     
   }else{
-    memset(packet,0,0);
+    memset(packet,0,sizeof(packet));
     addDebugLog(F("Packet < 6"));
     log_w("Packet < 6");
   }
@@ -826,8 +826,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         u8FieldControl = protocol.payload[u8Offset++];
 
         DeviceData *device = getDeviceShortAddr((int)u16SrcAddr);
+        if (device == nullptr) {
+            log_e("OTA 0x8501: device 0x%04X not found", u16SrcAddr);
+            break;
+        }
 
-        // Send response 
+        // Send response
         if (u8OTAWaitForDataParamsPending == 0)
         {
             byte u8NbrBytes = 0;
@@ -917,6 +921,10 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       SendAttributeRead((int)u16SrcAddr,1,0,5);
 
       DeviceData *device = getDeviceShortAddr((int)u16SrcAddr);
+      if (device == nullptr) {
+          log_e("OTA 0x8503: device 0x%04X not found", u16SrcAddr);
+          break;
+      }
       device->otaInProgress=0;
       
     }
@@ -1788,7 +1796,7 @@ uint8_t getChecksum(int type, int len, uint8_t datas[512])
     {
       //Début de trame
       i=0;
-      memset(packet,0,0);
+      memset(packet,0,sizeof(packet));
       stx = true;
     }else if (sp[count]==0x03)
     {
@@ -1843,7 +1851,7 @@ uint8_t getChecksum(int type, int len, uint8_t datas[512])
             xSemaphoreGive(Queue_Mutex);
           }
         }
-        memset(packet,0,0);
+        memset(packet,0,sizeof(packet));
         //datasManage(packet,i);
         i=0;
         numPacket++;

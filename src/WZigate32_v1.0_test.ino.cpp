@@ -748,16 +748,19 @@ DEBUG_PRINTLN(F("config_write OK"));
         if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
       }
 
-      DeviceEnergyHistory& ehProd = devProd->energyHistory;
-      PeriodData* pdProd = nullptr;
-      pdProd=&ehProd.hours;
-      
-      for (auto &kv : pdProd->graph) {
-        ValueMap &vm = kv.second;   
-        int attrId = 1;
-        auto itv = vm.attributes.find(attrId);
-        if (itv != vm.attributes.end()) {       
-          sumProd += itv->second;
+      if (devProd == nullptr) {
+        log_e("Production device %s not found", ConfigGeneral.Production);
+      } else {
+        DeviceEnergyHistory& ehProd = devProd->energyHistory;
+        PeriodData* pdProd = &ehProd.hours;
+
+        for (auto &kv : pdProd->graph) {
+          ValueMap &vm = kv.second;
+          int attrId = 1;
+          auto itv = vm.attributes.find(attrId);
+          if (itv != vm.attributes.end()) {
+            sumProd += itv->second;
+          }
         }
       }
 
