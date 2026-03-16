@@ -4,6 +4,8 @@
 
 **LiXee-Box** est une passerelle multi-protocole pour appareils Zigbee, conçue pour être un hub central de **gestion de l'énergie** et de domotique. Cette application transforme votre LiXee-ZiWifi32 en une passerelle complète capable de gérer vos appareils Zigbee, votre Linky, compteur de production, gaz, eau, et d'intégrer le tout dans votre système domotique.
 
+**Pour avoir plus d'informations vous pouvez parcourir (https://lixee-box.fr)**
+
 ## Matériel Compatible
 
 Cette application fonctionne avec :
