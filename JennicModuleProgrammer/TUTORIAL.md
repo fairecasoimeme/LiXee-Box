@@ -5,8 +5,8 @@ Ce guide explique comment programmer le firmware d'une ZiGate (microcontroleur N
 ## Prerequis
 
 - Une **LiXee-Box** 
-- Le **fichier firmware** (.bin) a programmer (ex: `ZiGatev2-324.bin`)
-- L'application **JN518xProgrammerGUI.exe**
+- Le **fichier firmware** (.bin) à programmer :  [Firmware](https://github.com/fairecasoimeme/LiXee-Box/blob/master/JennicModuleProgrammer/Firmware/ZiGatev2-324.bin)
+- L'application **JN518xProgrammerGUI.exe** à dézipper : [JN518xProgrammerGUI.zip](https://github.com/fairecasoimeme/LiXee-Box/blob/master/JennicModuleProgrammer/JN518xProgrammerGUI-Windows-x64.zip)
 - Le driver FTDI installe (Windows le detecte generalement automatiquement)
 
 
@@ -14,11 +14,12 @@ Ce guide explique comment programmer le firmware d'une ZiGate (microcontroleur N
 
 ## Etape 1 : Configurer la connexion
 
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg" width="600">  
+
 - Dévisser le boitier
-- Positionner le switch sur FTDI
+- Positionner le switch / sélecteur sur FTDI
 - Brancher la **LiXee-Box** sur le port USB de votre ordinateur sous Windows en maintenant le bouton flash puis relacher
 
-![Etape 1](screenshots/flash_etape1.PNG)
 
 Au lancement de l'application :
 
@@ -32,7 +33,7 @@ Au lancement de l'application :
 
 ## Etape 2 : Verifier la detection du chip
 
-![Etape 2](screenshots/flash_etape2.PNG)
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/JennicModuleProgrammer/Screenshots/flash_etape2.PNG" width="800">  
 
 Apres connexion, l'application détecte automatiquement le microcontroleur :
 
@@ -49,7 +50,7 @@ Le journal en bas de l'ecran confirme la connexion et le passage à la vitesse d
 
 ## Etape 3 : Charger le firmware
 
-![Etape 3](screenshots/flash_etape3.PNG)
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/JennicModuleProgrammer/Screenshots/flash_etape3.PNG" width="800">  
 
 1. Cliquez sur **Browse...** ou glissez-déposez votre fichier firmware dans le champ prévu. Le chemin du fichier s'affiche (ex: `C:/nxp/DK6Programmer/ZiGatev2-324.bin`), ainsi que sa taille et son point d'entree.
 2. Cliquez sur **Program** pour lancer la programmation de la mémoire FLASH.
@@ -60,7 +61,7 @@ Le journal en bas de l'ecran confirme la connexion et le passage à la vitesse d
 
 ## Etape 4 : Confirmer l'effacement
 
-![Etape 4](screenshots/flash_etape4.PNG)
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/JennicModuleProgrammer/Screenshots/flash_etape4.PNG" width="800">  
 
 Une boite de dialogue de confirmation apparait avant l'effacement de la mémoire FLASH. Elle indique la zone mémoire qui sera éffacée (ex: `0x00000000` à `0x00049600`).
 
@@ -72,13 +73,13 @@ Cliquez sur **Yes** pour confirmer et démarrer l'opération.
 
 ## Etape 5 : Programmation terminee
 
-![Etape 5](screenshots/flash_etape5.PNG)
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/JennicModuleProgrammer/Screenshots/flash_etape5.PNG" width="800">  
 
 L'operation se deroule en trois phases : effacement, programmation, puis verification. La barre de progression atteint **100%** et le journal affiche **"Memory verified successfully"**.
 
 Le firmware est maintenant installé sur votre ZiGate. Vous pouvez cliquer sur **Disconnect** puis 
 
-- Repositionnez le switch sur ESP
+- Repositionnez le switch / sélecteur sur ESP
 - Revisser le boitier
 - Débrancher et rébrancher le module pour qu'il démarre avec le nouveau firmware.
 
