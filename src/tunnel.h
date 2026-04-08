@@ -269,6 +269,7 @@ private:
             info["type"] = "info";
             JsonObject data = info["data"].to<JsonObject>();
             data["firmware"] = "LiXeeBoxTunnel/1.0";
+            data["version"] = VERSION;
             data["chip"] = ESP.getChipModel();
             data["freeHeap"] = ESP.getFreeHeap();
             data["localIP"] = WiFi.localIP().toString();

@@ -56,6 +56,7 @@ extern "C" {
 #include "TemplateCache.h"
 #include "zigate_flasher.h"
 #include "tunnel.h"
+#include "alertChecks.h"
 #include "mbedtls/platform.h"
 
 #define RESET_WINDOW_MS     3000    // Fenêtre de détection
@@ -386,6 +387,7 @@ bool ScanDevicesToRAZ() {
 
   // Parcours de tous les devices
   for (DeviceData* device : devices) {
+    esp_task_wdt_reset();
     String model = device->getInfo().model;
     String deviceId = device->getDeviceID();
     
@@ -484,7 +486,8 @@ bool ScanDevicesToRAZ() {
               notifList->shift();
               notifList->push(Notification{"💸🚨Dépassement de budget", text, FormattedDate, 3, 0});
             }
-            notificationManager.addNotification("💸🚨Dépassement de budget", text, 0);
+            notificationManager.addNotification("💸🚨Dépassement de budget", text, 0,
+                "over_budget", (float)TotalWh, (float)budgetkWh);
           }
         }
       }
@@ -655,7 +658,7 @@ bool ScanDevicesToRAZ() {
     // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
     time_t lastSeen = device->getLastSeenEpoch();
 
-    if ((now - lastSeen) > 3600) {
+    if (lastSeen != (time_t)-1 && (now - lastSeen) > 3600) {
       
       String textError = "device : " + deviceId + " - Pas vu depuis plus de 1 heure";
       addDebugLog(textError);
@@ -776,16 +779,16 @@ DEBUG_PRINTLN(F("config_write OK"));
         {
           notifList->push(Notification{" ☀️⚡Production nulle",text,FormattedDate,3,0});
           notificationManager.addNotification(
-            "☀️⚡Production nulle", 
-            text, 
-            1
+            "☀️⚡Production nulle",
+            text,
+            1, "prod_zero"
           );
         }else{
           notifList->shift();
           notificationManager.addNotification(
-            "☀️⚡Production nulle", 
-            text, 
-            1
+            "☀️⚡Production nulle",
+            text,
+            1, "prod_zero"
           );
           notifList->push(Notification{"Production nulle",text,FormattedDate,3,0});
         } 
@@ -799,6 +802,7 @@ DEBUG_PRINTLN(F("config_write OK"));
 
   log_e("Sauvegarde de tous les devices");
   for (auto d : devices) {
+    esp_task_wdt_reset();
     d->saveToFile();
     if (d->getInfo().model=="ZLinky_TIC")
     {
@@ -1052,7 +1056,11 @@ void processCompleteFrame(uint8_t frame_buffer[], size_t frame_len) {
         protocol.ln = declared_len;
         protocol.chksum = received_crc;
         
-        // Copier SEULEMENT la longueur déclarée
+        // Copier SEULEMENT la longueur déclarée (avec protection buffer)
+        if (declared_len > sizeof(protocol.payload)) {
+            log_e("Payload too large for buffer: %d > %d", declared_len, sizeof(protocol.payload));
+            return;
+        }
         memcpy(protocol.payload, &frame_buffer[5], declared_len);
         
         // Traitement direct
@@ -1739,6 +1747,23 @@ bool loadConfigGeneral() {
   ConfigNotif.UnderVoltageThreshold = (int)doc["UnderVoltageThreshold"];
   ConfigNotif.PEJP = (int)doc["PEJP"];
   ConfigNotif.RedColor = (int)doc["RedColor"];
+
+  // Alertes avancées
+  ConfigNotif.OverPower = (int)doc["OverPower"];
+  ConfigNotif.OverPowerThreshold = doc["OverPowerThreshold"] | 6000;
+  ConfigNotif.OverPowerDuration = doc["OverPowerDuration"] | 60;
+  ConfigNotif.OverPowerCooldown = doc["OverPowerCooldown"] | 30;
+  ConfigNotif.Freeze = (int)doc["Freeze"];
+  ConfigNotif.FreezeThreshold = doc["FreezeThreshold"] | 300;
+  strlcpy(ConfigNotif.FreezeSensorIEEE, doc["FreezeSensorIEEE"] | "", sizeof(ConfigNotif.FreezeSensorIEEE));
+  ConfigNotif.FreezeCooldown = doc["FreezeCooldown"] | 60;
+  ConfigNotif.DailyAnomaly = (int)doc["DailyAnomaly"];
+  ConfigNotif.DailyAnomalyPercent = doc["DailyAnomalyPercent"] | 30;
+  ConfigNotif.WaterLeak = (int)doc["WaterLeak"];
+  ConfigNotif.WaterLeakThreshold = doc["WaterLeakThreshold"] | 5;
+  ConfigNotif.NightWaterLeak = (int)doc["NightWaterLeak"];
+  ConfigNotif.NightWaterLeakThreshold = doc["NightWaterLeakThreshold"] | 1;
+  ConfigNotif.DailyMetrics = (int)doc["DailyMetrics"];
 
   // === SOUS-COMPTEURS ===
   ConfigGeneral.subMeterCount = 0;  // Initialiser à 0
@@ -2471,6 +2496,9 @@ void loop(void)
   if (tunnel != nullptr) {
       tunnel->loop();
   }
+
+  // Vérification des seuils d'alerte
+  alertChecksLoop();
 
   // Traitement async de l'activation tunnel
   processTunnelActivation();

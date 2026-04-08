@@ -473,7 +473,17 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
     if (curStr == "") return false;  // Valeur non trouvée
     
     String condValueStr = String(cond.value.c_str());
-    
+
+    // Appliquer le coefficient du template pour convertir la valeur brute
+    // en valeur réelle (ex: 2350 * 0.01 = 23.50°C)
+    float coefficient = 1.0;
+    if (strcmp(cond.type.c_str(), "device") == 0) {
+        DeviceData* device = findDeviceByIEEE(cond.IEEE.c_str());
+        if (device) {
+            coefficient = device->GetAttributeCoefficient(cond.cluster, cond.attribute);
+        }
+    }
+
     // Détecter si on a affaire à des NOMBRES ou du TEXTE
     bool currentIsNumber = isNumeric(curStr);
     bool condIsNumber = isNumeric(condValueStr);
@@ -489,7 +499,7 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
             return curTrimmed.equalsIgnoreCase(condTrimmed);
         }
         // Si les deux sont des nombres, comparaison numérique
-        double curNum = parseNumber(curStr, true);        // Valeur Zigbee = hex
+        double curNum = parseNumber(curStr, true) * coefficient;  // Valeur réelle avec coefficient
         double condValueNum = parseNumber(condValueStr, false);  // Valeur condition = décimal
         return curNum == condValueNum;
     }
@@ -504,7 +514,7 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
             return !curTrimmed.equalsIgnoreCase(condTrimmed);
         }
         // Si les deux sont des nombres, comparaison numérique
-        double curNum = parseNumber(curStr, true);        // Valeur Zigbee = hex
+        double curNum = parseNumber(curStr, true) * coefficient;  // Valeur réelle avec coefficient
         double condValueNum = parseNumber(condValueStr, false);  // Valeur condition = décimal
         return curNum != condValueNum;
     }
@@ -516,7 +526,7 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
         return false;  // Impossible de comparer du texte avec <, >, etc.
     }
     
-    double curNum = parseNumber(curStr, true);        // Valeur Zigbee = hex
+    double curNum = parseNumber(curStr, true) * coefficient;  // Valeur réelle avec coefficient
     double condValueNum = parseNumber(condValueStr, false);  // Valeur condition = décimal
     
     log_d("Comparaison: curStr='%s' -> %.0f | condStr='%s' -> %.0f | op='%s'",
@@ -817,9 +827,9 @@ void RulesManager::executeAction(const ActionRule& act, const Rule& rule) {
         }
         notifList->push(Notification{act.title.c_str(), fullMessage.c_str(), FormattedDate, 0, 0});
         notificationManager.addNotification(
-            String(act.title.c_str()), 
-            String(fullMessage.c_str()), 
-            0 
+            String(act.title.c_str()),
+            String(fullMessage.c_str()),
+            0, "rule"
         );
         log_w("Action exec: notification - title='%s'", act.title.c_str());
         return;

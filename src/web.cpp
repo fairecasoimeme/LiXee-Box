@@ -41,6 +41,7 @@
 #include "TemplateData.h"
 #include "TemplateCache.h"
 #include "tunnel.h"
+#include "ElectricalMeasurement.h"
 
 extern std::vector<DeviceData*> devices;
 extern LiXeeBoxTunnel* tunnel;
@@ -497,7 +498,12 @@ const char HTTP_MENU[] PROGMEM =
   "</svg>"
    " Energie"
    "</a>"
-
+   "<a class='dropdown-item' href='/configNotifications'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-bell' viewBox='0 0 16 16'>"
+   "  <path d='M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6'/>"
+   "</svg>"
+   " Notifications"
+   "</a>"
     "<a class='dropdown-item' href='/configRules'>"
    "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-file-ruled' viewBox='0 0 16 16'>"
    "  <path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
@@ -683,6 +689,12 @@ const char HTTP_TOOLS[] PROGMEM =
     "<div class='icon red'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M11.534 7h3.932a.25.25 0 0 1 .192.41l-1.966 2.36a.25.25 0 0 1-.384 0l-1.966-2.36a.25.25 0 0 1 .192-.41zm-11 2h3.932a.25.25 0 0 0 .192-.41L2.692 6.23a.25.25 0 0 0-.384 0L.342 8.59A.25.25 0 0 0 .534 9z'/><path fill-rule='evenodd' d='M8 3c-1.552 0-2.94.707-3.857 1.818a.5.5 0 1 1-.771-.636A6.002 6.002 0 0 1 13.917 7H12.9A5.002 5.002 0 0 0 8 3zM3.1 9a5.002 5.002 0 0 0 8.757 2.182.5.5 0 1 1 .771.636A6.002 6.002 0 0 1 2.083 9H3.1z'/></svg></div>"
     "<span class='label'>Redémarrer</span>"
     "<span class='desc'>Reboot système</span>"
+    "</a>"
+
+    "<a href='#' onclick='fetch(\"/cmdCleanGhosts\").then(()=>alert(\"Nettoyage lancé\"));return false;' class='tool-card'>"
+    "<div class='icon orange'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/><path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H5.5l1-1h3l1 1H14a1 1 0 0 1 .5.5V3zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/></svg></div>"
+    "<span class='label'>Fantômes</span>"
+    "<span class='desc'>Nettoyer ZiGate</span>"
     "</a>"
 
     "</div>"
@@ -1054,82 +1066,6 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"rawstring(
                     <input class='form-control' id='tarifIdx10' type='text' name='tarifIdx10' value='{{tarifIdx10}}'> 
                   </div>
                 </div>
-                <h5>Notifications
-                  <button
-                      id="toggleButtonLinkyNotif"
-                      class="btn btn-link p-0 ms-auto"
-                      type="button"
-                      data-bs-toggle="collapse"
-                      data-bs-target="#notifLinky"
-                      aria-expanded="true"
-                      aria-controls="notifLinky"
-                      onClick="toggleDiv('notifLinky');"
-                    >
-                      <span id="IconotifLinky" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
-                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
-                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                      </svg></span>
-                    </button>
-                </h5>
-                <div class="collapse" id="notifLinky" style="display:none;">
-                  <h5>Alertes</h5>
-                  <div class='form-check'>
-                    <input class='' id='NotifSubscribedPower' type='checkbox' name='NotifSubscribedPower' {{checkedNotifSubscribedPower}}>
-                    <label class='' for='NotifSubscribedPower'> Dépassement de puissance souscrite</label>
-                  </div>
-                  <div class='form-check'>
-                    <input class='' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
-                    <label class='' for='NotifPowerOutage'> Puissance nulle</label>
-                  </div>
-                  <div class='form-check'>
-                    <input class='' id='NotifRedColor' type='checkbox' name='NotifRedColor' {{checkedNotifRedColor}}>
-                    <label class='' for='NotifRedColor'> Jour rouge (uniquement pour les abonnements Tempo)</label>
-                  </div>
-                  <div class='form-check'>
-                    Sur-tension
-                    <div class="input-group mb-3">
-                      <div class="input-group-text">
-                        <input class="mt-0" type="checkbox" name='NotifOverVoltage' {{checkedNotifOverVoltage}}>
-                      </div>
-                      <input type="text" class="form-control" name='NotifOverVoltageThreshold' value='{{valOverVoltageThreshold}}'>
-                      <span class="input-group-text"> V</span> 
-                    </div>
-                  </div>
-                  <div class='form-check'>
-                    Sous-tension
-                    <div class="input-group mb-3">
-                      <div class="input-group-text">
-                        <input class="mt-0" type="checkbox" name='NotifUnderVoltage' {{checkedNotifUnderVoltage}}>
-                      </div>
-                      <input type="text" class="form-control" name='NotifUnderVoltageThreshold' value='{{valUnderVoltageThreshold}}'>
-                      <span class="input-group-text"> V</span> 
-                    </div>
-                  </div>
-                  <h5>Infos</h5>
-                  <div class='form-check'>
-                    <input class='' id='NotifPriceChange' type='checkbox' name='NotifPriceChange' {{checkedNotifPriceChange}}>
-                    <label class='' for='NotifPriceChange'> Changement de tarif</label>
-                  </div>
-                  <div class='form-check'>
-                    <input class='' id='NotifPEJP' type='checkbox' name='NotifPEJP' {{checkedNotifPEJP}}>
-                    <label class='' for='NotifPEJP'> Préavis EJP (uniquement pour les abonnements EJP)</label>
-                  </div>
-                  <div class='form-check'>
-                    <input class='' id='NotifColorTomorrow' type='checkbox' name='NotifColorTomorrow' {{checkedNotifColorTomorrow}}>
-                    <label class='' for='NotifColorTomorrow'> Changement de couleur du lendemain (uniquement pour les abonnements Tempo)</label>
-                  </div>
-                  <div class='form-check'>
-                    Dépassement de budget
-                    <div class="input-group mb-3">
-                      <div class="input-group-text">
-                        <input class="mt-0" type="checkbox" name='NotifOverBudget' {{checkedNotifOverBudget}}>
-                      </div>
-                      <input type="text" class="form-control" name='NotifOverBudgetThreshold' value='{{valOverBudgetThreshold}}'>
-                      <span class="input-group-text"> € </span> 
-                    </div>
-                  </div>
-                  
-                </div>
                 <h5>Délestage automatique
                   <button
                       id="toggleButtonLinkyDelestage"
@@ -1203,36 +1139,6 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"rawstring(
                   </div>
                 </div>
 
-                <h5>Notifications
-                  <button
-                      id="toggleButtonProdNotif"
-                      class="btn btn-link p-0 ms-auto"
-                      type="button"
-                      data-bs-toggle="collapse"
-                      data-bs-target="#notifProd"
-                      aria-expanded="true"
-                      aria-controls="notifProd"
-                      onClick="toggleDiv('notifProd');"
-                    >
-                      <span id="IconotifProd" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
-                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
-                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                      </svg></span>
-                    </button>
-                </h5>
-                <div class="collapse" id="notifProd" style="display:none;">
-                  <h5>Alertes</h5>
-                    <div class='form-check'>
-                      <input class='' id='NotifProdZero' type='checkbox' name='NotifProdZero' {{checkedNotifProdZero}}>
-                      <label class='' for='NotifProdZero'>Production = 0</label>
-                    </div>
-                  
-                  <h5>Infos</h5>
-                    <div class='form-check'>
-                      <input class='' id='NotifProdSupConso' type='checkbox' name='NotifProdSupConso' {{checkedNotifProdSupConso}}>
-                      <label class='' for='NotifProdSupConso'>Production > Consommation</label>
-                    </div>
-                </div>
               </div>
               <div class="d-flex justify-content-end">
                 <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
@@ -1286,40 +1192,12 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"rawstring(
                     <input class='form-control' id='tarifGaz' type='text' name='tarifGaz' value='{{tarifGaz}}'> 
                   </div>
                 </div>
-                <h5>Notifications
-                  <button
-                      id="toggleButtonGazNotif"
-                      class="btn btn-link p-0 ms-auto"
-                      type="button"
-                      data-bs-toggle="collapse"
-                      data-bs-target="#notifGaz"
-                      aria-expanded="true"
-                      aria-controls="notifGaz"
-                      onClick="toggleDiv('notifGaz');"
-                    >
-                      <span id="IconotifGaz" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
-                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
-                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                      </svg></span>
-                    </button>
-                </h5>
-                <div class="collapse" id="notifGaz" style="display:none;">
-                  <h5>Alertes</h5>
-                  <div class='form-check'>
-                    
-                  </div>
-                  
-                  <h5>Infos</h5>
-                  <div class='form-check'>
-                    
-                  </div>
-                </div>
-              </div> 
+              </div>
               <div class="d-flex justify-content-end">
                 <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
               </div>
             </form>
-          </div> 
+          </div>
         </div>
       </div>
       <!-- Onglet Water -->
@@ -1367,35 +1245,7 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"rawstring(
                     <input class='form-control' id='tarifWater' type='text' name='tarifWater' value='{{tarifWater}}'> 
                   </div>
                 </div>
-                <h5>Notifications
-                  <button
-                      id="toggleButtonWaterNotif"
-                      class="btn btn-link p-0 ms-auto"
-                      type="button"
-                      data-bs-toggle="collapse"
-                      data-bs-target="#notifWater"
-                      aria-expanded="true"
-                      aria-controls="notifWater"
-                      onClick="toggleDiv('notifWater');"
-                    >
-                      <span id="IconotifWater" ><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-plus-square" viewBox="0 0 16 16">
-                        <path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z"/>
-                        <path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4"/>
-                      </svg></span>
-                    </button>
-                </h5>
-                <div class="collapse" id="notifWater" style="display:none;">
-                  <h5>Alertes</h5>
-                  <div class='form-check'>
-                    
-                  </div>
-                  
-                  <h5>Infos</h5>
-                  <div class='form-check'>
-                    
-                  </div>
-                </div>
-              </div> 
+              </div>
               <div class="d-flex justify-content-end">
                 <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
               </div>
@@ -1625,6 +1475,202 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"rawstring(
   </script>
 
 
+)rawstring";
+
+const char HTTP_CONFIG_NOTIFICATIONS[] PROGMEM = R"rawstring(
+  <div class="container py-5">
+    <h4 class="mb-4">Config Notifications</h4>
+    <form method='POST' action='saveConfigNotifications'>
+    <ul class="nav nav-tabs" id="notifTab" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="conso-tab" data-bs-toggle="tab" data-bs-target="#conso" type="button" role="tab" aria-controls="conso" aria-selected="true">Consommation</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="prod-tab" data-bs-toggle="tab" data-bs-target="#prod" type="button" role="tab" aria-controls="prod" aria-selected="false">Production</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="eauNotif-tab" data-bs-toggle="tab" data-bs-target="#eauNotif" type="button" role="tab" aria-controls="eauNotif" aria-selected="false">Eau</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="gazNotif-tab" data-bs-toggle="tab" data-bs-target="#gazNotif" type="button" role="tab" aria-controls="gazNotif" aria-selected="false">Gaz</button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="autres-tab" data-bs-toggle="tab" data-bs-target="#autres" type="button" role="tab" aria-controls="autres" aria-selected="false">Autres</button>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="notifTabContent">
+
+      <!-- Onglet Consommation -->
+      <div class="tab-pane fade show active" id="conso" role="tabpanel" aria-labelledby="conso-tab">
+        <div class='card mx-auto shadow-sm'>
+          <div class="card-body">
+            <h5>Alertes</h5>
+            <div class='form-check'>
+              <input class='' id='NotifSubscribedPower' type='checkbox' name='NotifSubscribedPower' {{checkedNotifSubscribedPower}}>
+              <label class='' for='NotifSubscribedPower'> D&eacute;passement de puissance souscrite</label>
+            </div>
+            <div class='form-check'>
+              <input class='' id='NotifPowerOutage' type='checkbox' name='NotifPowerOutage' {{checkedNotifPowerOutage}}>
+              <label class='' for='NotifPowerOutage'> Puissance nulle</label>
+            </div>
+            <div class='form-check'>
+              <input class='' id='NotifRedColor' type='checkbox' name='NotifRedColor' {{checkedNotifRedColor}}>
+              <label class='' for='NotifRedColor'> Jour rouge (Tempo)</label>
+            </div>
+            <div class='form-check'>
+              Sur-tension
+              <div class="input-group mb-3">
+                <div class="input-group-text">
+                  <input class="mt-0" type="checkbox" name='NotifOverVoltage' {{checkedNotifOverVoltage}}>
+                </div>
+                <input type="text" class="form-control" name='NotifOverVoltageThreshold' value='{{valOverVoltageThreshold}}'>
+                <span class="input-group-text"> V</span>
+              </div>
+            </div>
+            <div class='form-check'>
+              Sous-tension
+              <div class="input-group mb-3">
+                <div class="input-group-text">
+                  <input class="mt-0" type="checkbox" name='NotifUnderVoltage' {{checkedNotifUnderVoltage}}>
+                </div>
+                <input type="text" class="form-control" name='NotifUnderVoltageThreshold' value='{{valUnderVoltageThreshold}}'>
+                <span class="input-group-text"> V</span>
+              </div>
+            </div>
+            <div class='form-check'>
+              Surpuissance soutenue
+              <div class="input-group mb-2">
+                <div class="input-group-text">
+                  <input class="mt-0" type="checkbox" name='NotifOverPower' {{checkedNotifOverPower}}>
+                </div>
+                <input type="text" class="form-control" name='NotifOverPowerThreshold' value='{{valOverPowerThreshold}}' placeholder='6000'>
+                <span class="input-group-text">W</span>
+              </div>
+              <div class="input-group mb-2">
+                <span class="input-group-text">Dur&eacute;e</span>
+                <input type="text" class="form-control" name='NotifOverPowerDuration' value='{{valOverPowerDuration}}' placeholder='60'>
+                <span class="input-group-text">s</span>
+              </div>
+              <div class="input-group mb-3">
+                <span class="input-group-text">Cooldown</span>
+                <input type="text" class="form-control" name='NotifOverPowerCooldown' value='{{valOverPowerCooldown}}' placeholder='30'>
+                <span class="input-group-text">min</span>
+              </div>
+            </div>
+            <div class='form-check'>
+              Consommation journali&egrave;re anormale
+              <div class="input-group mb-3">
+                <div class="input-group-text">
+                  <input class="mt-0" type="checkbox" name='NotifDailyAnomaly' {{checkedNotifDailyAnomaly}}>
+                </div>
+                <input type="text" class="form-control" name='NotifDailyAnomalyPercent' value='{{valDailyAnomalyPercent}}' placeholder='30'>
+                <span class="input-group-text">% au-dessus moy. 7j</span>
+              </div>
+            </div>
+            <h5>Infos</h5>
+            <div class='form-check'>
+              <input class='' id='NotifPriceChange' type='checkbox' name='NotifPriceChange' {{checkedNotifPriceChange}}>
+              <label class='' for='NotifPriceChange'> Changement de tarif</label>
+            </div>
+            <div class='form-check'>
+              <input class='' id='NotifPEJP' type='checkbox' name='NotifPEJP' {{checkedNotifPEJP}}>
+              <label class='' for='NotifPEJP'> Pr&eacute;avis EJP</label>
+            </div>
+            <div class='form-check'>
+              <input class='' id='NotifColorTomorrow' type='checkbox' name='NotifColorTomorrow' {{checkedNotifColorTomorrow}}>
+              <label class='' for='NotifColorTomorrow'> Couleur du lendemain (Tempo)</label>
+            </div>
+            <div class='form-check'>
+              D&eacute;passement de budget
+              <div class="input-group mb-3">
+                <div class="input-group-text">
+                  <input class="mt-0" type="checkbox" name='NotifOverBudget' {{checkedNotifOverBudget}}>
+                </div>
+                <input type="text" class="form-control" name='NotifOverBudgetThreshold' value='{{valOverBudgetThreshold}}'>
+                <span class="input-group-text"> &euro; </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Onglet Production -->
+      <div class="tab-pane fade" id="prod" role="tabpanel" aria-labelledby="prod-tab">
+        <div class='card mx-auto shadow-sm'>
+          <div class="card-body">
+            <h5>Alertes</h5>
+            <div class='form-check'>
+              <input class='' id='NotifProdZero' type='checkbox' name='NotifProdZero' {{checkedNotifProdZero}}>
+              <label class='' for='NotifProdZero'>Production = 0</label>
+            </div>
+            <h5>Infos</h5>
+            <div class='form-check'>
+              <input class='' id='NotifProdSupConso' type='checkbox' name='NotifProdSupConso' {{checkedNotifProdSupConso}}>
+              <label class='' for='NotifProdSupConso'>Production > Consommation</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Onglet Eau -->
+      <div class="tab-pane fade" id="eauNotif" role="tabpanel" aria-labelledby="eauNotif-tab">
+        <div class='card mx-auto shadow-sm'>
+          <div class="card-body">
+            <h5>Fuite d'eau (journali&egrave;re)</h5>
+            <div class='form-check'>
+              Consommation totale du jour
+              <div class="input-group mb-3">
+                <div class="input-group-text">
+                  <input class="mt-0" type="checkbox" name='NotifWaterLeak' {{checkedNotifWaterLeak}}>
+                </div>
+                <input type="text" class="form-control" name='NotifWaterLeakThreshold' value='{{valWaterLeakThreshold}}' placeholder='5'>
+                <span class="input-group-text">L</span>
+              </div>
+            </div>
+            <h5>Fuite d'eau (nocturne)</h5>
+            <div class='form-check'>
+              Consommation entre 00h et 05h
+              <div class="input-group mb-3">
+                <div class="input-group-text">
+                  <input class="mt-0" type="checkbox" name='NotifNightWaterLeak' {{checkedNotifNightWaterLeak}}>
+                </div>
+                <input type="text" class="form-control" name='NotifNightWaterLeakThreshold' value='{{valNightWaterLeakThreshold}}' placeholder='1'>
+                <span class="input-group-text">L</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Onglet Gaz -->
+      <div class="tab-pane fade" id="gazNotif" role="tabpanel" aria-labelledby="gazNotif-tab">
+        <div class='card mx-auto shadow-sm'>
+          <div class="card-body">
+            <p class="text-muted">Aucune notification configur&eacute;e pour le gaz.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Onglet Autres -->
+      <div class="tab-pane fade" id="autres" role="tabpanel" aria-labelledby="autres-tab">
+        <div class='card mx-auto shadow-sm'>
+          <div class="card-body">
+            <h5>M&eacute;triques quotidiennes</h5>
+            <div class='form-check mb-3'>
+              <input class='' id='NotifDailyMetrics' type='checkbox' name='NotifDailyMetrics' {{checkedNotifDailyMetrics}}>
+              <label class='' for='NotifDailyMetrics'> Envoyer un r&eacute;sum&eacute; quotidien</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <div class="d-flex justify-content-end mt-3">
+      <button type="submit" class="btn btn-warning btn-lg">Enregistrer</button>
+    </div>
+    </form>
+  </div>
 )rawstring";
 
 const char HTTP_UPDATE[] PROGMEM = R"(
@@ -2046,11 +2092,6 @@ const char HTTP_CONFIG_GENERAL[] PROGMEM = R"(
       <div class='card mx-auto shadow-sm' >
         <div class="card-body"> 
           <form method='POST' action='saveConfigParameter'> 
-            <h5>Option série</h5>
-            <div class='form-check'>
-              <input class='form-check-input' id='enableHWFlow' type='checkbox' name='enableHWFlow' {{checkedHWFlowControl}}>
-              <label class='form-check-label' for='enableHWFlow'>Hardware Flow control</label>
-            </div>
             <h5>Développeur</h5>
             <div class='form-check'>
               <input class='form-check-input' id='developerMode' type='checkbox' name='developerMode' {{checkeddeveloperMode}}>
@@ -3108,8 +3149,9 @@ $('#ruleForm').on('submit',function(e){
       <div class='card mx-auto shadow-sm' >
         <div class="card-body">
           <form method='POST' action='saveConfigHTTP'>
+          {{securityLockWarning}}
           <div class="form-check form-switch mb-3">
-            <input class="form-check-input" type="checkbox" id="enableSecureHttp" name='enableSecureHttp' {{checkedHttp}}>
+            <input class="form-check-input" type="checkbox" id="enableSecureHttp" name='enableSecureHttp' {{checkedHttp}} {{disabledSecuToggle}}>
             <label class="form-check-label" for="enableSecureHttp">Activer l'accès sécurisé</label>
           </div>
           <div class="mb-3">
@@ -3260,6 +3302,7 @@ const char HTTP_LOGIN[] PROGMEM = R"(
  const char HTTP_CONFIG_TUNNEL[] PROGMEM = R"(
     <div class='container p-4'>
       <h4 class='card-title mb-4'>Config Tunnel (Accès distant)</h4>
+      {{securityWarning}}
 
       <div class='card mx-auto shadow-sm mb-3'>
         <div class='card-body'>
@@ -3278,13 +3321,13 @@ const char HTTP_LOGIN[] PROGMEM = R"(
               <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
               <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
             </div>
-            <button class='btn btn-warning' type='button' id='btnActivate' style='height:48px'>Activer</button>
+            <button class='btn btn-warning' type='button' id='btnActivate' style='height:48px' {{disabledNoSec}}>Activer</button>
           </div>
           <div id='activateStatus' class='d-none'></div>
           <hr>
           <form method='POST' action='saveConfigTunnel' id='formToggle'>
             <div class='form-check form-switch'>
-              <input class='form-check-input' type='checkbox' id='enableTunnel' name='enableTunnel' {{checkedTunnel}}>
+              <input class='form-check-input' type='checkbox' id='enableTunnel' name='enableTunnel' {{checkedTunnel}} {{disabledNoSec}}>
               <label class='form-check-label' for='enableTunnel'>Tunnel actif</label>
             </div>
             <input type='hidden' name='tunnelClientId' value='{{tunnelClientId}}'>
@@ -3300,7 +3343,7 @@ const char HTTP_LOGIN[] PROGMEM = R"(
             <summary class='h5' style='cursor:pointer'>Connexion manuelle (avancé)</summary>
             <form method='POST' action='saveConfigTunnel' class='mt-3'>
               <div class='form-check form-switch mb-3'>
-                <input class='form-check-input' type='checkbox' name='enableTunnel' {{checkedTunnelManual}}>
+                <input class='form-check-input' type='checkbox' name='enableTunnel' {{checkedTunnelManual}} {{disabledNoSec}}>
                 <label class='form-check-label'>Activer le Tunnel</label>
               </div>
               <div class='mb-3'>
@@ -3311,7 +3354,7 @@ const char HTTP_LOGIN[] PROGMEM = R"(
                 <label class='form-label'>Token</label>
                 <input class='form-control' type='password' name='tunnelToken' value='{{tunnelToken}}'>
               </div>
-              <button type='submit' class='btn btn-warning'>Enregistrer</button>
+              <button type='submit' class='btn btn-warning' {{disabledNoSec}}>Enregistrer</button>
             </form>
           </details>
         </div>
@@ -6810,8 +6853,9 @@ void handleDashboard(AsyncWebServerRequest *request)
   String js = "";
   int exist = 0;
 
-  for (size_t ident = 0; ident < devices.size(); ident++) 
+  for (size_t ident = 0; ident < devices.size(); ident++)
   {
+    esp_task_wdt_reset();
     DeviceData* device = devices[ident];
 
       int ShortAddr = device->getInfo().shortAddr.toInt();
@@ -8226,9 +8270,11 @@ function preventCanvasZoom(canvasId) {
     response->print(FPSTR(HTTP_ENERGY_JAVASCRIPT));
 
     // Power gauge (généré directement)
+    esp_task_wdt_reset();
     writePowerGauges(response, isTriphase, hasProduction, isHourMode);
 
     // JavaScript des graphiques
+    esp_task_wdt_reset();
     response->print(F("<script>$(document).ready(function() {"));
     
     if (hasZLinky) {
@@ -8835,15 +8881,6 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
   }
 
   //PARAMETER
-  if (ConfigSettings.enableHWFlow)
-  {
-    result.replace("{{checkedHWFlowControl}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedHWFlowControl}}", "");
-  }
-
   if (ConfigGeneral.developerMode)
   {
     result.replace("{{checkeddeveloperMode}}", "Checked");
@@ -9012,7 +9049,20 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
   }else{
     result.replace("{{checkedHttp}}", "");
   }
-  
+
+  // Empêcher la désactivation de la sécurité si le tunnel est actif
+  if (ConfigGeneral.enableTunnel && ConfigSettings.enableSecureHttp) {
+    result.replace("{{disabledSecuToggle}}", "disabled");
+    result.replace("{{securityLockWarning}}",
+      "<div class='alert alert-info mb-3'>"
+      "L'acc&egrave;s s&eacute;curis&eacute; ne peut pas &ecirc;tre d&eacute;sactiv&eacute; tant que le tunnel est actif. "
+      "<a href='/configTunnel' class='alert-link'>D&eacute;sactiver le tunnel</a>"
+      "</div>");
+  } else {
+    result.replace("{{disabledSecuToggle}}", "");
+    result.replace("{{securityLockWarning}}", "");
+  }
+
   if (request->arg("error").toInt() > 0)
   {
     result.replace("{{error}}", "Erreur : Veuillez verifier l'identifiant et le mode de passe HTTP ou la longeur du mot de passe >= 4 characters");
@@ -9756,7 +9806,8 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
 
 void handleConfigEnergy(AsyncWebServerRequest *request)
 {
-  String result,listLinky,listProd,ListGaz,ListWater,listDevicesAction;
+  PSRAMString result;
+  String listLinky,listProd,ListGaz,ListWater,listDevicesAction;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
@@ -9959,103 +10010,140 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
     result.replace("{{checkedEnablePresenceGraph}}", "");
   }
 
-  // NOTIFICATION
-  result.replace("{{valOverVoltageThreshold}}", String(ConfigNotif.OverVoltageThreshold));
-  result.replace("{{valUnderVoltageThreshold}}", String(ConfigNotif.UnderVoltageThreshold));
-  result.replace("{{valOverBudgetThreshold}}", String(ConfigNotif.OverBudgetThreshold));
-  if (ConfigNotif.ColorTomorrow)
-  {
-    result.replace("{{checkedNotifColorTomorrow}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifColorTomorrow}}", "");
-  }
-  if (ConfigNotif.OverBudget)
-  {
-    result.replace("{{checkedNotifOverBudget}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifOverBudget}}", "");
-  }
-  if (ConfigNotif.RedColor)
-  {
-    result.replace("{{checkedNotifRedColor}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifRedColor}}", "");
-  }
-  if (ConfigNotif.PEJP)
-  {
-    result.replace("{{checkedNotifPEJP}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifPEJP}}", "");
-  }
-  if (ConfigNotif.UnderVoltage)
-  {
-    result.replace("{{checkedNotifUnderVoltage}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifUnderVoltage}}", "");
-  }
-  if (ConfigNotif.OverVoltage)
-  {
-    result.replace("{{checkedNotifOverVoltage}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifOverVoltage}}", "");
-  }
-  if (ConfigNotif.PowerOutage)
-  {
-    result.replace("{{checkedNotifPowerOutage}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifPowerOutage}}", "");
-  }
-  if (ConfigNotif.PriceChange)
-  {
-    result.replace("{{checkedNotifPriceChange}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifPriceChange}}", "");
-  }
-  if (ConfigNotif.SubscribedPower)
-  {
-    result.replace("{{checkedNotifSubscribedPower}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifSubscribedPower}}", "");
-  }
-  if (ConfigNotif.ProdSupConso)
-  {
-    result.replace("{{checkedNotifProdSupConso}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifProdSupConso}}", "");
-  }
-  if (ConfigNotif.ProdZero)
-  {
-    result.replace("{{checkedNotifProdZero}}", "Checked");
-  }
-  else
-  {
-    result.replace("{{checkedNotifProdZero}}", "");
-  }
-
-  request->send(200, "text/html", result);
+  request->send(200, "text/html", result.c_str());
 }
 
+// ==================== Config Notifications ====================
 
+void handleConfigNotifications(AsyncWebServerRequest *request) {
+  PSRAMString result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_CONFIG_NOTIFICATIONS);
+  result += footer();
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+
+  // Consommation
+  result.replace("{{checkedNotifSubscribedPower}}", ConfigNotif.SubscribedPower ? "Checked" : "");
+  result.replace("{{checkedNotifPowerOutage}}", ConfigNotif.PowerOutage ? "Checked" : "");
+  result.replace("{{checkedNotifRedColor}}", ConfigNotif.RedColor ? "Checked" : "");
+  result.replace("{{checkedNotifOverVoltage}}", ConfigNotif.OverVoltage ? "Checked" : "");
+  result.replace("{{valOverVoltageThreshold}}", String(ConfigNotif.OverVoltageThreshold));
+  result.replace("{{checkedNotifUnderVoltage}}", ConfigNotif.UnderVoltage ? "Checked" : "");
+  result.replace("{{valUnderVoltageThreshold}}", String(ConfigNotif.UnderVoltageThreshold));
+  result.replace("{{checkedNotifPriceChange}}", ConfigNotif.PriceChange ? "Checked" : "");
+  result.replace("{{checkedNotifPEJP}}", ConfigNotif.PEJP ? "Checked" : "");
+  result.replace("{{checkedNotifColorTomorrow}}", ConfigNotif.ColorTomorrow ? "Checked" : "");
+  result.replace("{{checkedNotifOverBudget}}", ConfigNotif.OverBudget ? "Checked" : "");
+  result.replace("{{valOverBudgetThreshold}}", String(ConfigNotif.OverBudgetThreshold));
+
+  // Production
+  result.replace("{{checkedNotifProdZero}}", ConfigNotif.ProdZero ? "Checked" : "");
+  result.replace("{{checkedNotifProdSupConso}}", ConfigNotif.ProdSupConso ? "Checked" : "");
+
+  // Autres (push + alertes avancées)
+  result.replace("{{checkedNotifOverPower}}", ConfigNotif.OverPower ? "Checked" : "");
+  result.replace("{{valOverPowerThreshold}}", String(ConfigNotif.OverPowerThreshold > 0 ? ConfigNotif.OverPowerThreshold : 6000));
+  result.replace("{{valOverPowerDuration}}", String(ConfigNotif.OverPowerDuration > 0 ? ConfigNotif.OverPowerDuration : 60));
+  result.replace("{{valOverPowerCooldown}}", String(ConfigNotif.OverPowerCooldown > 0 ? ConfigNotif.OverPowerCooldown : 30));
+  result.replace("{{checkedNotifDailyAnomaly}}", ConfigNotif.DailyAnomaly ? "Checked" : "");
+  result.replace("{{valDailyAnomalyPercent}}", String(ConfigNotif.DailyAnomalyPercent > 0 ? ConfigNotif.DailyAnomalyPercent : 30));
+  result.replace("{{checkedNotifWaterLeak}}", ConfigNotif.WaterLeak ? "Checked" : "");
+  result.replace("{{valWaterLeakThreshold}}", String(ConfigNotif.WaterLeakThreshold > 0 ? ConfigNotif.WaterLeakThreshold : 5));
+  result.replace("{{checkedNotifNightWaterLeak}}", ConfigNotif.NightWaterLeak ? "Checked" : "");
+  result.replace("{{valNightWaterLeakThreshold}}", String(ConfigNotif.NightWaterLeakThreshold > 0 ? ConfigNotif.NightWaterLeakThreshold : 1));
+  result.replace("{{checkedNotifDailyMetrics}}", ConfigNotif.DailyMetrics ? "Checked" : "");
+
+  request->send(200, "text/html", result.c_str());
+}
+
+void handleSaveConfigNotifications(AsyncWebServerRequest *request) {
+  String path = "configGeneral.json";
+
+  // Consommation - toggles
+  ConfigNotif.SubscribedPower = (request->arg("NotifSubscribedPower") == "on");
+  config_write(path, "SubscribedPower", ConfigNotif.SubscribedPower ? "1" : "0");
+
+  ConfigNotif.PowerOutage = (request->arg("NotifPowerOutage") == "on");
+  config_write(path, "PowerOutage", ConfigNotif.PowerOutage ? "1" : "0");
+
+  ConfigNotif.RedColor = (request->arg("NotifRedColor") == "on");
+  config_write(path, "RedColor", ConfigNotif.RedColor ? "1" : "0");
+
+  ConfigNotif.OverVoltage = (request->arg("NotifOverVoltage") == "on");
+  config_write(path, "OverVoltage", ConfigNotif.OverVoltage ? "1" : "0");
+
+  ConfigNotif.OverVoltageThreshold = request->arg("NotifOverVoltageThreshold").toInt();
+  config_write(path, "OverVoltageThreshold", String(ConfigNotif.OverVoltageThreshold));
+
+  ConfigNotif.UnderVoltage = (request->arg("NotifUnderVoltage") == "on");
+  config_write(path, "UnderVoltage", ConfigNotif.UnderVoltage ? "1" : "0");
+
+  ConfigNotif.UnderVoltageThreshold = request->arg("NotifUnderVoltageThreshold").toInt();
+  config_write(path, "UnderVoltageThreshold", String(ConfigNotif.UnderVoltageThreshold));
+
+  ConfigNotif.PriceChange = (request->arg("NotifPriceChange") == "on");
+  config_write(path, "PriceChange", ConfigNotif.PriceChange ? "1" : "0");
+
+  ConfigNotif.PEJP = (request->arg("NotifPEJP") == "on");
+  config_write(path, "PEJP", ConfigNotif.PEJP ? "1" : "0");
+
+  ConfigNotif.ColorTomorrow = (request->arg("NotifColorTomorrow") == "on");
+  config_write(path, "ColorTomorrow", ConfigNotif.ColorTomorrow ? "1" : "0");
+
+  ConfigNotif.OverBudget = (request->arg("NotifOverBudget") == "on");
+  config_write(path, "OverBudget", ConfigNotif.OverBudget ? "1" : "0");
+
+  ConfigNotif.OverBudgetThreshold = request->arg("NotifOverBudgetThreshold").toInt();
+  config_write(path, "OverBudgetThreshold", String(ConfigNotif.OverBudgetThreshold));
+
+  // Production
+  ConfigNotif.ProdSupConso = (request->arg("NotifProdSupConso") == "on");
+  config_write(path, "ProdSupConso", ConfigNotif.ProdSupConso ? "1" : "0");
+
+  ConfigNotif.ProdZero = (request->arg("NotifProdZero") == "on");
+  config_write(path, "ProdZero", ConfigNotif.ProdZero ? "1" : "0");
+
+  // Autres
+  ConfigNotif.OverPower = (request->arg("NotifOverPower") == "on");
+  config_write(path, "OverPower", ConfigNotif.OverPower ? "1" : "0");
+
+  ConfigNotif.OverPowerThreshold = request->arg("NotifOverPowerThreshold").toInt();
+  config_write(path, "OverPowerThreshold", String(ConfigNotif.OverPowerThreshold));
+
+  ConfigNotif.OverPowerDuration = request->arg("NotifOverPowerDuration").toInt();
+  config_write(path, "OverPowerDuration", String(ConfigNotif.OverPowerDuration));
+
+  ConfigNotif.OverPowerCooldown = request->arg("NotifOverPowerCooldown").toInt();
+  config_write(path, "OverPowerCooldown", String(ConfigNotif.OverPowerCooldown));
+
+  ConfigNotif.DailyAnomaly = (request->arg("NotifDailyAnomaly") == "on");
+  config_write(path, "DailyAnomaly", ConfigNotif.DailyAnomaly ? "1" : "0");
+
+  ConfigNotif.DailyAnomalyPercent = request->arg("NotifDailyAnomalyPercent").toInt();
+  config_write(path, "DailyAnomalyPercent", String(ConfigNotif.DailyAnomalyPercent));
+
+  ConfigNotif.WaterLeak = (request->arg("NotifWaterLeak") == "on");
+  config_write(path, "WaterLeak", ConfigNotif.WaterLeak ? "1" : "0");
+
+  ConfigNotif.WaterLeakThreshold = request->arg("NotifWaterLeakThreshold").toInt();
+  config_write(path, "WaterLeakThreshold", String(ConfigNotif.WaterLeakThreshold));
+
+  ConfigNotif.NightWaterLeak = (request->arg("NotifNightWaterLeak") == "on");
+  config_write(path, "NightWaterLeak", ConfigNotif.NightWaterLeak ? "1" : "0");
+
+  ConfigNotif.NightWaterLeakThreshold = request->arg("NotifNightWaterLeakThreshold").toInt();
+  config_write(path, "NightWaterLeakThreshold", String(ConfigNotif.NightWaterLeakThreshold));
+
+  ConfigNotif.DailyMetrics = (request->arg("NotifDailyMetrics") == "on");
+  config_write(path, "DailyMetrics", ConfigNotif.DailyMetrics ? "1" : "0");
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configNotifications"));
+  request->send(response);
+}
 
 void handleConfigGaz(AsyncWebServerRequest *request)
 {
@@ -10352,6 +10440,20 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
     result.replace("{{tunnelToken}}", "");
   }
 
+  // Sécurité HTTP requise pour le tunnel
+  if (!ConfigSettings.enableSecureHttp) {
+    result.replace("{{securityWarning}}",
+      "<div class='alert alert-warning mb-3'>"
+      "<strong>S&eacute;curit&eacute; requise</strong> &mdash; "
+      "L'acc&egrave;s s&eacute;curis&eacute; (identifiant + mot de passe) doit &ecirc;tre activ&eacute; avant de pouvoir utiliser le tunnel. "
+      "<a href='/configHTTP' class='alert-link'>Configurer l'acc&egrave;s s&eacute;curis&eacute;</a>"
+      "</div>");
+    result.replace("{{disabledNoSec}}", "disabled");
+  } else {
+    result.replace("{{securityWarning}}", "");
+    result.replace("{{disabledNoSec}}", "");
+  }
+
   String error = "";
   if (request->arg("error").toInt() > 0)
   {
@@ -10366,6 +10468,10 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
     if ((request->arg("error").toInt() & 4) == 4)
     {
       error = "Impossible de désactiver le tunnel depuis un accès distant.";
+    }
+    if ((request->arg("error").toInt() & 8) == 8)
+    {
+      error = "Erreur : L'acc&egrave;s s&eacute;curis&eacute; HTTP doit &ecirc;tre activ&eacute; avant d'activer le tunnel.";
     }
   }
   result.replace("{{error}}", error);
@@ -10385,6 +10491,14 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
   if (viaTunnel && request->arg("enableTunnel") != "on") {
     AsyncWebServerResponse *response = request->beginResponse(302);
     response->addHeader(F("Location"), F("/configTunnel?error=4"));
+    request->send(response);
+    return;
+  }
+
+  // Sécurité HTTP requise pour activer le tunnel
+  if (request->arg("enableTunnel") == "on" && !ConfigSettings.enableSecureHttp) {
+    AsyncWebServerResponse *response = request->beginResponse(302);
+    response->addHeader(F("Location"), F("/configTunnel?error=8"));
     request->send(response);
     return;
   }
@@ -11350,6 +11464,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   esp_task_wdt_reset();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = F("db/");
@@ -11382,6 +11497,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   esp_task_wdt_reset();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = F("config/");
@@ -11414,6 +11530,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   esp_task_wdt_reset();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = F("debug/");
@@ -11447,6 +11564,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   esp_task_wdt_reset();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = F("hst/");
@@ -11480,6 +11598,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   esp_task_wdt_reset();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = F("tp/");
@@ -11512,6 +11631,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
   esp_task_wdt_reset();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = F("bk/");
@@ -12271,6 +12391,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
   File file = root.openNextFile();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = file.name();
@@ -12585,6 +12706,7 @@ void handleHistory(AsyncWebServerRequest *request)
   File file = root.openNextFile();
   while (file)
   {
+    esp_task_wdt_reset();
     if (!file.isDirectory())
     {
       String tmp = file.name();
@@ -13454,9 +13576,9 @@ void handleGenerateNotif(AsyncWebServerRequest *request)
   {
     notifList->push(Notification{"TEST","Test de "+String(ConfigGeneral.ZLinky),FormattedDate,1,0});
     notificationManager.addNotification(
-      "TEST", 
-      "Test de "+String(ConfigGeneral.ZLinky), 
-      0
+      "TEST",
+      "Test de "+String(ConfigGeneral.ZLinky),
+      0, "test"
     );
   }  
   AsyncWebServerResponse *response = request->beginResponse(303);
@@ -14369,138 +14491,6 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
     config_write(path, "tarifIdx10", String(request->arg("tarifIdx10")));
   }
 
-  String NotifSubscribedPower;
-  if (request->arg("NotifSubscribedPower") == "on")
-  {
-    NotifSubscribedPower = "1";
-    ConfigNotif.SubscribedPower = true;
-  }
-  else
-  {
-    NotifSubscribedPower = "0";
-    ConfigNotif.SubscribedPower = false;
-  }
-  config_write(path, "SubscribedPower", NotifSubscribedPower);
-
-  String NotifPowerOutage;
-  if (request->arg("NotifPowerOutage") == "on")
-  {
-    NotifPowerOutage = "1";
-    ConfigNotif.PowerOutage = true;
-  }
-  else
-  {
-    NotifPowerOutage = "0";
-    ConfigNotif.PowerOutage = false;
-  }
-  config_write(path, "PowerOutage", NotifPowerOutage);
-
-  String NotifPriceChange;
-  if (request->arg("NotifPriceChange") == "on")
-  {
-    NotifPriceChange = "1";
-    ConfigNotif.PriceChange = true;
-  }
-  else
-  {
-    NotifPriceChange = "0";
-    ConfigNotif.PriceChange = false;
-  }
-  config_write(path, "PriceChange", NotifPriceChange);
-
-  String NotifColorTomorrow;
-  if (request->arg("NotifColorTomorrow") == "on")
-  {
-    NotifColorTomorrow = "1";
-    ConfigNotif.ColorTomorrow = true;
-  }
-  else
-  {
-    NotifColorTomorrow = "0";
-    ConfigNotif.ColorTomorrow = false;
-  }
-  config_write(path, "ColorTomorrow", NotifColorTomorrow);
-
-  String NotifPEJP;
-  if (request->arg("NotifPEJP") == "on")
-  {
-    NotifPEJP = "1";
-    ConfigNotif.PEJP = true;
-  }
-  else
-  {
-    NotifPEJP = "0";
-    ConfigNotif.PEJP = false;
-  }
-  config_write(path, "PEJP", NotifPEJP);
-
-  String NotifRedColor;
-  if (request->arg("NotifRedColor") == "on")
-  {
-    NotifRedColor = "1";
-    ConfigNotif.RedColor = true;
-  }
-  else
-  {
-    NotifRedColor = "0";
-    ConfigNotif.RedColor = false;
-  }
-  config_write(path, "RedColor", NotifRedColor);
-
-  String NotifOverBudget;
-  if (request->arg("NotifOverBudget") == "on")
-  {
-    NotifOverBudget = "1";
-    ConfigNotif.OverBudget = true;
-  }
-  else
-  {
-    NotifOverBudget = "0";
-    ConfigNotif.OverBudget = false;
-  }
-  config_write(path, "OverBudget", NotifOverBudget);
-  if (request->arg("NotifOverBudgetThreshold").toInt() >= 0)
-  {
-    ConfigNotif.OverBudgetThreshold = request->arg("NotifOverBudgetThreshold").toInt();
-    config_write(path, "OverBudgetThreshold", String(request->arg("NotifOverBudgetThreshold")));
-  }
-
-  String NotifOverVoltage;
-  if (request->arg("NotifOverVoltage") == "on")
-  {
-    NotifOverVoltage = "1";
-    ConfigNotif.OverVoltage = true;
-  }
-  else
-  {
-    NotifOverVoltage = "0";
-    ConfigNotif.OverVoltage = false;
-  }
-  config_write(path, "OverVoltage", NotifOverVoltage);
-  if (request->arg("NotifOverVoltageThreshold").toInt() >= 0)
-  {
-    ConfigNotif.OverVoltageThreshold = request->arg("NotifOverVoltageThreshold").toInt();
-    config_write(path, "OverVoltageThreshold", String(request->arg("NotifOverVoltageThreshold")));
-  }
-
-  String NotifUnderVoltage;
-  if (request->arg("NotifUnderVoltage") == "on")
-  {
-    NotifUnderVoltage = "1";
-    ConfigNotif.UnderVoltage = true;
-  }
-  else
-  {
-    NotifUnderVoltage = "0";
-    ConfigNotif.UnderVoltage = false;
-  }
-  config_write(path, "UnderVoltage", NotifUnderVoltage);
-  if (request->arg("NotifUnderVoltageThreshold").toInt() >= 0)
-  {
-    ConfigNotif.UnderVoltageThreshold = request->arg("NotifUnderVoltageThreshold").toInt();
-    config_write(path, "UnderVoltageThreshold", String(request->arg("NotifUnderVoltageThreshold")));
-  }
-  
   //Enregistrement device délestage.
   String delestageIDs="";
   int j=0;
@@ -14550,32 +14540,6 @@ void handleSaveConfigProduction(AsyncWebServerRequest *request)
     strlcpy(ConfigGeneral.tarifIdxProd, request->arg("tarifIdxProd").c_str(), sizeof(ConfigGeneral.tarifIdxProd));
     config_write(path, "tarifIdxProd", String(request->arg("tarifIdxProd")));
   }
-
-  String NotifProdSupConso;
-  if (request->arg("NotifProdSupConso") == "on")
-  {
-    NotifProdSupConso = "1";
-    ConfigNotif.ProdSupConso = true;
-  }
-  else
-  {
-    NotifProdSupConso = "0";
-    ConfigNotif.ProdSupConso = false;
-  }
-  config_write(path, "ProdSupConso", NotifProdSupConso);
-
-  String NotifProdZero;
-  if (request->arg("NotifProdZero") == "on")
-  {
-    NotifProdZero = "1";
-    ConfigNotif.ProdZero = true;
-  }
-  else
-  {
-    NotifProdZero = "0";
-    ConfigNotif.ProdZero = false;
-  }
-  config_write(path, "ProdZero", NotifProdZero);
 
   AsyncWebServerResponse *response = request->beginResponse(303);
   response->addHeader(F("Location"), F("/configEnergy"));
@@ -14789,6 +14753,19 @@ void handleSaveConfigHTTP(AsyncWebServerRequest *request)
   {
     enableHTTP = "0";
     ConfigSettings.enableSecureHttp = false;
+
+    // Couper le tunnel si la sécurité HTTP est désactivée
+    if (ConfigGeneral.enableTunnel) {
+      ConfigGeneral.enableTunnel = false;
+      config_write(path, "enableTunnel", "0");
+      if (tunnel != nullptr) {
+        tunnel->stop();
+        delete tunnel;
+        tunnel = nullptr;
+        Serial.println("[Tunnel] Arrêté (sécurité HTTP désactivée)");
+        addDebugLog("Tunnel arrêté : sécurité HTTP désactivée");
+      }
+    }
   }
   config_write(path, "enableSecureHttp", enableHTTP);
 
@@ -15036,54 +15013,6 @@ void handleSaveConfigUDPClient(AsyncWebServerRequest *request)
   
 }
 
-void handleSaveConfigNotification(AsyncWebServerRequest *request)
-{
-  String path = "configGeneral.json";
-  String NotifSubscribedPower;
-  if (request->arg("NotifSubscribedPower") == "on")
-  {
-    NotifSubscribedPower = "1";
-    ConfigNotif.SubscribedPower = true;
-  }
-  else
-  {
-    NotifSubscribedPower = "0";
-    ConfigNotif.SubscribedPower = false;
-  }
-  config_write(path, "SubscribedPower", NotifSubscribedPower);
-
-  String NotifPowerOutage;
-  if (request->arg("NotifPowerOutage") == "on")
-  {
-    NotifPowerOutage = "1";
-    ConfigNotif.PowerOutage = true;
-  }
-  else
-  {
-    NotifPowerOutage = "0";
-    ConfigNotif.PowerOutage = false;
-  }
-  config_write(path, "PowerOutage", NotifPowerOutage);
-
-  String NotifPriceChange;
-  if (request->arg("NotifPriceChange") == "on")
-  {
-    NotifPriceChange = "1";
-    ConfigNotif.PriceChange = true;
-  }
-  else
-  {
-    NotifPriceChange = "0";
-    ConfigNotif.PriceChange = false;
-  }
-  config_write(path, "PriceChange", NotifPriceChange);
-
-  
-
-  AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/configGeneral"));
-  request->send(response);
-}
 
 void handleSaveConfigParameter(AsyncWebServerRequest *request)
 {
@@ -17323,7 +17252,7 @@ void handleGetDeviceAttrValues(AsyncWebServerRequest *request)
   int shortAddr = device->getInfo().shortAddr.toInt();
   bool isZLinky = (device->getInfo().model == "ZLinky_TIC");
   int linkyMode = device->getInfo().linkyMode.toInt();
-  
+
   if (t != nullptr) {
     bool first = true;
     for (int i = 0; i < t->StateSize(); i++) {
@@ -17356,12 +17285,12 @@ void handleGetDeviceAttrValues(AsyncWebServerRequest *request)
       }
       
       String attrId = String(shortAddr) + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute);
-      String value = GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, 
+      String value = GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute,
                                      (String)t->states[i].type, t->states[i].coefficient);
-      
+
       if (!first) result += ",";
       first = false;
-      
+
       result += "\"" + attrId + "\":\"" + value + "\"";
     }
   }
@@ -17731,6 +17660,7 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
       (*it)->~DeviceData();
       free(*it);
       devices.erase(it);
+      invalidateElectricalDeviceCache();
       break;
     }
   }
@@ -17743,6 +17673,11 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
   {
       request->send(500, "text/plain", "Error");
   }
+}
+
+void handleCleanGhostDevices(AsyncWebServerRequest *request) {
+    requestGhostClean();
+    request->send(200, F("text/html"), "OK");
 }
 
 void handleGetFormattedDate(AsyncWebServerRequest *request)
@@ -18350,6 +18285,12 @@ void initWebServer()
   serverWeb.on("/api/tunnelActivate", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
 
+    if (!ConfigSettings.enableSecureHttp) {
+      request->send(200, "application/json",
+        "{\"status\":\"error\",\"error\":\"L'acc\\u00e8s s\\u00e9curis\\u00e9 HTTP doit \\u00eatre activ\\u00e9 avant d'activer le tunnel.\"}");
+      return;
+    }
+
     String code = request->arg("code");
     if (code.length() != 6) {
       request->send(200, "application/json", "{\"status\":\"error\",\"error\":\"Code invalide\"}");
@@ -18387,6 +18328,76 @@ void initWebServer()
     }
   });
 
+  // GET /api/tunnel/credentials — retourne clientId + token en clair
+  serverWeb.on("/api/tunnel/credentials", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!checkAuth(request)) return;
+    SpiRamJsonDocument doc(256);
+    doc["tunnelClientId"] = ConfigGeneral.tunnelClientId;
+    doc["tunnelToken"] = ConfigGeneral.tunnelToken;
+    String json;
+    serializeJson(doc, json);
+    request->send(200, "application/json", json);
+  });
+
+  // POST /api/tunnel/credentials — met à jour clientId et/ou token
+  serverWeb.on("/api/tunnel/credentials", HTTP_POST,
+    [](AsyncWebServerRequest *request){},
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+      if (!checkAuth(request)) return;
+      static String jsonBuffer;
+      if (index == 0) { jsonBuffer = ""; jsonBuffer.reserve(total); }
+      for (size_t i = 0; i < len; i++) jsonBuffer += (char)data[i];
+      if (index + len < total) return;
+
+      SpiRamJsonDocument doc(256);
+      if (deserializeJson(doc, jsonBuffer)) {
+        jsonBuffer = "";
+        request->send(400, "application/json", "{\"error\":\"JSON invalide\"}");
+        return;
+      }
+      jsonBuffer = "";
+
+      String path = "configGeneral.json";
+      bool changed = false;
+
+      if (doc.containsKey("tunnelClientId")) {
+        strlcpy(ConfigGeneral.tunnelClientId, doc["tunnelClientId"] | "", sizeof(ConfigGeneral.tunnelClientId));
+        config_write(path, "tunnelClientId", String(ConfigGeneral.tunnelClientId));
+        changed = true;
+      }
+      if (doc.containsKey("tunnelToken")) {
+        const char* token = doc["tunnelToken"] | "";
+        if (strlen(token) > 0 && strcmp(token, "********") != 0) {
+          strlcpy(ConfigGeneral.tunnelToken, token, sizeof(ConfigGeneral.tunnelToken));
+          config_write(path, "tunnelToken", String(ConfigGeneral.tunnelToken));
+          changed = true;
+        }
+      }
+
+      if (changed && ConfigGeneral.enableTunnel) {
+        if (tunnel != nullptr) {
+          tunnel->stop();
+          delete tunnel;
+          tunnel = nullptr;
+        }
+        if (strlen(ConfigGeneral.tunnelToken) > 0) {
+          String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
+          tunnelUrl += ConfigGeneral.tunnelToken;
+          if (strlen(ConfigGeneral.tunnelClientId) > 0) {
+            tunnelUrl += "&clientId=";
+            tunnelUrl += ConfigGeneral.tunnelClientId;
+          }
+          tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
+          tunnel->begin();
+          Serial.println("[Tunnel] Service tunnel restarted with new credentials");
+        }
+      }
+
+      request->send(200, "application/json", "{\"status\":\"ok\"}");
+    }
+  );
+
   serverWeb.on("/api/tariff", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
@@ -18420,9 +18431,14 @@ void initWebServer()
     handleConfigHorloge(request); 
   });
   serverWeb.on("/configEnergy", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handleConfigEnergy(request); 
+    handleConfigEnergy(request);
+  });
+  serverWeb.on("/configNotifications", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleConfigNotifications(request);
   });
   serverWeb.on("/configGaz", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -18763,10 +18779,10 @@ void initWebServer()
     handleSaveConfigParameter(request); 
   });
 
-  serverWeb.on("/saveConfigNotification", HTTP_POST, [](AsyncWebServerRequest *request)
-  { 
+  serverWeb.on("/saveConfigNotifications", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
     if (!checkAuth(request)) return;
-    handleSaveConfigNotification(request); 
+    handleSaveConfigNotifications(request);
   });
 
   serverWeb.on("/saveWifi", HTTP_POST, [](AsyncWebServerRequest *request)
@@ -18824,6 +18840,13 @@ void initWebServer()
       }
     });
   
+  // API: Test push notification
+  serverWeb.on("/api/testPush", HTTP_POST, [](AsyncWebServerRequest *request){
+    if (!checkAuth(request)) return;
+    notificationManager.addNotification("Test Push", "Notification push de test", 0, "test");
+    request->send(200, "application/json", "{\"success\":true}");
+  });
+
   // API: Marquer comme lu - Route simplifiée
   serverWeb.on("/api/notifications/read", HTTP_PUT, [](AsyncWebServerRequest *request){
     if (!checkAuth(request)) return;
@@ -19241,9 +19264,14 @@ void initWebServer()
     handleLoadLabelEnergy(request); 
   });
   serverWeb.on("/deleteDevice", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handleDeleteDevice(request); 
+    handleDeleteDevice(request);
+  });
+  serverWeb.on("/cmdCleanGhosts", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleCleanGhostDevices(request);
   });
   serverWeb.on("/getDeviceValue", HTTP_GET, [](AsyncWebServerRequest *request)
   { 

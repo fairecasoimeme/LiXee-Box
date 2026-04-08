@@ -26,7 +26,8 @@ bool NotificationManager::begin() {
   return true;
 }
 
-bool NotificationManager::addNotification(const String& title, const String& message, int type) {
+bool NotificationManager::addNotification(const String& title, const String& message, int type,
+                                          const char* alertType, float value, float threshold) {
   if (notifications.size() >= maxNotifications) {
     cleanupOldNotifications();
   }
@@ -50,7 +51,12 @@ bool NotificationManager::addNotification(const String& title, const String& mes
   
   // Sauvegarde automatique
   saveToFile();
-  
+
+  // Push mobile via tunnel (si callback configuré)
+  if (_pushCallback) {
+      _pushCallback(title, message, type, alertType, value, threshold);
+  }
+
   log_i("Notification ajoutée: %s\n", title.c_str());
   return true;
 }
@@ -279,6 +285,10 @@ String NotificationManager::getStatsJson() const {
   return result;
 }
 
+
+void NotificationManager::setPushCallback(PushCallback cb) {
+    _pushCallback = cb;
+}
 
 void NotificationManager::cleanupOldNotifications() {
   if (notifications.size() < maxNotifications) return;

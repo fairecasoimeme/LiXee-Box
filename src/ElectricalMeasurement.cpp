@@ -87,14 +87,15 @@ String getPhaseFromAttribute(int attribute) {
 }
 
 // Fonction centralisée pour gérer les notifications électriques
-void handleElectricalNotification(const String& title, const String& text, int priority = 1) {
+void handleElectricalNotification(const String& title, const String& text, int priority = 1,
+                                  const char* alertType = nullptr, float value = 0, float threshold = 0) {
     if (!notifList->isFull()) {
         notifList->push(Notification{title, text, FormattedDate, 1, 0});
     } else {
         notifList->shift();
         notifList->push(Notification{title, text, FormattedDate, 1, 0});
     }
-    notificationManager.addNotification(title, text, priority);
+    notificationManager.addNotification(title, text, priority, alertType, value, threshold);
 }
 
 // Fonction centralisée pour créer les données de mesure depuis les données brutes
@@ -312,7 +313,7 @@ void handlePowerOutageNotification(const ElectricalMeasurementData& data) {
     
     if (data.numericValue == 0 && oldPowerOutage != 0) {
         String text = "La puissance apparente de " + String(ConfigGeneral.ZLinky) + " est à 0 VA";
-        handleElectricalNotification("⚡0️⃣Puissance apparente nulle", text, 1);
+        handleElectricalNotification("⚡0️⃣Puissance apparente nulle", text, 1, "power_outage");
     }
     oldPowerOutage = data.numericValue;
 }
@@ -337,13 +338,14 @@ void handleVoltageNotifications(const ElectricalMeasurementData& data) {
             if (!oldOverTension[data.attribute]) {
                 oldOverTension[data.attribute] = true;
                 String text = "Tension relevée Ph" + phase + " : " + String(tension) + " V";
-                handleElectricalNotification("⚡⚠️ Sur-tension", text, 1);
+                handleElectricalNotification("⚡⚠️ Sur-tension", text, 1,
+                    "over_voltage", (float)tension, (float)ConfigNotif.OverVoltageThreshold);
             }
         } else {
             oldOverTension[data.attribute] = false;
         }
     }
-    
+
     // Gestion sous-tension
     if (ConfigNotif.UnderVoltage) {
         if (ConfigNotif.UnderVoltageThreshold > tension) {
@@ -351,7 +353,8 @@ void handleVoltageNotifications(const ElectricalMeasurementData& data) {
                 oldUnderTension[data.attribute] = true;
                 String phase = getPhaseFromAttribute(data.attribute);
                 String text = "Tension relevée Ph" + phase + " : " + String(tension) + " V";
-                handleElectricalNotification("⚡⚠️ Sous-tension", text, 1);
+                handleElectricalNotification("⚡⚠️ Sous-tension", text, 1,
+                    "under_voltage", (float)tension, (float)ConfigNotif.UnderVoltageThreshold);
             }
         } else {
             oldUnderTension[data.attribute] = false;

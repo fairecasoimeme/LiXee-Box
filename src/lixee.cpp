@@ -105,14 +105,15 @@ void updateDeviceValue(const String& deviceId, int attribute, const String& valu
 }
 
 // Fonction pour gérer les notifications
-void handleNotification(const String& title, const String& text, int priority = 0) {
+void handleNotification(const String& title, const String& text, int priority = 0,
+                        const char* alertType = nullptr, float value = 0, float threshold = 0) {
     if (!notifList->isFull()) {
         notifList->push(Notification{title, text, FormattedDate, priority, 0});
     } else {
         notifList->shift();
         notifList->push(Notification{title, text, FormattedDate, priority, 0});
     }
-    notificationManager.addNotification(title, text, priority);
+    notificationManager.addNotification(title, text, priority, alertType, value, threshold);
 }
 
 // Fonction pour gérer le délestage (éviter duplication)
@@ -161,8 +162,8 @@ void handleAttribute5(const String& inifile, uint8_t* datas, int len) {
     
     // Gestion spécifique de la surconsommation
     if (ConfigNotif.SubscribedPower) {
-        handleNotification("🚨⚡Surconsommation", 
-                          " Dépassement de la puissance souscrite", 2);
+        handleNotification("🚨⚡Surconsommation",
+                          " Dépassement de la puissance souscrite", 2, "subscribed_power");
         handleDelestage();
     }
 }
@@ -219,7 +220,8 @@ void handleAttribute519(const String& inifile, uint8_t* datas, int len) {
                             oldProdSupConso = true;
                             String text = "La puissance apparente injecté :" + String(production) +
                                         "VA est supérieure à la consommation : " + conso + " VA";
-                            handleNotification("☀️➡️⚡Production > Consommation", text, 0);
+                            handleNotification("☀️➡️⚡Production > Consommation", text, 0,
+                                "prod_sup_conso", (float)production, (float)conso);
                         }
                     } else {
                         oldProdSupConso = false;
@@ -261,8 +263,8 @@ void handleAttribute535(const String& inifile, uint8_t* datas, int len) {
         if ((oldRed != status.tempo_jour) && (oldRed != "") && 
             status.tempo_jour == "3") {
             
-            handleNotification("⚠️🔴Journée Rouge !", 
-                              "Il faut consommer le moins possible", 3);
+            handleNotification("⚠️🔴Journée Rouge !",
+                              "Il faut consommer le moins possible", 3, "red_day");
         }
         oldRed = status.tempo_jour;
     }
@@ -271,7 +273,7 @@ void handleAttribute535(const String& inifile, uint8_t* datas, int len) {
     if (status.depassement_ref_pow) {
         if (ConfigNotif.SubscribedPower) {
             handleNotification("🚨⚡Surconsommation",
-                              " Dépassement de la puissance souscrite", 2);
+                              " Dépassement de la puissance souscrite", 2, "subscribed_power");
         }
         handleDelestage();
     }
@@ -347,7 +349,7 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
 
         if ((oldColor != tmp.c_str()) && (oldColor != "")) {
             handleNotification("🕓💵Couleur du lendemain",
-                              "Couleur : " + tmp, 1);
+                              "Couleur : " + tmp, 1, "color_tomorrow");
         }
         oldColor = tmp.c_str();
     }
@@ -367,7 +369,7 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
 
             String text ="Préavis EJP : "+tmp+" min";
             handleNotification("⚡Préavis début EJP",
-                              text, 1);
+                              text, 1, "ejp");
 
             }
             oldPEJP = tmp.c_str();
@@ -382,7 +384,7 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
             {
                 String text ="--> tarif : "+tmp;
                 handleNotification("🕓💵 Changement de tarif",
-                                text,0);
+                                text, 0, "price_change");
             }
             oldPriceChange = tmp.c_str();
         }

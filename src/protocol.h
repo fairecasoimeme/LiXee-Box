@@ -18,6 +18,7 @@ bool ScanDeviceToPoll();
 
 String getMacAddress(uint8_t mac[9]);
 String GetMacAdrr(int shortAddr);
+void requestGhostClean();
 void lastSeen(uint8_t ShortAddr[2]);
 String GetSoftwareVersion(String inifile);
 
@@ -47,7 +48,7 @@ struct ZiGateProtocol {
   int type;
   int ln;
   uint8_t chksum;
-  char payload[256];   
+  char payload[1024];
 }; 
 
 #endif

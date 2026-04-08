@@ -42,6 +42,7 @@ public:
     PeriodData days;
     PeriodData months;
     PeriodData years;
+    String lastUpdate; // "DD/MM/YYYY HH:MM" - date de la dernière mesure d'énergie
 
     DeviceEnergyHistory() {}
     ~DeviceEnergyHistory() {}

@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.17"
+#define VERSION "v2.18"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -102,6 +102,27 @@ struct ConfigNotification{
   bool PowerOutage;
   bool ProdSupConso;
   bool ProdZero;
+
+  // Alertes avancées
+  bool OverPower;
+  int  OverPowerThreshold;       // Watts
+  int  OverPowerDuration;        // Secondes avant alerte
+  int  OverPowerCooldown;        // Minutes entre alertes
+
+  bool Freeze;
+  int  FreezeThreshold;          // Centièmes °C (300 = 3.00°C)
+  char FreezeSensorIEEE[20];
+  int  FreezeCooldown;           // Minutes entre alertes
+
+  bool DailyAnomaly;
+  int  DailyAnomalyPercent;      // % au-dessus moyenne 7j
+
+  bool WaterLeak;
+  int  WaterLeakThreshold;       // Litres
+  bool NightWaterLeak;
+  int  NightWaterLeakThreshold;  // Litres (conso nocturne 00h-05h)
+
+  bool DailyMetrics;
 };
 
 struct ConfigGeneralStruct {

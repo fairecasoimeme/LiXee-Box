@@ -22,14 +22,21 @@ DeviceData::~DeviceData() {
 }
 
 time_t DeviceData::getLastSeenEpoch() const {
-    // on suppose le format EXACT "YYYY-MM-DD HH:MM"
+    // Format réel produit par NTPClient::getFullFormattedTime() : "DD/MM/YYYY HH:MM"
     struct tm t = {};
     const char* s = _info.lastSeen.c_str();
-    t.tm_year = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0') - 1900;
-    t.tm_mon  = (s[5]-'0')*10 + (s[6]-'0') - 1;
-    t.tm_mday = (s[8]-'0')*10 + (s[9]-'0');
-    t.tm_hour = (s[11]-'0')*10 + (s[12]-'0');
-    t.tm_min  = (s[14]-'0')*10 + (s[15]-'0');
+    int len = _info.lastSeen.length();
+
+    // Vérifier longueur minimale et format "DD/MM/YYYY HH:MM" (16 chars)
+    if (len < 16 || s[2] != '/' || s[5] != '/') {
+        return (time_t)-1;  // Format invalide
+    }
+
+    t.tm_mday = (s[0]-'0')*10 + (s[1]-'0');          // DD
+    t.tm_mon  = (s[3]-'0')*10 + (s[4]-'0') - 1;      // MM (0-based)
+    t.tm_year = (s[6]-'0')*1000 + (s[7]-'0')*100 + (s[8]-'0')*10 + (s[9]-'0') - 1900; // YYYY
+    t.tm_hour = (s[11]-'0')*10 + (s[12]-'0');          // HH
+    t.tm_min  = (s[14]-'0')*10 + (s[15]-'0');          // MM
     t.tm_sec  = 0;
     t.tm_isdst = -1;
     return mktime(&t);

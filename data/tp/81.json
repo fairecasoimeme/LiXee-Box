@@ -1191,5 +1191,129 @@
         }
       ]
     }
+  ],
+  "S60ZBTPF": [
+    {
+      "status": [
+        {
+          "name": "On/Off",
+          "cluster": "0006",
+          "attribut": 0,
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Energy",
+          "cluster": "0B04",
+          "attribut": 1291,
+          "mqtt_device_class": "apparent_power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 8000,
+          "unit": "W"
+        },
+        {
+          "name": "Tension",
+          "cluster": "0B04",
+          "attribut": 1285,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "coefficient": 0.01,
+          "visible": 1,
+          "unit": "V"
+        },
+        {
+          "name": "Intensite",
+          "cluster": "0B04",
+          "attribut": 1288,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "mA"
+        },
+        {
+          "name": "Consumption",
+          "cluster": "0702",
+          "attribut": 0,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "text",
+          "unit": "kWh"
+        }
+      ],
+      "bind": "6;1794;2820;65382",
+      "report": [
+        {
+          "cluster": "0006",
+          "attribut": 0,
+          "type": 33,
+          "min": 60,
+          "max": 61,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1291,
+          "type": 37,
+          "min": 60,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1288,
+          "type": 37,
+          "min": 60,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0702",
+          "attribut": 0,
+          "type": 37,
+          "min": 60,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        }
+      ],
+      "action": [
+        {
+          "name": "ON",
+          "command": 146,
+          "endpoint": 1,
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "OFF",
+          "command": 146,
+          "endpoint": 1,
+          "value": 0,
+          "visible": 1
+        },
+        {
+          "name": "TOGGLE",
+          "command": 146,
+          "endpoint": 1,
+          "value": 2,
+          "visible": 1
+        }
+      ]
+    }
   ]
 }

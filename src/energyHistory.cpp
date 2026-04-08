@@ -13,6 +13,12 @@ extern String Minute;
 extern String Year;
 extern String Yesterday;
 
+// Seuil anti-spike : delta maximum acceptable (en Wh) entre deux mesures consécutives.
+// Au-delà, on considère que l'appareil s'est reconnecté après une période hors-ligne
+// et on ne calcule pas de delta pour le graphe (évite les pics impossibles).
+// 100 kWh/h = impossible en résidentiel (max abonnement France = 36 kVA)
+#define MAX_ENERGY_DELTA_WH 100000
+
 
 // Lit un objet JSON contenant { "256": x, "258": y, "512": z, ... }
 // et le stocke dans valueMap.attributes[256] = x, etc.
@@ -113,6 +119,9 @@ bool parseDeviceHistory(String IEEE, DeviceEnergyHistory &hist) {
         }
         if (root.containsKey("years")) {
             parsePeriodData(root["years"].as<JsonObject>(), hist.years);
+        }
+        if (root.containsKey("lastUpdate")) {
+            hist.lastUpdate = root["lastUpdate"].as<String>();
         }
         return true;
     }
@@ -220,6 +229,10 @@ bool saveEnergyHistory(String IEEE,const DeviceEnergyHistory &hist)
         buildPeriodData(yearsObj, hist.years);
     }
 
+    if (hist.lastUpdate.length() > 0) {
+        doc["lastUpdate"] = hist.lastUpdate;
+    }
+
     // --------------------------------------------------------------------------------------
     // 3) Sérialiser en String
     // --------------------------------------------------------------------------------------
@@ -263,7 +276,7 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
     if (lastTotal > 0 && totalValue > lastTotal) {
         delta = totalValue - lastTotal;
     }
-    
+
     // Mettre à jour la valeur totale dans l'attribut 0
     hist.hours.data[PsString(Hour.c_str())].attributes[0] = totalValue;
     hist.days.data[PsString(Day.c_str())].attributes[0] = totalValue;
@@ -273,29 +286,90 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
     hist.days.last.attributes[0] = totalValue;
     hist.months.last.attributes[0] = totalValue;
     hist.years.last.attributes[0] = totalValue;
-    
+
     // Si pas de delta, rien à accumuler dans le tarif
     if (delta <= 0) {
+        hist.lastUpdate = FormattedDate;
         return true;
     }
-    
+
+    // Anti-spike avec lissage pour sous-compteurs
+    if (delta > MAX_ENERGY_DELTA_WH) {
+        // Calculer le gap depuis lastUpdate
+        int lastDay = 0, lastMonth = 0, lastYear = 0;
+        if (hist.lastUpdate.length() >= 16) {
+            lastDay   = hist.lastUpdate.substring(0, 2).toInt();
+            lastMonth = hist.lastUpdate.substring(3, 5).toInt();
+            lastYear  = hist.lastUpdate.substring(6, 10).toInt();
+        }
+
+        int curDay   = Day.toInt();
+        int curMonth = Month.toInt();
+        int curYear  = Year.toInt();
+        int curHour  = Hour.toInt();
+
+        int gapDays = 1;
+        if (lastYear > 0) {
+            long lastTotalDays = lastYear * 365L + lastMonth * 30L + lastDay;
+            long curTotalDays  = curYear * 365L + curMonth * 30L + curDay;
+            gapDays = (int)(curTotalDays - lastTotalDays);
+            if (gapDays < 1) gapDays = 1;
+        }
+
+        long deltaPerDay = delta / gapDays;
+
+        log_w("SubMeter spike smoothed: delta=%ld over %d days (%ld/day)", delta, gapDays, deltaPerDay);
+
+        // DAILY : distribuer sur les jours vides du mois courant
+        int startDay = (lastMonth == curMonth && lastYear == curYear) ? lastDay + 1 : 1;
+        for (int d = startDay; d <= curDay; d++) {
+            char dayKey[3];
+            snprintf(dayKey, sizeof(dayKey), "%02d", d);
+            hist.days.graph[PsString(dayKey)].attributes[tariffAttrId] += deltaPerDay;
+        }
+        hist.days.trend.attributes[tariffAttrId] = deltaPerDay;
+
+        // HOURLY : distribuer la part du jour sur les heures
+        int hoursToday = curHour + 1;
+        long deltaPerHour = deltaPerDay / hoursToday;
+        for (int h = 0; h <= curHour; h++) {
+            char hourKey[3];
+            snprintf(hourKey, sizeof(hourKey), "%02d", h);
+            hist.hours.graph[PsString(hourKey)].attributes[tariffAttrId] += deltaPerHour;
+        }
+        hist.hours.trend.attributes[tariffAttrId] = deltaPerHour;
+
+        // MONTHLY
+        hist.months.graph[PsString(Month.c_str())].attributes[tariffAttrId] += delta;
+        hist.months.trend.attributes[tariffAttrId] = delta;
+
+        // YEARLY
+        hist.years.graph[PsString(Year.c_str())].attributes[tariffAttrId] += delta;
+        hist.years.trend.attributes[tariffAttrId] = delta;
+
+        hist.lastUpdate = FormattedDate;
+        return true;
+    }
+
+    // --- Fonctionnement normal (pas de spike) ---
     // Accumuler le delta dans l'attribut tarifaire (graph seulement)
     // Hours
     hist.hours.graph[PsString(Hour.c_str())].attributes[tariffAttrId] += delta;
     hist.hours.trend.attributes[tariffAttrId] = delta;
-    
+
     // Days
     hist.days.graph[PsString(Day.c_str())].attributes[tariffAttrId] += delta;
     hist.days.trend.attributes[tariffAttrId] += delta;
-    
+
     // Months
     hist.months.graph[PsString(Month.c_str())].attributes[tariffAttrId] += delta;
     hist.months.trend.attributes[tariffAttrId] += delta;
-    
+
     // Years
     hist.years.graph[PsString(Year.c_str())].attributes[tariffAttrId] += delta;
     hist.years.trend.attributes[tariffAttrId] += delta;
-    
+
+    hist.lastUpdate = FormattedDate;
     return true;
 }
 
@@ -321,7 +395,91 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
             hist.days.data[PsString(Day.c_str())].attributes[attrId] = value;
             hist.months.data[PsString(Month.c_str())].attributes[attrId] = value;
             hist.years.data[PsString(Year.c_str())].attributes[attrId] = value;
-                
+
+            // --- Anti-spike avec lissage ---
+            // Si la valeur a sauté de plus de MAX_ENERGY_DELTA_WH depuis la dernière mesure,
+            // c'est une reconnexion après période hors-ligne.
+            // Au lieu de perdre les données, on distribue le delta uniformément
+            // sur la période où les données étaient absentes.
+            if (hist.hours.last.attributes[attrId] != 0) {
+                long previousLast = hist.hours.last.attributes[attrId];
+                if (value > previousLast && (value - previousLast) > MAX_ENERGY_DELTA_WH) {
+                    long totalDelta = value - previousLast;
+
+                    // Calculer le gap depuis lastUpdate
+                    int lastDay = 0, lastMonth = 0, lastYear = 0, lastHour = 0;
+                    if (hist.lastUpdate.length() >= 16) {
+                        lastDay   = hist.lastUpdate.substring(0, 2).toInt();
+                        lastMonth = hist.lastUpdate.substring(3, 5).toInt();
+                        lastYear  = hist.lastUpdate.substring(6, 10).toInt();
+                        lastHour  = hist.lastUpdate.substring(11, 13).toInt();
+                    }
+
+                    int curDay   = Day.toInt();
+                    int curMonth = Month.toInt();
+                    int curYear  = Year.toInt();
+                    int curHour  = Hour.toInt();
+
+                    // Gap en jours (approximatif si cross-mois)
+                    int gapDays = 1;
+                    if (lastYear > 0) {
+                        long lastTotalDays  = lastYear * 365L + lastMonth * 30L + lastDay;
+                        long curTotalDays   = curYear * 365L + curMonth * 30L + curDay;
+                        gapDays = (int)(curTotalDays - lastTotalDays);
+                        if (gapDays < 1) gapDays = 1;
+                    }
+
+                    long deltaPerDay = totalDelta / gapDays;
+
+                    log_w("Energy spike smoothed: attr=%ld delta=%ld over %d days (%ld/day)",
+                          attrId, totalDelta, gapDays, deltaPerDay);
+
+                    // --- DAILY : distribuer sur les jours vides du mois courant ---
+                    int startDay = (lastMonth == curMonth && lastYear == curYear) ? lastDay + 1 : 1;
+                    for (int d = startDay; d <= curDay; d++) {
+                        char dayKey[3];
+                        snprintf(dayKey, sizeof(dayKey), "%02d", d);
+                        hist.days.graph[PsString(dayKey)].attributes[attrId] = deltaPerDay;
+                        hist.days.data[PsString(dayKey)].attributes[attrId] =
+                            previousLast + deltaPerDay * (d - startDay + 1);
+                    }
+                    hist.days.trend.attributes[attrId] = deltaPerDay;
+                    hist.days.last.attributes[attrId] = value;
+
+                    // --- HOURLY : distribuer la part du jour courant sur les heures ---
+                    int hoursToday = curHour + 1;
+                    long deltaPerHour = deltaPerDay / hoursToday;
+                    for (int h = 0; h <= curHour; h++) {
+                        char hourKey[3];
+                        snprintf(hourKey, sizeof(hourKey), "%02d", h);
+                        hist.hours.graph[PsString(hourKey)].attributes[attrId] = deltaPerHour;
+                    }
+                    hist.hours.trend.attributes[attrId] = deltaPerHour;
+                    hist.hours.last.attributes[attrId] = value;
+
+                    // --- MONTHLY : distribuer si gap multi-mois ---
+                    int gapMonths = 1;
+                    if (lastYear > 0 && lastMonth > 0) {
+                        gapMonths = (curYear - lastYear) * 12 + (curMonth - lastMonth);
+                        if (gapMonths < 1) gapMonths = 1;
+                    }
+                    long deltaPerMonth = totalDelta / gapMonths;
+                    hist.months.graph[PsString(Month.c_str())].attributes[attrId] = deltaPerMonth;
+                    hist.months.trend.attributes[attrId] = deltaPerMonth;
+                    hist.months.last.attributes[attrId] = value;
+
+                    // --- YEARLY ---
+                    hist.years.graph[PsString(Year.c_str())].attributes[attrId] += totalDelta;
+                    hist.years.trend.attributes[attrId] = totalDelta;
+                    hist.years.last.attributes[attrId] = value;
+
+                    hist.lastUpdate = FormattedDate;
+                    return true;
+                }
+            }
+
+            // --- Fonctionnement normal (pas de spike) ---
+
             // hour
             if (hist.hours.last.attributes[attrId]!=0)
             {
@@ -357,7 +515,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
               if (hist.days.data[PsString(daytmp.c_str())].attributes[attrId]==0)
               {
                 hist.days.data[PsString(daytmp.c_str())].attributes[attrId] = hist.days.last.attributes[attrId];
-              }    
+              }
               result = tmp - hist.days.data[PsString(daytmp.c_str())].attributes[attrId];
 
               if (hist.days.data[PsString(daytmp.c_str())].attributes[attrId]!=0)
@@ -385,7 +543,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
               {
                 hist.months.data[PsString(monthtmp.c_str())].attributes[attrId] = hist.months.last.attributes[attrId];
               }
-              
+
               result = tmp - hist.months.data[PsString(monthtmp.c_str())].attributes[attrId];
               if (hist.months.data[PsString(monthtmp.c_str())].attributes[attrId]!=0)
               {
@@ -407,7 +565,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
               {
                 hist.years.data[PsString(yeartmp.c_str())].attributes[attrId] = hist.years.last.attributes[attrId];
               }
-              
+
               result = tmp - hist.years.data[PsString(yeartmp.c_str())].attributes[attrId];
               if (hist.years.data[PsString(yeartmp.c_str())].attributes[attrId]!=0)
               {
@@ -417,8 +575,10 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
               hist.years.trend.attributes[attrId] = result;
             }
             hist.years.last.attributes[attrId] = value;
+
+            hist.lastUpdate = FormattedDate;
           }
     }
-    
+
     return true;
 }

@@ -18,6 +18,7 @@
 #include "energymeter.h" 
 
 #include "device.h"
+#include "ElectricalMeasurement.h"
 #include "TemplateCache.h"
 extern TemplateCache templateCache;
 
@@ -111,6 +112,15 @@ int TimedFiFo;
 // Map shortAddr -> timestamp millis() de réception du Device Announce
 #include <map>
 static std::map<int, unsigned long> joiningDevices;
+
+// Flag indiquant qu'un nettoyage des fantômes ZiGate est en cours
+static bool ghostCleanPending = false;
+
+void requestGhostClean() {
+    ghostCleanPending = true;
+    commandList->push(Packet{0x0602, 0x0000, 0});
+    log_d("Ghost clean: sent 0x0602 (Network Recovery Extract Extended)");
+}
 
 IPAddress parse_ip_address(const char *str) {
     IPAddress result;    
@@ -510,7 +520,7 @@ void datasManage(char packet[256],int count)
     CRC=CRC ^ uint8_t(packet[3]);
     protocol.chksum = uint8_t(packet[4]);    
 
-    if (protocol.ln > (256 - 5)) {
+    if (protocol.ln > (int)sizeof(protocol.payload)) {
         log_e("Payload too large: %d", protocol.ln);
         return;
     }
@@ -1354,7 +1364,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           ln = (uint8_t)protocol.payload[10]*256 +(uint8_t)protocol.payload[11];
           char lqi[4];
           snprintf(lqi,3, "%02X",protocol.payload[ln+12]);
-           
+
           SetInfoLastseen(inifile,FormattedDate);
 
           SetInfoLQI(inifile,String(lqi));
@@ -1363,7 +1373,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 
            //Traitement données
           readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[12]);
-          
+
         }
 
         //traitement bind lors de la réception du model
@@ -1548,6 +1558,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           DeviceData* dev = new (mem) DeviceData("/db/" + path, adMac);
           if (dev->loadFromFile()) {
             devices.push_back(dev);
+            invalidateElectricalDeviceCache();
           }
         }
 
@@ -1610,6 +1621,140 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         } else {
           log_e("Extended Status Callback: 0x%02X", statusCode);
         }
+      }
+      break;
+      case 0x8602:
+      {
+        // Réponse Network Recovery Extract Extended (0x0602)
+        // Layout JN5189 (ARM little-endian, alignement naturel) :
+        //   tsNwkRecovery header (64 octets) + N × tsNwkRecoveryDevice (16 octets)
+        // Entrée device = uint64_t IEEE (8) + uint16_t SA (2) + reserved (2) + padding (4) = 16
+        //
+        // Stratégie : copier le payload complet, mettre à zéro les entrées fantômes
+        // sur place, puis renvoyer la table entière (même taille) via 0x0603.
+        // Important : ne PAS tronquer la table (causait un reboot de la ZiGate).
+
+        const int HEADER_SIZE = 64;
+        const int ENTRY_SIZE = 16;
+        const int MIN_ENTRY_BYTES = 10; // 8 IEEE + 2 SA minimum
+
+        if (!ghostCleanPending) {
+            log_d("0x8602 received but no clean pending, ignoring");
+            break;
+        }
+        ghostCleanPending = false;
+
+        if (protocol.ln < HEADER_SIZE + MIN_ENTRY_BYTES) {
+            log_e("0x8602 payload too short: %d bytes", protocol.ln);
+            break;
+        }
+
+        if (protocol.ln > 512) {
+            log_e("0x8602 payload too large for restore: %d bytes (max 512)", protocol.ln);
+            alertList->push(Alert{"Erreur: table ZiGate trop grande pour le nettoyage", 1});
+            break;
+        }
+
+        // Nombre d'entrées complètes (16 octets chacune)
+        int deviceBytes = protocol.ln - HEADER_SIZE;
+        int deviceCount = deviceBytes / ENTRY_SIZE;
+        log_d("0x8602 - %d entries (%d bytes payload)", deviceCount, protocol.ln);
+
+        // Copier le payload complet pour le restore (même taille = pas de reboot)
+        Packet restorePacket;
+        restorePacket.cmd = 0x0603;
+        restorePacket.len = protocol.ln;
+        memcpy(restorePacket.datas, protocol.payload, protocol.ln);
+
+        // Extraire l'IEEE du coordinateur depuis le header (offset 16, little-endian)
+        // pour ne jamais le supprimer de la table
+        uint64_t coordinatorIeee;
+        memcpy(&coordinatorIeee, &restorePacket.datas[16], 8);
+
+        int ghostCount = 0;
+        uint64_t processedMacs[40];
+        int processedCount = 0;
+
+        for (int d = 0; d < deviceCount; d++) {
+            int offset = HEADER_SIZE + (d * ENTRY_SIZE);
+
+            uint64_t macInt;
+            memcpy(&macInt, &restorePacket.datas[offset], 8);
+
+            uint16_t shortAddr;
+            memcpy(&shortAddr, &restorePacket.datas[offset + 8], 2);
+
+            // Ignorer le coordinateur et les entrées déjà vides
+            if (macInt == 0 || shortAddr == 0x0000 || macInt == coordinatorIeee) continue;
+
+            // Validation : au moins un octet de l'IEEE doit être > 0x7E
+            // Filtre le junk ASCII (texte debug du JN5189) — on ne touche pas au junk
+            bool validIeee = false;
+            uint8_t* ieeeBytes = (uint8_t*)&macInt;
+            for (int b = 0; b < 8; b++) {
+                if (ieeeBytes[b] > 0x7E) {
+                    validIeee = true;
+                    break;
+                }
+            }
+            if (!validIeee) continue;
+
+            // Déduplication : si doublon, mettre à zéro ce doublon
+            bool alreadyProcessed = false;
+            for (int p = 0; p < processedCount; p++) {
+                if (processedMacs[p] == macInt) {
+                    alreadyProcessed = true;
+                    break;
+                }
+            }
+            if (alreadyProcessed) {
+                memset(&restorePacket.datas[offset], 0, ENTRY_SIZE);
+                ghostCount++;
+                log_d("Duplicate zeroed: SA=0x%04X", shortAddr);
+                continue;
+            }
+            if (processedCount < 40) {
+                processedMacs[processedCount++] = macInt;
+            }
+
+            // Convertir IEEE en string hex (MSB first, comme getDeviceID())
+            char ieeeStr[17];
+            snprintf(ieeeStr, sizeof(ieeeStr), "%02x%02x%02x%02x%02x%02x%02x%02x",
+                     (uint8_t)(macInt >> 56), (uint8_t)(macInt >> 48),
+                     (uint8_t)(macInt >> 40), (uint8_t)(macInt >> 32),
+                     (uint8_t)(macInt >> 24), (uint8_t)(macInt >> 16),
+                     (uint8_t)(macInt >> 8),  (uint8_t)(macInt));
+
+            // Comparer par IEEE (pas par shortAddr qui peut changer après un rejoin)
+            bool found = false;
+            for (size_t i = 0; i < devices.size(); i++) {
+                if (devices[i]->getDeviceID() == ieeeStr) {
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found) {
+                // Fantôme : mettre à zéro dans la copie de la table
+                memset(&restorePacket.datas[offset], 0, ENTRY_SIZE);
+                ghostCount++;
+                log_e("Ghost zeroed: SA=0x%04X IEEE=%s", shortAddr, ieeeStr);
+            } else {
+                log_d("Known device kept: SA=0x%04X IEEE=%s", shortAddr, ieeeStr);
+            }
+        }
+
+        if (ghostCount > 0) {
+            // Envoyer la table complète (même taille) avec les fantômes mis à zéro
+            commandList->push(restorePacket);
+            char msg[80];
+            snprintf(msg, sizeof(msg), "%d fantôme(s) supprimé(s) de la ZiGate", ghostCount);
+            alertList->push(Alert{String(msg), 2});
+            log_d("Restore 0x0603 sent: %d bytes, %d ghosts zeroed", protocol.ln, ghostCount);
+        } else {
+            alertList->push(Alert{"Aucun appareil fantôme détecté", 2});
+        }
+        log_d("Ghost clean done: %d ghosts zeroed, %d known devices", ghostCount, processedCount);
       }
       break;
     default:

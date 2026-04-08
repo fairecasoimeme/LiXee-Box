@@ -5,13 +5,18 @@
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <vector>
+#include <functional>
 #include "config.h"
 
 class NotificationManager {
+public:
+  typedef std::function<void(const String&, const String&, int, const char*, float, float)> PushCallback;
+
 private:
   std::vector<Notification*> notifications; // Vecteur en mémoire standard
   const char* jsonFilePath;
   size_t maxNotifications;
+  PushCallback _pushCallback = nullptr;
 
 public:
   // Constructeur
@@ -24,7 +29,8 @@ public:
   bool begin();
   
   // Gestion des notifications
-  bool addNotification(const String& title, const String& message, int type = 0);
+  bool addNotification(const String& title, const String& message, int type = 0,
+                       const char* alertType = nullptr, float value = 0, float threshold = 0);
   bool addNotification(const Notification& notification);
   
   // Accès aux données
@@ -45,7 +51,10 @@ public:
   // Export JSON
   String toJson(size_t offset = 0, size_t limit = 10) const;
   String getStatsJson() const;
-  
+
+  // Push callback
+  void setPushCallback(PushCallback cb);
+
 private:
   void cleanupOldNotifications();
   void* allocatePSRAM(size_t size);
