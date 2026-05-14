@@ -793,7 +793,7 @@ Pour accéder aux commandes de l'API, allez sur http://<HOST>/<commande>
 
 * [getSystem](#getSystem)
 * [getDevices](#getDevices)
-* [getDevice?id=IEEE](#getDevice)
+* [getDevice?IEEE=<IEEE>](#getDevice)
 * [getLinky](#getLinky)
 * [getTemplates](#getTemplates)
 
@@ -887,7 +887,7 @@ curl -X GET 'https://<HOST>/getDevices'\
 
 ##### Requête
 ```bash
-curl -X GET 'https://<HOST>/getDevice?id=04cf8cdf3c79ce2b'\
+curl -X GET 'https://<HOST>/getDevice?IEEE=04cf8cdf3c79ce2b'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
