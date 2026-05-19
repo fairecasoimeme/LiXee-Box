@@ -748,9 +748,12 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       //ini_write(inifile,"INFO","Status",String(tmpStatus));  
       SetInfoStatus(inifile,String(tmpStatus));
       
+      String deviceAlias = ini_read(inifile, "INFO", "alias");
+      // Utiliser l'alias si dispo, sinon l'IEEE (sans .json)
+      String deviceName = (deviceAlias.length() > 0) ? deviceAlias : inifile.substring(0, inifile.indexOf('.'));
       log_e("8702 - Status : %02X - %02X%02X - %s",protocol.payload[0],protocol.payload[4],protocol.payload[5],inifile.c_str());
       char error[200];
-      sprintf(error,"Error Packet : %02x - Device : %02X%02X",protocol.payload[0],protocol.payload[4],protocol.payload[5]);
+      snprintf(error, sizeof(error), "Error Packet : %02x - Device : %s", protocol.payload[0], deviceName.c_str());
       alertList->push(Alert{String(error), 1});
       
     }

@@ -40,7 +40,7 @@
 
 static const int MAX_CONCURRENT = 6;
 static const size_t MAX_BODY_SIZE = 300000;  // 300KB max per response
-static const unsigned long SLOT_TIMEOUT_MS = 15000;  // 15s per slot max
+static const unsigned long SLOT_TIMEOUT_MS = 30000;  // 30s per slot max
 
 // State machine for a single tunneled HTTP request
 struct TunnelSlot {
@@ -130,8 +130,8 @@ public:
         });
 
         _ws.beginSslWithCA(_host.c_str(), 443, _path.c_str(), nullptr, "lixeebox");
-        _ws.setReconnectInterval(10000);
-        _ws.enableHeartbeat(30000, 20000, 3);
+        _ws.setReconnectInterval(3000);   // Reconnexion rapide (3s au lieu de 10s)
+        _ws.enableHeartbeat(15000, 10000, 3);  // Ping toutes les 15s, timeout 10s
 
         Serial.println("[Tunnel] WebSocket configuration complete, waiting for connection...");
     }
@@ -148,8 +148,8 @@ public:
             }
         }
 
-        // Send application-level heartbeat every 25 seconds
-        if (millis() - _lastHeartbeat > 25000) {
+        // Send application-level heartbeat every 15 seconds (aligned with WS heartbeat)
+        if (millis() - _lastHeartbeat > 15000) {
             _lastHeartbeat = millis();
             SpiRamJsonDocument hb(256);
             hb["type"] = "heartbeat";
@@ -182,6 +182,26 @@ public:
     bool isConnected() { return _connected; }
     String getDeviceId() { return _deviceId; }
     String getSubdomain() { return _subdomain; }
+
+    void sendNotification(const String& title, const String& message, int type,
+                          const char* alertType, float value, float threshold) {
+        if (!_connected) return;
+        SpiRamJsonDocument doc(768);
+        doc["type"] = "notification";
+        doc["deviceId"] = _deviceId;
+        doc["subdomain"] = _subdomain;
+        doc["title"] = title;
+        doc["message"] = message;
+        doc["notifType"] = type;
+        doc["timestamp"] = FormattedDate;
+        if (alertType) doc["alertType"] = alertType;
+        if (value != 0) doc["value"] = value;
+        if (threshold != 0) doc["threshold"] = threshold;
+        String str;
+        serializeJson(doc, str);
+        _ws.sendTXT(str);
+        Serial.printf("[Tunnel] Push notification sent: %s (payload=%u bytes)\n", title.c_str(), str.length());
+    }
 
 private:
     WebSocketsClient _ws;
@@ -220,7 +240,8 @@ private:
                 break;
 
             case WStype_DISCONNECTED:
-                Serial.println("[Tunnel] WebSocket DISCONNECTED");
+                Serial.printf("[Tunnel] WebSocket DISCONNECTED (heap: %u, uptime: %lus)\n",
+                              ESP.getFreeHeap(), millis() / 1000);
                 _connected = false;
                 // Reset all active slots
                 for (int i = 0; i < MAX_CONCURRENT; i++) {
@@ -250,10 +271,14 @@ private:
     }
 
     void handleMessage(char* payload, size_t length) {
-        SpiRamJsonDocument doc(2048);
+        // Size the JSON document to fit the actual message (PSRAM-backed)
+        size_t docSize = length + 256;
+        if (docSize < 2048) docSize = 2048;
+        SpiRamJsonDocument doc(docSize);
         DeserializationError err = deserializeJson(doc, payload, length);
         if (err) {
-            Serial.println("[Tunnel] JSON parse error: " + String(err.c_str()));
+            Serial.printf("[Tunnel] JSON parse error: %s (len=%u, doc=%u)\n",
+                          err.c_str(), length, docSize);
             return;
         }
 
@@ -776,6 +801,12 @@ private:
             _ws.loop();
 
             _ws.sendTXT((uint8_t*)respBuf, offset);
+
+            // Traiter pings/pongs immédiatement après un gros envoi
+            // pour éviter un timeout côté serveur
+            if (offset > 10000) {
+                _ws.loop();
+            }
 
             Serial.printf("[Tunnel] [%s] Response sent: %d (%u bytes)\n",
                           slot.reqId.c_str(), slot.statusCode, offset);

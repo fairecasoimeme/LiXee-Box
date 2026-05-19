@@ -25,6 +25,7 @@
 #include <Update.h>
 
 #include "config.h"
+#include "mbedtls/base64.h"
 #include "flash.h"
 #include "log.h"
 #include "protocol.h"
@@ -316,6 +317,7 @@ const char HTTP_SHELLY_EMULE[] PROGMEM =
 
 const char HTTP_HEADER[] PROGMEM =
     "<head>"
+    "<link rel='icon' type='image/x-icon' href='web/favicon.ico'>"
     "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
     "<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
     //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
@@ -340,6 +342,7 @@ const char HTTP_HEADER[] PROGMEM =
 
 const char HTTP_HEADERGRAPH[] PROGMEM =
     "<head>"
+    "<link rel='icon' type='image/x-icon' href='web/favicon.ico'>"
     "<script type='text/javascript' src='web/js/raphael-min.js'></script>"
     "<script type='text/javascript' src='web/js/morris.min.js'></script>"
     "<script type='text/javascript' src='web/js/chart.umd.min.js'></script>"
@@ -758,30 +761,95 @@ const char HTTP_OTA[] PROGMEM = R"(
 </form>
 
 <script>
-  // Fonction pour récupérer les paramètres de l'URL
   function getUrlParameter(name) {
     name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
     var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
     var results = regex.exec(location.search);
     return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
   };
-  
-  // Récupération de l'ID au chargement de la page
+
   var deviceId = getUrlParameter('id');
-  
   document.getElementById('upload_form').action = '/doUploadOTA?id=' + deviceId;
 
   function sub(obj){
     var fileName = obj.value.split('\\');
-    // Utilisation de l'ID dans le nom du fichier affiché
     document.getElementById('file-input').innerHTML = '   '+ fileName[fileName.length-1];
   };
-  
+
+  function isTunnel() {
+    return window.location.hostname.indexOf('lixee-box.fr') >= 0;
+  }
+
+  function blobToBase64(blob) {
+    return new Promise(function(resolve, reject) {
+      var reader = new FileReader();
+      reader.onloadend = function() { resolve(reader.result.split(',')[1]); };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function uploadChunkedOta(file) {
+    var CHUNK = 8192;
+    var total = file.size;
+    var chunks = Math.ceil(total / CHUNK);
+
+    $('#prg').html('Initialisation...');
+    $('#bar').css('width', '0%');
+
+    var resp = await fetch('/otaInit?id=' + deviceId, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({totalSize: total})
+    });
+    if (!resp.ok) { $('#prg').html('Erreur init: ' + resp.status); return; }
+
+    for (var i = 0; i < chunks; i++) {
+      var start = i * CHUNK;
+      var end = Math.min(start + CHUNK, total);
+      var b64 = await blobToBase64(file.slice(start, end));
+
+      resp = await fetch('/otaChunk?n=' + i, {
+        method: 'POST',
+        headers: {'Content-Type': 'text/plain'},
+        body: b64
+      });
+      if (!resp.ok) {
+        $('#prg').html('Erreur chunk ' + i + ': ' + resp.status);
+        return;
+      }
+
+      var pct = Math.round(((i + 1) / chunks) * 90);
+      $('#bar').css('width', pct + '%');
+      $('#prg').html('Envoi ' + (i+1) + '/' + chunks);
+    }
+
+    $('#prg').html('Finalisation...');
+    $('#bar').css('width', '95%');
+
+    resp = await fetch('/otaFinish', {method: 'POST'});
+    if (!resp.ok) {
+      $('#prg').html('Erreur finish: ' + resp.status);
+      return;
+    }
+
+    $('#prg').html('Upload completed for device ' + deviceId + '<br> Redirect to config ...');
+    $('#bar').css('width', '100%');
+    setTimeout(function(){window.location.href='/configDevices';},5000);
+  }
+
   $('form').submit(function(e){
     e.preventDefault();
     var form = $('#upload_form')[0];
+    var file = document.getElementById('file').files[0];
+    if (!file) return;
+
+    if (isTunnel()) {
+      uploadChunkedOta(file);
+      return;
+    }
+
     var data = new FormData(form);
-    // Ajout de l'ID aux données du formulaire
     data.append('device_id', deviceId);
     $.ajax({
       url: '/doUploadOTA?id=' + deviceId,
@@ -1763,7 +1831,7 @@ const char HTTP_UPDATE[] PROGMEM = R"(
               type="file"
               id="f"
               name="archive"
-              accept=".tar,.tar.gz,.gz">
+              accept=".tar,.tar.gz,.gz,.bin">
           </div>
           <button id="btnUpdateMan" type="submit" style="width:100%" class="btn btn-primary mb-3">Mettre à jour</button>
         </form>
@@ -1931,54 +1999,255 @@ const char HTTP_UPDATE[] PROGMEM = R"(
             f   = document.getElementById('f'),
             bar = document.getElementById('barP'),
             st  = document.getElementById('status');
-      
+
+      function isTunnel() {
+        return window.location.hostname.indexOf('lixee-box.fr') >= 0;
+      }
+
+      function blobToBase64(blob) {
+        return new Promise(function(resolve, reject) {
+          var reader = new FileReader();
+          reader.onloadend = function() {
+            resolve(reader.result.split(',')[1]);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+
+      async function uploadChunked(file) {
+        var CHUNK = 8192;
+        var total = file.size;
+        var chunks = Math.ceil(total / CHUNK);
+
+        st.textContent = 'Initialisation...';
+        bar.style.width = '0%';
+        bar.textContent = '0%';
+
+        var resp = await fetch('/restoreInit', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({totalSize: total})
+        });
+        if (!resp.ok) { st.textContent = 'Erreur init: ' + resp.status; return; }
+
+        isUpdating = true;
+        updatePollingInterval = setInterval(pollUpdateStatusManuel, 2000);
+
+        for (var i = 0; i < chunks; i++) {
+          var start = i * CHUNK;
+          var end = Math.min(start + CHUNK, total);
+          var b64 = await blobToBase64(file.slice(start, end));
+
+          resp = await fetch('/restoreChunk?n=' + i, {
+            method: 'POST',
+            headers: {'Content-Type': 'text/plain'},
+            body: b64
+          });
+          if (!resp.ok) {
+            st.textContent = 'Erreur chunk ' + i + ': ' + resp.status;
+            stopUpdatePolling();
+            return;
+          }
+
+          var pct = Math.round(((i + 1) / chunks) * 50);
+          bar.style.width = pct + '%';
+          bar.textContent = pct + '%';
+          st.textContent = 'Téléchargement ' + (i+1) + '/' + chunks;
+        }
+
+        st.textContent = 'Installation...';
+        bar.style.width = '55%';
+        bar.textContent = '55%';
+
+        resp = await fetch('/restoreFinish', {method: 'POST'});
+        if (!resp.ok) {
+          st.textContent = 'Erreur finish: ' + resp.status;
+          stopUpdatePolling();
+          return;
+        }
+
+        st.textContent = 'Redémarrage...';
+        bar.style.width = '100%';
+        bar.textContent = '100%';
+        setTimeout(function() { window.location.href = '/'; }, 5000);
+      }
+
+      async function uploadChunkedFirmware(file) {
+        var CHUNK = 8192;
+        var total = file.size;
+        var chunks = Math.ceil(total / CHUNK);
+
+        st.textContent = 'Initialisation firmware...';
+        bar.style.width = '0%';
+        bar.textContent = '0%';
+
+        var resp = await fetch('/fwUpdateInit', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({totalSize: total, filename: file.name})
+        });
+        if (!resp.ok) { st.textContent = 'Erreur init: ' + resp.status; return; }
+
+        isUpdating = true;
+        updatePollingInterval = setInterval(pollUpdateStatusManuel, 2000);
+
+        for (var i = 0; i < chunks; i++) {
+          var start = i * CHUNK;
+          var end = Math.min(start + CHUNK, total);
+          var b64 = await blobToBase64(file.slice(start, end));
+
+          resp = await fetch('/fwUpdateChunk?n=' + i, {
+            method: 'POST',
+            headers: {'Content-Type': 'text/plain'},
+            body: b64
+          });
+          if (!resp.ok) {
+            st.textContent = 'Erreur chunk ' + i + ': ' + resp.status;
+            stopUpdatePolling();
+            return;
+          }
+
+          var pct = Math.round(((i + 1) / chunks) * 90);
+          bar.style.width = pct + '%';
+          bar.textContent = pct + '%';
+          st.textContent = 'Flash firmware ' + (i+1) + '/' + chunks;
+        }
+
+        st.textContent = 'Finalisation...';
+        bar.style.width = '95%';
+        bar.textContent = '95%';
+
+        resp = await fetch('/fwUpdateFinish', {method: 'POST'});
+        if (!resp.ok) {
+          st.textContent = 'Erreur finish: ' + resp.status;
+          stopUpdatePolling();
+          return;
+        }
+
+        st.textContent = 'Redémarrage...';
+        bar.style.width = '100%';
+        bar.textContent = '100%';
+        setTimeout(function() { window.location.href = '/'; }, 10000);
+      }
+
+      function isBinFile(name) {
+        return name.toLowerCase().endsWith('.bin');
+      }
+
+      function isGzFile(name) {
+        var n = name.toLowerCase();
+        return n.endsWith('.gz') || n.endsWith('.tgz');
+      }
+
+      async function decompressGzip(file) {
+        st.textContent = 'Décompression gzip...';
+        var ds = new DecompressionStream('gzip');
+        var decompressed = file.stream().pipeThrough(ds);
+        var blob = await new Response(decompressed).blob();
+        var tarName = file.name.replace(/\.gz$/i, '').replace(/\.tgz$/i, '.tar');
+        if (!tarName.endsWith('.tar')) tarName += '.tar';
+        return new File([blob], tarName, {type: 'application/x-tar'});
+      }
+
+      async function handleSubmit(file) {
+        $("#btnUpdateMan").hide();
+
+        // Décompresser les .tar.gz/.gz côté navigateur avant envoi
+        if (isGzFile(file.name)) {
+          try {
+            file = await decompressGzip(file);
+          } catch(e) {
+            st.textContent = 'Erreur décompression: ' + e.message;
+            return;
+          }
+        }
+
+        if (isTunnel()) {
+          if (isBinFile(file.name)) {
+            uploadChunkedFirmware(file);
+          } else {
+            uploadChunked(file);
+          }
+          return;
+        }
+
+        // --- Upload direct (réseau local) ---
+        if (isBinFile(file.name)) {
+          // Direct firmware .bin upload
+          bar.style.width = '0%';
+          bar.textContent = '0%';
+
+          isUpdating = true;
+          pollUpdateStatusManuel();
+          updatePollingInterval = setInterval(pollUpdateStatusManuel, 2000);
+
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST','/doUpdate');
+          xhr.upload.onprogress = function(ev) {
+            if (ev.lengthComputable) {
+              var pct = Math.round((ev.loaded / ev.total) * 100);
+              bar.style.width = pct + '%';
+              bar.textContent = pct + '%';
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 302) {
+              st.textContent = 'Redémarrage...';
+              setTimeout(() => { window.location.href='/'; }, 10000);
+            } else {
+              st.textContent = 'Erreur: ' + xhr.status;
+              stopUpdatePolling();
+            }
+          };
+          const fd = new FormData();
+          fd.append('firmware', file, file.name);
+          xhr.send(fd);
+        } else {
+          // .tar restore upload
+          if (updatePollingInterval) {
+            clearInterval(updatePollingInterval);
+            updatePollingInterval = null;
+          }
+
+          isUpdating = true;
+          pollUpdateStatusManuel();
+          updatePollingInterval = setInterval(function() {
+            pollUpdateStatusManuel();
+          }, 500);
+
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST','/doRestore');
+
+          xhr.onload = () => {
+            if (xhr.status === 200) {
+              setTimeout(() => {
+                  window.location.href='/';
+              }, 3000);
+            } else {
+                st.textContent = 'Erreur: ' + xhr.status;
+                if (updatePollingInterval) {
+                  clearInterval(updatePollingInterval);
+                }
+                updatePollingInterval = setInterval(function() {
+                  pollUpdateStatusManuel();
+                }, 2000);
+            }
+          };
+          const fd = new FormData();
+          fd.append('archive', file, file.name);
+          xhr.send(fd);
+          bar.style.width = '0%';
+          bar.textContent = '0%';
+        }
+      }
 
       frm.addEventListener('submit', e => {
         e.preventDefault();
         const file = f.files[0];
-        if (!file) return alert('Choisissez un .tar');
-
-        // Arrêter le polling existant et démarrer un polling rapide
-        if (updatePollingInterval) {
-          clearInterval(updatePollingInterval);
-          updatePollingInterval = null;
-        }
-        
-        // Polling RAPIDE pendant l'upload (500ms au lieu de 2000ms)
-        isUpdating = true;
-        pollUpdateStatusManuel();
-        updatePollingInterval = setInterval(function() {
-          pollUpdateStatusManuel();
-        }, 500);  // ← CHANGÉ : 500ms au lieu de 2000ms
-        
-        $("#btnUpdateMan").hide();
-
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST','/doRestore');
-
-        xhr.onload = () => {
-          if (xhr.status === 200) {
-            setTimeout(() => {
-                window.location.href='/';
-            }, 3000);
-          } else {
-              st.textContent = 'Erreur: ' + xhr.status;
-              if (updatePollingInterval) {
-                clearInterval(updatePollingInterval);
-              }
-              updatePollingInterval = setInterval(function() {
-                pollUpdateStatusManuel();
-              }, 2000);
-          }
-        };
-        const fd = new FormData();
-        fd.append('archive', file, file.name);
-        xhr.send(fd);
-          bar.style.width = '0%';
-          bar.textContent = '0%';
+        if (!file) return alert('Choisissez un fichier');
+        handleSubmit(file);
       });
-
-      
 
 
     </script>)";
@@ -3180,6 +3449,7 @@ const char HTTP_LOGIN[] PROGMEM = R"(
 <head>
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <link rel='icon' type='image/x-icon' href='web/favicon.ico'>
   <title>Box - Connexion</title>
   <link href='web/css/bootstrap.min.css' rel='stylesheet'>
   <style>
@@ -3233,6 +3503,7 @@ const char HTTP_LOGIN[] PROGMEM = R"(
         </div>
         <button type='submit' class='btn btn-warning w-100 btn-lg'>Se connecter</button>
       </form>
+      <div class='text-center text-muted mt-3' style='font-size:0.8rem;'>{{version}}</div>
     </div>
   </div>
   <script>
@@ -3589,6 +3860,8 @@ const char HTTP_NETWORK[] PROGMEM =
                 "<br><strong>@IP : </strong>{{ipWifi}}"
                 "<br><strong>@Masque : </strong>{{maskWifi}}"
                 "<br><strong>@Passerelle : </strong>{{GWWifi}}"
+                "<br><strong>Signal (RSSI) : </strong><span id='rssiVal'>{{rssiWifi}}</span>"
+                "<br><strong>TX Power : </strong><span id='txPwrVal'>{{txPowerWifi}}</span>"
               "</div>"
             "</div>"
           "</div>"
@@ -3733,6 +4006,7 @@ const char HTTP_TARIFF_CARD[] PROGMEM = R"rawstring(
 
 
 const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
+<style>.hi{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1.5px solid currentColor;border-radius:50%;font-size:14px;font-weight:bold;cursor:pointer;}</style>
 <div class='col-sm-12'>
   {{LinkyStatus}}
 </div>
@@ -3788,10 +4062,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
         </div>
       </div>
       <a href='javascript:void(0)' onclick='showPopup("popupHelpEnergyLabel")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
-        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
-          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
-          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
-        </svg>
+        <span class='hi'>?</span>
       </a>
       <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
         title='Paramétrer la tarification'>
@@ -3826,10 +4097,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
         
       </div>
       <a href='javascript:void(0)' onclick='showPopup("popupHelpEnergyDispatch")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
-        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
-          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
-          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
-        </svg>
+        <span class='hi'>?</span>
       </a>
       <a href='/configEnergy' class='position-absolute bottom-0 end-0 p-2 text-muted'
         title='Paramétrer la tarification'>
@@ -3858,10 +4126,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
       </div>
 
       <a href='javascript:void(0)' onclick='showPopup("popupHelpApparentPower")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
-        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
-          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
-          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
-        </svg>
+        <span class='hi'>?</span>
       </a>
     </div>
   </div>
@@ -3872,10 +4137,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
           <canvas id='energy-chart' style='height: 342px;'></canvas>
       </div>
       <a href='javascript:void(0)' onclick='showPopup("popupHelpElectricity")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
-        <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">  
-          <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"></path>  
-          <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"></path>
-        </svg>
+        <span class='hi'>?</span>
       </a>
     </div>
   </div>
@@ -3883,170 +4145,104 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
   <!-- Popup avec système simple -->
   <div id='popupHelpPowerJaugeHour' class='popup' onclick='hidePopup("popupHelpPowerJaugeHour", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpPowerJaugeHour")'>&times;</button> 
+      <button class='close-btn' onclick='hidePopup("popupHelpPowerJaugeHour")'>&times;</button>
       <h2 class='popup-header'>Jauges de puissance</h2>
-      <p class='popup-text'>
-          Les jauges de puissance permettent d'obtenir, en temps réel, la puissance apparente soutirée de chaque phase mais aussi la puissance injectée si votre Linky est en mode producteur.
-      </p>
-      <p class='popup-text'>
-        Pour les puissances soutirées et injectées, les jauges auront pour échelle : le minimum à 0 et le maximum correspondant à votre puissance souscrite.
-      </p>
+      <p class='popup-text'>Les jauges de puissance affichent en temps r&eacute;el la puissance apparente soutir&eacute;e de chaque phase, ainsi que la puissance inject&eacute;e si votre Linky est en mode producteur.</p>
+      <p class='popup-text'>L'&eacute;chelle va de 0 &agrave; la puissance souscrite.</p>
     </div>
   </div>
   <div id='popupHelpPowerJauge' class='popup' onclick='hidePopup("popupHelpPowerJauge", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpPowerJauge")'>&times;</button> 
-      <h2 class='popup-header'>Electricité</h2>
-      <p class='popup-text'>
-          La (les) jauge(s) affiche(nt) , selon la période sélectionnée, la consommation ou la production totale de vore habitat.
-      </p>
-      <p class='popup-text'>
-        Concernant les jauges, l'échelle utilise la valeur minimal ou maximal déjà rencontrée. Grâce à ce principe vous pourrez comparer votre consommation / production en fonction des records historiques.
-      </p>
+      <button class='close-btn' onclick='hidePopup("popupHelpPowerJauge")'>&times;</button>
+      <h2 class='popup-header'>Electricit&eacute;</h2>
+      <p class='popup-text'>Les jauges affichent, selon la p&eacute;riode s&eacute;lectionn&eacute;e, la consommation ou la production totale de votre habitat.</p>
+      <p class='popup-text'>L'&eacute;chelle utilise les valeurs minimale et maximale d&eacute;j&agrave; rencontr&eacute;es, ce qui permet de comparer par rapport aux records historiques.</p>
     </div>
   </div>
   <div id='popupHelpEnergyDispatch' class='popup' onclick='hidePopup("popupHelpEnergyDispatch", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpEnergyDispatch")'>&times;</button> 
-      <h2 class='popup-header'>Répartition énergétique</h2>
-      <p class='popup-text'>
-        Grâce au graphe en donut, vous pourrez avoir une meilleur vision de la répartition des ressources énergétiques selon la période choisie.
-      </p>
+      <button class='close-btn' onclick='hidePopup("popupHelpEnergyDispatch")'>&times;</button>
+      <h2 class='popup-header'>R&eacute;partition &eacute;nerg&eacute;tique</h2>
+      <p class='popup-text'>Le graphe en donut offre une vision de la r&eacute;partition des ressources &eacute;nerg&eacute;tiques selon la p&eacute;riode choisie.</p>
       <div class='highlight'>
-        <strong>Attention !</strong> Toutes les données sont calculées sur des périodes glissantes. <br>Par exemple, si vous avez sélectionné :<br>
-          * Heure : les données reprendront les 24 dernières heures.<br>
-          * Jour : les données reprendront les 30 derniers jours<br>
-          * Mois : Les données reprendront les 12 derniers mois.<br>
-          * Année : Les données reprendront toutes les données.<br>
+        <strong>P&eacute;riodes glissantes :</strong><br>
+        <ul class='info-list' style='margin:5px 0;'>
+          <li><strong>Heure :</strong> 24 derni&egrave;res heures</li>
+          <li><strong>Jour :</strong> 30 derniers jours</li>
+          <li><strong>Mois :</strong> 12 derniers mois</li>
+          <li><strong>Ann&eacute;e :</strong> toutes les donn&eacute;es</li>
+        </ul>
       </div>
-      <p class='popup-text'>
-        Que ce soit de l'électricité, de la production solaire ou de la consommation de gaz, vous pourrez observer la répartition de chaque source énergétique en kWh ou en €.  
-      </p>
-      <p class='popup-text'>
-        Enfin la consommation totale (selon la période choisie) vous permettra d'avoir une vue globale sur votre consommation énergétique.
-      </p>
+      <p class='popup-text'>&Eacute;lectricit&eacute;, production solaire, gaz et eau : la r&eacute;partition de chaque source est affich&eacute;e en kWh (ou m&sup3;) et en &euro;.</p>
+      <p class='popup-text'>La consommation totale donne une vue globale sur la p&eacute;riode.</p>
     </div>
   </div>
   <div id='popupHelpEnergyTrendHour' class='popup' onclick='hidePopup("popupHelpEnergyTrendHour", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrendHour")'>&times;</button> 
+      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrendHour")'>&times;</button>
       <h2 class='popup-header'>Tendances</h2>
       <h5>Puissance apparente</h5>
-      <p class='popup-text'>
-        La tendance de la puissance apparente permet d'avoir en temps réel les variations de puissances. Vous pourrez aussi observer la puissance apparente minimale et maximale soutirée de votre habitat.
-      </p>
+      <p class='popup-text'>Variations en temps r&eacute;el avec les puissances minimale et maximale soutir&eacute;es.</p>
       <h5>Stats</h5>
-      <p class='popup-text'>
-       Cette section permet d'avoir les consommations :<br>
-        * de la veille<br>
-        * du mois en cours<br>
-        * de l'année en cours.<br>
-      </p>
-      
+      <p class='popup-text'>Consommations de la veille, du mois en cours et de l'ann&eacute;e en cours.</p>
     </div>
   </div>
   <div id='popupHelpEnergyTrend' class='popup' onclick='hidePopup("popupHelpEnergyTrend", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrend")'>&times;</button> 
+      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrend")'>&times;</button>
       <h2 class='popup-header'>Tendances</h2>
       <h5>Consommation</h5>
-      <p class='popup-text'>
-        Selon la période choisie, vous aurez la variation de consommation par rapport à la veille en kWh avec le minimum et maximum consommé en fonction de la période de temps choisie.
-      </p>
-
-      <p class='popup-text'>
-        Si vous avez rempli la tarification, vous aurez aussi la somme en € que représente la consommation d'électricité sur la période.
-      </p>
-      
+      <p class='popup-text'>Variation de consommation par rapport &agrave; la p&eacute;riode pr&eacute;c&eacute;dente en kWh, avec le minimum et maximum sur la p&eacute;riode choisie.</p>
+      <p class='popup-text'>Si la tarification est configur&eacute;e, le co&ucirc;t en &euro; est &eacute;galement affich&eacute;.</p>
     </div>
   </div>
   <div id='popupLinkyDatas' class='popup' onclick='hidePopup("popupLinkyDatas", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupLinkyDatas")'>&times;</button> 
-      <h2 class='popup-header'>Données Linky</h2>
+      <button class='close-btn' onclick='hidePopup("popupLinkyDatas")'>&times;</button>
+      <h2 class='popup-header'>Donn&eacute;es Linky</h2>
       <div id='power_data'></div>
     </div>
   </div>
-
   <div id='popupHelpApparentPower' class='popup' onclick='hidePopup("popupHelpApparentPower", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpApparentPower")'>&times;</button> 
+      <button class='close-btn' onclick='hidePopup("popupHelpApparentPower")'>&times;</button>
       <h2 class='popup-header'>Graphe puissance apparente</h2>
-      <div class='highlight'>
-        <strong>Attention !</strong> Toutes les données sont calculées sur des périodes glissantes. <br>Par exemple, si vous avez sélectionné l'horloge, les données reprendront les 24 dernières heures.
-      </div>
-      <p class='popup-text'>
-        Le graphe permet de voir les puissances apparentes (de toutes les phases) à la minute sur les 24 dernières heures.
-      </p>
-      <p class='popup-text'>
-        <span style='color:red'> --- </span> La ligne rouge correspond à la valeur de la puissance souscrite. 
-      </p>
+      <div class='highlight'><strong>Note :</strong> Les donn&eacute;es sont calcul&eacute;es sur des p&eacute;riodes glissantes.</div>
+      <p class='popup-text'>Puissances apparentes de toutes les phases, &agrave; la minute, sur les 24 derni&egrave;res heures.</p>
+      <p class='popup-text'><span style='color:red'> --- </span> Ligne rouge = puissance souscrite.</p>
     </div>
   </div>
   <div id='popupHelpElectricity' class='popup' onclick='hidePopup("popupHelpElectricity", event)'>
     <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpElectricity")'>&times;</button> 
-      <h2 class='popup-header'>Graphe Usage d'électricité</h2>
-      <div class='highlight'>
-        <strong>Attention !</strong> Toutes les données sont calculées sur des périodes glissantes. <br>Par exemple, si vous avez sélectionné l'horloge, les données reprendront les 24 dernières heures.
-      </div>
-      <p class='popup-text'>
-        Le graphe permet, selon la période sélectionnée, d'avoir l'usage complet d'électricité consommé ou produit par votre habitat: <br>
-        * La consommation selon tarifs <br>
-        * La production d'électricité
-      </p>
-      <p class='popup-text'>
-        <span style='color:red'> --- </span> La ligne rouge correspond à la valeur en kWh du budget que vous avez fixez mensuellement. 
-      </p>
+      <button class='close-btn' onclick='hidePopup("popupHelpElectricity")'>&times;</button>
+      <h2 class='popup-header'>Graphe Usage d'&eacute;lectricit&eacute;</h2>
+      <div class='highlight'><strong>Note :</strong> Les donn&eacute;es sont calcul&eacute;es sur des p&eacute;riodes glissantes.</div>
+      <p class='popup-text'>Usage complet d'&eacute;lectricit&eacute; selon la p&eacute;riode :</p>
+      <ul class='info-list'>
+        <li>Consommation par tarif</li>
+        <li>Production d'&eacute;lectricit&eacute;</li>
+      </ul>
+      <p class='popup-text'><span style='color:red'> --- </span> Ligne rouge = budget mensuel fix&eacute; (en kWh).</p>
     </div>
   </div>
-  
   <div id='popupHelpEnergyLabel' class='popup' onclick='hidePopup("popupHelpEnergyLabel", event)'>
     <div class='popup-content'>
-        <button class='close-btn' onclick='hidePopup("popupHelpEnergyLabel")'>&times;</button> 
-        <h2 class='popup-header'>Etiquette énergétique</h2>
-        <p class='popup-text'>
-            L'étiquette énergétique permet d'avoir une vision simple sur la performance énergétique (électricité / production / gaz en kWh) de votre habitat en fonction de la surface habitable.
-        </p>
-        <div class='highlight'>
-            <strong>Point important :</strong> L'étiquette énergétique n'est affichée qu'à titre informatif et ne remplace pas une étude DPE.
-        </div>
-        <p class='popup-text'>
-            La performance est calculée de la manière suivante:
-        </p>
-
-        <ul class='info-list'>
-            <li><strong>Mode horaire :</strong> (Total énergie (Elect/prod/gaz) x 365) / surface habitable </li>
-            <li><strong>Mode journalier :</strong> (Total énergie (Elect/prod/gaz) x 12) / surface habitable</li>
-            <li><strong>Mode mensuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
-            <li><strong>Mode annuel :</strong> (Total énergie (Elect/prod/gaz)) / surface habitable</li>
-        </ul>
-
-        <p class='popup-text'>
-            Liste des étiquettes :
-        </p>
-        <p class='popup-text'>
-            A : < 50 kWh/m².an
-        </p>
-        <p class='popup-text'>
-            B : 51 - 90 kWh/m².an
-        </p>
-        <p class='popup-text'>
-            C : 91 - 150 kWh/m².an
-        </p>
-        <p class='popup-text'>
-            D : 151 - 230 kWh/m².an
-        </p>
-        <p class='popup-text'>
-            E : 231 - 330 kWh/m².an
-        </p>
-        <p class='popup-text'>
-            F : 331 - 450 kWh/m².an
-        </p>
-        <p class='popup-text'>
-            G : > 451 kWh/m².an
-        </p>
-      </div>
+      <button class='close-btn' onclick='hidePopup("popupHelpEnergyLabel")'>&times;</button>
+      <h2 class='popup-header'>Etiquette &eacute;nerg&eacute;tique</h2>
+      <p class='popup-text'>Performance &eacute;nerg&eacute;tique (electricit&eacute;, production, gaz, eau) de votre habitat rapport&eacute;e &agrave; la surface habitable.</p>
+      <div class='highlight'><strong>Indicatif uniquement</strong> &mdash; ne remplace pas un DPE.</div>
+      <p class='popup-text'>Calcul :</p>
+      <ul class='info-list'>
+        <li><strong>Heure :</strong> total &times; 365 / surface</li>
+        <li><strong>Jour :</strong> total &times; 12 / surface</li>
+        <li><strong>Mois / Ann&eacute;e :</strong> total / surface</li>
+      </ul>
+      <p class='popup-text'>&Eacute;tiquettes (kWh/m&sup2;.an) :</p>
+      <ul class='info-list'>
+        <li><strong>A</strong> &lt; 50 | <strong>B</strong> 51-90 | <strong>C</strong> 91-150 | <strong>D</strong> 151-230</li>
+        <li><strong>E</strong> 231-330 | <strong>F</strong> 331-450 | <strong>G</strong> &gt; 451</li>
+      </ul>
+    </div>
   </div>
 
   <script>
@@ -4744,6 +4940,7 @@ R"HTML(
             };
             return text.replace(/[&<>"']/g, function(m) { return map[m]; });
         }
+
     </script>
 )HTML";
 
@@ -4975,14 +5172,28 @@ const char HTTP_CREATE_TEMPLATE[] PROGMEM =
     "try{JSON.parse($('#file').val());"
     "$('#validationMsg').removeClass('invalid').addClass('valid').html('✓ JSON valide');return true;"
     "}catch(e){$('#validationMsg').removeClass('valid').addClass('invalid').html('✗ '+e.message);return false;}}"
+    "function _isTunnel(){return window.location.hostname.indexOf('lixee-box.fr')>=0;}"
+    "async function _saveChunked(fn,ct){"
+    "var C=8192,r=await fetch('/templateSaveInit?file='+encodeURIComponent(fn),{method:'POST'});"
+    "if(!r.ok)throw new Error('init:'+r.status);"
+    "for(var i=0;i<ct.length;i+=C){"
+    "r=await fetch('/templateSaveChunk',{method:'POST',headers:{'Content-Type':'text/plain'},body:ct.substring(i,i+C)});"
+    "if(!r.ok)throw new Error('chunk:'+r.status);}"
+    "r=await fetch('/templateSaveFinish',{method:'POST'});"
+    "if(!r.ok){var e=await r.json().catch(function(){return{error:r.status}});throw new Error(e.error||r.status);}"
+    "return r.json();}"
     "function saveNewTemplate(){"
     "var filename=$('#filename').val();"
     "if(!filename){alert('Entrez un nom de fichier');return;}"
     "if(!filename.endsWith('.json'))filename+='.json';"
     "if(!validateJson()){alert('Corrigez les erreurs JSON');return;}"
-    "$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:$('#file').val(),2:'save'},dataType:'json',"
+    "var content=$('#file').val();"
+    "if(_isTunnel()){"
+    "_saveChunked(filename,content).then(function(){window.location='/configTemplates';}).catch(function(e){alert('Erreur: '+e.message);});"
+    "}else{"
+    "$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:content,2:'save'},dataType:'json',"
     "success:function(){window.location='/configTemplates';},"
-    "error:function(xhr){alert('Erreur: '+(xhr.responseJSON||{}).error||'Erreur inconnue');}});}"
+    "error:function(xhr){alert('Erreur: '+(xhr.responseJSON||{}).error||'Erreur inconnue');}});}}"
     "</script>";
 
 
@@ -6596,6 +6807,30 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   return result;
 }
 
+// === Garde mémoire pour les handlers HTML ===
+// Retourne false (et envoie 503) si le heap est trop bas pour servir une page
+bool checkHeapForPage(AsyncWebServerRequest *request) {
+    uint32_t freeHeap = ESP.getFreeHeap();
+    if (freeHeap < 50000) {
+        Serial.printf("[WebServer] Heap trop bas (%u) - 503 renvoye\n", freeHeap);
+        request->send(503, "text/html",
+            "<html><head><meta charset='utf-8'><meta http-equiv='refresh' content='3'>"
+            "</head><body style='font-family:sans-serif;text-align:center;padding:40px;'>"
+            "<h2>Serveur temporairement surcharg&eacute;</h2>"
+            "<p>M&eacute;moire insuffisante. Rechargement automatique...</p>"
+            "</body></html>");
+        return false;
+    }
+    return true;
+}
+
+// === Helper pour streamer un bloc PROGMEM avec remplacement FormattedDate ===
+void streamSection(AsyncResponseStream *response, const char *progmem) {
+    String section = FPSTR(progmem);
+    section.replace("{{FormattedDate}}", FormattedDate);
+    response->print(section);
+}
+
 void handleNotFound(AsyncWebServerRequest *request)
 {
 
@@ -6838,18 +7073,19 @@ void handleRoot(AsyncWebServerRequest *request)
 
 void handleDashboard(AsyncWebServerRequest *request)
 {
-  String result;
-  result += F("<html>");
-  result += FPSTR(HTTP_HEADERGRAPH);
-  result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_DASHBOARD);
-  result +=footer();
-  result += F("</html>");
-  result.replace("{{FormattedDate}}", FormattedDate);
+  if (!checkHeapForPage(request)) return;
 
-  String time;
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
 
-  String dashboard = "";
+  response->print(F("<html>"));
+  response->print(FPSTR(HTTP_HEADERGRAPH));
+  streamSection(response, HTTP_MENU);
+
+  // Début conteneur dashboard (inline au lieu de HTTP_DASHBOARD pour éviter template replace)
+  response->print(F("<div class='container py-4' >"));
+  response->print(F("<h4>Dashboard</h4>"));
+  response->print(F("<div class='row justify-content-start gx-4 gy-4' id='masonry-grid'>"));
+
   String js = "";
   int exist = 0;
 
@@ -6858,179 +7094,115 @@ void handleDashboard(AsyncWebServerRequest *request)
     esp_task_wdt_reset();
     DeviceData* device = devices[ident];
 
-      int ShortAddr = device->getInfo().shortAddr.toInt();
-      int DeviceId = device->getInfo().device_id.toInt();
-      String model;
-      model = device->getInfo().model;
-      dashboard += F("<div class='col-12 col-sm-12 col-md-12 col-lg-5 col-xl-4 d-flex'>"); //col-md-auto col-sm-auto
-      dashboard += F("<div class='card p-4 flex-fill' style='min-width:380px;'>"); //min-width:380px;
-      dashboard += F("<h5 class='card-title' >"); //style='font-size:12px;font-weight:bold;color:#FFF;background-color:#007bc6;'>
-      String alias = "null";
+    int ShortAddr = device->getInfo().shortAddr.toInt();
+    int DeviceId = device->getInfo().device_id.toInt();
+    String model = device->getInfo().model;
 
-      if (alias != "null")
-      {
-        dashboard += F("<strong>");
-        dashboard += alias;
-        dashboard += F("</strong>");
-        dashboard += F("<br>(@Mac : ");
-        dashboard += device->getDeviceID();
-        dashboard += F(")");
+    response->print(F("<div class='col-12 col-sm-12 col-md-12 col-lg-5 col-xl-4 d-flex'>"));
+    response->print(F("<div class='card p-4 flex-fill' style='min-width:380px;'>"));
+    response->print(F("<h5 class='card-title' >"));
+    response->print(F("@Mac : "));
+    response->print(device->getDeviceID());
+    response->print(F("</h5>"));
+    response->print(F("<div class='card-body'>"));
+
+    if (TemplateExist(DeviceId))
+    {
+      TemplateData* t = device->getTemplate();
+      if (!t) {
+          Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
+          continue;
       }
-      else
+      response->print(F("<div id='status_"));
+      response->print(ShortAddr);
+      response->print(F("'>"));
+
+      for (int i = 0; i < t->StateSize(); i++)
       {
-        dashboard += F("@Mac : ");
-        dashboard += device->getDeviceID();
-      }
-      dashboard += F("</h5>");
-      dashboard += F("<div class='card-body'>");
-      // Get status and action from json
-
-      if (TemplateExist(DeviceId))
-      {
-        /*Template *t;
-        t = GetTemplate(DeviceId, model);*/
-        TemplateData* t = device->getTemplate();
-        if (!t) {
-            // Template introuvable - logger pour debug
-            Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
-            continue; // ou return, selon votre logique
-        }
-        // toutes les propiétés
-        dashboard += F("<div id='status_");
-        dashboard += (String)ShortAddr;
-        dashboard += F("'>");
-
-        for (int i = 0; i < t->StateSize(); i++)
+        if (t->states[i].visible)
         {
-          if (t->states[i].visible)
-          {
+          String sa = String(ShortAddr);
+          String si = String(i);
+          String sai = sa + si;
 
-            if (String(t->states[i].typeJauge) == "gauge")
-            {
-              exist++;
-              dashboard += "<div id='gauge_";
-              dashboard += (String)ShortAddr+String(i);
-              dashboard += F("' style='height:150px;'>");
-              dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
-              dashboard += String(t->states[i].name);
-              dashboard += F("</div>");
-              dashboard += F("</div>");
-              js += createGaugeDashboard((String)ShortAddr, (String)i, String(t->states[i].jaugeMin), String(t->states[i].jaugeMax), t->states[i].unit);
-              js += CreateTimeGauge((String)ShortAddr + (String)i);
-              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->states[i].cluster + "," + t->states[i].attribute + ",'" + t->states[i].type + "'," + t->states[i].coefficient + ");";
-            }
-            else if(String(t->states[i].typeJauge) == "battery")
-            {
-              exist++;
-              dashboard += "<div id='gauge_";
-              dashboard += (String)ShortAddr+String(i);
-              dashboard += F("' style='height:150px;'>");
-              dashboard += F("<div align='center' style='font-size:12px;margin-top:-70px;'>");
-              dashboard += String(t->states[i].name);
-              dashboard += F("</div>");
-              dashboard += F("</div>");
-              js += createBaterryDashboard((String)ShortAddr, (String)i, String(t->states[i].jaugeMin), String(t->states[i].jaugeMax), t->states[i].unit);
-              js += CreateTimeGauge((String)ShortAddr + (String)i);
-              js += "refreshGauge" + (String)ShortAddr + (String)i + "('" + device->getDeviceID() + "'," + t->states[i].cluster + "," + t->states[i].attribute + ",'" + t->states[i].type + "'," + t->states[i].coefficient + ");";
-            }else if(String(t->states[i].typeJauge) == "text")
-            {
-              exist++;
-              dashboard +=F("<div id='text_");
-              dashboard += (String)ShortAddr+String(i);
-              dashboard += F("' style='text-align:center;font-size:12px;'>");
-              dashboard += t->states[i].name;
-              dashboard += F("<br>");
-              dashboard += "<span id='";
-              dashboard += F("label_");
-              dashboard += (String)ShortAddr;
-              dashboard += F("_");
-              dashboard += t->states[i].cluster;
-              dashboard += F("_");
-              dashboard += t->states[i].attribute;
-              dashboard += F("' style='font-size:24px;font-family :\"Courier New\", Courier, monospace;'>");
-              dashboard += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);             
-              dashboard += F("</span>&nbsp;");
-              dashboard += String(t->states[i].unit);
-              dashboard += F("</div><br>");
-              js += "refreshLabel('"+String(device->getDeviceID())+"','"+(String)ShortAddr+"',"+t->states[i].cluster+","+t->states[i].attribute+",'"+(String)t->states[i].type+"',"+t->states[i].coefficient+",'"+(String)t->states[i].unit+"');";
-
-            }
-          }
-        }
-        dashboard += F("</div>");
-        dashboard += F("<div id='action_");
-        dashboard += (String)ShortAddr;
-        dashboard += F("'>");
-        // toutes les actions
-
-        for (int i = 0; i < t->ActionSize(); i++)
-        {
-          if (t->actions[i].visible)
+          if (String(t->states[i].typeJauge) == "gauge")
           {
             exist++;
-            dashboard += F("<button onclick=\"ZigbeeAction(");
-            dashboard += ShortAddr;
-            dashboard += ",";
-            dashboard += t->actions[i].command;
-            dashboard += ",";
-            dashboard += t->actions[i].endpoint;
-            dashboard += ",";
-            dashboard += t->actions[i].value;
-            if (t->actions[i].command == 400) {
-              dashboard += ",";
-              dashboard += String(t->actions[i].cluster);
-              dashboard += ",";
-              dashboard += String(t->actions[i].manufacturerCode);
-            }
-            dashboard += ");\" class='btn btn-primary mb-2'>";
-            dashboard += t->actions[i].name;
-            dashboard += F("</button>&nbsp;");
+            response->printf("<div id='gauge_%s' style='height:150px;'><div align='center' style='font-size:12px;margin-top:-70px;'>%s</div></div>", sai.c_str(), t->states[i].name);
+            js += createGaugeDashboard(sa, si, String(t->states[i].jaugeMin), String(t->states[i].jaugeMax), t->states[i].unit);
+            js += CreateTimeGauge(sai);
+            js += "refreshGauge" + sai + "('" + device->getDeviceID() + "'," + t->states[i].cluster + "," + t->states[i].attribute + ",'" + t->states[i].type + "'," + t->states[i].coefficient + ");";
+          }
+          else if(String(t->states[i].typeJauge) == "battery")
+          {
+            exist++;
+            response->printf("<div id='gauge_%s' style='height:150px;'><div align='center' style='font-size:12px;margin-top:-70px;'>%s</div></div>", sai.c_str(), t->states[i].name);
+            js += createBaterryDashboard(sa, si, String(t->states[i].jaugeMin), String(t->states[i].jaugeMax), t->states[i].unit);
+            js += CreateTimeGauge(sai);
+            js += "refreshGauge" + sai + "('" + device->getDeviceID() + "'," + t->states[i].cluster + "," + t->states[i].attribute + ",'" + t->states[i].type + "'," + t->states[i].coefficient + ");";
+          }else if(String(t->states[i].typeJauge) == "text")
+          {
+            exist++;
+            response->printf("<div id='text_%s' style='text-align:center;font-size:12px;'>%s<br>", sai.c_str(), t->states[i].name);
+            response->printf("<span id='label_%d_%d_%d' style='font-size:24px;font-family:\"Courier New\",Courier,monospace;'>",
+              ShortAddr, t->states[i].cluster, t->states[i].attribute);
+            response->print(GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient));
+            response->print(F("</span>&nbsp;"));
+            response->print(t->states[i].unit);
+            response->print(F("</div><br>"));
+            js += "refreshLabel('"+String(device->getDeviceID())+"','"+sa+"',"+t->states[i].cluster+","+t->states[i].attribute+",'"+t->states[i].type+"',"+t->states[i].coefficient+",'"+t->states[i].unit+"');";
           }
         }
-        dashboard += F("</div>");
-        //free(t);
       }
-      dashboard += F("</div></div></div>");
+      response->print(F("</div>"));
+      response->print(F("<div id='action_"));
+      response->print(ShortAddr);
+      response->print(F("'>"));
+
+      for (int i = 0; i < t->ActionSize(); i++)
+      {
+        if (t->actions[i].visible)
+        {
+          exist++;
+          response->printf("<button onclick=\"ZigbeeAction(%d,%d,%d,%d",
+            ShortAddr, t->actions[i].command, t->actions[i].endpoint, t->actions[i].value);
+          if (t->actions[i].command == 400) {
+            response->printf(",%d,%d", t->actions[i].cluster, t->actions[i].manufacturerCode);
+          }
+          response->print(F(");\" class='btn btn-primary mb-2'>"));
+          response->print(t->actions[i].name);
+          response->print(F("</button>&nbsp;"));
+        }
+      }
+      response->print(F("</div>"));
+    }
+    response->print(F("</div></div></div>"));
 
     vTaskDelay(1);
-    
   }
 
-  if (exist>0)
+  if (exist == 0)
   {
-    result.replace("{{dashboard}}", dashboard);
-  }else{
-    result.replace("{{dashboard}}", "<div align='center' style='font-size:28px;font-weight:bold;'>No dashboard datas yet</div>");
+    response->print(F("<div align='center' style='font-size:28px;font-weight:bold;'>No dashboard datas yet</div>"));
   }
-  
 
-  String javascript = "";
-  javascript = F("<script language='javascript'>");
-  javascript += F("$(document).ready(function() {");
-  javascript += js;
+  response->print(F("</div></div>")); // fin row + container
 
+  // JavaScript
+  response->print(F("<script language='javascript'>$(document).ready(function(){"));
+  response->print(js);
+  response->print(F(
+    "const grid=document.querySelector('#masonry-grid');"
+    "const msnry=new Masonry(grid,{itemSelector:'.col-12',percentPosition:true});"
+    "const observer=new ResizeObserver(()=>{msnry.layout();});"
+    "document.querySelectorAll('.col-12').forEach(card=>observer.observe(card));"
+  ));
+  response->print(F("});</script>"));
 
-    javascript += "const grid = document.querySelector('#masonry-grid');";
-    javascript += "const msnry = new Masonry(grid, {";
-      javascript += "itemSelector: '.col-12',";
-      javascript += "percentPosition: true";
-      javascript += "});";
+  response->print(footer());
+  response->print(F("</html>"));
 
-      javascript += "const observer = new ResizeObserver(() => {";
-        javascript += "msnry.layout();";
-        javascript += "});";
-
-        javascript += "document.querySelectorAll('.col-12').forEach(card => observer.observe(card));";
-
-  javascript += F("});");
-
-  javascript += F("</script>");
-  result.replace("{{javascript}}", javascript);
-
-  request->send(200, "text/html", result);
-
-
-
+  request->send(response);
 }
 
 
@@ -7209,6 +7381,7 @@ void handleDashboard(AsyncWebServerRequest *request)
 
 void handleStatusNetwork(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   PSRAMString result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -7232,7 +7405,21 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
     result.replace("{{maskWifi}}", ConfigSettings.ipMaskWiFi);
     result.replace("{{GWWifi}}", ConfigSettings.ipGWWiFi);
   }
-  
+
+  // Signal WiFi
+  if (WiFi.isConnected()) {
+    int rssi = WiFi.RSSI();
+    int quality = 0;
+    if (rssi >= -50) quality = 100;
+    else if (rssi <= -100) quality = 0;
+    else quality = 2 * (rssi + 100);
+    String rssiStr = String(rssi) + " dBm (" + String(quality) + "%)";
+    result.replace("{{rssiWifi}}", rssiStr);
+    result.replace("{{txPowerWifi}}", String((float)WiFi.getTxPower() / 4.0, 1) + " dBm");
+  } else {
+    result.replace("{{rssiWifi}}", "-");
+    result.replace("{{txPowerWifi}}", "-");
+  }
 
   if (ConfigSettings.connectedWifiSta)
   {
@@ -7296,6 +7483,17 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   float temperature = 0;
   temperature = temperatureReadFixed();
   result.replace("{{Temperature}}", String(temperature));
+
+  result += F("<script>"
+    "setInterval(function(){"
+      "fetch('/api/wifiSignal').then(function(r){return r.json();}).then(function(d){"
+        "if(d.rssi){"
+          "document.getElementById('rssiVal').textContent=d.rssi+' dBm ('+d.quality+'%)';"
+          "document.getElementById('txPwrVal').textContent=d.txPower.toFixed(1)+' dBm';"
+        "}"
+      "}).catch(function(){});"
+    "},5000);"
+  "</script>");
 
   request->send(200, "text/html", result.c_str());
 }
@@ -7563,7 +7761,7 @@ String getPresenceJavaScript(String time) {
 #ifndef USE_ENERGY_V2
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
-
+  if (!checkHeapForPage(request)) return;
   PSRAMString result(500000);
   result = F("<html>");
   result += FPSTR(HTTP_HEADERGRAPH);
@@ -7669,22 +7867,12 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   {
     result.replace("{{stylePowerChart}}", F("block"));
     
-    String help="<a href='javascript:void(0)' onclick='showPopup(\"popupHelpEnergyTrendHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>";
-    help+="<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>";  
-    help+="<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>  ";
-    help+="<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>";
-    help+="</svg>";
-    help+="</a>";
+    String help="<a href='javascript:void(0)' onclick='showPopup(\"popupHelpEnergyTrendHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>";
     result.replace("{{helpTrend}}", help);
   }
   else{
     result.replace("{{stylePowerChart}}", F("none"));
-    String help="<a href='javascript:void(0)' onclick='showPopup(\"popupHelpEnergyTrend\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>";
-    help+="<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>";  
-    help+="<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>  ";
-    help+="<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>";
-    help+="</svg>";
-    help+="</a>";
+    String help="<a href='javascript:void(0)' onclick='showPopup(\"popupHelpEnergyTrend\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>";
     result.replace("{{helpTrend}}", help);
   }
 
@@ -7786,18 +7974,13 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
                   powerGauge +=F("</div>");
                 }
                 powerGauge +=F("</div>");
-                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>");
-                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>");  
-                    powerGauge +=F("<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>");
-                    powerGauge +=F("<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>");
-                  powerGauge +=F("</svg>");
-                powerGauge +=F("</a>");  
+                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>");
                 powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupLinkyDatas\")' class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>");
-                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");  
+                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");
                     powerGauge +=F("<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>");
                     powerGauge +=F("<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>");
                   powerGauge +=F("</svg>");
-                powerGauge +=F("</a>"); 
+                powerGauge +=F("</a>");
               powerGauge +=F("</div>");
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
@@ -7824,18 +8007,13 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
                   powerGauge +=F("</div>");
                 }
                 powerGauge +=F("</div>");
-                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>");
-                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>");  
-                    powerGauge +=F("<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>");
-                    powerGauge +=F("<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>");
-                  powerGauge +=F("</svg>");
-                powerGauge +=F("</a>");  
+                powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>");
                 powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupLinkyDatas\")' class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>");
-                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");  
+                  powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");
                     powerGauge +=F("<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>");
                     powerGauge +=F("<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>");
                   powerGauge +=F("</svg>");
-                powerGauge +=F("</a>"); 
+                powerGauge +=F("</a>");
               powerGauge +=F("</div>");  
             powerGauge +=F("</div>");
           powerGauge +=F("</div>");
@@ -7863,12 +8041,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
               powerGauge +=F("</div>");
             }
           powerGauge +=F("</div>");
-          powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJauge\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>");
-            powerGauge +=F("<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>");  
-              powerGauge +=F("<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'></path>");
-              powerGauge +=F("<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'></path>");
-            powerGauge +=F("</svg>");
-          powerGauge +=F("</a>"); 
+          powerGauge +=F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJauge\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>"); 
         powerGauge +=F("</div>");
       powerGauge +=F("</div>");
     powerGauge +=F("</div>");
@@ -8025,137 +8198,14 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 #endif // !USE_ENERGY_V2
 
 #ifdef USE_ENERGY_V2
-void writeHelpIcon(AsyncResponseStream* response, const char* popupId) {
-    response->printf(
-        "<a href='javascript:void(0)' onclick='showPopup(\"%s\")' "
-        "class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>"
-        "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' "
-        "fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>"
-        "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
-        "<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 "
-        "1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 "
-        "1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486"
-        ".609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 "
-        "5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
-        "</svg></a>",
-        popupId
-    );
-}
-
-// Helper pour écrire l'icône info
-void writeInfoIcon(AsyncResponseStream* response, const char* popupId) {
-    response->printf(
-        "<a href='javascript:void(0)' onclick='showPopup(\"%s\")' "
-        "class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>"
-        "<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' "
-        "class='bi bi-info-square' viewBox='0 0 16 16'>"
-        "<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 "
-        "2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>"
-        "<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 "
-        "1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193"
-        "-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>"
-        "</svg></a>",
-        popupId
-    );
-}
-
-void writePowerGauges(AsyncResponseStream* response, bool isTriphase, bool hasProduction, bool isHourMode) {
-    response->print(F("<div class='col-lg-4 col-md-12 col-12'>"));
-    response->print(F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>"));
-    
-    if (isHourMode) {
-        response->print(F("<h5 class='card-title'>Linky : Puissances</h5>"));
-    } else {
-        response->print(F("<h5 class='card-title'>Linky</h5>"));
-    }
-    
-    response->print(F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>"));
-    response->print(F("<div class='row'>"));
-    
-    if (isHourMode) {
-        // Mode heure - affichage des puissances instantanées
-        if (isTriphase) {
-            // Triphasé
-            const char* phases[] = {"Soutirée P.1", "Soutirée P.2", "Soutirée P.3"};
-            const char* gaugeIds[] = {"power_gauge_global", "power_gauge_global2", "power_gauge_global3"};
-            
-            for (int i = 0; i < 3; i++) {
-                response->printf(
-                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
-                    "<h5>%s</h5>"
-                    "<div id='%s' class='w-100'></div>"
-                    "</div>",
-                    phases[i], gaugeIds[i]
-                );
-            }
-            
-            if (hasProduction) {
-                response->print(F(
-                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
-                    "<h5>Injectée</h5>"
-                    "<div id='power_gauge_prod' class='w-100'></div>"
-                    "</div>"
-                ));
-            }
-        } else {
-            // Monophasé
-            if (hasProduction) {
-                response->print(F(
-                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
-                    "<h5>Soutirée</h5>"
-                    "<div id='power_gauge_global' class='w-100'></div>"
-                    "</div>"
-                    "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
-                    "<h5>Injectée</h5>"
-                    "<div id='power_gauge_prod' class='w-100'></div>"
-                    "</div>"
-                ));
-            } else {
-                response->print(F(
-                    "<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>"
-                    "<h5>Soutirée</h5>"
-                    "<div id='power_gauge_global' class='w-100'></div>"
-                    "</div>"
-                ));
-            }
-        }
-        writeHelpIcon(response, "popupHelpPowerJaugeHour");
-    } else {
-        // Mode jour/mois/année - affichage des consommations
-        if (hasProduction) {
-            response->print(F(
-                "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
-                "<h5>Consommation</h5>"
-                "<div id='power_gauge_global' class='w-100'></div>"
-                "</div>"
-                "<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'>"
-                "<h5>Production</h5>"
-                "<div id='power_gauge_prod' class='w-100'></div>"
-                "</div>"
-            ));
-        } else {
-            response->print(F(
-                "<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'>"
-                "<h5>Consommation</h5>"
-                "<div id='power_gauge_global' class='w-100'></div>"
-                "</div>"
-            ));
-        }
-        writeHelpIcon(response, "popupHelpPowerJauge");
-    }
-    
-    writeInfoIcon(response, "popupLinkyDatas");
-    
-    response->print(F("</div></div></div></div></div>")); // Fermeture row, card-body, card, col
-}
-
 
 void handleStatusEnergy(AsyncWebServerRequest *request)
 {
     if (!checkAuth(request)) return;
+    if (!checkHeapForPage(request)) return;
 
     unsigned long startTime = millis();
-    
+
     // Créer réponse streamée
     AsyncResponseStream *response = request->beginResponseStream("text/html");
     response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
@@ -8165,87 +8215,177 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     if (request->params() > 0) {
         time = request->arg(0);
     }
-    
+
     bool hasZLinky = (strcmp(ConfigGeneral.ZLinky, "") != 0);
     bool hasGaz = (strcmp(ConfigGeneral.Gaz, "") != 0);
     bool hasWater = (strcmp(ConfigGeneral.Water, "") != 0);
     bool hasProduction = (strcmp(ConfigGeneral.Production, "") != 0);
-    
-    ConfigGeneral.LinkyMode = hasZLinky ? 
+
+    ConfigGeneral.LinkyMode = hasZLinky ?
         getZigbeeValue(String(ConfigGeneral.ZLinky) + ".json", "FF66", "768").toInt() : 0;
     bool isTriphase = (ConfigGeneral.LinkyMode == 2) || (ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7);
     bool isHourMode = (time == "hour");
 
-    // === Envoyer les parties statiques directement ===
+    // === Part 1 : Header statique ===
     response->print(F("<html>"));
     response->print(FPSTR(HTTP_HEADERGRAPH));
-    
-    // HTTP_MENU - petit, on peut le traiter
+
     {
         String menu = FPSTR(HTTP_MENU);
         menu.replace("{{FormattedDate}}", FormattedDate);
         response->print(menu);
     }
-    
-    // HTTP_ENERGY - traiter les placeholders
-    {
-        String energy = FPSTR(HTTP_ENERGY);
-        energy.replace("{{FormattedDate}}", FormattedDate);
-        energy.replace("{{time}}", time);
-        energy.replace("{{stylePowerChart}}", isHourMode ? "block" : "none");
-        
-        // Alerte énergie
-        bool showAlert = false;
-        String alertMsg = "";
-        if (hasZLinky) {
-            for (size_t i = 0; i < devices.size(); i++) {
-                if (devices[i]->getDeviceID() == String(ConfigGeneral.ZLinky)) {
-                    if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2)) {
-                        if (devices[i]->getValue(std::string("FF66"), std::string("5")).toInt() > 0) {
-                            showAlert = true;
-                            alertMsg = "Dépassement de puissance souscrite";
-                        }
-                    }
-                    break;
-                }
+
+    // HTTP_ENERGY = onglets navigation (pas de placeholders)
+    response->print(FPSTR(HTTP_ENERGY));
+
+    // === Part 2 : HTTP_ENERGY_LINKY — charger en PSRAM, remplacer, streamer ===
+    response->print(F("<div class='row'>"));
+    if (hasZLinky) {
+        PSRAMString linky;
+        linky = FPSTR(HTTP_ENERGY_LINKY);
+
+        // LinkyStatus
+        String LinkyStatus;
+        if (getDeviceStatus(String(ConfigGeneral.ZLinky) + ".json") == "d4") {
+            LinkyStatus = "<div class='alert alert-danger' role='alert'>Appareil déconnecté</div>";
+        } else {
+            LinkyStatus = "";
+        }
+        linky.replace("{{LinkyStatus}}", LinkyStatus.c_str());
+
+        // Alerte énergie (tous les modes Linky)
+        bool foundDevice = false;
+        DeviceData* device = nullptr;
+        for (size_t ident = 0; ident < devices.size(); ident++) {
+            if (devices[ident]->getDeviceID() == String(ConfigGeneral.ZLinky)) {
+                device = devices[ident];
+                foundDevice = true;
+                break;
             }
         }
-        energy.replace("{{styleEnergyAlert}}", showAlert ? "display:block;" : "display:none;");
-        energy.replace("{{energyAlertMessage}}", alertMsg);
-        
-        // LinkyStatus
-        String linkyStatus = "";
-        if (hasZLinky && getDeviceStatus(String(ConfigGeneral.ZLinky) + ".json") == "d4") {
-            linkyStatus = "<div class='alert alert-danger' role='alert'>Appareil déconnecté</div>";
-        }
-        energy.replace("{{LinkyStatus}}", linkyStatus);
-        
-        // Help trend
-        String helpPopup = isHourMode ? "popupHelpEnergyTrendHour" : "popupHelpEnergyTrend";
-        String helpHtml = "<a href='javascript:void(0)' onclick='showPopup(\"" + helpPopup + "\")' "
-            "class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>"
-            "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' "
-            "fill='currentColor' class='bi bi-question-circle' viewBox='0 0 16 16'>"
-            "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
-            "<path d='M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 "
-            "1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 "
-            "1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486"
-            ".609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 "
-            "5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94'/>"
-            "</svg></a>";
-        energy.replace("{{helpTrend}}", helpHtml);
-        
-        response->print(energy);
-    }
 
-    // Sections conditionnelles
-    response->print(F("<div class='row'>"));
-    if (hasZLinky) response->print(FPSTR(HTTP_ENERGY_LINKY));
+        if (foundDevice) {
+            if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2)) {
+                String tmp = device->getValue(std::string("FF66"), std::string(String("5").c_str()));
+                if (tmp.toInt() > 0) {
+                    linky.replace("{{styleEnergyAlert}}", "display:block;");
+                    linky.replace("{{energyAlertMessage}}", "Dépassement de puissance souscrite");
+                } else {
+                    linky.replace("{{styleEnergyAlert}}", "display:none;");
+                    linky.replace("{{energyAlertMessage}}", "");
+                }
+            } else {
+                String tmp = device->getValue(std::string("FF66"), std::string(String("535").c_str()));
+                auto status = parseStatusRegister(tmp);
+                if (status.depassement_ref_pow) {
+                    linky.replace("{{styleEnergyAlert}}", "display:block;");
+                    linky.replace("{{energyAlertMessage}}", "Dépassement de puissance souscrite");
+                } else {
+                    linky.replace("{{styleEnergyAlert}}", "display:none;");
+                    linky.replace("{{energyAlertMessage}}", "");
+                }
+            }
+        } else {
+            linky.replace("{{styleEnergyAlert}}", "display:none;");
+            linky.replace("{{energyAlertMessage}}", "");
+        }
+
+        // TariffCard
+        linky.replace("{{tariffCard}}", FPSTR(HTTP_TARIFF_CARD));
+
+        // time (utilisé dans les liens distribution)
+        linky.replace("{{time}}", time.c_str());
+
+        // stylePowerChart
+        linky.replace("{{stylePowerChart}}", isHourMode ? "block" : "none");
+
+        // helpTrend
+        {
+            String help = "<a href='javascript:void(0)' onclick='showPopup(\"";
+            help += isHourMode ? "popupHelpEnergyTrendHour" : "popupHelpEnergyTrend";
+            help += "\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>";
+            linky.replace("{{helpTrend}}", help.c_str());
+        }
+
+        // power_gauge — générer le HTML comme V1
+        {
+            String powerGauge = "";
+            if (isHourMode) {
+                if (isTriphase) {
+                    powerGauge = F("<div class='col-lg-4 col-md-12 col-12'>");
+                    powerGauge += F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
+                    powerGauge += F("<h5 class='card-title'>Linky : Puissances</h5>");
+                    powerGauge += F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
+                    powerGauge += F("<div class='row'>");
+                    if (hasProduction) {
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Soutirée P.1</h5><div id='power_gauge_global' class='w-100'></div></div>");
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Soutirée P.2</h5><div id='power_gauge_global2' class='w-100'></div></div>");
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Soutirée P.3</h5><div id='power_gauge_global3' class='w-100'></div></div>");
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Injectée</h5><div id='power_gauge_prod' class='w-100'></div></div>");
+                    } else {
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Soutirée P.1</h5><div id='power_gauge_global' class='w-100'></div></div>");
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Soutirée P.2</h5><div id='power_gauge_global2' class='w-100'></div></div>");
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Soutirée P.3</h5><div id='power_gauge_global3' class='w-100'></div></div>");
+                    }
+                    powerGauge += F("</div>");
+                    powerGauge += F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>");
+                    powerGauge += F("<a href='javascript:void(0)' onclick='showPopup(\"popupLinkyDatas\")' class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>");
+                    powerGauge += F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");
+                    powerGauge += F("<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>");
+                    powerGauge += F("<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>");
+                    powerGauge += F("</svg></a>");
+                    powerGauge += F("</div></div></div>");
+                } else {
+                    // Monophasé mode heure
+                    powerGauge = F("<div class='col-lg-4 col-md-12 col-12'>");
+                    powerGauge += F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
+                    powerGauge += F("<h5 class='card-title'>Linky : Puissances</h5>");
+                    powerGauge += F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
+                    powerGauge += F("<div class='row'>");
+                    if (hasProduction) {
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Soutirée</h5><div id='power_gauge_global' class='w-100'></div></div>");
+                        powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Injectée</h5><div id='power_gauge_prod' class='w-100'></div></div>");
+                    } else {
+                        powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'><h5>Soutirée</h5><div id='power_gauge_global' class='w-100'></div></div>");
+                    }
+                    powerGauge += F("</div>");
+                    powerGauge += F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJaugeHour\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>");
+                    powerGauge += F("<a href='javascript:void(0)' onclick='showPopup(\"popupLinkyDatas\")' class='position-absolute bottom-0 end-0 p-2 text-muted' title='Help'>");
+                    powerGauge += F("<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' class='bi bi-info-square' viewBox='0 0 16 16'>");
+                    powerGauge += F("<path d='M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zM2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2z'/>");
+                    powerGauge += F("<path d='m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0'/>");
+                    powerGauge += F("</svg></a>");
+                    powerGauge += F("</div></div></div>");
+                }
+            } else {
+                // Mode jour/mois/année
+                powerGauge = F("<div class='col-lg-4 col-md-12 col-12'>");
+                powerGauge += F("<div id='energyGauge' class='card p-4' style='height:100%;min-height:270px;'>");
+                powerGauge += F("<h5 class='card-title'>Linky</h5>");
+                powerGauge += F("<div class='card-body' style='margin-left:-30px;margin-right:-30px;'>");
+                powerGauge += F("<div class='row'>");
+                if (hasProduction) {
+                    powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Consommation</h5><div id='power_gauge_global' class='w-100'></div></div>");
+                    powerGauge += F("<div class='col-12 col-md-6 col-lg-6 mb-3' style='text-align:center;'><h5>Production</h5><div id='power_gauge_prod' class='w-100'></div></div>");
+                } else {
+                    powerGauge += F("<div class='col-12 col-md-12 col-lg-12 mb-3' style='text-align:center;'><h5>Consommation</h5><div id='power_gauge_global' class='w-100'></div></div>");
+                }
+                powerGauge += F("</div>");
+                powerGauge += F("<a href='javascript:void(0)' onclick='showPopup(\"popupHelpPowerJauge\")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'><span class='hi'>?</span></a>");
+                powerGauge += F("</div></div></div>");
+            }
+            linky.replace("{{power_gauge}}", powerGauge.c_str());
+        }
+
+        esp_task_wdt_reset();
+        response->print(linky.c_str());
+    }
     if (hasGaz) response->print(FPSTR(HTTP_ENERGY_GAZ));
     if (hasWater) response->print(FPSTR(HTTP_ENERGY_WATER));
     response->print(F("</div>"));
 
-    // JavaScript inline
+    // === Part 3 : JavaScript inline ===
     response->print(F(R"(<script>
 document.addEventListener('DOMContentLoaded', () => {
   const params = new URLSearchParams(window.location.search);
@@ -8267,19 +8407,13 @@ function preventCanvasZoom(canvasId) {
 }
 </script>)"));
 
-    response->print(FPSTR(HTTP_ENERGY_JAVASCRIPT));
-
-    // Power gauge (généré directement)
-    esp_task_wdt_reset();
-    writePowerGauges(response, isTriphase, hasProduction, isHourMode);
-
-    // JavaScript des graphiques
+    // === Part 4 : JavaScript des graphiques ===
     esp_task_wdt_reset();
     response->print(F("<script>$(document).ready(function() {"));
-    
+
     if (hasZLinky) {
         response->printf("calculateEnergyClass('%s','%s');", ConfigGeneral.ZLinky, time.c_str());
-        
+
         if (isHourMode) {
             response->print(createPowerGraph(ConfigGeneral.ZLinky));
             if (isTriphase) {
@@ -8287,23 +8421,30 @@ function preventCanvasZoom(canvasId) {
                 response->printf("loadPowerGaugeAbo(3,'%s','2575','%s');", ConfigGeneral.ZLinky, time.c_str());
             }
         }
-        
+
         response->print(createDistributionGraph(ConfigGeneral.ZLinky));
-        
-        int budget = ConfigNotif.OverBudgetThreshold ? 
+
+        int budget = ConfigNotif.OverBudgetThreshold ?
             getkWhBudget(String(ConfigGeneral.ZLinky), time, ConfigNotif.OverBudgetThreshold) : 0;
-        
+
         response->print(createEnergyGraph(ConfigGeneral.ZLinky, "energy",
             "['#d35400','#27ae60','#2980b9','#154360','#7f8c8d','#000000','#e74c3c','#c0392b','#f5b041','#145a32']", budget));
-        
+
+        // Presence JS (overlay sur le graphe d'énergie)
+        if (strlen(ConfigGeneral.Presence) > 0 && ConfigGeneral.enablePresenceGraph) {
+            if (isHourMode || time == "day") {
+                response->print(getPresenceJavaScript(time));
+            }
+        }
+
         response->printf("loadPowerGaugeAbo(1,'%s','1295','%s');", ConfigGeneral.ZLinky, time.c_str());
-        
+
         if (hasProduction) {
             response->printf("loadPowerGaugeAbo(4,'%s','519','%s');", ConfigGeneral.Production, time.c_str());
         }
-        
+
         response->printf("refreshStatusEnergy('%s','1295','%s','energy');", ConfigGeneral.ZLinky, time.c_str());
-        
+
         if (isTriphase) {
             response->printf("refreshGaugeAbo('%s','1295','%s');", ConfigGeneral.ZLinky, time.c_str());
             response->printf("refreshGaugeAbo('%s','2319','%s');", ConfigGeneral.ZLinky, time.c_str());
@@ -8315,21 +8456,26 @@ function preventCanvasZoom(canvasId) {
             response->printf("refreshGaugeAbo('%s','1295','%s');", ConfigGeneral.ZLinky, time.c_str());
         }
     }
-    
+
     if (hasGaz) {
         response->print(createEnergyGraph(ConfigGeneral.Gaz, "gaz",
             "['#e67e22','#2785c7','#00c967','#c9c600','#c96100','#c90000','#00c6c9','#a700c9','#c90043','#373737']", 0));
         response->printf("refreshStatusGaz('%s','%s');", ConfigGeneral.Gaz, time.c_str());
     }
-    
+
     if (hasWater) {
         response->print(createEnergyGraph(ConfigGeneral.Water, "water",
             "['#2e86c1','#2785c7','#00c967','#c9c600','#c96100','#c90000','#00c6c9','#a700c9','#c90043','#373737']", 0));
         response->printf("refreshStatusWater('%s','%s');", ConfigGeneral.Water, time.c_str());
     }
-    
+
+    // Presence init
+    if (isHourMode || time == "day") {
+        response->printf("initPresence('%s');", time.c_str());
+    }
+
     response->print(F("});"));
-    
+
     // Ajustement hauteur
     response->print(F(
         "var ET=document.getElementById('energyTrend').offsetHeight;"
@@ -8338,7 +8484,21 @@ function preventCanvasZoom(canvasId) {
         "if(cadre>720){if(EG<ET){document.getElementById('energyGauge').style.minHeight=`${ET}px`;}"
         "else{document.getElementById('energyTrend').style.minHeight=`${EG}px`;}}"
     ));
-    
+
+    // Tariff update JS
+    response->print(F(
+        "function uT(){fetch('/api/tariff').then(r=>r.json()).then(d=>{if(d.show){"
+        "document.getElementById('tariff-name').textContent=d.tariff;"
+        "document.getElementById('tariff-card').style.background=d.bgColor;"
+        "document.getElementById('tempo-section').style.display=d.isTempo?'block':'none';"
+        "if(d.isTempo){var t=document.getElementById('tempo-today');"
+        "t.className='tempo-badge '+d.today.class;t.textContent=d.today.icon;"
+        "var m=document.getElementById('tempo-tomorrow');"
+        "m.className='tempo-badge '+d.tomorrow.class;m.textContent=d.tomorrow.icon;}"
+        "document.getElementById('tariff-section').style.display='block';"
+        "}}).catch(e=>{});}uT();setInterval(uT,60000);"
+    ));
+
     response->print(F("</script>"));
 
     // Footer
@@ -8346,7 +8506,7 @@ function preventCanvasZoom(canvasId) {
     response->print(F("</html>"));
 
     request->send(response);
-    
+
     log_d("handleStatusEnergy took %lu ms", millis() - startTime);
 }
 #endif // USE_ENERGY_V2
@@ -8371,6 +8531,7 @@ function preventCanvasZoom(canvasId) {
         "<!DOCTYPE html><html lang='fr'><head>"
         "<meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<link rel='icon' type='image/x-icon' href='web/favicon.ico'>"
         "<title>LiXee TV</title>"
         "<script src='web/js/chart.umd.min.js'></script>"
         "<style>"
@@ -8639,98 +8800,96 @@ $(document).ready(function() {
 
 void handleStatusDevices(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
+
   if(!deviceList->isEmpty())
   {
     deviceList->clear();
   }
-  //String result;
-  PSRAMString result(150000);
-  result = F("<html>");
-  result += FPSTR(HTTP_HEADER);
-  
+
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+
+  response->print(F("<html>"));
+  response->print(FPSTR(HTTP_HEADER));
+
   // Styles personnalisés pour les fiches
-  result += F("<style>");
-  result += F(".status-card { background: #fff; border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; overflow: hidden; }");
-  result += F(".status-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }");
-  result += F(".card-header-custom { background: #fff; padding: 14px 18px; }");
-  result += F(".card-header-custom a { color: #222; text-decoration: none; font-weight: 600; font-size: 15px; display: flex; align-items: center; }");
-  result += F(".card-header-custom a:hover { color: #6c757d; opacity: 0.95; }");
-  result += F(".card-header-custom svg { flex-shrink: 0; margin-right: 10px; width: 18px; height: 18px; }");
-  result += F(".card-body-custom { padding: 12px 18px; }");
-  result += F(".attr-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 0; border-bottom: 1px solid #e9ecef; }");
-  result += F(".attr-row:last-child { border-bottom: none; }");
-  result += F(".attr-name { color: #6c757d; font-size: 13px; font-weight: 500; }");
-  result += F(".attr-value { font-family: 'Courier New', monospace; font-size: 14px; font-weight: 600; color: #212529; }");
-  result += F(".attr-unit { color: #adb5bd; font-size: 12px; margin-left: 4px; }");
-  result += F(".actions-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 18px; background: #f8f9fa; border-top: 1px solid #e9ecef; }");
-  result += F(".btn-action { background: #0d6efd; border: none; color: #fff; padding: 7px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.2s; }");
-  result += F(".btn-action:hover { background: #0b5ed7; }");
-  result += F(".btn-action:active { background: #0a58ca; }");
-  result += F("@media (max-width: 576px) {");
-  result += F("  .status-card { border-radius: 10px; }");
-  result += F("  .card-header-custom { padding: 12px 14px; }");
-  result += F("  .card-header-custom a { font-size: 14px; }");
-  result += F("  .card-body-custom { padding: 10px 14px; }");
-  result += F("  .attr-row { padding: 7px 0; }");
-  result += F("  .attr-name { font-size: 12px; }");
-  result += F("  .attr-value { font-size: 13px; }");
-  result += F("  .actions-bar { padding: 10px 14px; }");
-  result += F("  .btn-action { padding: 6px 12px; font-size: 12px; }");
-  result += F("}");
-  result += F("</style>");
-  
-  result += FPSTR(HTTP_MENU);
-  result.replace("{{FormattedDate}}", FormattedDate);
-  
-  result += F("<div class='container py-4'>");
-  result += F("<h4 style='color:#212529;font-weight:600;margin-bottom:20px;'>Mesures des appareils</h4>");
-  result += F("<div class='row g-4' id='masonry-grid'>");
-  
-  String str = "";
+  response->print(F("<style>"
+    ".status-card{background:#fff;border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);transition:transform 0.2s,box-shadow 0.2s;overflow:hidden}"
+    ".status-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,0.12)}"
+    ".card-header-custom{background:#fff;padding:14px 18px}"
+    ".card-header-custom a{color:#222;text-decoration:none;font-weight:600;font-size:15px;display:flex;align-items:center}"
+    ".card-header-custom a:hover{color:#6c757d;opacity:0.95}"
+    ".card-header-custom svg{flex-shrink:0;margin-right:10px;width:18px;height:18px}"
+    ".card-body-custom{padding:12px 18px}"
+    ".attr-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #e9ecef}"
+    ".attr-row:last-child{border-bottom:none}"
+    ".attr-name{color:#6c757d;font-size:13px;font-weight:500}"
+    ".attr-value{font-family:'Courier New',monospace;font-size:14px;font-weight:600;color:#212529}"
+    ".attr-unit{color:#adb5bd;font-size:12px;margin-left:4px}"
+    ".actions-bar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 18px;background:#f8f9fa;border-top:1px solid #e9ecef}"
+    ".btn-action{background:#0d6efd;border:none;color:#fff;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;transition:background 0.2s}"
+    ".btn-action:hover{background:#0b5ed7}"
+    ".btn-action:active{background:#0a58ca}"
+    "@media(max-width:576px){"
+      ".status-card{border-radius:10px}"
+      ".card-header-custom{padding:12px 14px}"
+      ".card-header-custom a{font-size:14px}"
+      ".card-body-custom{padding:10px 14px}"
+      ".attr-row{padding:7px 0}"
+      ".attr-name{font-size:12px}"
+      ".attr-value{font-size:13px}"
+      ".actions-bar{padding:10px 14px}"
+      ".btn-action{padding:6px 12px;font-size:12px}"
+    "}"
+  "</style>"));
+
+  streamSection(response, HTTP_MENU);
+
+  response->print(F("<div class='container py-4'>"));
+  response->print(F("<h4 style='color:#212529;font-weight:600;margin-bottom:20px;'>Mesures des appareils</h4>"));
+  response->print(F("<div class='row g-4' id='masonry-grid'>"));
+
   int exist = 0;
-  for (size_t ident = 0; ident < devices.size(); ident++) 
+  for (size_t ident = 0; ident < devices.size(); ident++)
   {
     esp_task_wdt_reset();
     DeviceData* device = devices[ident];
-    
+
     exist++;
-    result += F("<div class='col-12 col-sm-12 col-md-6 col-lg-4 col-xl-4'>");
-    result += F("<div class='status-card'>");
-    
+    response->print(F("<div class='col-12 col-sm-12 col-md-6 col-lg-4 col-xl-4'>"));
+    response->print(F("<div class='status-card'>"));
+
     // Header avec icône et titre
-    result += F("<div class='card-header-custom'>");
-    result += F("<a href='/configDevice?id=");
-    result += device->getDeviceID();
-    result += F("'>");
+    response->print(F("<div class='card-header-custom'>"));
+    response->print(F("<a href='/configDevice?id="));
+    response->print(device->getDeviceID());
+    response->print(F("'>"));
     // Icône device
     if (LittleFS.exists("/web/img/icon_" + device->getInfo().model +".png"))
     {
-      result += F("<img src='web/img/icon_");
-      result += device->getInfo().model;
-      result += F(".png'  height='64px'/>");
+      response->print(F("<img src='web/img/icon_"));
+      response->print(device->getInfo().model);
+      response->print(F(".png'  height='64px'/>"));
     }else{
-      result += F("<img src='web/img/icon_");
-      result += device->getInfo().device_id;
-      result += F(".png'  height='64px'/>");
-
+      response->print(F("<img src='web/img/icon_"));
+      response->print(device->getInfo().device_id);
+      response->print(F(".png'  height='64px'/>"));
     }
 
     if (device->getInfo().alias.length() > 0) {
-      result += device->getInfo().alias;
+      response->print(device->getInfo().alias);
     } else {
-      result += device->getDeviceID();
+      response->print(device->getDeviceID());
     }
-    result += F("</a></div>");
-    
+    response->print(F("</a></div>"));
+
     // Body avec attributs
-    result += F("<div class='card-body-custom'>");
-    
-    char SAddr[5];
+    response->print(F("<div class='card-body-custom'>"));
+
     int ShortAddr = device->getInfo().shortAddr.toInt();
-    snprintf(SAddr, 5, "%04X", ShortAddr);
     int DeviceId = device->getInfo().device_id.toInt();
 
-    // Get status and action from json    
+    // Get status and action from json
     if (TemplateExist(DeviceId))
     {
       TemplateData* t = device->getTemplate();
@@ -8738,11 +8897,11 @@ void handleStatusDevices(AsyncWebServerRequest *request)
           Serial.printf("WARNING: Template introuvable pour model: %s\n", device->getInfo().model.c_str());
           continue;
       }
-      
-      result += F("<div id='status_");
-      result += (String)device->getInfo().shortAddr;
-      result += F("'>");
-      
+
+      response->print(F("<div id='status_"));
+      response->print(device->getInfo().shortAddr);
+      response->print(F("'>"));
+
       for (int i = 0; i < t->StateSize(); i++)
       {
         if (t->states[i].visible)
@@ -8752,13 +8911,13 @@ void handleStatusDevices(AsyncWebServerRequest *request)
             bool afficheOK = false;
             const char *tmp = t->states[i].mode;
 
-            if ((tmp != NULL) && (tmp[0] != '\0')) 
+            if ((tmp != NULL) && (tmp[0] != '\0'))
             {
               char modeCopy[50];
               strncpy(modeCopy, tmp, sizeof(modeCopy) - 1);
               modeCopy[sizeof(modeCopy) - 1] = '\0';
-              
-              char *pch = strtok(modeCopy, ";"); 
+
+              char *pch = strtok(modeCopy, ";");
               while (pch != NULL)
               {
                 if (atoi(pch) == device->getInfo().linkyMode.toInt())
@@ -8774,91 +8933,80 @@ void handleStatusDevices(AsyncWebServerRequest *request)
 
             if (afficheOK){
               String attrIdLinky = String(ShortAddr)+"_"+String(t->states[i].cluster)+"_"+String(t->states[i].attribute);
-              result += F("<div class='attr-row'>");
-              result += F("<span class='attr-name'>");
-              result += t->states[i].name;
-              result += F("</span>");
-              result += F("<span><span class='attr-value' id='");
-              result += attrIdLinky;
-              result += F("'>");
-              result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
-              result += F("</span><span class='attr-unit'>");
-              result += (String)t->states[i].unit;
-              result += F("</span></span></div>");
+              response->print(F("<div class='attr-row'><span class='attr-name'>"));
+              response->print(t->states[i].name);
+              response->print(F("</span><span><span class='attr-value' id='"));
+              response->print(attrIdLinky);
+              response->print(F("'>"));
+              response->print(GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient));
+              response->print(F("</span><span class='attr-unit'>"));
+              response->print(t->states[i].unit);
+              response->print(F("</span></span></div>"));
             }
           }else{
             String attrId = String(ShortAddr) + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute);
-            result += F("<div class='attr-row'>");
-            result += F("<span class='attr-name'>");
-            result += t->states[i].name;
-            result += F("</span>");
-            result += F("<span><span class='attr-value' id='");
-            result += attrId;
-            result += F("'>");
-            result += GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient);
-            result += F("</span><span class='attr-unit'>");
-            result += (String)t->states[i].unit;
-            result += F("</span></span></div>");
+            response->print(F("<div class='attr-row'><span class='attr-name'>"));
+            response->print(t->states[i].name);
+            response->print(F("</span><span><span class='attr-value' id='"));
+            response->print(attrId);
+            response->print(F("'>"));
+            response->print(GetValueStatus(device->getDeviceID(), t->states[i].cluster, t->states[i].attribute, (String)t->states[i].type, t->states[i].coefficient));
+            response->print(F("</span><span class='attr-unit'>"));
+            response->print(t->states[i].unit);
+            response->print(F("</span></span></div>"));
           }
         }
       }
-      result += F("</div>"); // fin status_
-      result += F("</div>"); // fin card-body-custom
-      
+      response->print(F("</div>")); // fin status_
+      response->print(F("</div>")); // fin card-body-custom
+
       // Actions bar
       if (t->ActionSize() > 0) {
-        result += F("<div class='actions-bar'>");
+        response->print(F("<div class='actions-bar'>"));
         for (int i = 0; i < t->ActionSize(); i++)
         {
           esp_task_wdt_reset();
-          result += F("<button onclick=\"ZigbeeAction(");
-          result += device->getInfo().shortAddr;
-          result += ",";
-          result += String(t->actions[i].command);
-          result += ",";
-          result += String(t->actions[i].endpoint);
-          result += ",";
-          result += String(t->actions[i].value);
+          response->printf("<button onclick=\"ZigbeeAction(%s,%d,%d,%d",
+            device->getInfo().shortAddr.c_str(),
+            t->actions[i].command,
+            t->actions[i].endpoint,
+            t->actions[i].value);
           if (t->actions[i].command == 400) {
-            result += F(",");
-            result += String(t->actions[i].cluster);
-            result += F(",");
-            result += String(t->actions[i].manufacturerCode);
+            response->printf(",%d,%d", t->actions[i].cluster, t->actions[i].manufacturerCode);
           }
-          result += F(");\" class='btn-action'>");
-          result += t->actions[i].name;
-          result += F("</button>");
+          response->print(F(");\" class='btn-action'>"));
+          response->print(t->actions[i].name);
+          response->print(F("</button>"));
         }
-        result += F("</div>");
+        response->print(F("</div>"));
       }
     } else {
-      result += F("</div>"); // fin card-body-custom si pas de template
+      response->print(F("</div>")); // fin card-body-custom si pas de template
     }
-    
-    result += F("</div></div>"); // fin status-card et col
-    
+
+    response->print(F("</div></div>")); // fin status-card et col
+
     vTaskDelay(1);
   }
-  result += F("</div>");
-  result += F("</div>");
+  response->print(F("</div>"));
+  response->print(F("</div>"));
 
   if (exist>0)
   {
-    result += F("<script>getDeviceValue();</script>");
-    result += FPSTR(HTTP_SCRIPT_MASONRY);
+    response->print(F("<script>getDeviceValue();</script>"));
+    response->print(FPSTR(HTTP_SCRIPT_MASONRY));
   }else{
-    result += "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>";
+    response->print(F("<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>"));
   }
-  result +=footer();
-  result += F("</html>");
+  response->print(footer());
+  response->print(F("</html>"));
 
-
-  request->send(200, F("text/html"), result.c_str());
-
+  request->send(response);
 }
 
 void handleConfigGeneral(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -8895,6 +9043,7 @@ void handleConfigGeneral(AsyncWebServerRequest *request)
 
 void handleConfigZigbee(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
 
   result += FPSTR(HTTP_HEADER);
@@ -8920,6 +9069,7 @@ void handleConfigZigbee(AsyncWebServerRequest *request)
 
 void handleConfigHorloge(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -8964,6 +9114,7 @@ void handleGetMQTTStatus(AsyncWebServerRequest *request)
 
 void handleConfigMQTT(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -9034,6 +9185,7 @@ void handleConfigMQTT(AsyncWebServerRequest *request)
 
 void handleConfigHTTP(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -9098,6 +9250,7 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
 
 void handleConfigRules(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -9201,6 +9354,7 @@ void handleConfigRules(AsyncWebServerRequest *request)
 
 void handleEditRule(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String ruleName = "";
   if (request->hasArg("name")) {
     ruleName = request->arg("name");
@@ -9632,6 +9786,7 @@ void APIToggleRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, si
 // Handler pour afficher la page
 void handleAddRule(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -9806,6 +9961,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
 
 void handleConfigEnergy(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   PSRAMString result;
   String listLinky,listProd,ListGaz,ListWater,listDevicesAction;
   result += F("<html>");
@@ -10016,6 +10172,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
 // ==================== Config Notifications ====================
 
 void handleConfigNotifications(AsyncWebServerRequest *request) {
+  if (!checkHeapForPage(request)) return;
   PSRAMString result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10147,6 +10304,7 @@ void handleSaveConfigNotifications(AsyncWebServerRequest *request) {
 
 void handleConfigGaz(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result,list;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10205,6 +10363,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
 
 void handleConfigWater(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result,list;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10262,6 +10421,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
 
 void handleConfigNotificationMail(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10293,6 +10453,7 @@ void handleConfigNotificationMail(AsyncWebServerRequest *request)
 
 void handleConfigWebPush(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10375,6 +10536,7 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
 
 void handleConfigTunnel(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10584,6 +10746,7 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
 
 void handleConfigMarstek(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10614,6 +10777,7 @@ void handleConfigMarstek(AsyncWebServerRequest *request)
 
 void handleConfigUdpClient(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10674,6 +10838,7 @@ void handleConfigUdpClient(AsyncWebServerRequest *request)
 
 void handleConfigWifi(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10759,6 +10924,7 @@ void handleConfigWifi(AsyncWebServerRequest *request)
 
 void handleLogs(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
 
   result += F("<html>");
@@ -10799,7 +10965,7 @@ void handleLogs(AsyncWebServerRequest *request)
 
 void handleNotifications(AsyncWebServerRequest *request)
 {
-
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -10815,8 +10981,8 @@ void handleNotifications(AsyncWebServerRequest *request)
 
 void handleTools(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
 
-  
  /* AsyncWebServerResponse *response = request->beginChunkedResponse("text/plain",[](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
     
     String result; 
@@ -10911,6 +11077,7 @@ void handlePoll(AsyncWebServerRequest * request)
 
 
 void handleHelp(AsyncWebServerRequest * request) {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -11051,6 +11218,7 @@ static void untarApplyAndRestore(const char *tarPath) {
   mtar_header_t h;
   while (mtar_read_header(&tar, &h) == MTAR_ESUCCESS) {
     esp_task_wdt_reset();
+    if (tunnel) tunnel->loop();
     String name = String(h.name);
     // dossier ?
     if (h.type == '5') {
@@ -11075,6 +11243,7 @@ static void untarApplyAndRestore(const char *tarPath) {
       uint8_t buf[512];
       while (rem) {
         esp_task_wdt_reset();
+        if (tunnel) tunnel->loop();
         uint32_t n = rem > sizeof(buf) ? sizeof(buf) : rem;
         mtar_read_data(&tar, buf, n);
         if (Update.write(buf, n) != n) {
@@ -11103,6 +11272,7 @@ static void untarApplyAndRestore(const char *tarPath) {
       log_w("fichier : %s - size : %d",path.c_str(),h.size);
       while (rem) {
         esp_task_wdt_reset();
+        if (tunnel) tunnel->loop();
         uint32_t n = rem > sizeof(buf) ? sizeof(buf) : rem;
         mtar_read_data(&tar, buf, n);
         f.write(buf, n);
@@ -11161,7 +11331,7 @@ void handleDoRestore(AsyncWebServerRequest *request,
     updateStatus.rebootRequested = true;
 
     executeReboot=true;
-    
+
     request->send(200, "text/plain", "Mise à jour terminée");
 
 
@@ -11169,7 +11339,169 @@ void handleDoRestore(AsyncWebServerRequest *request,
   }
 }
 
+// ---- Chunked restore via tunnel (small HTTP requests) ----
+// Each 8KB raw chunk is base64-encoded client-side (~11KB text),
+// which stays under the 15KB WebSocket tunnel limit.
+// Chunks are sent sequentially; file is kept open in append mode.
 
+static struct {
+    bool active;
+    size_t totalSize;
+    size_t received;
+    size_t nextChunk;
+    File file;
+} _chunkedRestore = {false, 0, 0, 0, File()};
+
+static const char* _crTmpPath = "/rt/upload.tar";
+
+// Shared body accumulation handler (used by both init and chunk)
+static void _crAccumBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+    if (index == 0) {
+        auto* buf = (uint8_t*)ps_malloc(total + 1);
+        if (!buf) buf = (uint8_t*)malloc(total + 1);
+        request->_tempObject = buf;
+    }
+    if (request->_tempObject) {
+        memcpy((uint8_t*)request->_tempObject + index, data, len);
+        if (index + len == total) {
+            ((uint8_t*)request->_tempObject)[total] = '\0';
+        }
+    }
+}
+
+// POST /restoreInit  body: {"totalSize":12345}
+void handleRestoreInitResponse(AsyncWebServerRequest *request) {
+    if (!request->_tempObject) {
+        request->send(400, "application/json", "{\"error\":\"no body\"}");
+        return;
+    }
+    SpiRamJsonDocument doc(256);
+    DeserializationError err = deserializeJson(doc, (const char*)request->_tempObject);
+    free(request->_tempObject);
+    request->_tempObject = nullptr;
+
+    if (err || !doc.containsKey("totalSize")) {
+        request->send(400, "application/json", "{\"error\":\"bad json\"}");
+        return;
+    }
+
+    _chunkedRestore.totalSize = doc["totalSize"].as<size_t>();
+    _chunkedRestore.received = 0;
+    _chunkedRestore.nextChunk = 0;
+
+    if (LittleFS.exists(_crTmpPath)) LittleFS.remove(_crTmpPath);
+    _chunkedRestore.file = LittleFS.open(_crTmpPath, "w");
+    if (!_chunkedRestore.file) {
+        request->send(500, "application/json", "{\"error\":\"fs open\"}");
+        return;
+    }
+    _chunkedRestore.active = true;
+
+    updateStatus.statusManuel = "Téléchargement ...";
+    updateStatus.progressManuel = 0;
+
+    Serial.printf("[ChunkedRestore] Init: %u bytes\n", _chunkedRestore.totalSize);
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /restoreChunk?n=<index>  body: base64-encoded raw bytes
+// Sequential append - chunks must arrive in order
+void handleRestoreChunkResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedRestore.active || !_chunkedRestore.file) {
+        if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+    if (!request->_tempObject) {
+        request->send(400, "application/json", "{\"error\":\"no body\"}");
+        return;
+    }
+
+    // Decode base64 body to raw binary
+    const char* b64 = (const char*)request->_tempObject;
+    size_t b64Len = strlen(b64);
+
+    size_t outLen = 0;
+    mbedtls_base64_decode(nullptr, 0, &outLen, (const uint8_t*)b64, b64Len);
+
+    uint8_t* raw = (uint8_t*)ps_malloc(outLen);
+    if (!raw) raw = (uint8_t*)malloc(outLen);
+    if (!raw) {
+        free(request->_tempObject); request->_tempObject = nullptr;
+        request->send(500, "application/json", "{\"error\":\"OOM decode\"}");
+        return;
+    }
+
+    size_t actualLen = 0;
+    int ret = mbedtls_base64_decode(raw, outLen, &actualLen, (const uint8_t*)b64, b64Len);
+    free(request->_tempObject);
+    request->_tempObject = nullptr;
+
+    if (ret != 0) {
+        free(raw);
+        request->send(400, "application/json", "{\"error\":\"b64 decode\"}");
+        return;
+    }
+
+    // Append to file
+    esp_task_wdt_reset();
+    size_t written = _chunkedRestore.file.write(raw, actualLen);
+    free(raw);
+
+    _chunkedRestore.received += written;
+    _chunkedRestore.nextChunk++;
+
+    // Update progress (0-50% for upload phase)
+    if (_chunkedRestore.totalSize > 0) {
+        int pct = (_chunkedRestore.received * 50) / _chunkedRestore.totalSize;
+        updateStatus.progressManuel = pct;
+    }
+
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// Flag checked in main loop() to apply the restore outside of AsyncTCP context
+static volatile bool _restoreApplyPending = false;
+
+// Called from main loop() - safe context for tunnel->loop() inside untarApplyAndRestore
+void chunkedRestoreApplyIfPending() {
+    if (!_restoreApplyPending) return;
+    _restoreApplyPending = false;
+
+    Serial.println("[ChunkedRestore] Applying update from main loop...");
+    updateStatus.statusManuel = "Installation ...";
+    updateStatus.progressManuel = 60;
+
+    untarApplyAndRestore(_crTmpPath);
+    esp_task_wdt_reset();
+
+    updateStatus.statusManuel = "Redémarrage ...";
+    updateStatus.progressManuel = 100;
+    updateStatus.rebootRequested = true;
+    executeReboot = true;
+}
+
+// POST /restoreFinish
+void handleRestoreFinishResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedRestore.active) {
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+
+    _chunkedRestore.file.close();
+    _chunkedRestore.active = false;
+
+    Serial.printf("[ChunkedRestore] File complete: %u bytes received\n", _chunkedRestore.received);
+
+    // Defer untarApplyAndRestore to main loop - calling it here would crash
+    // because we're in AsyncTCP callback context and tunnel->loop() inside
+    // untarApplyAndRestore would re-enter the network stack.
+    updateStatus.statusManuel = "Installation en attente ...";
+    updateStatus.progressManuel = 55;
+    _restoreApplyPending = true;
+
+    request->send(200, "application/json", "{\"ok\":true}");
+}
 
 size_t content_len;
 #define U_PART U_SPIFFS
@@ -11204,8 +11536,146 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String& filename, size
   }
 }
 
+// ===== Chunked firmware update via tunnel =====
+// Same pattern as chunked restore: 8KB raw → ~11KB base64 per chunk,
+// under the 15KB WebSocket tunnel limit.
+// Writes directly to flash via Update API (no temp file needed).
 
+static struct {
+    bool active;
+    size_t totalSize;
+    size_t received;
+    size_t nextChunk;
+    int cmd;  // U_FLASH or U_SPIFFS
+} _chunkedFwUpdate = {false, 0, 0, 0, U_FLASH};
 
+// POST /fwUpdateInit  body: {"totalSize":12345,"filename":"firmware.bin"}
+void handleFwUpdateInitResponse(AsyncWebServerRequest *request) {
+    if (!request->_tempObject) {
+        request->send(400, "application/json", "{\"error\":\"no body\"}");
+        return;
+    }
+    SpiRamJsonDocument doc(256);
+    DeserializationError err = deserializeJson(doc, (const char*)request->_tempObject);
+    free(request->_tempObject);
+    request->_tempObject = nullptr;
+
+    if (err || !doc.containsKey("totalSize")) {
+        request->send(400, "application/json", "{\"error\":\"bad json\"}");
+        return;
+    }
+
+    _chunkedFwUpdate.totalSize = doc["totalSize"].as<size_t>();
+    _chunkedFwUpdate.received = 0;
+    _chunkedFwUpdate.nextChunk = 0;
+
+    // Detect partition type from filename
+    String fname = doc["filename"] | "firmware.bin";
+    _chunkedFwUpdate.cmd = (fname.indexOf("spiffs") > -1) ? U_PART : U_FLASH;
+
+    if (!Update.begin(_chunkedFwUpdate.totalSize, _chunkedFwUpdate.cmd)) {
+        Update.printError(Serial);
+        request->send(500, "application/json", "{\"error\":\"update begin failed\"}");
+        return;
+    }
+
+    _chunkedFwUpdate.active = true;
+
+    updateStatus.statusManuel = "Téléchargement firmware ...";
+    updateStatus.progressManuel = 0;
+
+    Serial.printf("[ChunkedFwUpdate] Init: %u bytes, cmd=%d\n", _chunkedFwUpdate.totalSize, _chunkedFwUpdate.cmd);
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /fwUpdateChunk?n=<index>  body: base64-encoded raw bytes
+void handleFwUpdateChunkResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedFwUpdate.active) {
+        if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+    if (!request->_tempObject) {
+        request->send(400, "application/json", "{\"error\":\"no body\"}");
+        return;
+    }
+
+    // Decode base64 body to raw binary
+    const char* b64 = (const char*)request->_tempObject;
+    size_t b64Len = strlen(b64);
+
+    size_t outLen = 0;
+    mbedtls_base64_decode(nullptr, 0, &outLen, (const uint8_t*)b64, b64Len);
+
+    uint8_t* raw = (uint8_t*)ps_malloc(outLen);
+    if (!raw) raw = (uint8_t*)malloc(outLen);
+    if (!raw) {
+        free(request->_tempObject); request->_tempObject = nullptr;
+        request->send(500, "application/json", "{\"error\":\"OOM decode\"}");
+        return;
+    }
+
+    size_t actualLen = 0;
+    int ret = mbedtls_base64_decode(raw, outLen, &actualLen, (const uint8_t*)b64, b64Len);
+    free(request->_tempObject);
+    request->_tempObject = nullptr;
+
+    if (ret != 0) {
+        free(raw);
+        request->send(400, "application/json", "{\"error\":\"b64 decode\"}");
+        return;
+    }
+
+    // Write to flash
+    esp_task_wdt_reset();
+    if (Update.write(raw, actualLen) != actualLen) {
+        free(raw);
+        Update.printError(Serial);
+        request->send(500, "application/json", "{\"error\":\"flash write\"}");
+        return;
+    }
+    free(raw);
+
+    _chunkedFwUpdate.received += actualLen;
+    _chunkedFwUpdate.nextChunk++;
+
+    // Update progress (0-90% for upload phase)
+    if (_chunkedFwUpdate.totalSize > 0) {
+        int pct = (_chunkedFwUpdate.received * 90) / _chunkedFwUpdate.totalSize;
+        updateStatus.progressManuel = pct;
+    }
+
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /fwUpdateFinish
+void handleFwUpdateFinishResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedFwUpdate.active) {
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+
+    _chunkedFwUpdate.active = false;
+
+    Serial.printf("[ChunkedFwUpdate] Complete: %u bytes received\n", _chunkedFwUpdate.received);
+
+    if (!Update.end(true)) {
+        Update.printError(Serial);
+        request->send(500, "application/json", "{\"error\":\"update end failed\"}");
+        return;
+    }
+
+    updateStatus.statusManuel = "Redémarrage ...";
+    updateStatus.progressManuel = 100;
+    updateStatus.rebootRequested = true;
+
+    request->send(200, "application/json", "{\"ok\":true}");
+
+    Serial.println("[ChunkedFwUpdate] Update complete, rebooting...");
+    Serial.flush();
+    delay(500);
+    ESP.restart();
+}
 
 void handleDoUploadOTA(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
   String logmessage="";
@@ -11242,6 +11712,121 @@ void handleDoUploadOTA(AsyncWebServerRequest *request, const String& filename, s
     
     request->redirect("/configDevices");
   }
+}
+
+// ---- Chunked OTA upload via tunnel ----
+// Same pattern as chunked restore but writes to /ota/<deviceId>.ota
+
+static struct {
+    bool active;
+    size_t totalSize;
+    size_t received;
+    String deviceId;
+    File file;
+} _chunkedOta = {false, 0, 0, "", File()};
+
+// POST /otaInit?id=<deviceId>  body: {"totalSize":12345}
+void handleOtaInitResponse(AsyncWebServerRequest *request) {
+    if (!request->_tempObject) {
+        request->send(400, "application/json", "{\"error\":\"no body\"}");
+        return;
+    }
+    SpiRamJsonDocument doc(256);
+    DeserializationError err = deserializeJson(doc, (const char*)request->_tempObject);
+    free(request->_tempObject);
+    request->_tempObject = nullptr;
+
+    if (err || !doc.containsKey("totalSize")) {
+        request->send(400, "application/json", "{\"error\":\"bad json\"}");
+        return;
+    }
+
+    String deviceId = "";
+    if (request->hasParam("id")) {
+        deviceId = request->getParam("id")->value();
+    }
+    if (deviceId.length() == 0) {
+        request->send(400, "application/json", "{\"error\":\"missing id\"}");
+        return;
+    }
+
+    _chunkedOta.totalSize = doc["totalSize"].as<size_t>();
+    _chunkedOta.received = 0;
+    _chunkedOta.deviceId = deviceId + ".ota";
+
+    String path = "/ota/" + _chunkedOta.deviceId;
+    if (LittleFS.exists(path)) LittleFS.remove(path);
+    _chunkedOta.file = LittleFS.open(path, "w");
+    if (!_chunkedOta.file) {
+        request->send(500, "application/json", "{\"error\":\"fs open\"}");
+        return;
+    }
+    _chunkedOta.active = true;
+
+    Serial.printf("[ChunkedOTA] Init: %u bytes for %s\n", _chunkedOta.totalSize, _chunkedOta.deviceId.c_str());
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /otaChunk  body: base64-encoded raw bytes
+void handleOtaChunkResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedOta.active || !_chunkedOta.file) {
+        if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+    if (!request->_tempObject) {
+        request->send(400, "application/json", "{\"error\":\"no body\"}");
+        return;
+    }
+
+    const char* b64 = (const char*)request->_tempObject;
+    size_t b64Len = strlen(b64);
+
+    size_t outLen = 0;
+    mbedtls_base64_decode(nullptr, 0, &outLen, (const uint8_t*)b64, b64Len);
+
+    uint8_t* raw = (uint8_t*)ps_malloc(outLen);
+    if (!raw) raw = (uint8_t*)malloc(outLen);
+    if (!raw) {
+        free(request->_tempObject); request->_tempObject = nullptr;
+        request->send(500, "application/json", "{\"error\":\"OOM\"}");
+        return;
+    }
+
+    size_t actualLen = 0;
+    int ret = mbedtls_base64_decode(raw, outLen, &actualLen, (const uint8_t*)b64, b64Len);
+    free(request->_tempObject);
+    request->_tempObject = nullptr;
+
+    if (ret != 0) {
+        free(raw);
+        request->send(400, "application/json", "{\"error\":\"b64 decode\"}");
+        return;
+    }
+
+    esp_task_wdt_reset();
+    _chunkedOta.file.write(raw, actualLen);
+    free(raw);
+    _chunkedOta.received += actualLen;
+
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /otaFinish
+void handleOtaFinishResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedOta.active) {
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+
+    _chunkedOta.file.close();
+    _chunkedOta.active = false;
+
+    Serial.printf("[ChunkedOTA] Complete: %u bytes for %s\n", _chunkedOta.received, _chunkedOta.deviceId.c_str());
+
+    loadOTAFile(_chunkedOta.deviceId.c_str());
+
+    request->send(200, "application/json", "{\"ok\":true,\"redirect\":\"/configDevices\"}");
 }
 
 void handleDoUploadHistory(AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data, size_t len, bool final) {
@@ -11702,6 +12287,7 @@ void handleToolCreateBackup(AsyncWebServerRequest *request)
 
 void handleToolBackup(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -11938,6 +12524,8 @@ bool checkUpdateFirmware()
 
     while(bytesRead < contentLength) {
       esp_task_wdt_reset();
+      // Maintenir le tunnel actif pendant le téléchargement
+      if (tunnel) tunnel->loop();
       // get available data size
       size_t size = stream->available();
       if (!size) {
@@ -11971,6 +12559,7 @@ bool checkUpdateFirmware()
 
 void handleToolUpdate(AsyncWebServerRequest *request)
 {
+    if (!checkHeapForPage(request)) return;
     String result;
     result += F("<html>");
     result += FPSTR(HTTP_HEADER);
@@ -11990,6 +12579,7 @@ void handleToolUpdate(AsyncWebServerRequest *request)
 
 void handleConfigFiles(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12050,6 +12640,7 @@ void handleConfigFiles(AsyncWebServerRequest *request)
 
 void handleDebugFiles(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12241,6 +12832,7 @@ void handleDebugFiles(AsyncWebServerRequest *request)
 
 void handleFSbrowserBackup(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12301,6 +12893,7 @@ void handleFSbrowserBackup(AsyncWebServerRequest *request)
 
 void handleFSbrowser(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12579,6 +13172,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
 
 void handleCreateDevice(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12591,6 +13185,7 @@ void handleCreateDevice(AsyncWebServerRequest *request)
 
 void handleOTA(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12603,6 +13198,7 @@ void handleOTA(AsyncWebServerRequest *request)
 
 void handleCreateHistory(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12615,6 +13211,7 @@ void handleCreateHistory(AsyncWebServerRequest *request)
 
 void handleHistory(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12901,6 +13498,7 @@ void handleHistory(AsyncWebServerRequest *request)
 
 void handleCreateTemplate(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -12914,6 +13512,7 @@ void handleCreateTemplate(AsyncWebServerRequest *request)
 
 void handleTemplates(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -13235,15 +13834,42 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += F("}catch(e){alert('JSON invalide: '+e.message);}");
   result += F("}");
 
+  // Tunnel detection
+  result += F("function _isTunnel(){return window.location.hostname.indexOf('lixee-box.fr')>=0;}");
+
+  // Chunked save for tunnel (sends text in ~8KB chunks)
+  result += F("async function _saveChunked(filename,content){");
+  result += F("var CHUNK=8192;");
+  result += F("var r=await fetch('/templateSaveInit?file='+encodeURIComponent(filename),{method:'POST'});");
+  result += F("if(!r.ok)throw new Error('init: '+r.status);");
+  result += F("for(var i=0;i<content.length;i+=CHUNK){");
+  result += F("var chunk=content.substring(i,i+CHUNK);");
+  result += F("r=await fetch('/templateSaveChunk',{method:'POST',headers:{'Content-Type':'text/plain'},body:chunk});");
+  result += F("if(!r.ok)throw new Error('chunk: '+r.status);");
+  result += F("}");
+  result += F("r=await fetch('/templateSaveFinish',{method:'POST'});");
+  result += F("if(!r.ok){var e=await r.json().catch(function(){return{error:r.status}});throw new Error(e.error||r.status);}");
+  result += F("return r.json();");
+  result += F("}");
+
+  // Generic save (auto-detects tunnel vs direct)
+  result += F("function _doSave(filename,content,onSuccess,onError){");
+  result += F("if(_isTunnel()){");
+  result += F("_saveChunked(filename,content).then(onSuccess).catch(function(e){onError(e.message);});");
+  result += F("}else{");
+  result += F("$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:content,2:'save'},dataType:'json',");
+  result += F("success:onSuccess,");
+  result += F("error:function(xhr){onError((xhr.responseJSON||{}).error||'Erreur inconnue');}");
+  result += F("});");
+  result += F("}");
+  result += F("}");
+
   // Sauvegarde
   result += F("function saveTemplate(){");
   result += F("var filename=$('#filename').val();");
   result += F("var content=$('#file').val();");
   result += F("if(!validateJson()){alert('Corrigez les erreurs JSON avant de sauvegarder');return;}");
-  result += F("$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:content,2:'save'},dataType:'json',");
-  result += F("success:function(d){if(d.success){hasChanges=false;alert('Template sauvegardé!');}},");
-  result += F("error:function(xhr){var r=xhr.responseJSON||{error:'Erreur inconnue'};alert('Erreur: '+r.error);}");
-  result += F("});");
+  result += F("_doSave(filename,content,function(d){hasChanges=false;alert('Template sauvegardé!');},function(e){alert('Erreur: '+e);});");
   result += F("}");
 
   // Suppression
@@ -13276,10 +13902,7 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += F("var filename=prompt('Nom du fichier:',file.name);");
   result += F("if(!filename)return;");
   result += F("if(!filename.endsWith('.json'))filename+='.json';");
-  result += F("$.ajax({url:'saveFileTemplates',type:'POST',data:{0:filename,1:ev.target.result,2:'save'},dataType:'json',");
-  result += F("success:function(){location.reload();},");
-  result += F("error:function(xhr){alert('Erreur: '+(xhr.responseJSON||{}).error||'Erreur inconnue');}");
-  result += F("});");
+  result += F("_doSave(filename,ev.target.result,function(){location.reload();},function(e){alert('Erreur: '+e);});");
   result += F("}catch(err){alert('JSON invalide: '+err.message);}");
   result += F("};");
   result += F("reader.readAsText(file);");
@@ -13292,10 +13915,7 @@ void handleTemplates(AsyncWebServerRequest *request)
   result += F("if(!name)return;");
   result += F("if(!name.endsWith('.json'))name+='.json';");
   result += F("var defaultContent='{\\n  \"default\": [\\n    {\\n      \"status\": [],\\n      \"action\": [],\\n      \"bind\": \"\",\\n      \"report\": []\\n    }\\n  ]\\n}';");
-  result += F("$.ajax({url:'saveFileTemplates',type:'POST',data:{0:name,1:defaultContent,2:'save'},dataType:'json',");
-  result += F("success:function(){location.reload();},");
-  result += F("error:function(xhr){alert('Erreur: '+(xhr.responseJSON||{}).error||'Erreur inconnue');}");
-  result += F("});");
+  result += F("_doSave(name,defaultContent,function(){location.reload();},function(e){alert('Erreur: '+e);});");
   result += F("}");
 
   // Détecter les changements
@@ -13314,6 +13934,7 @@ void handleTemplates(AsyncWebServerRequest *request)
 
 void handleRules(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -13776,6 +14397,119 @@ void handleSaveTemplates(AsyncWebServerRequest *request)
   request->send(200, F("application/json"), F("{\"success\":true}"));
 }
 
+// ===== Chunked template save via tunnel =====
+// Large JSON templates exceed the 15KB WebSocket tunnel frame limit
+// when form-encoded. Split into raw text chunks of ~8KB each.
+
+static struct {
+    bool active;
+    String filename;
+    size_t received;
+    File file;
+} _chunkedTemplate = {false, "", 0, File()};
+
+static const char* _ctTmpPath = "/rt/template_tmp.json";
+
+// POST /templateSaveInit?file=xxx.json
+void handleTemplateSaveInitResponse(AsyncWebServerRequest *request) {
+    if (!request->hasParam("file")) {
+        request->send(400, "application/json", "{\"error\":\"missing file param\"}");
+        return;
+    }
+    _chunkedTemplate.filename = request->getParam("file")->value();
+    _chunkedTemplate.received = 0;
+
+    if (LittleFS.exists(_ctTmpPath)) LittleFS.remove(_ctTmpPath);
+    _chunkedTemplate.file = LittleFS.open(_ctTmpPath, "w");
+    if (!_chunkedTemplate.file) {
+        request->send(500, "application/json", "{\"error\":\"fs open\"}");
+        return;
+    }
+    _chunkedTemplate.active = true;
+
+    Serial.printf("[ChunkedTemplate] Init: %s\n", _chunkedTemplate.filename.c_str());
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /templateSaveChunk  body: raw text chunk
+void handleTemplateSaveChunkResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedTemplate.active || !_chunkedTemplate.file) {
+        if (request->_tempObject) { free(request->_tempObject); request->_tempObject = nullptr; }
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+    if (!request->_tempObject) {
+        request->send(400, "application/json", "{\"error\":\"no body\"}");
+        return;
+    }
+
+    const char* text = (const char*)request->_tempObject;
+    size_t len = strlen(text);
+    _chunkedTemplate.file.write((const uint8_t*)text, len);
+    _chunkedTemplate.received += len;
+
+    free(request->_tempObject);
+    request->_tempObject = nullptr;
+
+    request->send(200, "application/json", "{\"ok\":true}");
+}
+
+// POST /templateSaveFinish?action=save|delete
+void handleTemplateSaveFinishResponse(AsyncWebServerRequest *request) {
+    if (!_chunkedTemplate.active) {
+        request->send(409, "application/json", "{\"error\":\"not initialized\"}");
+        return;
+    }
+
+    _chunkedTemplate.file.close();
+    _chunkedTemplate.active = false;
+
+    String filepath = "/tp/" + _chunkedTemplate.filename;
+
+    Serial.printf("[ChunkedTemplate] Complete: %u bytes for %s\n",
+                  _chunkedTemplate.received, filepath.c_str());
+
+    // Read back and validate JSON
+    File tmpFile = LittleFS.open(_ctTmpPath, "r");
+    if (!tmpFile) {
+        LittleFS.remove(_ctTmpPath);
+        request->send(500, "application/json", "{\"error\":\"read failed\"}");
+        return;
+    }
+    size_t fSize = tmpFile.size();
+    SpiRamJsonDocument doc(fSize + 256);
+    DeserializationError error = deserializeJson(doc, tmpFile);
+    tmpFile.close();
+
+    if (error) {
+        LittleFS.remove(_ctTmpPath);
+        String errJson = "{\"success\":false,\"error\":\"" + String(error.c_str()) + "\"}";
+        request->send(400, "application/json", errJson);
+        return;
+    }
+
+    // Move to final location
+    if (LittleFS.exists(filepath)) LittleFS.remove(filepath);
+    LittleFS.rename(_ctTmpPath, filepath.c_str());
+
+    // Reload template cache
+    templateCache.reload(_chunkedTemplate.filename);
+
+    // Reload devices using this template
+    String templateId = _chunkedTemplate.filename;
+    if (templateId.endsWith(".json")) {
+        templateId = templateId.substring(0, templateId.length() - 5);
+    }
+    for (size_t i = 0; i < devices.size(); i++) {
+        DeviceData* device = devices[i];
+        if (device->getInfo().device_id == templateId) {
+            device->reloadTemplate();
+        }
+    }
+
+    request->send(200, "application/json", "{\"success\":true}");
+}
+
 void handleSaveRules(AsyncWebServerRequest *request)
 {
   if (request->method() != HTTP_POST)
@@ -13827,6 +14561,7 @@ void handleSaveRules(AsyncWebServerRequest *request)
 
 void handleJavascript(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
   result += F("<html>");
   result += FPSTR(HTTP_HEADER);
@@ -15257,6 +15992,7 @@ void handleSaveWifi(AsyncWebServerRequest *request)
 
 void handleConfigDevices(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   String result;
 
   result = F("<html>");
@@ -15444,6 +16180,7 @@ void handleConfigDevices(AsyncWebServerRequest *request)
 // ============================================================
 void handleConfigDevice(AsyncWebServerRequest *request)
 {
+  if (!checkHeapForPage(request)) return;
   // Vérifier le paramètre id
   if (!request->hasParam("id")) {
     request->redirect("/configDevices");
@@ -15608,10 +16345,12 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("}");
   
   // Fonction d'écriture d'attribut avec support manufacturer specific
-  result += F("function writeAttribute(btnElement, shortAddr, endpoint, cluster, attr, type, inputId, mfrCode) {");
+  result += F("function writeAttribute(btnElement, shortAddr, endpoint, cluster, attr, type, inputId, mfrCode, coeff) {");
   result += F("  var inp = document.getElementById(inputId);");
+  result += F("  var val = inp.value;");
+  result += F("  if(coeff && coeff != 1 && coeff != 0) { val = Math.round(parseFloat(val) / coeff); }");
   result += F("  if(btnElement) btnElement.classList.add('pending');");
-  result += F("  var url = '/ZigbeeWriteAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr + '&type=' + type + '&value=' + encodeURIComponent(inp.value);");
+  result += F("  var url = '/ZigbeeWriteAttribut?addr=' + shortAddr + '&endpoint=' + endpoint + '&cluster=' + cluster + '&attr=' + attr + '&type=' + type + '&value=' + encodeURIComponent(val);");
   result += F("  if(mfrCode && mfrCode > 0) { url += '&mfr=' + mfrCode; }");
   result += F("  fetch(url)");
   result += F("  .then(r => r.json()).then(d => {");
@@ -15893,6 +16632,8 @@ void handleConfigDevice(AsyncWebServerRequest *request)
         result += attrId;
         result += F("', ");
         result += String(t->states[i].manufacturerCode);
+        result += F(", ");
+        result += String(t->states[i].coefficient, 6);
         result += F(")\" title='Écrire'>&#9998;</button>");
       }
       result += F("</td>");
@@ -15948,16 +16689,22 @@ void handleConfigDevice(AsyncWebServerRequest *request)
 
 void handleAssistDevice(AsyncWebServerRequest *request)
 {
-  String result;
+  if (!checkHeapForPage(request)) return;
 
+  Serial.printf("[AssistDevice] Heap: %u, client: %s\n", ESP.getFreeHeap(), request->client()->remoteIP().toString().c_str());
+
+  // Construction String pour garantir Content-Length (compatibilité tunnel)
+  String result;
+  result.reserve(8192);
   result = F("<html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ASSIST_DEVICE);
-  result+=footerAssist();
+  result += footerAssist();
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("</html>");
 
+  Serial.printf("[AssistDevice] Sending %u bytes text/html\n", result.length());
   request->send(200, F("text/html"), result);
 }
 
@@ -16018,27 +16765,31 @@ void handleZigbeeWriteattribut(AsyncWebServerRequest *request)
     }
   
   uint16_t shortAddr = request->getParam(F("addr"))->value().toInt();
+    uint8_t endpoint = 1;
+    if (request->hasParam(F("endpoint"))) {
+        endpoint = request->getParam(F("endpoint"))->value().toInt();
+    }
     uint16_t cluster = request->getParam(F("cluster"))->value().toInt();
     uint16_t attribute = request->getParam(F("attr"))->value().toInt();
     uint8_t type = request->getParam(F("type"))->value().toInt();
     String valueStr = request->getParam(F("value"))->value();
-    
-    Serial.printf("ZigbeeWrite: addr=%04X cluster=%04X attr=%04X type=%02X value=%s\n",
-                  shortAddr, cluster, attribute, type, valueStr.c_str());
+
+    Serial.printf("ZigbeeWrite: addr=%04X ep=%d cluster=%04X attr=%04X type=%02X value=%s\n",
+                  shortAddr, endpoint, cluster, attribute, type, valueStr.c_str());
   // ====== DÉTECTION TUYA ======
     if (cluster == 0xEF00) {
         uint8_t dpId = (uint8_t)attribute;
         uint8_t dpType = type;
         uint32_t value = (uint32_t)valueStr.toInt();
-        
+
         Serial.printf("Tuya Write: DP%d type=%d value=%lu\n", dpId, dpType, value);
-        sendTuyaDatapointSet(shortAddr, 1, dpId, dpType, value);
-        
+        sendTuyaDatapointSet(shortAddr, endpoint, dpId, dpType, value);
+
         request->send(200, F("application/json"), F("{\"success\":true,\"tuya\":true}"));
         return;
     }
 
-  SendAttributeWrite(shortAddr, 1, cluster, attribute, type, valueStr.toInt());
+  SendAttributeWrite(shortAddr, endpoint, cluster, attribute, type, valueStr.toInt());
 
 
   bool success = true; // Placeholder
@@ -16938,11 +17689,23 @@ void writeEnergyDataWithSubMeters(String& out,
           ValueMap& vmProd = itProd->second;
           auto itvProd = vmProd.attributes.find(1);
           if (itvProd != vmProd.attributes.end() && itvProd->second != 0) {
+            // La valeur est déjà négative (handleAttribute1 ajoute le signe -)
             out += ",\"1\":";
             out += String(itvProd->second);
+          } else {
+            Serial.printf("[EnergyChart] Prod key=%s: attr1 %s (attrs:%d)\n",
+                          keyStr.c_str(),
+                          itvProd == vmProd.attributes.end() ? "NOT_FOUND" : "ZERO",
+                          vmProd.attributes.size());
           }
+        } else {
+          Serial.printf("[EnergyChart] Prod key=%s: NOT in graph (graph size:%d)\n",
+                        keyStr.c_str(), pdProd->graph.size());
         }
       }
+    } else {
+      Serial.printf("[EnergyChart] Production device '%s' NOT FOUND in devices\n",
+                    ConfigGeneral.Production);
     }
   }
 }
@@ -17872,7 +18635,7 @@ void APIgetSystem(AsyncWebServerRequest *request)
   result.replace("{{mqttenable}}",String(ConfigSettings.enableMqtt));
   result.replace("{{mqttconected}}",String(mqttClient.connected()));
   result.replace("{{mqtturl}}",ConfigGeneral.servMQTT);
-  result.replace("{{mqttport}}",String(ConfigGeneral.portMQTT));
+  result.replace("{{mqttport}}", strlen(ConfigGeneral.portMQTT) > 0 ? String(ConfigGeneral.portMQTT) : "0");
 
   result.replace("{{webpushenable}}",String(ConfigSettings.enableWebPush));
   result.replace("{{webpushauth}}",String(ConfigGeneral.webPushAuth));
@@ -17944,9 +18707,9 @@ void APIgetDevice(AsyncWebServerRequest *request)
   String IEEE;
   int args = request->args();
   String result;
-  if ((args >0) && (request->hasArg("IEEE")) )
+  if (args > 0 && (request->hasArg("IEEE") || request->hasArg("id")))
   {
-    IEEE = request->arg("IEEE");
+    IEEE = request->hasArg("IEEE") ? request->arg("IEEE") : request->arg("id");
   
     result = "{";
     String inifile = IEEE+".json";
@@ -18065,9 +18828,9 @@ void APIgetEnergyDevice(AsyncWebServerRequest *request)
   String IEEE;
   int args = request->args();
   String result;
-  if ((args >0) && (request->hasArg("IEEE")) )
+  if (args > 0 && (request->hasArg("IEEE") || request->hasArg("id")))
   {
-    IEEE = request->arg("IEEE");
+    IEEE = request->hasArg("IEEE") ? request->arg("IEEE") : request->arg("id");
     result = "{";
     String inifile = "nrg_"+IEEE+".json";
     File file = LittleFS.open("/db/" + inifile, FILE_READ);
@@ -18100,10 +18863,10 @@ void APIgetPowerDevice(AsyncWebServerRequest *request)
   String IEEE;
   int args = request->args();
   String result;
-  if ((args >0) && (request->hasArg("IEEE")) )
+  if (args > 0 && (request->hasArg("IEEE") || request->hasArg("id")))
   {
-    IEEE = request->arg("IEEE");
-  
+    IEEE = request->hasArg("IEEE") ? request->arg("IEEE") : request->arg("id");
+
     result = "{";
     String inifile = "pwr_"+IEEE+".json";
     File file = LittleFS.open("/db/" + inifile, FILE_READ);
@@ -18189,6 +18952,13 @@ void handleGetUpdateStatusAuto(AsyncWebServerRequest *request) {
 
 void initWebServer()
 {
+  static bool webServerInitialized = false;
+  if (webServerInitialized) {
+    Serial.println("[WebServer] Already initialized, skipping");
+    return;
+  }
+  webServerInitialized = true;
+
   // ==================== Login / Logout Routes ====================
   serverWeb.on("/login", HTTP_GET, [](AsyncWebServerRequest *request) {
     // If already authenticated, redirect to home
@@ -18207,6 +18977,7 @@ void initWebServer()
         page.replace("{{errorDisplay}}", "d-none");
         page.replace("{{errorMsg}}", "");
     }
+    page.replace("{{version}}", VERSION);
     request->send(200, "text/html", page);
   });
 
@@ -18678,10 +19449,36 @@ void initWebServer()
   
 
   serverWeb.on("/saveFileTemplates", HTTP_POST, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handleSaveTemplates(request); 
+    handleSaveTemplates(request);
   });
+
+  // Chunked template save via tunnel
+  serverWeb.on("/templateSaveInit", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleTemplateSaveInitResponse(request);
+    }
+  );
+  serverWeb.on("/templateSaveChunk", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleTemplateSaveChunkResponse(request);
+    },
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!checkAuth(request)) return;
+        _crAccumBody(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/templateSaveFinish", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleTemplateSaveFinishResponse(request);
+    }
+  );
+
   serverWeb.on("/saveFileRules", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (!checkAuth(request)) return;
@@ -18840,13 +19637,6 @@ void initWebServer()
       }
     });
   
-  // API: Test push notification
-  serverWeb.on("/api/testPush", HTTP_POST, [](AsyncWebServerRequest *request){
-    if (!checkAuth(request)) return;
-    notificationManager.addNotification("Test Push", "Notification push de test", 0, "test");
-    request->send(200, "application/json", "{\"success\":true}");
-  });
-
   // API: Marquer comme lu - Route simplifiée
   serverWeb.on("/api/notifications/read", HTTP_PUT, [](AsyncWebServerRequest *request){
     if (!checkAuth(request)) return;
@@ -18981,12 +19771,103 @@ void initWebServer()
   serverWeb.on("/doRestore", HTTP_POST,
     [](AsyncWebServerRequest *request) {},
     [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
-                  size_t len, bool final) 
+                  size_t len, bool final)
         {
           if (!checkAuth(request)) return;
           handleDoRestore(request, filename, index, data, len, final);
         }
   );
+
+  // Chunked restore via tunnel (small HTTP requests under 15KB WS limit)
+  serverWeb.on("/restoreInit", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleRestoreInitResponse(request);
+    },
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!checkAuth(request)) return;
+        _crAccumBody(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/restoreChunk", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleRestoreChunkResponse(request);
+    },
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!checkAuth(request)) return;
+        _crAccumBody(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/restoreFinish", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleRestoreFinishResponse(request);
+    }
+  );
+
+  // Chunked firmware update via tunnel (ESP32 .bin flash)
+  serverWeb.on("/fwUpdateInit", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleFwUpdateInitResponse(request);
+    },
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!checkAuth(request)) return;
+        _crAccumBody(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/fwUpdateChunk", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleFwUpdateChunkResponse(request);
+    },
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!checkAuth(request)) return;
+        _crAccumBody(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/fwUpdateFinish", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleFwUpdateFinishResponse(request);
+    }
+  );
+
+  // Chunked OTA upload via tunnel
+  serverWeb.on("/otaInit", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleOtaInitResponse(request);
+    },
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!checkAuth(request)) return;
+        _crAccumBody(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/otaChunk", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleOtaChunkResponse(request);
+    },
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+        if (!checkAuth(request)) return;
+        _crAccumBody(request, data, len, index, total);
+    }
+  );
+  serverWeb.on("/otaFinish", HTTP_POST,
+    [](AsyncWebServerRequest *request) {
+        if (!checkAuth(request)) return;
+        handleOtaFinishResponse(request);
+    }
+  );
+
   serverWeb.on("/doUploadHistory", HTTP_POST,
     [](AsyncWebServerRequest *request) {},
     [](AsyncWebServerRequest *request, const String& filename, size_t index, uint8_t *data,
@@ -19354,10 +20235,24 @@ void initWebServer()
     APIgetSystem(request); 
     
   });
+  serverWeb.on("/api/wifiSignal", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    char buf[96];
+    if (WiFi.isConnected()) {
+      int rssi = WiFi.RSSI();
+      int q = rssi >= -50 ? 100 : (rssi <= -100 ? 0 : 2 * (rssi + 100));
+      snprintf(buf, sizeof(buf), "{\"rssi\":%d,\"quality\":%d,\"txPower\":%.1f}",
+               rssi, q, (float)WiFi.getTxPower() / 4.0);
+    } else {
+      snprintf(buf, sizeof(buf), "{\"rssi\":0,\"quality\":0,\"txPower\":0}");
+    }
+    request->send(200, "application/json", buf);
+  });
   serverWeb.on("/setAlias", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
-    handleSetAlias(request); 
+    handleSetAlias(request);
   });
   serverWeb.on("/setConfigWiFi", HTTP_POST, [](AsyncWebServerRequest *request)
   {
@@ -19464,7 +20359,19 @@ void initWebServer()
   });
   serverWeb.serveStatic("/web", LittleFS, "/web")
     .setCacheControl("max-age=604800, immutable");
-  serverWeb.onNotFound(handleNotFound);
+  // === CORS : preflight OPTIONS handler (#24) ===
+  serverWeb.onNotFound([](AsyncWebServerRequest *request) {
+    if (request->method() == HTTP_OPTIONS) {
+      request->send(204);
+    } else {
+      handleNotFound(request);
+    }
+  });
+
+  // === CORS Headers pour accès API cross-origin (#24) ===
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
 
   serverWeb.begin();
 

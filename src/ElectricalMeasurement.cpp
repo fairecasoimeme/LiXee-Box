@@ -152,129 +152,171 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
     if (!device) return;
 
     String value = data.value;
-   
+
     //GESTION INJECTION AUTOCONSOMMATION
+    // Timestamps pour synchronisation PAPP/URMS/IRMS
+    // Les données remontent toutes les ~1 minute ; on attend que URMS/IRMS
+    // soient mis à jour APRES que PAPP soit passé à 0 avant de calculer V*I
+    static unsigned long lastUrmsIrmsUpdate = 0;  // millis() du dernier update URMS ou IRMS
+    static unsigned long pappZeroSince = 0;        // millis() du premier PAPP==0 (0 = pas en état zéro)
+    static bool wasInjecting = false;              // true si PAPP <= 0 lors de la dernière lecture
+
     if (strcmp(ConfigGeneral.ZLinky,data.deviceId.c_str()) == 0 )
     {
+        // Tracker les mises à jour URMS/IRMS (attrs 1285,1288,2309,2312,2565,2568)
+        if (data.attribute == 1285 || data.attribute == 1288 ||
+            data.attribute == 2309 || data.attribute == 2312 ||
+            data.attribute == 2565 || data.attribute == 2568)
+        {
+            lastUrmsIrmsUpdate = millis();
+        }
+
         long tmpValue = data.numericValue;
         long injection = 0 ;
-        
+
         if ((data.attribute == 1295) ||(data.attribute == 2319) ||(data.attribute == 2575))
         {
-            if (tmpValue == 0)
+            if (tmpValue > 0)
             {
-                switch (ConfigGeneral.LinkyMode) 
+                // Consommation normale : RAZ injection si on était en injection
+                if (wasInjecting) {
+                    int injAttr = (data.attribute == 1295) ? 1 : (data.attribute == 2319) ? 2 : 3;
+                    addMeasurement(device->powerHistory, injAttr, 0);
+                    wasInjecting = false;
+                }
+                pappZeroSince = 0;
+            }
+            // PAPP négatif = injection en cours : utiliser |PAPP| comme puissance d'injection
+            else if (tmpValue < 0)
+            {
+                wasInjecting = true;
+                pappZeroSince = 0;
+                injection = tmpValue; // valeur négative
+                int injAttr = (data.attribute == 1295) ? 1 : (data.attribute == 2319) ? 2 : 3;
+                addMeasurement(device->powerHistory, injAttr, injection);
+                value = "0"; // consommation affichée = 0
+            }
+            // PAPP == 0 : estimer l'injection depuis URMS * IRMS
+            // Attendre que URMS/IRMS aient été mis à jour depuis le passage à PAPP==0
+            else // tmpValue == 0
+            {
+                if (pappZeroSince == 0) {
+                    pappZeroSince = millis();
+                }
+
+                // URMS/IRMS synchronisés si :
+                // 1) Mis à jour récemment (< 15s = même burst de données), OU
+                // 2) Mis à jour après que PAPP soit passé à 0, OU
+                // 3) Timeout de 2 minutes (sécurité)
+                bool recentUpdate = (lastUrmsIrmsUpdate > 0) && (millis() - lastUrmsIrmsUpdate < 15000);
+                bool synced = recentUpdate ||
+                              (lastUrmsIrmsUpdate > pappZeroSince) ||
+                              (millis() - pappZeroSince > 120000);
+
+                if (!synced)
                 {
-                    case 1 :
-                    case 5 :
+                    // Transition conso→injection : URMS/IRMS pas encore rafraîchis
+                    Serial.printf("[Energy] PAPP=0 : attente sync URMS/IRMS (depuis %lus)\n",
+                                  (millis() - pappZeroSince) / 1000);
+                }
+                else
+                {
+                    wasInjecting = true;
+                    // URMS/IRMS synchronisés, calculer injection depuis V*I
+                    switch (ConfigGeneral.LinkyMode)
                     {
-                        //mode STANDARD MONOPHASE
-                        if (data.attribute == 1295)
+                        case 1 :
+                        case 5 :
                         {
-                            long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16); //URMS1
-                            long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IRMS1
-                            //tmp = String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16));
-                            injection = -URMS1 * IRMS1;
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 1, injection);
+                            //mode STANDARD MONOPHASE
+                            if (data.attribute == 1295)
+                            {
+                                long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16);
+                                long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                injection = -URMS1 * IRMS1;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 1, injection);
+                            }
                         }
-
-                    }
-                    break;
-                    case 3:
-                    case 7:
-                    //if ( (ConfigGeneral.LinkyMode == 3 ) || (ConfigGeneral.LinkyMode == 7 ) )
-                    {
-                        //mode STANDARD TRIPHASE
-                        if (data.attribute == 1295)
+                        break;
+                        case 3:
+                        case 7:
                         {
-                            long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16); //URMS1
-                            long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IRMS1
-                            injection = -URMS1 * IRMS1;
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 1, injection);
-
-                        }else if (data.attribute == 2319)
-                        {
-                            long URMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2309")).c_str(),0,16); //URMS2
-                            long IRMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16); //IRMS2
-                            injection = -URMS2 * IRMS2; 
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 2, injection);
-                            
-                        }else if (data.attribute == 2575)
-                        {
-                            long URMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2565")).c_str(),0,16); //URMS3
-                            long IRMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16); //IRMS3
-                            injection = -URMS3 * IRMS3; 
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 3, injection);
+                            //mode STANDARD TRIPHASE
+                            if (data.attribute == 1295)
+                            {
+                                long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16);
+                                long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                injection = -URMS1 * IRMS1;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 1, injection);
+                            }else if (data.attribute == 2319)
+                            {
+                                long URMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2309")).c_str(),0,16);
+                                long IRMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16);
+                                injection = -URMS2 * IRMS2;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 2, injection);
+                            }else if (data.attribute == 2575)
+                            {
+                                long URMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2565")).c_str(),0,16);
+                                long IRMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16);
+                                injection = -URMS3 * IRMS3;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 3, injection);
+                            }
                         }
-
-                    }
-                    break;
-                    case 0:
-                    //if (ConfigGeneral.LinkyMode == 0 )
-                    {
-                        //mode HISTORIQUE monophasé
-                        if (data.attribute == 1295)
+                        break;
+                        case 0:
                         {
+                            //mode HISTORIQUE monophasé
+                            if (data.attribute == 1295)
+                            {
+                                long voltage = 200;
+                                long IINST =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                injection = -voltage * IINST;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 1, injection);
+                            }
+                        }
+                        break;
+                        case 2:
+                        {
+                            //mode HISTORIQUE triphasé
                             long voltage = 200;
-                            long IINST =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IINST
-                            injection = -voltage * IINST;
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 1, injection);
+                            if (data.attribute == 1295)
+                            {
+                                long IINST1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                injection = -voltage * IINST1;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 1, injection);
+                            }else if (data.attribute == 2319)
+                            {
+                                long IINST2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16);
+                                injection = -voltage * IINST2;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 2, injection);
+                            }else if (data.attribute == 2575)
+                            {
+                                long IINST3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16);
+                                injection = -voltage * IINST3;
+                                value = String(injection, HEX);
+                                value.toUpperCase();
+                                addMeasurement(device->powerHistory, 3, injection);
+                            }
                         }
+                        break;
 
+                        default:
+                        break;
                     }
-                    break;
-                    case 2:
-                    //if (ConfigGeneral.LinkyMode == 2 ){
-                    {
-                        //mode HISTORIQUE monophasé
-                        long voltage = 200; 
-                        if (data.attribute == 1295)
-                        {
-                            long IINST1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16); //IINST1
-                            injection = -voltage * IINST1;
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 1, injection);
-
-                        }else if (data.attribute == 2319)
-                        {
-                            long IINST2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16); //IINST2
-                            injection = -voltage * IINST2; 
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 2, injection);
-
-                        }else if (data.attribute == 2575)
-                        {
-                            long IINST3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16); //IINST3
-                            injection = -voltage * IINST3;
-                            value = String(injection, HEX);  // "ff"
-                            value.toUpperCase();
-
-                            addMeasurement(device->powerHistory, 3, injection);
-                        }
-                    }
-                    break;
-
-                    default:
-                    break;
                 }
             }
         }
@@ -290,17 +332,19 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
         addMeasurement(device->powerHistory, data.attribute, data.numericValue);
     }
 
+    // Stocker la consommation dans powerHistory (0 si injection, sinon valeur réelle)
+    long powerValue = (data.numericValue < 0) ? 0 : data.numericValue;
     if ((ConfigGeneral.LinkyMode == 2) || (ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7))
     {
         if ((data.attribute == 1295) ||(data.attribute == 2319) ||(data.attribute == 2575))
         {
-            addMeasurement(device->powerHistory, data.attribute, data.numericValue);
+            addMeasurement(device->powerHistory, data.attribute, powerValue);
         }
     }else{
         if ((data.attribute == 1295) )
         {
-            addMeasurement(device->powerHistory, data.attribute, data.numericValue);
-        }  
+            addMeasurement(device->powerHistory, data.attribute, powerValue);
+        }
     }    
 }
 

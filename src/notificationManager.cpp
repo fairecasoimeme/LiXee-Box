@@ -152,7 +152,10 @@ void NotificationManager::clearAll() {
 }
 
 bool NotificationManager::saveToFile() {
-  SpiRamJsonDocument doc(8192);
+  // ~256 bytes par notification (titre + message + timestamp + overhead JSON)
+  size_t docSize = 512 + notifications.size() * 256;
+  if (docSize < 8192) docSize = 8192;
+  SpiRamJsonDocument doc(docSize);
   JsonArray array = doc.createNestedArray("notifications");
   
   for (const Notification* notif : notifications) {
@@ -185,7 +188,11 @@ bool NotificationManager::loadFromFile() {
     return true; // Pas d'erreur, juste pas de fichier existant
   }
   
-  SpiRamJsonDocument doc(8192);
+  // Dimensionner le document selon la taille du fichier
+  size_t fileSize = file.size();
+  size_t docSize = fileSize + fileSize / 2 + 512; // fichier + 50% marge + overhead
+  if (docSize < 8192) docSize = 8192;
+  SpiRamJsonDocument doc(docSize);
   DeserializationError error = deserializeJson(doc, file);
   file.close();
   
@@ -215,7 +222,10 @@ bool NotificationManager::loadFromFile() {
 }
 
 String NotificationManager::toJson(size_t offset, size_t limit) const {
-  SpiRamJsonDocument doc(4096);
+  // ~300 bytes par notification serialisée + overhead
+  size_t docSize = 512 + limit * 300;
+  if (docSize < 4096) docSize = 4096;
+  SpiRamJsonDocument doc(docSize);
   
   size_t total = getCount();
   doc["total"] = total;

@@ -240,8 +240,12 @@ static void checkNightWaterLeak() {
 }
 
 static void sendDailyMetrics() {
-    if (!ConfigNotif.DailyMetrics) return;
+    if (!ConfigNotif.DailyMetrics) {
+        Serial.println("[DailyMetrics] Disabled in config, skipping");
+        return;
+    }
 
+    Serial.printf("[DailyMetrics] Generating summary for day=%s\n", Day.c_str());
     PsString dayKey(Day.c_str(), PsramAllocator<char>());
     String msg = "";
     float totalCost = 0;
@@ -347,6 +351,7 @@ static void sendDailyMetrics() {
         msg += "💰 Total: " + String(totalCost, 2) + " €";
     }
 
+    Serial.printf("[DailyMetrics] Pushing notification (msg len=%d)\n", msg.length());
     pushNotification("📊 Résumé quotidien", msg, 0, "daily_metrics");
 }
 
@@ -357,6 +362,8 @@ void alertChecksLoop() {
 
     // Reset des flags quotidiens à minuit
     if (Day != lastCheckedDay) {
+        Serial.printf("[AlertChecks] New day detected: %s -> %s, resetting daily flags\n",
+                      lastCheckedDay.c_str(), Day.c_str());
         lastCheckedDay = Day;
         dailyAnomalyCheckedToday = false;
         waterLeakCheckedToday = false;
@@ -376,27 +383,31 @@ void alertChecksLoop() {
         checkFreeze();
     }
 
-    // Anomalie conso journalière : à 23h55
-    if (Hour == "23" && Minute == "55" && !dailyAnomalyCheckedToday) {
+    int min = Minute.toInt();
+
+    // Anomalie conso journalière : entre 23h50 et 23h59
+    if (Hour == "23" && min >= 50 && !dailyAnomalyCheckedToday) {
         dailyAnomalyCheckedToday = true;
+        Serial.println("[AlertChecks] Running daily anomaly check");
         checkDailyAnomaly();
     }
 
-    // Fuite d'eau : à 06h00
-    if (Hour == "06" && Minute == "00" && !waterLeakCheckedToday) {
+    // Fuite d'eau : entre 06h00 et 06h09
+    if (Hour == "06" && min <= 9 && !waterLeakCheckedToday) {
         waterLeakCheckedToday = true;
         checkWaterLeak();
     }
 
-    // Fuite d'eau nocturne : à 06h00
-    if (Hour == "06" && Minute == "00" && !nightWaterLeakCheckedToday) {
+    // Fuite d'eau nocturne : entre 06h00 et 06h09
+    if (Hour == "06" && min <= 9 && !nightWaterLeakCheckedToday) {
         nightWaterLeakCheckedToday = true;
         checkNightWaterLeak();
     }
 
-    // Résumé quotidien : à 23h55
-    if (Hour == "23" && Minute == "55" && !dailyMetricsSentToday) {
+    // Résumé quotidien : entre 23h50 et 23h59
+    if (Hour == "23" && min >= 50 && !dailyMetricsSentToday) {
         dailyMetricsSentToday = true;
+        Serial.println("[AlertChecks] Running daily metrics");
         sendDailyMetrics();
     }
 }

@@ -2569,7 +2569,10 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         String result="";
         if (Attribute != "519")
         {
-          result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          long papp = strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16);
+          // PAPP négatif = injection : afficher 0 sur la jauge soutirée
+          if (papp < 0) papp = 0;
+          result = String(papp);
           result +=";";
           if (ConfigGeneral.LinkyMode == 0)
           {
@@ -2581,13 +2584,25 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
           }else if ((ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7)){
             result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000 / 3;
           }
-          result +=";0;"; 
+          result +=";0;";
           result += device->getPowerW()+" W";
         }else{
-          result = String(strtol(device->getValue(std::string("FF66"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          // Jauge Injectée : utiliser la dernière puissance d'injection depuis powerHistory
+          long injValue = 0;
+          if (!device->powerHistory.stats.empty()) {
+            auto it = device->powerHistory.stats.find(1); // attr 1 = injection phase 1
+            if (it != device->powerHistory.stats.end()) {
+              injValue = abs(it->second.last); // valeur absolue de la dernière injection
+            }
+          }
+          // Fallback : lire l'index SINSTI depuis le cluster FF66
+          if (injValue == 0) {
+            injValue = strtol(device->getValue(std::string("FF66"),std::string(String(Attribute).c_str())).c_str(),0,16);
+          }
+          result = String(injValue);
           result +=";";
           result += String(strtol(device->getValue(std::string("0B01"),std::string("14")).c_str(),0,16)*1000);
-          result +=";0"; 
+          result +=";0";
         }
 
         return result;

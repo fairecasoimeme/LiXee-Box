@@ -669,7 +669,7 @@ function loadPowerChart(IEEE, attribute) {
             var hasInjection = false;
             
             datas.forEach(function(item) {
-                var i1 = item['519'] || item['1'] || 0;
+                var i1 = item['1'] || 0;
                 var i2 = item['2'] || 0;
                 var i3 = item['3'] || 0;
                 

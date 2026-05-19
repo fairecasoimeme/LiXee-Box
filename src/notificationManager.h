@@ -54,6 +54,7 @@ public:
 
   // Push callback
   void setPushCallback(PushCallback cb);
+  bool hasPushCallback() const { return _pushCallback != nullptr; }
 
 private:
   void cleanupOldNotifications();

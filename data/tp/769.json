@@ -197,6 +197,213 @@
       ]
     }
   ],
+  "IRB-4-1-00": [
+    {
+      "status": [
+        {
+          "name": "local_temperature",
+          "cluster": "0201",
+          "attribut": 0,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.01,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "home-thermometer"
+        },
+        {
+          "name": "occupied_heating_setpoint",
+          "cluster": "0201",
+          "attribut": 18,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.01,
+          "jauge": "Gauge",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 41,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "thermometer"
+        },
+        {
+          "name": "occupied_cooling_setpoint",
+          "cluster": "0201",
+          "attribut": 17,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.01,
+          "jauge": "Gauge",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 41,
+          "mqtt_device_class": "temperature",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "snowflake-thermometer"
+        },
+        {
+          "name": "local_temperature_calibration",
+          "cluster": "0201",
+          "attribut": 16,
+          "type": "numeric",
+          "unit": "°C",
+          "coefficient": 0.1,
+          "visible": 0,
+          "writable": true,
+          "typewritable": 40,
+          "mqtt_icon": "tune",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "system_mode",
+          "cluster": "0201",
+          "attribut": 28,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 48,
+          "mqtt_icon": "hvac",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "ac_louver_position",
+          "cluster": "0201",
+          "attribut": 69,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 48,
+          "mqtt_icon": "air-filter",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "fan_mode",
+          "cluster": "0202",
+          "attribut": 0,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 48,
+          "mqtt_icon": "fan",
+          "mqtt_device_class": "",
+          "mqtt_state_class": ""
+        },
+        {
+          "name": "humidity",
+          "cluster": "0405",
+          "attribut": 0,
+          "type": "numeric",
+          "unit": "%",
+          "coefficient": 0.01,
+          "jauge": "Gauge",
+          "visible": 1,
+          "mqtt_device_class": "humidity",
+          "mqtt_state_class": "measurement",
+          "mqtt_icon": "water-percent"
+        }
+      ],
+      "bind": "0201,0202,0405",
+      "report": [
+        {
+          "cluster": "0201",
+          "attribut": 0,
+          "type": 41,
+          "min": 60,
+          "max": 600,
+          "change": 10
+        },
+        {
+          "cluster": "0201",
+          "attribut": 17,
+          "type": 41,
+          "min": 1,
+          "max": 600,
+          "change": 50
+        },
+        {
+          "cluster": "0201",
+          "attribut": 18,
+          "type": 41,
+          "min": 1,
+          "max": 600,
+          "change": 50
+        },
+        {
+          "cluster": "0201",
+          "attribut": 28,
+          "type": 48,
+          "min": 1,
+          "max": 600,
+          "change": 1
+        },
+        {
+          "cluster": "0202",
+          "attribut": 0,
+          "type": 48,
+          "min": 1,
+          "max": 600,
+          "change": 1
+        },
+        {
+          "cluster": "0405",
+          "attribut": 0,
+          "type": 33,
+          "min": 60,
+          "max": 600,
+          "change": 100
+        }
+      ],
+      "action": [
+        {
+          "name": "OFF",
+          "command": 310,
+          "endpoint": 1,
+          "value": 0,
+          "visible": 1
+        },
+        {
+          "name": "AUTO",
+          "command": 310,
+          "endpoint": 1,
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "COOL",
+          "command": 310,
+          "endpoint": 1,
+          "value": 3,
+          "visible": 1
+        },
+        {
+          "name": "HEAT",
+          "command": 310,
+          "endpoint": 1,
+          "value": 4,
+          "visible": 1
+        },
+        {
+          "name": "FAN_ONLY",
+          "command": 310,
+          "endpoint": 1,
+          "value": 7,
+          "visible": 1
+        },
+        {
+          "name": "DRY",
+          "command": 310,
+          "endpoint": 1,
+          "value": 8,
+          "visible": 1
+        }
+      ]
+    }
+  ],
   "default": [
     {
       "status": [

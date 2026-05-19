@@ -1879,7 +1879,7 @@ void monitor_heap(void) {
         static uint32_t heap_highwater_mark = 0;
         static uint32_t heap_lowwater_mark = UINT32_MAX;
 
-        if (curheap < heap_lowwater_mark) {IsChanged = true; heap_lowwater_mark = curheap;} 
+        if (curheap < heap_lowwater_mark) {IsChanged = true; heap_lowwater_mark = curheap;}
         if (curheap > heap_highwater_mark) {IsChanged = true; heap_highwater_mark = curheap;}
 
         if(IsChanged) {
@@ -1889,109 +1889,219 @@ void monitor_heap(void) {
         }
         prevheap = curheap;
     }
+
+    // === WATCHDOG MEMOIRE ===
+    static unsigned long lastWatchdogAction = 0;
+    static bool tunnelStopped = false;
+    static bool mqttStopped = false;
+    // Timestamps de première détection sous seuil (0 = pas sous seuil)
+    static unsigned long tunnelLowSince = 0;
+    static unsigned long mqttLowSince = 0;
+
+    unsigned long now = millis();
+    bool cooldownActive = (now - lastWatchdogAction < 60000 && lastWatchdogAction != 0);
+
+    // --- Gestion des compteurs de durée sous seuil ---
+    // Tunnel : seuil 80KB, confirmation 5s
+    if (curheap < 80000) {
+        if (tunnelLowSince == 0) tunnelLowSince = now;
+    } else {
+        tunnelLowSince = 0; // Heap remonté, reset du compteur
+    }
+
+    // MQTT : seuil 60KB, confirmation 5s
+    if (curheap < 60000) {
+        if (mqttLowSince == 0) mqttLowSince = now;
+    } else {
+        mqttLowSince = 0;
+    }
+
+    // --- Actions de coupure (soumises au cooldown + confirmation temporelle) ---
+    if (!cooldownActive) {
+        // Palier 1 : < 80KB pendant 5s — arrêter le tunnel (libère ~15-20KB SSL)
+        if (tunnelLowSince != 0 && (now - tunnelLowSince >= 5000)
+            && !tunnelStopped && tunnel != nullptr) {
+            Serial.printf("[Watchdog] HEAP BAS %u < 80KB depuis 5s - Arret tunnel\n", curheap);
+            addDebugLog("Watchdog: arret tunnel (heap < 80KB pendant 5s)");
+            tunnel->stop();
+            delete tunnel;
+            tunnel = nullptr;
+            tunnelStopped = true;
+            tunnelLowSince = 0;
+            lastWatchdogAction = now;
+            return;
+        }
+
+        // Palier 2 : < 60KB pendant 5s — déconnecter MQTT (libère ~10-15KB SSL)
+        if (mqttLowSince != 0 && (now - mqttLowSince >= 5000)
+            && !mqttStopped && mqttClient.connected()) {
+            Serial.printf("[Watchdog] HEAP BAS %u < 60KB depuis 5s - Deconnexion MQTT\n", curheap);
+            addDebugLog("Watchdog: deconnexion MQTT (heap < 60KB pendant 5s)");
+            mqttClient.disconnect(true);
+            mqttStopped = true;
+            mqttLowSince = 0;
+            lastWatchdogAction = now;
+            return;
+        }
+
+        // Palier 3 : < 40KB — reboot immédiat (pas de confirmation, trop critique)
+        if (curheap < 40000) {
+            Serial.printf("[Watchdog] HEAP CRITIQUE %u < 40KB - REBOOT DE SECURITE\n", curheap);
+            addDebugLog("Watchdog: reboot securite (heap < 40KB)");
+            delay(500);
+            ESP.restart();
+        }
+    }
+
+    // --- Relance quand heap remonte (pas soumis au cooldown de coupure) ---
+    // Hysteresis : on coupe à 50KB, on relance à 120KB (marge large pour éviter le flapping)
+    if (curheap > 120000) {
+        if (tunnelStopped) {
+            // Relancer le tunnel si configuré
+            if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0 && tunnel == nullptr) {
+                String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
+                tunnelUrl += ConfigGeneral.tunnelToken;
+                if (strlen(ConfigGeneral.tunnelClientId) > 0) {
+                    tunnelUrl += "&clientId=";
+                    tunnelUrl += ConfigGeneral.tunnelClientId;
+                }
+                tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
+                tunnel->begin();
+                Serial.printf("[Watchdog] Heap remonte a %u - tunnel relance\n", curheap);
+                addDebugLog("Watchdog: tunnel relance (heap > 120KB)");
+            }
+            tunnelStopped = false;
+        }
+        if (mqttStopped) {
+            Serial.printf("[Watchdog] Heap remonte a %u - MQTT peut se reconnecter\n", curheap);
+            mqttStopped = false;
+            // MQTT se reconnectera via mqttAutoReconnect() dans la boucle principale
+        }
+    }
 }
 
 void initWiFiServices() {
-  // Cette fonction contient tous vos services WiFi actuels
-  // MQTT, mDNS, serveur web, etc.
-  
-  //WiFi.onEvent(WiFiEvent);
-  //WiFi.onEvent(WiFiStationDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-  
-  // mDNS
+  static bool firstInit = true;
+
+  uint32_t heapBefore = ESP.getFreeHeap();
+  Serial.printf("[WiFiServices] %s - Free heap: %u\n", firstInit ? "FIRST INIT" : "RECONNECT", heapBefore);
+
+  // === mDNS ===
+  if (!firstInit) {
+    MDNS.end(); // Libérer les ressources mDNS précédentes
+  }
   String localdns = "LIXEEBOX-" + getIDWifi();
   if (!MDNS.begin(localdns.c_str())) {
     Serial.println("Error starting mDNS");
   }
-  Serial.printf("📡mDNS : %s\n",localdns.c_str());
-  
-  // MQTT si activé
-  if (ConfigSettings.enableMqtt) {
+  Serial.printf("[WiFiServices] mDNS: %s\n", localdns.c_str());
 
-    
-    mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
-    
-    mqttClient.onConnect(onMqttConnect);
-    mqttClient.onDisconnect(onMqttDisconnect);
-    mqttClient.onSubscribe(onMqttSubscribe);
-    mqttClient.onUnsubscribe(onMqttUnsubscribe);
-    mqttClient.onMessage(onMqttMessage);
-    mqttClient.onPublish(onMqttPublish);
-    
+  // === MQTT ===
+  bool heapCritique = (!firstInit && ESP.getFreeHeap() < 50000);
+  if (heapCritique) {
+    Serial.printf("[WiFiServices] WARN: Heap critique %u < 50KB - MQTT/tunnel différés (watchdog gère)\n", ESP.getFreeHeap());
+    addDebugLog("WiFiServices: heap critique, MQTT/tunnel differés");
+  }
+
+  if (ConfigSettings.enableMqtt) {
+    if (firstInit) {
+      // Première init : créer timer + enregistrer callbacks
+      mqttReconnectTimer = xTimerCreate("mqttTimer", pdMS_TO_TICKS(2000), pdFALSE, (void*)0, reinterpret_cast<TimerCallbackFunction_t>(connectToMqtt));
+      mqttClient.onConnect(onMqttConnect);
+      mqttClient.onDisconnect(onMqttDisconnect);
+      mqttClient.onSubscribe(onMqttSubscribe);
+      mqttClient.onUnsubscribe(onMqttUnsubscribe);
+      mqttClient.onMessage(onMqttMessage);
+      mqttClient.onPublish(onMqttPublish);
+    }
+    // Config serveur (peut changer entre reconnexions)
     mqttClient.setServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT));
     mqttClient.setClientId(ConfigGeneral.clientIDMQTT);
     if (String(ConfigGeneral.userMQTT) != "") {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
     }
-    mqttClient.connect();
-  }
-  
-  // NTP
-  timeClient.setPoolServerName((const char*)ConfigGeneral.ntpserver);
-  timeClient.setTimeOffset((3600 * ConfigGeneral.timeoffset));
-  timeClient.setTimeZone(ConfigGeneral.timezone);
-  timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS);
-  timeClient.begin();
-  bool NTPOK = timeClient.forceUpdate();
-  log_e("NTPOK : %d\r\n",NTPOK);
-
-  log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
-
-
-  if (NTPOK)
-  {  
-   FormattedDate = timeClient.getFullFormattedTime();
-
-   Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
-   Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
-   Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
-   Year = String(timeClient.getYear());
-   Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
-   Yesterday =  timeClient.getYesterday();
-   String path = "configGeneral.json";
-   config_write(path, "epoch", String(timeClient.getEpochTime()));
-
-  }else{
-      timeClient.setEpochTime(ConfigGeneral.epochTime);
-      FormattedDate = timeClient.getFullFormattedTime();
-
-      Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
-      Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
-      Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
-      Year = String(timeClient.getYear());
-      Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
-      Yesterday =  timeClient.getYesterday();
-  }
-  
-  addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(0)));
-  addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(1)));
-  
-  // Serveur web
-  initWebServer();
-  MDNS.addService("http", "tcp", 80);
-  
-  // Autres services...
-  if (ConfigSettings.enableMarstek && strcmp(ConfigGeneral.ZLinky, "") != 0) {
-    udpProcess();
-    tcpProcess();
-  }
-
-  // Tunnel reverse proxy
-  if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0) {
-    // Construire l'URL du tunnel avec token et clientId
-    String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
-    tunnelUrl += ConfigGeneral.tunnelToken;
-    if (strlen(ConfigGeneral.tunnelClientId) > 0) {
-      tunnelUrl += "&clientId=";
-      tunnelUrl += ConfigGeneral.tunnelClientId;
+    if (!heapCritique) {
+      mqttClient.connect();
     }
-
-    // Créer et démarrer le tunnel
-    tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
-    tunnel->begin();
-    Serial.println("[Tunnel] Service tunnel activé");
-    addDebugLog("Tunnel reverse proxy activé");
   }
+
+  // === NTP ===
+  if (firstInit) {
+    timeClient.setPoolServerName((const char*)ConfigGeneral.ntpserver);
+    timeClient.setTimeOffset((3600 * ConfigGeneral.timeoffset));
+    timeClient.setTimeZone(ConfigGeneral.timezone);
+    timeClient.setUpdateInterval(NTP_UPDATE_INTERVAL_MS);
+    timeClient.begin();
+  }
+  bool NTPOK = timeClient.forceUpdate();
+  log_e("NTPOK : %d\r\n", NTPOK);
+
+  log_w("[WiFiServices] Core: %d - Heap: %ld - Free: %ld - PSRAM: %ld",
+        xPortGetCoreID(), ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getFreePsram());
+
+  if (NTPOK) {
+    FormattedDate = timeClient.getFullFormattedTime();
+    Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
+    Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
+    Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
+    Year = String(timeClient.getYear());
+    Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute());
+    Yesterday = timeClient.getYesterday();
+    String path = "configGeneral.json";
+    config_write(path, "epoch", String(timeClient.getEpochTime()));
+  } else {
+    timeClient.setEpochTime(ConfigGeneral.epochTime);
+    FormattedDate = timeClient.getFullFormattedTime();
+    Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
+    Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
+    Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
+    Year = String(timeClient.getYear());
+    Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute());
+    Yesterday = timeClient.getYesterday();
+  }
+
+  if (firstInit) {
+    addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(0)));
+    addDebugLog(verbose_print_reset_reason(rtc_get_reset_reason(1)));
+
+    // Serveur web (une seule fois)
+    initWebServer();
+    MDNS.addService("http", "tcp", 80);
+
+    // Marstek (une seule fois)
+    if (ConfigSettings.enableMarstek && strcmp(ConfigGeneral.ZLinky, "") != 0) {
+      udpProcess();
+      tcpProcess();
+    }
+  }
+
+  // === Tunnel reverse proxy ===
+  if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0 && !heapCritique) {
+    if (!firstInit && tunnel != nullptr) {
+      // Reconnexion : nettoyer l'ancien tunnel avant d'en créer un nouveau
+      Serial.println("[Tunnel] Cleanup ancien tunnel avant reconnexion");
+      tunnel->stop();
+      delete tunnel;
+      tunnel = nullptr;
+    }
+    if (tunnel == nullptr) {
+      String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
+      tunnelUrl += ConfigGeneral.tunnelToken;
+      if (strlen(ConfigGeneral.tunnelClientId) > 0) {
+        tunnelUrl += "&clientId=";
+        tunnelUrl += ConfigGeneral.tunnelClientId;
+      }
+      tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
+      tunnel->begin();
+      Serial.println("[Tunnel] Service tunnel activé");
+      addDebugLog("Tunnel reverse proxy activé");
+    }
+  }
+
+  uint32_t heapAfter = ESP.getFreeHeap();
+  Serial.printf("[WiFiServices] Done - Free heap: %u (delta: %d)\n", heapAfter, (int)heapAfter - (int)heapBefore);
+
+  firstInit = false;
 }
 
 void setupZigbeeAndTasks() {
@@ -2167,11 +2277,14 @@ void setup(void)
 
   // Vérifier si RAZ demandée
   if (resetManager.checkForReset()) {
-      
+
       blinkLed(10, 50);
-      // Effacer la config
+      // Effacer la config WiFi
       clearWifiConfig();
-      
+      // Désactiver la sécurité HTTP (permet de récupérer l'accès si mot de passe oublié)
+      config_write("configGeneral.json", "enableSecureHttp", "0");
+      Serial.println("[RESET] Securite HTTP desactivee");
+
       Serial.println("[RESET] Redémarrage...");
       delay(500);
       ESP.restart();
@@ -2259,16 +2372,10 @@ void setup(void)
     smartWiFi.onStateChange([](WiFiState state) {
         switch (state) {
             case WIFI_STATE_CONNECTED:
-                Serial.println("🌐 ✅ WiFi connected - Services will start");
+                Serial.printf("[WiFi] Connected - Free heap: %u\n", ESP.getFreeHeap());
                 addDebugLog(F("WiFi Connected"));
-                wifiServicesStarted = false; // Trigger init in loop
-
-                // Reconnexion MQTT automatique
-                if (ConfigSettings.enableMqtt) {
-                    Serial.println("📡 Reconnexion MQTT suite à WiFi...");
-                    connectToMqtt();
-                }
-
+                wifiServicesStarted = false; // Trigger initWiFiServices() in loop()
+                // MQTT sera reconnecté par initWiFiServices() — pas de double connect ici
                 break;
                 
             case WIFI_STATE_BLE_PROVISIONING:
@@ -2346,6 +2453,14 @@ void setup(void)
     Serial.println("Erreur: initialisation NotificationManager échouée");
     return;
   }
+
+  // Wire push callback pour envoyer les notifications via le tunnel
+  notificationManager.setPushCallback([](const String& title, const String& message,
+      int type, const char* alertType, float value, float threshold) {
+      if (tunnel && tunnel->isConnected()) {
+          tunnel->sendNotification(title, message, type, alertType, value, threshold);
+      }
+  });
 
   // Configuration WebSocket tunnel
   // === CONFIGURATION WEBSOCKET PSRAM ===
@@ -2526,6 +2641,8 @@ void loop(void)
         updatePending = false;       // on n'exécute qu'une fois
         launchUpdateTask();
       }
+
+      chunkedRestoreApplyIfPending();
 
       sendTreatment();
 
