@@ -4,7 +4,7 @@
 
 **LiXee-Box** est une passerelle multi-protocole pour appareils Zigbee, conçue pour être un hub central de **gestion de l'énergie** et de domotique. Cette application transforme votre LiXee-ZiWifi32 en une passerelle complète capable de gérer vos appareils Zigbee, votre Linky, compteur de production, gaz, eau, et d'intégrer le tout dans votre système domotique.
 
-**Pour avoir plus d'informations (moins techniques==) vous pouvez parcourir (https://lixee-box.fr)**
+**Pour avoir plus d'informations (moins techniques) vous pouvez parcourir (https://lixee-box.fr)**
 
 ## Matériel Compatible
 
@@ -120,6 +120,8 @@ Pour repasser la LiXee-Box en mode bluetooth pour association avec **LiXee-Assis
 3. Débrancher **la LiXee-Box**
 
 Répéter l'opération 3 fois et la LiXee-Box sera réinitialisée
+
+> **Note (v2.19+)** : La remise à zéro désactive également la sécurité HTTP, ce qui permet de récupérer l'accès à l'interface si le mot de passe est oublié.
 
 ## Mise à Jour du Firmware
 
@@ -315,9 +317,11 @@ Si vous possédez des panneaux photovoltaïques sans contrat, le Linky ne pourra
 Cependant, il sera possible de détecter une sur production lorsque votre production sera supérieure à votre consommation. Dans ce cas, la **LiXee-Box** pourra déterminer la puissance d'injection sur le réseau et agir en conséquence.
 En effet, cette information vous permettra de lancer des machines, enclencher votre chauffe-eau ou encore recharger votre véhicule électrique.
 
-Voici les conditions permettant de détecter une surproduction sur votre Linky
-* une puissance apparente à 0 VA
-* une intensité > 0 A
+Voici les conditions permettant de détecter une surproduction sur votre Linky :
+* **PAPP négatif** : le Linky reporte directement une puissance apparente négative (détection immédiate)
+* **PAPP = 0 VA avec intensité > 0 A** : la LiXee-Box attend la synchronisation des données URMS/IRMS puis calcule la puissance d'injection (V × I)
+
+> **Note (v2.19+)** : La détection utilise une synchronisation par timestamps entre PAPP et URMS/IRMS pour éviter les faux positifs lors des transitions consommation/injection. Les jauges de puissance soutirée et injectée se mettent à jour automatiquement lors des changements d'état.
 
 Si ce cas arrive, vous aurez sur le graphique de puissance les données d'injection.
 
@@ -343,8 +347,11 @@ Une section **Configuration avancée** repliable permet également une connexion
 ### Caractéristiques
 
 * Jusqu'à **6 requêtes HTTP simultanées** grâce à une architecture non-bloquante à machine d'état
-* **Heartbeat** automatique pour maintenir la connexion active
+* **Heartbeat** automatique (15s) pour maintenir la connexion active avec reconnexion rapide (3s)
 * **Hot-reload** : le tunnel redémarre automatiquement après modification de la configuration
+* **Mise à jour via tunnel** : upload OTA des devices et mise à jour firmware/restore de la LiXee-Box à distance (upload chunké en base64)
+* **Notifications push** : les alertes sont relayées via le tunnel vers l'application LiXee-Assist
+* **Watchdog mémoire** : le tunnel est automatiquement arrêté si le heap descend sous 80KB et relancé quand il remonte au-dessus de 120KB
 * L'URL d'accès distant est de la forme `https://<votre-id>.lixee-box.fr`
 * La désactivation du tunnel est protégée lorsqu'on y accède depuis l'accès distant (pour éviter de se couper l'accès)
 
@@ -648,7 +655,7 @@ Tout appareil avec Device Type 0x0107 utilisant le cluster Occupancy Sensing (0x
 | **Innr** | Compatible Hue et Zigbee standards | |
 | **Tuya/Moes** | Nombreux modèles | |
 
-> ℹ️ La LiXee-Box supporte le cluster On/Off (0x0006). Le contrôle des couleurs (cluster 0x0300) n'est pas ecnore implémenté.
+> ℹ️ La LiXee-Box supporte le cluster On/Off (0x0006). Le contrôle des couleurs (cluster 0x0300) n'est pas encore implémenté.
 
 
 ### ❓ Vérifier la Compatibilité
@@ -1037,7 +1044,7 @@ write-flash -z \
 
 ## 🏠 Intégration Home Assistant
 
-**LiXee-Gateway** est compatible avec la découverte MQTT de Home Assistant.
+**LiXee-Box** est compatible avec la découverte MQTT de Home Assistant.
 
 Allez simplement dans le menu **Passerelle** --> **MQTT** et activez la fonctionnalité
 
