@@ -8,14 +8,12 @@
 #include "PsramAllocator.h"
 #include "TemplateData.h"
 
-using PsString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
-
 class TemplateCache {
 private:
     struct Template {
         char* jsonData;           // JSON brut en PSRAM
         size_t jsonSize;
-        std::map<String, TemplateData*> parsedDataByModel; // Multiple parsedData par modèle
+        std::map<String, TemplateData*, std::less<String>, PsramAllocator<std::pair<const String, TemplateData*>>> parsedDataByModel;
         bool loaded;
         
         Template() : jsonData(nullptr), jsonSize(0), loaded(false) {}

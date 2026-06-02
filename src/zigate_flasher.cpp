@@ -340,7 +340,7 @@ ZigateFlashStatus ZigateFlasher::connect() {
             _chipDetails.flashInfo.size = 632 * 1024;
             _chipDetails.flashInfo.blockSize = 512;
             _chipDetails.flashInfo.access = 0x07;
-            strcpy(_chipDetails.flashInfo.name, "FLASH");
+            strlcpy(_chipDetails.flashInfo.name, "FLASH", sizeof(_chipDetails.flashInfo.name));
             foundFlash = true;
         }
     }
@@ -842,10 +842,10 @@ ZigateFlashStatus ZigateFlasher::blChipIdRead() {
     // Set chip name based on ID
     switch (_chipDetails.chipId >> 24) {
         case 0x88:
-            strcpy(_chipDetails.chipName, "JN5189");
+            strlcpy(_chipDetails.chipName, "JN5189", sizeof(_chipDetails.chipName));
             break;
         case 0x89:
-            strcpy(_chipDetails.chipName, "JN5188");
+            strlcpy(_chipDetails.chipName, "JN5188", sizeof(_chipDetails.chipName));
             break;
         default:
             snprintf(_chipDetails.chipName, sizeof(_chipDetails.chipName),

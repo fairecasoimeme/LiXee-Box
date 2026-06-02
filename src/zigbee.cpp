@@ -30,7 +30,7 @@
 #include "powerHistory.h"
 #include "rules.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 
 extern struct ZigbeeConfig ZConfig;
 extern struct ConfigGeneralStruct ConfigGeneral;
@@ -41,12 +41,6 @@ extern RulesManager rulesManager;
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
 //extern CircularBuffer<Packet, 10> commandTimedList;
-extern String Day;
-extern String Month;
-extern String Yesterday;
-extern String Year;
-extern String Hour;
-extern String Minute;
 
 extern String section[12];
 
@@ -835,7 +829,7 @@ float getTarifPower(String IEEE, int power)
     const ValueMap &valMap   = graphEntry.second;
 
     
-    if (Day.c_str() == Key.c_str())
+    if (memcmp(Day, Key.c_str(), 2) == 0)
     {
       for (const auto &attrPair : valMap.attributes) {
           int attrId = attrPair.first;
@@ -873,9 +867,9 @@ PSRAMString getLinkyDatas(String IEEE)
     DeviceData* device = devices[i];
     if (device->getDeviceID() == IEEE)
     {
-      int modeTmp = strtol(device->getValue(std::string("FF66"),std::string("768")).c_str(),0,16);
+      int modeTmp = strtol(device->getValue("FF66","768").c_str(),0,16);
       result+="<div id='datasLinky' style='display:inline-block;float:left;'>";
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("776")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","776").c_str(),0,16));
       if (tmp != "")
       {
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -883,7 +877,7 @@ PSRAMString getLinkyDatas(String IEEE)
         result+=F("<path d='M1.5 1a.5.5 0 0 0-.5.5v3a.5.5 0 0 1-1 0v-3A1.5 1.5 0 0 1 1.5 0h3a.5.5 0 0 1 0 1zM11 .5a.5.5 0 0 1 .5-.5h3A1.5 1.5 0 0 1 16 1.5v3a.5.5 0 0 1-1 0v-3a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 1-.5-.5M.5 11a.5.5 0 0 1 .5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 1 0 1h-3A1.5 1.5 0 0 1 0 14.5v-3a.5.5 0 0 1 .5-.5m15 0a.5.5 0 0 1 .5.5v3a1.5 1.5 0 0 1-1.5 1.5h-3a.5.5 0 0 1 0-1h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 1 .5-.5M3 4.5a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0zm2 0a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5zm3 0a.5.5 0 0 1 1 0v7a.5.5 0 0 1-1 0z'/>");
         result+="</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Numéro de série)</i></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("FF66"),std::string("768")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("FF66","768").c_str(),0,16));
       if (tmp !="")
       {
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -891,7 +885,7 @@ PSRAMString getLinkyDatas(String IEEE)
         result+=F("<path d='M8.186 1.113a.5.5 0 0 0-.372 0L1.846 3.5l2.404.961L10.404 2zm3.564 1.426L5.596 5 8 5.961 14.154 3.5zm3.25 1.7-6.5 2.6v7.922l6.5-2.6V4.24zM7.5 14.762V6.838L1 4.239v7.923zM7.443.184a1.5 1.5 0 0 1 1.114 0l7.129 2.852A.5.5 0 0 1 16 3.5v8.662a1 1 0 0 1-.629.928l-7.185 2.874a.5.5 0 0 1-.372 0L.63 13.09a1 1 0 0 1-.63-.928V3.5a.5.5 0 0 1 .314-.464z'/>");
         result+="</svg><br><strong>"+getLinkyMode(tmp.toInt())+"</strong></span>";
       }
-      tmp = String(device->getValue(std::string("FF66"),std::string("0")));
+      tmp = String(device->getValue("FF66","0"));
       if (tmp!="")
       {      
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -900,7 +894,7 @@ PSRAMString getLinkyDatas(String IEEE)
         result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
         result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Abonnement)</i></span>";
       }
-      tmp = String(device->getValue(std::string("FF66"),std::string("16")));
+      tmp = String(device->getValue("FF66","16"));
       if (tmp!="")
       {      
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -909,7 +903,7 @@ PSRAMString getLinkyDatas(String IEEE)
         result+= F("<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zm12 1a1 1 0 0 1 1 1v1H1V2a1 1 0 0 1 1-1zm1 3v10a1 1 0 0 1-1 1h-2V4zm-4 0v11H2a1 1 0 0 1-1-1V4z'/>");
         result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Période tarifaire)</i></span>";
       }
-      tmp = String(device->getValue(std::string("FF66"),std::string("512")));
+      tmp = String(device->getValue("FF66","512"));
       if (tmp!="")
       {
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -919,7 +913,7 @@ PSRAMString getLinkyDatas(String IEEE)
         result+= F("<path d='M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5'/>");      
         result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Tarif en cours)</i></span>";
       }
-      tmp = String(device->getValue(std::string("FF66"),std::string("32")));
+      tmp = String(device->getValue("FF66","32"));
       if (tmp!="")
       {
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -930,7 +924,7 @@ PSRAMString getLinkyDatas(String IEEE)
         result+= "</svg><br><strong>"+tmp+"</strong><br><i style='font-size:12px;'>(Tarif en cours)</i></span>";
       }
 
-      tmp = String(strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0B01","13").c_str(),0,16));
       if (tmp!="")
       {
         result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -947,7 +941,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if ((modeTmp==2) || (modeTmp==0) )
       {
-        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("1290")).c_str(),0,16));
+        tmp = String(strtol(device->getValue("0B04","1290").c_str(),0,16));
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -966,7 +960,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if (modeTmp==2)
       {
-        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("2314")).c_str(),0,16));
+        tmp = String(strtol(device->getValue("0B04","2314").c_str(),0,16));
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -979,7 +973,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if (modeTmp==2)
       {
-        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("2570")).c_str(),0,16));
+        tmp = String(strtol(device->getValue("0B04","2570").c_str(),0,16));
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -993,7 +987,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if (modeTmp==2)
       {
-        tmp = String(strtol(device->getValue(std::string("0B04"),std::string("1293")).c_str(),0,16));
+        tmp = String(strtol(device->getValue("0B04","1293").c_str(),0,16));
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -1006,7 +1000,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if ((modeTmp==2) || (modeTmp==0) )
       {
-        tmp = String(device->getValue(std::string("FF66"),std::string("1")).c_str());
+        tmp = String(device->getValue("FF66","1").c_str());
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -1020,7 +1014,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if ((modeTmp==2) || (modeTmp==0) )
       {
-        tmp = String(device->getValue(std::string("FF66"),std::string("4")).c_str());
+        tmp = String(device->getValue("FF66","4").c_str());
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -1034,7 +1028,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if ((modeTmp==2))
       {
-        tmp = String(device->getValue(std::string("FF66"),std::string("3")).c_str());
+        tmp = String(device->getValue("FF66","3").c_str());
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -1047,7 +1041,7 @@ PSRAMString getLinkyDatas(String IEEE)
       }
       if ((modeTmp==2) || (modeTmp==0) )
       {
-        tmp = String(device->getValue(std::string("FF66"),std::string("2")).c_str());
+        tmp = String(device->getValue("FF66","2").c_str());
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -1061,7 +1055,7 @@ PSRAMString getLinkyDatas(String IEEE)
 
       if ((modeTmp==2) || (modeTmp==0) )
       {
-        tmp = String(device->getValue(std::string("FF66"),std::string("9")).c_str());
+        tmp = String(device->getValue("FF66","9").c_str());
         if (tmp!="")
         {
           result+=F("<span style='display:inline-block;float:left;width:150px;text-align:center;height:120px;'>");
@@ -1073,7 +1067,7 @@ PSRAMString getLinkyDatas(String IEEE)
           
       }
 
-      tmp = String(device->getValue(std::string("FF66"),std::string("535")));
+      tmp = String(device->getValue("FF66","535"));
       if (tmp!="")
       {
         auto status = parseStatusRegister(tmp);
@@ -1181,7 +1175,7 @@ PSRAMString getLinkyDatas(String IEEE)
         result+= "</svg><br><strong>"+status.pointe_mobile  +"</strong><br><i style='font-size:12px;'>(pointe mobile)</i></span>";
       }
 
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("1")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","1").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() != 0)
@@ -1193,7 +1187,7 @@ PSRAMString getLinkyDatas(String IEEE)
           result+= "</svg><br><strong>"+tmp+" Wh </strong><br><i style='font-size:12px;'>(Index 1)</i></span>";
         }
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("256")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","256").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
@@ -1205,7 +1199,7 @@ PSRAMString getLinkyDatas(String IEEE)
           result+= "</svg><br><strong>"+tmp+" Wh </strong><br><i style='font-size:12px;'>(Index 1)</i></span>";
         }
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("258")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","258").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
@@ -1217,49 +1211,49 @@ PSRAMString getLinkyDatas(String IEEE)
             result+= "</svg><br><strong>"+tmp+" Wh </strong><br><i style='font-size:12px;'>(Index 2)</i></span>";
         }
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("260")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","260").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
           result+="<br><strong>Index (BBRHCJW/EASF03): </strong>"+tmp+" Wh <span id='index4'></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("262")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","262").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
           result+="<br><strong>Index (BBRHPJW/EASF04): </strong>"+tmp+" Wh <span id='index5'></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("264")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","264").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
           result+="<br><strong>Index (BBRHCJR/EASF05): </strong>"+tmp+" Wh <span id='index6'></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("266")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","266").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
           result+="<br><strong>Index (BBRHPJR/EASF06): </strong>"+tmp+" Wh <span id='index7'></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("268")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","268").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
           result+="<br><strong>Index (EASF07): </strong>"+tmp+" Wh <span id='index8'></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("270")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","270").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
           result+="<br><strong>Index (EASF08): </strong>"+tmp+" Wh <span id='index9'></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("272")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","272").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
           result+="<br><strong>Index (EASF09): </strong>"+tmp+" Wh <span id='index10'></span>";
       }
-      tmp = String(strtol(device->getValue(std::string("0702"),std::string("274")).c_str(),0,16));
+      tmp = String(strtol(device->getValue("0702","274").c_str(),0,16));
       if (tmp!="")
       {
         if (tmp.toInt() > 0)
@@ -1391,36 +1385,36 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
           {
             if (Attribute == "1295")
             {
-              result = String(strtol(device->getValue(std::string("0B04"),std::string(String("1288").c_str())).c_str(),0,16) * 200);
+              result = String(strtol(device->getValue("0B04","1288").c_str(),0,16) * 200);
             }else if (Attribute == "2319")
             {
-              result = String(strtol(device->getValue(std::string("0B04"),std::string(String("2312").c_str())).c_str(),0,16) * 200);
+              result = String(strtol(device->getValue("0B04","2312").c_str(),0,16) * 200);
             }else if (Attribute == "2575")
             {
-              result = String(strtol(device->getValue(std::string("0B04"),std::string(String("2568").c_str())).c_str(),0,16) * 200);
+              result = String(strtol(device->getValue("0B04","2568").c_str(),0,16) * 200);
             }
       
           }else{
-            result = String(strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16));
+            result = String(strtol(device->getValue("0B04",String(Attribute).c_str()).c_str(),0,16));
           }
-          
+
           result += ";";
           if (ConfigGeneral.LinkyMode == 0)
           {
-            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
+            result += strtol(device->getValue("0B01", "13").c_str(), 0, 16) * 200;
           }else if (ConfigGeneral.LinkyMode == 2){
-            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200 / 3;
+            result += strtol(device->getValue("0B01", "13").c_str(), 0, 16) * 200 / 3;
           }else if ((ConfigGeneral.LinkyMode == 1) || (ConfigGeneral.LinkyMode == 5)){
-            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000;
+            result += strtol(device->getValue("0B01", "14").c_str(), 0, 16) * 1000;
           }else if ((ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7)){
-            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000 / 3;
+            result += strtol(device->getValue("0B01", "14").c_str(), 0, 16) * 1000 / 3;
           }
           result += ";";
           result += device->getPowerW();
         }else{
-          result = String(strtol(device->getValue(std::string("FF66"),std::string(String(Attribute).c_str())).c_str(),0,16));
+          result = String(strtol(device->getValue("FF66",String(Attribute).c_str()).c_str(),0,16));
           result += ";";
-          result += String(strtol(device->getValue(std::string("0B01"),std::string("14")).c_str(),0,16)*1000);
+          result += String(strtol(device->getValue("0B01","14").c_str(),0,16)*1000);
         }
         return result;
       }
@@ -1476,7 +1470,7 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         }
         maxVal = max(sum,maxVal);
         minVal = min(sum,minVal);
-        if (memcmp(Day.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Day,Key.c_str(),2)==0)
         {
           tmp=sum;
         }
@@ -1510,7 +1504,7 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         }
         maxVal = max(sum,maxVal);
         minVal = min(sum,minVal);
-        if (memcmp(Month.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Month,Key.c_str(),2)==0)
         {
           tmp=sum;
         }
@@ -1543,7 +1537,7 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
         }
         maxVal = max(sum,maxVal);
         minVal = min(sum,minVal);
-        if (memcmp(Year.c_str(),Key.c_str(),4)==0)
+        if (memcmp(Year,Key.c_str(),4)==0)
         {
           tmp=sum;
         }
@@ -2191,7 +2185,7 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
     for (const auto &graphEntry : hist.hours.graph) {
       const PsString &Key = graphEntry.first;
       const ValueMap &valMap   = graphEntry.second;
-      if (Hour.c_str() == Key.c_str())
+      if (memcmp(Hour, Key.c_str(), 2) == 0)
       {
         for (const auto &attrPair : valMap.attributes) {
           int attrId   = attrPair.first;
@@ -2250,7 +2244,7 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
       {
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
-        if (memcmp(Yesterday.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Yesterday,Key.c_str(),2)==0)
         {
           long int sum=0;
           float tmpEuros=0;
@@ -2292,7 +2286,7 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
       {
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
-        if (memcmp(Month.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Month,Key.c_str(),2)==0)
         {
           long int sum=0;
           float tmpEuros=0;
@@ -2336,7 +2330,7 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
       {
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
-        if (memcmp(Year.c_str(),Key.c_str(),4)==0)
+        if (memcmp(Year,Key.c_str(),4)==0)
         {
           long int sum=0;
           float tmpEuros=0;
@@ -2417,12 +2411,12 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
         minVal = min(sum,minVal);
         if (minVal ==0){minVal=maxVal;}  
 
-        if (memcmp(Day.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Day,Key.c_str(),2)==0)
         {
           tmp=sum;
           tarifEuro=tmpEuros;
         }
-        if (memcmp(Yesterday.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Yesterday,Key.c_str(),2)==0)
         {
           lastTime=sum;
         }
@@ -2452,12 +2446,12 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
         if (minVal ==0){minVal=maxVal;}  
         
         //tmpEuros+= String(ConfigGeneral.tarifAbo).toFloat();
-        if (memcmp(Month.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Month,Key.c_str(),2)==0)
         {
           tmp=sum;
           tarifEuro=tmpEuros;
         }
-        if (memcmp(String(Month.toInt()-1).c_str(),Key.c_str(),4)==0)
+        if (memcmp(String(atoi(Month)-1).c_str(),Key.c_str(),4)==0)
         {
           lastTime=sum;
         }
@@ -2487,12 +2481,12 @@ PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
         if (minVal ==0){minVal=maxVal;}  
         
 
-        if (memcmp(Year.c_str(),Key.c_str(),4)==0)
+        if (memcmp(Year,Key.c_str(),4)==0)
         {
           tmp=sum;
           tarifEuro=tmpEuros;
         }
-        if (memcmp(String(Year.toInt()-1).c_str(),Key.c_str(),4)==0)
+        if (memcmp(String(atoi(Year)-1).c_str(),Key.c_str(),4)==0)
         {
           lastTime=sum;
         }
@@ -2569,20 +2563,20 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         String result="";
         if (Attribute != "519")
         {
-          long papp = strtol(device->getValue(std::string("0B04"),std::string(String(Attribute).c_str())).c_str(),0,16);
+          long papp = strtol(device->getValue("0B04",String(Attribute).c_str()).c_str(),0,16);
           // PAPP négatif = injection : afficher 0 sur la jauge soutirée
           if (papp < 0) papp = 0;
           result = String(papp);
           result +=";";
           if (ConfigGeneral.LinkyMode == 0)
           {
-            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
+            result += strtol(device->getValue("0B01", "13").c_str(), 0, 16) * 200;
           }else if (ConfigGeneral.LinkyMode == 2){
-            result += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200 / 3;
+            result += strtol(device->getValue("0B01", "13").c_str(), 0, 16) * 200 / 3;
           }else if ((ConfigGeneral.LinkyMode == 1) || (ConfigGeneral.LinkyMode == 5)){
-            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000;
+            result += strtol(device->getValue("0B01", "14").c_str(), 0, 16) * 1000;
           }else if ((ConfigGeneral.LinkyMode == 3) || (ConfigGeneral.LinkyMode == 7)){
-            result += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000 / 3;
+            result += strtol(device->getValue("0B01", "14").c_str(), 0, 16) * 1000 / 3;
           }
           result +=";0;";
           result += device->getPowerW()+" W";
@@ -2597,11 +2591,11 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
           }
           // Fallback : lire l'index SINSTI depuis le cluster FF66
           if (injValue == 0) {
-            injValue = strtol(device->getValue(std::string("FF66"),std::string(String(Attribute).c_str())).c_str(),0,16);
+            injValue = strtol(device->getValue("FF66",String(Attribute).c_str()).c_str(),0,16);
           }
           result = String(injValue);
           result +=";";
-          result += String(strtol(device->getValue(std::string("0B01"),std::string("14")).c_str(),0,16)*1000);
+          result += String(strtol(device->getValue("0B01","14").c_str(),0,16)*1000);
           result +=";0";
         }
 
@@ -2641,7 +2635,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
 
-        if (memcmp(Day.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Day,Key.c_str(),2)==0)
         {
           for (const auto &attrPair : valMap.attributes) {
               long attrVal = attrPair.second;
@@ -2662,7 +2656,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
 
-        if (memcmp(Month.c_str(),Key.c_str(),2)==0)
+        if (memcmp(Month,Key.c_str(),2)==0)
         {
           for (const auto &attrPair : valMap.attributes) {
               long attrVal = attrPair.second;
@@ -2683,7 +2677,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
         const PsString &Key = graphEntry.first;
         const ValueMap &valMap   = graphEntry.second;
 
-        if (memcmp(Year.c_str(),Key.c_str(),4)==0)
+        if (memcmp(Year,Key.c_str(),4)==0)
         {
           for (const auto &attrPair : valMap.attributes) {
               long attrVal = attrPair.second;
@@ -2721,7 +2715,7 @@ String getPowerGaugeTimeDay(String IEEE, String Attribute)
   const char* path ="/db/";
   const char* extension =".json";
   char name_with_extension[64];
-  strcpy(name_with_extension,path);
+  strlcpy(name_with_extension,path, sizeof(name_with_extension));
   strcat(name_with_extension,Attribute.c_str());
   strcat(name_with_extension,"_");
   strcat(name_with_extension,IEEE.c_str());
@@ -2734,9 +2728,9 @@ String getPowerGaugeTimeDay(String IEEE, String Attribute)
   }else{
     SpiRamJsonDocument temp(MAXHEAP);
     deserializeJson(temp,DeviceFile);
-    if ((temp[Attribute]["minute"][Hour+":"+Minute]) && (temp[Attribute]["min"]) && (temp[Attribute]["max"]))
+    if ((temp[Attribute]["minute"][String(Hour)+":"+Minute]) && (temp[Attribute]["min"]) && (temp[Attribute]["max"]))
     {
-      String t = Hour+":"+Minute;
+      String t = String(Hour)+":"+Minute;
       result =String((int)temp[Attribute]["minute"][t])+";"+String((int)temp[Attribute]["min"])+";"+String((int)temp[Attribute]["max"]);
       return result;
     }
@@ -2752,7 +2746,7 @@ String getPowerDatas( String IEEE, String type, String Attribute, String time)
   const char* path ="/db/";
   const char* extension =".json";
   char name_with_extension[64];
-  strcpy(name_with_extension,path);
+  strlcpy(name_with_extension,path, sizeof(name_with_extension));
   strcat(name_with_extension,type.c_str());
   strcat(name_with_extension,"_");
   strcat(name_with_extension,Attribute.c_str());
@@ -2811,7 +2805,7 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
     const char* path ="/tp/";
     const char* extension =".json";
     char name_with_extensionTP[64];
-    strcpy(name_with_extensionTP,path);
+    strlcpy(name_with_extensionTP,path, sizeof(name_with_extensionTP));
     strcat(name_with_extensionTP,String(device_id).c_str());
     strcat(name_with_extensionTP,extension);
 
@@ -2914,7 +2908,7 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
           String inifile = GetMacAdrr(SA);
           const char* path ="/db/";
           char name_with_extension[64];
-          strcpy(name_with_extension,path);
+          strlcpy(name_with_extension,path, sizeof(name_with_extension));
           strcat(name_with_extension,inifile.c_str());
 
           File file = LittleFS.open(name_with_extension, "r+");
@@ -3163,7 +3157,7 @@ void getBind(uint64_t mac, int device_id, String model)
     const char* path ="/tp/";
     const char* extension =".json";
     char name_with_extension[64];
-    strcpy(name_with_extension,path);
+    strlcpy(name_with_extension,path, sizeof(name_with_extension));
     strcat(name_with_extension,String(device_id).c_str());
     strcat(name_with_extension,extension);  
 

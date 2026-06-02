@@ -1,5 +1,59 @@
 # Changelog
 
+## v2.20
+
+### Moteur de règles — refonte complète
+- Nouveau moteur de règles complet avec évaluation automatique (timer ou événement)
+- **9 types de conditions** :
+  - `device` — comparaison d'un attribut Zigbee à un seuil, avec affichage de la valeur actuelle
+  - `device_compare` — comparaison entre deux appareils Zigbee avec offset optionnel et affichage des valeurs actuelles
+  - `time` — heure précise (HH:MM)
+  - `time_range` — plage horaire (supporte le passage à minuit)
+  - `weekday` — jour(s) de semaine (lundi–dimanche)
+  - `date` — date précise, récurrente (ignorer année) ou ponctuelle
+  - `datetime` — date et heure combinées
+  - `day` — jour du mois (1–31)
+  - `month` — mois (1–12)
+- **Logique combinatoire** : chaînage ET / OU entre conditions avec évaluation court-circuit
+- **3 types d'actions** :
+  - `device` — envoyer une commande template à un appareil Zigbee
+  - `dynamic` — lire la valeur d'un capteur source, appliquer un calcul linéaire (coefficient × valeur + offset), envoyer le résultat à un actionneur cible
+  - `notification` — notification interne avec variables dynamiques (`{rule}`, `{date}`, `{value}`, `{device}`, `{threshold}`, `{value_N}`, `{device_N}`)
+- **Actions SINON** : exécutées lors de la transition VRAI → FAUX (même types que les actions SI)
+- **Options d'évaluation** :
+  - Durée de maintien (conditions vraies en continu pendant N minutes)
+  - Mode une seule fois / répété
+  - Intervalle minimum entre exécutions (mode répété)
+  - Limite d'exécutions par jour (max/jour)
+- **Migration automatique** des anciennes `timeRanges` en conditions `time_range` + `weekday` au chargement
+- Rétrocompatibilité backend pour l'ancien type d'action `onoff`
+- Interface web complète : éditeur de règles avec sélection dynamique des devices/clusters/attributs, résumé en temps réel, labels en français avec accord grammatical (inférieur(e), supérieur(e))
+- Documentation complète : `RULES.md`
+
+### Sécurité
+- **Protection CSRF** sur les requêtes POST : vérification du header `Origin`/`Referer` (IPs locales, mDNS, tunnel autorisés)
+- **Certificat TLS Let's Encrypt** (ISRG Root X1) embarqué en PROGMEM pour les connexions HTTPS sortantes — remplace `setInsecure()`
+- Remplacement systématique de `sprintf` → `snprintf` et `strcpy` → `strlcpy` pour prévenir les dépassements de buffer
+
+### Optimisation mémoire — migration PSRAM
+- `PsramAllocator` étendu avec aliases : `PsString`, `PsVector<T>`, `PsUnorderedMap<V>`, `PsStringHash`
+- Type `DeviceList` (vecteur de devices en PSRAM) remplace `std::vector<DeviceData*>` partout
+- `TemplateCache` : map des templates parsés migré en PSRAM
+- `NotificationManager` : vecteur de notifications migré en PSRAM
+- Variables globales temporelles (`FormattedDate`, `Hour`, `Day`, `Month`, `Year`, `Minute`, `Yesterday`) changées de `String` en `char[]` — réduit la fragmentation heap
+
+### Écriture atomique des fichiers JSON
+- Nouvelle fonction `atomicWriteJson()` : écriture dans un fichier `.tmp` puis renommage — protège contre la corruption en cas de coupure ou crash
+- Utilisée par `energyHistory`, `notificationManager` et les sauvegardes de configuration
+- Protection mutex (`file_Mutex`) ajoutée dans les opérations `SPIFFS_ini`
+
+### Divers
+- Suppression du support Marstek (config, menu, code)
+- Mise à jour du template device `81.json`
+- Nettoyage de `data/firmware.tar` (remplacé par `data/web.tar`)
+
+---
+
 ## v2.19
 
 ### Tunnel reverse proxy

@@ -1,4 +1,5 @@
 #include "NotificationManager.h"
+#include "SPIFFS_ini.h"
 #include <time.h>
 
 NotificationManager::NotificationManager(const char* filePath, size_t maxSize) 
@@ -169,17 +170,9 @@ bool NotificationManager::saveToFile() {
     }
   }
   
-  File file = LittleFS.open(jsonFilePath, "w");
-  if (!file) {
-    log_e("Erreur: impossible d'ouvrir le fichier pour écriture");
-    return false;
-  }
-  
-  size_t written = serializeJson(doc, file);
-  file.close();
-  
-  Serial.printf("Notifications sauvegardées: %d bytes\n", written);
-  return written > 0;
+  bool ok = atomicWriteJson(jsonFilePath, doc);
+  if (ok) Serial.println("Notifications sauvegardées");
+  return ok;
 }
 
 bool NotificationManager::loadFromFile() {

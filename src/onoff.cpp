@@ -8,7 +8,7 @@
 #include "mqtt.h"
 #include "device.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -50,7 +50,7 @@ void OnoffManage(String inifile,int attribute,uint8_t datatype,int len, char* da
       case 0:        
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -80,7 +80,7 @@ void OnoffManage(String inifile,int attribute,uint8_t datatype,int len, char* da
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0006"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0006",String(attribute).c_str(),tmp.c_str());
             break;
           }
         }
@@ -89,7 +89,7 @@ void OnoffManage(String inifile,int attribute,uint8_t datatype,int len, char* da
         
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -120,7 +120,7 @@ void OnoffManage(String inifile,int attribute,uint8_t datatype,int len, char* da
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0006"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0006",String(attribute).c_str(),tmp.c_str());
             break;
           }
         }

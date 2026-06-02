@@ -9,9 +9,10 @@
 #include "powerHistory.h"
 #include "energyHistory.h"
 #include "PsramAllocator.h"
-#include "TemplateData.h" 
+#include "TemplateData.h"
 
-using PsString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
+class DeviceData; // Forward declaration
+using DeviceList = std::vector<DeviceData*, PsramAllocator<DeviceData*>>;
 
 const uint16_t INDEX_ID_LIST[11] = {256, 258, 260, 262, 264,
     266, 268, 270, 272, 274, 1};
@@ -114,6 +115,8 @@ public:
     // Accès aux autres clusters/attributs
     String getValue(const std::string &cluster, const std::string &attrib);
     void   setValue(const std::string &cluster, const std::string &attrib, const std::string &val);
+    String getValue(const char* cluster, const char* attrib);
+    void   setValue(const char* cluster, const char* attrib, const char* val);
 
     // Poll
     PollList &getPollList() { return _pollList; }

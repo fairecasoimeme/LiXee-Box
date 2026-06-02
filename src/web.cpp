@@ -26,6 +26,7 @@
 
 #include "config.h"
 #include "mbedtls/base64.h"
+#include "esp_crt_bundle.h"
 #include "flash.h"
 #include "log.h"
 #include "protocol.h"
@@ -44,7 +45,7 @@
 #include "tunnel.h"
 #include "ElectricalMeasurement.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern LiXeeBoxTunnel* tunnel;
 
 extern SemaphoreHandle_t file_Mutex;
@@ -69,6 +70,41 @@ extern bool updatePending ;
 
 extern NotificationManager notificationManager;
 
+// ISRG Root X1 (Let's Encrypt) - valid until 2035-06-04
+static const char lixee_root_ca[] PROGMEM = R"EOF(
+-----BEGIN CERTIFICATE-----
+MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
+TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
+cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
+WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
+ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
+MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
+h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6
+UA5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+s
+WT8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qy
+HB5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+U
+CvdGz7aLzIwBBVRnkLb1fqB3pVFnk/Cn6SfNhTU65JkZ+8/pBjYbl5cw+At+a1o
+Zr/Gt9XHDGR/M7hz45zB/al51fqzYsAOHagPl/MX3S6K8/riPMPOnfKjPPbXPyQh
+sPBBmFr8fVPbEOF8FjGDLUsbgpf0GIGMBoFnaBCCIZOHk5EVJI0oBNFN1G5W4SBK
+r8WI0tBQ+rKn0dXBqFB/I4ek0WqfXjKl/LUoxDq48wLMFNxWL5U4gO8cHj3bT97I
+6neIEBq+xfYLwY1zQOzkvAkr4VZnOaJ/3ceEF1g8rMqIK3rRbsIhSmvJMN3B1lMy
+LLpXBccWpU5tPBWYhNg+DlMRbAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
+hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
+ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
+3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
+NFtY2PwByVS5uCbMiogZiUvsaXPFJYcFIB7LREoA1g1BQuGyMPNjpCKWB5BhpE/m
+8tVFEkneA6D1JYxr/7xtAplJSl3MgIFvzPO0JKr3NZprMpI3OSnEbNBbnCCdflcR
+p5/G4MGSUVMK4D90rjZbsWi0+bBfUjTMOBtOWEjqFf5j+aKKlIorMkX71MCTHF/x
+nNohmGFiFqYSDA19VO+J0qw3SYTzfdxofsqFmObUhDce4f0Fdb2lyNGjIKH15m4y
+qkgMzFBBrkixNS0a6Y2gdMg3e3Fse3N5KJY49X0VfhIyNJVEhmj8LNYMdK5S3zuA
+jRaGTGHaYbSEX5EvGNmJ0lJ2bkw7z6FCh7S3kvPFfMk3AbsHtT2oCEsG5T8qR+hh
+5MUC9aO0dwPJ5w/FPbFk+fk/1x/ZerQFOr/5IxJVWMhnav8pu6f0w3dBG/nb7kNN
+VPQ/qKSM9nHHKq+s3YlBEfMD2JG+r8OnVJSS1JfM/IVHd2Y4y2n65Arx9g=
+-----END CERTIFICATE-----
+)EOF";
+
 // ==================== Session Management ====================
 struct SessionInfo {
     char token[33];          // 32 hex chars + null
@@ -83,7 +119,7 @@ static const unsigned long SESSION_TIMEOUT = 24UL * 3600UL * 1000UL; // 24h
 String generateSessionToken() {
     char token[33];
     for (int i = 0; i < 16; i++) {
-        sprintf(token + i*2, "%02x", (uint8_t)esp_random());
+        snprintf(token + i*2, sizeof(token) - i*2, "%02x", (uint8_t)esp_random());
     }
     token[32] = 0;
     return String(token);
@@ -141,8 +177,41 @@ String getSessionCookie(AsyncWebServerRequest *request) {
     return "";
 }
 
+// CSRF protection: validate Origin/Referer on POST requests
+bool checkCsrf(AsyncWebServerRequest *request) {
+    if (request->method() != HTTP_POST) return true;
+
+    // Check Origin header first, then Referer
+    String origin;
+    if (request->hasHeader("Origin")) {
+        origin = request->header("Origin");
+    } else if (request->hasHeader("Referer")) {
+        origin = request->header("Referer");
+    } else {
+        // No Origin/Referer on POST = likely CSRF (browser always sends at least one)
+        log_e("[CSRF] POST without Origin/Referer from %s", request->client()->remoteIP().toString().c_str());
+        return false;
+    }
+
+    // Allow local IPs, mDNS hostnames, and tunnel proxy (127.0.0.1)
+    String localIP = WiFi.localIP().toString();
+    if (origin.indexOf(localIP) >= 0) return true;
+    if (origin.indexOf("127.0.0.1") >= 0) return true;
+    if (origin.indexOf("lixeebox-") >= 0) return true;  // mDNS
+    if (origin.indexOf(".lixee-box.fr") >= 0) return true;  // tunnel
+
+    log_e("[CSRF] Rejected POST from origin: %s", origin.c_str());
+    return false;
+}
+
 bool checkAuth(AsyncWebServerRequest *request) {
     if (!ConfigSettings.enableSecureHttp) return true;
+
+    // 0. CSRF protection on POST requests
+    if (!checkCsrf(request)) {
+        request->send(403, "text/plain", "Forbidden: CSRF check failed");
+        return false;
+    }
 
     // 1. Check session cookie
     String token = getSessionCookie(request);
@@ -199,7 +268,7 @@ void processTunnelActivation() {
     Serial.printf("[Tunnel] Activation avec code: %s\n", tunnelActivation.code);
 
     WiFiClientSecure secClient;
-    secClient.setInsecure();
+    secClient.setCACert(lixee_root_ca);
     HTTPClient http;
     String url = "https://remote.lixee-box.fr/api/activate?code=" + String(tunnelActivation.code);
     http.begin(secClient, url);
@@ -275,13 +344,6 @@ void processTunnelActivation() {
 
 int maxDayOfTheMonth[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 String section[12] = { "0", "1", "256", "258" , "260", "262", "264" ,"266", "268", "270", "272", "274"};
-
-extern String Hour;
-extern String Minute;
-extern String Day;
-extern String Month;
-extern String Year;
-extern String FormattedDate;
 
 UpdateStatus updateStatus;
 
@@ -466,17 +528,6 @@ const char HTTP_MENU[] PROGMEM =
    "</svg>"
    " WebPush"
    "</a>"
-   /*"<a class='dropdown-item' href='/configMarstek'>"
-   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink' width='24px' height='20px' viewBox='0 0 23 20' version='1.1'>"
-   "  <g id='surface1'>"
-   "    <path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 20.652344 1.757812 C 20.03125 2.171875 19.339844 2.757812 19.09375 3.046875 C 18.28125 4.035156 18.304688 3.878906 18.328125 11.867188 L 18.363281 19.035156 L 19.503906 18.292969 C 20.125 17.878906 20.851562 17.304688 21.109375 17 C 21.96875 15.988281 21.945312 16.183594 21.945312 8.144531 C 21.945312 4.207031 21.910156 0.976562 21.863281 0.976562 C 21.804688 0.988281 21.261719 1.328125 20.652344 1.757812 Z M 20.652344 1.757812 '/>"
-   "    <path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 1.644531 8.269531 C 1.644531 16.195312 1.644531 16.132812 2.464844 17.097656 C 2.980469 17.707031 5.09375 19.207031 5.28125 19.085938 C 5.351562 19.035156 5.386719 16.425781 5.363281 11.855469 L 5.339844 4.695312 L 5.070312 4.085938 C 4.917969 3.742188 4.636719 3.292969 4.4375 3.085938 C 4.011719 2.632812 2.007812 1.21875 1.785156 1.21875 C 1.679688 1.21875 1.644531 2.867188 1.644531 8.269531 Z M 1.644531 8.269531 '/>"
-   "    <path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 15.019531 5.171875 C 13.800781 6 13.355469 6.476562 12.992188 7.316406 C 12.765625 7.816406 12.753906 8.144531 12.730469 11.476562 C 12.707031 13.464844 12.742188 15.160156 12.789062 15.242188 C 12.859375 15.367188 13.144531 15.242188 13.90625 14.742188 C 15.160156 13.925781 15.722656 13.390625 16.089844 12.609375 C 16.371094 12.023438 16.371094 11.953125 16.40625 8.195312 C 16.429688 5.132812 16.417969 4.390625 16.289062 4.390625 C 16.207031 4.402344 15.628906 4.742188 15.019531 5.171875 Z M 15.019531 5.171875 '/>"
-   "    <path style=' stroke:none;fill-rule:nonzero;fill:rgb(0%,0%,0%);fill-opacity:1;' d='M 7.15625 8.011719 C 7.15625 9.953125 7.21875 11.769531 7.289062 12.074219 C 7.511719 13.085938 8.074219 13.78125 9.457031 14.730469 C 10.152344 15.207031 10.761719 15.574219 10.820312 15.535156 C 10.867188 15.5 10.914062 13.890625 10.914062 11.964844 C 10.914062 8.097656 10.855469 7.644531 10.210938 6.71875 C 9.878906 6.257812 7.558594 4.511719 7.265625 4.511719 C 7.207031 4.511719 7.15625 6.011719 7.15625 8.011719 Z M 7.15625 8.011719 '/>"
-   "  </g>"
-   "  </svg>"
-   " Marstek"
-   "</a>"*/
    "</div>"
    "</li>"
    "<li class='nav-item dropdown'>"
@@ -2723,15 +2774,44 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
         </div>
 
         <div class="mb-4">
-          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel - filtre d'exécution)</span></label>
-          <div id="timeRangesContainer"></div>
-          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Plage</button>
+          <label class="form-label fw-bold">SI ... (Conditions)</label>
+          <div id="conditionsContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addCondition()">+ Condition</button>
         </div>
 
         <div class="mb-4">
-          <label class="form-label fw-bold">SI ... (Conditions)</label>
-          <div id="conditionsContainer"></div>
-          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Condition</button>
+          <label class="form-label fw-bold">Options d'évaluation</label>
+          <div class="d-flex align-items-center gap-4 flex-wrap">
+            <div class="d-flex align-items-center gap-2">
+              <label class="form-label small mb-0 text-nowrap">Mode :</label>
+              <select class="form-select form-select-sm" id="ruleRepeat" style="width:auto;" onchange="updateModeInfo()">
+                <option value="0">Sur changement d'état</option>
+                <option value="1">À chaque évaluation</option>
+              </select>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <label class="form-label small mb-0 text-nowrap">Maintien :</label>
+              <div class="input-group input-group-sm" style="width:150px;">
+                <input type="number" class="form-control" id="ruleDuration" min="0" value="0">
+                <span class="input-group-text">min</span>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2" id="cooldownGroup" style="display:none;">
+              <label class="form-label small mb-0 text-nowrap">Intervalle min :</label>
+              <div class="input-group input-group-sm" style="width:150px;">
+                <input type="number" class="form-control" id="ruleCooldown" min="0" value="0">
+                <span class="input-group-text">min</span>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <label class="form-label small mb-0 text-nowrap">Max/jour :</label>
+              <div class="input-group input-group-sm" style="width:120px;">
+                <input type="number" class="form-control" id="ruleMaxExecPerDay" min="0" value="0">
+              </div>
+              <span class="form-text small text-muted mb-0">(0=illimit&eacute;)</span>
+            </div>
+          </div>
+          <div id="modeInfoBox" class="alert alert-info small mt-2 mb-0" style="font-size:0.85em;"></div>
         </div>
 
         <div class="mb-4">
@@ -2746,6 +2826,15 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="addElseAction()">+ Action</button>
         </div>
 
+        <div class="mb-4">
+          <label class="form-label fw-bold">Résumé</label>
+          <div id="ruleSummary" class="card bg-light">
+            <div class="card-body py-2" style="font-size:0.9em;">
+              <em class="text-muted">Complétez la règle pour voir le résumé...</em>
+            </div>
+          </div>
+        </div>
+
         <div class="d-flex justify-content-between mt-4">
           <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
           <button type="submit" class="btn btn-primary btn-lg">Enregistrer</button>
@@ -2757,321 +2846,13 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
 )rawstring";
 
 const char HTTP_EDIT_RULE_JS[] PROGMEM = R"rawstring(
+<script src='web/js/rules.js'></script>
 <script>
-var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
-
-var clusterNames={'0000':'Basic','0001':'Power','0003':'Identify','0004':'Groups','0005':'Scenes','0006':'On/Off','0008':'Level Control','000A':'Time','0019':'OTA Upgrade','0020':'Poll Control','0100':'Shade Config','0101':'Door Lock','0102':'Window Covering','0201':'Thermostat','0202':'Fan Control','0300':'Color Control','0400':'Illuminance','0402':'Temperature','0403':'Pressure','0405':'Humidity','0406':'Occupancy','0500':'IAS Zone','0502':'IAS WD','0702':'Simple Metering','0B04':'Electrical Measurement','0B05':'Diagnostics','1000':'Touchlink','EF00':'Tuya','FC11':'Sonoff Custom','FF66':'LiXee'};
-function clusterLabel(hex){var n=clusterNames[hex];return n?'0x'+hex+' - '+n:'0x'+hex}
-
 $(document).ready(function(){
-  $.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});
-  $.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})
+  initRulesEditor('edit', typeof ruleToEdit!=='undefined' ? ruleToEdit : null);
+  setupSubmitHandler('edit');
 });
 
-function checkDataLoadedAndInit(){
-  if(devicesLoaded&&templatesLoaded){
-    populateTriggerDeviceSelect();
-    if(typeof ruleToEdit!=='undefined'){loadRule(ruleToEdit)}
-  }
-}
-
-function populateTriggerDeviceSelect(){
-  var s=$('#triggerDevice').html('<option value="">-- Choisir --</option>');
-  $.each(devices,function(ieee,dev){
-    if(dev.INFO){
-      var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';
-      s.append('<option value="'+ieee+'">'+l+'</option>')
-    }
-  })
-}
-
-function getDeviceActions(ieee){
-  if(!ieee||!devices[ieee]||!devices[ieee].INFO)return[];
-  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default';
-  var tk=tid+'.json',tf=templates[tk];
-  if(!tf)return[];
-  var td=tf[m]||tf['default'];
-  if(!td||!td[0]||!td[0].action)return[];
-  return td[0].action
-}
-
-function hasCluster0006(ieee){
-  if(!ieee||!devices[ieee]||!devices[ieee].INFO)return false;
-  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default';
-  var tk=tid+'.json',tf=templates[tk];
-  if(!tf)return false;
-  var td=tf[m]||tf['default'];
-  if(!td||!td[0]||!td[0].status)return false;
-  return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})
-}
-
-function onTriggerModeChange(){
-  var mode=$('#triggerMode').val();
-  if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}
-  else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}
-}
-
-function onTriggerDeviceChange(){
-  var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');
-  c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');
-  if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;
-  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];
-  if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;
-  var clAdded={};
-  td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})
-}
-
-function onTriggerClusterChange(){
-  var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');
-  a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;
-  var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4);
-  var tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;
-  td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})
-}
-
-function addTimeRange(data){
-  var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';
-  ['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});
-  html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';
-  $('#timeRangesContainer').append(html);
-  if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}
-}
-function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
-
-// ========== CONDITIONS avec types temporels ==========
-
-function addCondition(data){
-  var id=conditionCount++;
-  var type=data?data.type||'device':'device';
-  var html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body">'+
-    '<div class="row g-2 mb-2">'+
-    '<div class="col-md-3"><label class="form-label small">Type</label>'+
-    '<select class="form-select form-select-sm condition-type-select" onchange="onConditionTypeChange('+id+')" required>'+
-    '<option value="device" '+(type==='device'?'selected':'')+'>📡 Appareil Zigbee</option>'+
-    '<option value="time" '+(type==='time'?'selected':'')+'>🕐 Heure précise</option>'+
-    '<option value="time_range" '+(type==='time_range'?'selected':'')+'>🕐 Plage horaire</option>'+
-    '<option value="weekday" '+(type==='weekday'?'selected':'')+'>📅 Jour de semaine</option>'+
-    '<option value="date" '+(type==='date'?'selected':'')+'>📆 Date</option>'+
-    '<option value="day" '+(type==='day'?'selected':'')+'>📆 Jour du mois</option>'+
-    '<option value="month" '+(type==='month'?'selected':'')+'>📆 Mois</option>'+
-    '</select></div>'+
-    '<div class="col-md-8 condition-fields-wrapper"></div>'+
-    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div>'+
-    '</div>'+
-    '<div class="row g-2"><div class="col-md-2"><label class="form-label small">Logique</label>'+
-    '<select class="form-select form-select-sm logic-select"><option value="AND">ET (AND)</option><option value="OR">OU (OR)</option></select></div></div>'+
-    '</div></div>';
-  $('#conditionsContainer').append(html);
-  onConditionTypeChange(id);
-  if(data){
-    var c=$('[data-id="'+id+'"]');
-    c.find('.logic-select').val(data.logic||'AND');
-    setTimeout(function(){loadConditionData(c,data)},50);
-  }
-}
-
-function onConditionTypeChange(id){
-  var c=$('[data-id="'+id+'"]'),type=c.find('.condition-type-select').val();
-  var wrapper=c.find('.condition-fields-wrapper');
-  wrapper.html(getConditionFieldsHTML(type,id));
-  if(type==='device'){
-    var sel=c.find('.device-select');
-    $.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});
-  }
-}
-
-function getConditionFieldsHTML(type,id){
-  switch(type){
-    case 'time':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Heure</label><input type="time" class="form-control form-control-sm time-input" value="08:00" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= (égal)</option><option value="!=">≠ (différent)</option><option value="<">&lt; (avant)</option><option value="<=">&le;</option><option value=">">&gt; (après)</option><option value=">=">&ge;</option></select></div></div>';
-    case 'time_range':
-      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">De</label><input type="time" class="form-control form-control-sm time-start-input" value="08:00" required></div><div class="col-md-3"><label class="form-label small">À</label><input type="time" class="form-control form-control-sm time-end-input" value="18:00" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="in">Dans la plage</option><option value="not_in">Hors plage</option></select></div></div>';
-    case 'weekday':
-      return '<div class="row g-2"><div class="col-md-8"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex flex-wrap"><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-1" value="1"><label class="btn btn-outline-primary" for="wd-'+id+'-1">Lun</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-2" value="2"><label class="btn btn-outline-primary" for="wd-'+id+'-2">Mar</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-3" value="3"><label class="btn btn-outline-primary" for="wd-'+id+'-3">Mer</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-4" value="4"><label class="btn btn-outline-primary" for="wd-'+id+'-4">Jeu</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-5" value="5"><label class="btn btn-outline-primary" for="wd-'+id+'-5">Ven</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-6" value="6"><label class="btn btn-outline-primary" for="wd-'+id+'-6">Sam</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-7" value="7"><label class="btn btn-outline-primary" for="wd-'+id+'-7">Dim</label></div></div><div class="col-md-3"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" required><option value="in">Ces jours</option><option value="not_in">Sauf ces jours</option></select></div></div>';
-    case 'date':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Date</label><input type="date" class="form-control form-control-sm date-input" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= ce jour</option><option value="!=">≠ pas ce jour</option><option value="<">&lt; avant</option><option value=">">&gt; après</option></select></div><div class="col-md-3 d-flex align-items-end"><div class="form-check"><input class="form-check-input ignore-year-check" type="checkbox" checked id="iy-'+id+'"><label class="form-check-label small" for="iy-'+id+'">Récurrent (ignorer année)</label></div></div></div>';
-    case 'day':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Jour du mois</label><input type="number" class="form-control form-control-sm day-input" min="1" max="31" value="1" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option><option value="<">&lt;</option><option value=">">&gt;</option></select></div></div>';
-    case 'month':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Mois</label><select class="form-select form-select-sm month-input" required><option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option></select></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option></select></div></div>';
-    case 'device':
-    default:
-      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">Appareil</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">--</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">--</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&le;</option><option value=">">&gt;</option><option value=">=">&ge;</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div></div>';
-  }
-}
-
-function loadConditionData(c,data){
-  var type=data.type||'device';
-  c.find('.operator-select').val(data.operator||'==');
-  switch(type){
-    case 'time':
-      c.find('.time-input').val(data.value||'08:00');
-      break;
-    case 'time_range':
-      c.find('.time-start-input').val(data.value||'08:00');
-      c.find('.time-end-input').val(data.value2||'18:00');
-      break;
-    case 'weekday':
-      if(data.value){data.value.split(',').forEach(function(d){c.find('.weekday-check[value="'+d.trim()+'"]').prop('checked',!0)})}
-      break;
-    case 'date':
-      if(data.value){
-        var p=data.value.split('/');
-        if(p.length>=2){
-          var y=p.length===3?p[2]:new Date().getFullYear();
-          c.find('.date-input').val(y+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'));
-          c.find('.ignore-year-check').prop('checked',p.length===2);
-        }
-      }
-      break;
-    case 'day':
-      c.find('.day-input').val(data.value||'1');
-      break;
-    case 'month':
-      c.find('.month-input').val(data.value||'1');
-      break;
-    case 'device':
-    default:
-      c.find('.device-select').val(data.IEEE);onDeviceChange(parseInt(c.attr('data-id')));
-      setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(parseInt(c.attr('data-id')));setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.value-input').val(data.value);onOperatorChange(parseInt(c.attr('data-id')))},100)},100);
-      break;
-  }
-}
-
-function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
-function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})}
-function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
-function removeCondition(id){$('[data-id="'+id+'"]').remove()}
-
-function collectConditionData(c){
-  var type=c.find('.condition-type-select').val(),op=c.find('.operator-select').val(),logic=c.find('.logic-select').val();
-  var cond={type:type,operator:op,logic:logic,IEEE:'',cluster:0,attribute:0,value:'',value2:''};
-  switch(type){
-    case 'time':cond.value=c.find('.time-input').val();break;
-    case 'time_range':cond.value=c.find('.time-start-input').val();cond.value2=c.find('.time-end-input').val();break;
-    case 'weekday':var days=[];c.find('.weekday-check:checked').each(function(){days.push($(this).val())});cond.value=days.join(',');break;
-    case 'date':
-      var dv=c.find('.date-input').val();
-      if(dv){var p=dv.split('-');var iy=c.find('.ignore-year-check').is(':checked');cond.value=iy?p[2]+'/'+p[1]:p[2]+'/'+p[1]+'/'+p[0]}
-      break;
-    case 'day':cond.value=c.find('.day-input').val();break;
-    case 'month':cond.value=c.find('.month-input').val();break;
-    case 'device':default:
-      cond.IEEE=c.find('.device-select').val();cond.cluster=parseInt(c.find('.cluster-select').val())||0;
-      cond.attribute=parseInt(c.find('.attribute-select').val())||0;cond.value=c.find('.value-input').val();
-      break;
-  }
-  return cond;
-}
-
-// ========== ACTIONS ==========
-
-function addAction(data){
-  var id=actionCount++;
-  var html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
-    '<div class="col-md-2"><label class="form-label small">Type</label>'+
-    '<select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required>'+
-    '<option value="device">Appareil</option>'+
-    '<option value="onoff">ON/OFF (legacy)</option>'+
-    '<option value="notification">Notification</option></select></div>'+
-    '<div class="col-md-3 action-device-fields"><label class="form-label small">Appareil</label>'+
-    '<select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-3 action-device-fields"><label class="form-label small">Action</label>'+
-    '<select class="form-select form-select-sm action-name-select" onchange="onActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
-    '<div class="col-md-2 action-device-fields"><label class="form-label small">Endpoint</label>'+
-    '<input type="number" class="form-control form-control-sm action-device-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label>'+
-    '<select class="form-select form-select-sm action-legacy-device-select" onchange="onActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label>'+
-    '<input type="number" class="form-control form-control-sm action-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label>'+
-    '<select class="form-select form-select-sm action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
-    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label>'+
-    '<input type="text" class="form-control form-control-sm action-title-input"></div>'+
-    '<div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label>'+
-    '<input type="text" class="form-control form-control-sm action-message-input"></div>'+
-    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';
-  $('#actionsContainer').append(html);
-  var c=$('[data-action-id="'+id+'"]');
-  var sel=c.find('.action-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
-  var selLegacy=c.find('.action-legacy-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
-  onActionTypeChange(id);
-  if(data){
-    if(data.type==='notification'){c.find('.action-type-select').val('notification');onActionTypeChange(id);c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}
-    else if(data.type==='device'&&data.actionName){c.find('.action-type-select').val('device');onActionTypeChange(id);c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);setTimeout(function(){c.find('.action-name-select').val(data.actionName);c.find('.action-device-endpoint-input').val(data.endpoint||1)},100)}
-    else if(data.type==='onoff'){c.find('.action-type-select').val('onoff');onActionTypeChange(id);c.find('.action-legacy-device-select').val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint||1);c.find('.action-value-select').val(data.value)}
-  }
-}
-
-function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();c.find('.action-device-fields,.action-legacy-fields,.action-notification-fields').hide();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input,.action-legacy-device-select,.action-endpoint-input,.action-value-select,.action-title-input,.action-message-input').prop('required',!1);if(t==='device'){c.find('.action-device-fields').show();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.action-legacy-fields').show();c.find('.action-legacy-device-select,.action-endpoint-input,.action-value-select').prop('required',!0)}else{c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0)}}
-function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val(),actionSel=c.find('.action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
-function onActionNameChange(id){var c=$('[data-action-id="'+id+'"]'),opt=c.find('.action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.action-device-endpoint-input').val(ep)}}
-function onActionLegacyDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
-function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
-
-// ========== ELSE ACTIONS ==========
-
-function addElseAction(data){
-  var id=elseActionCount++;
-  var html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2">'+
-    '<div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="device">Appareil</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div>'+
-    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div>'+
-    '<div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div>'+
-    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div>'+
-    '<div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div>'+
-    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div>'+
-    '<div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div>'+
-    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';
-  $('#elseActionsContainer').append(html);
-  var c=$('[data-else-action-id="'+id+'"]'),sel=c.find('.else-action-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
-  var selLegacy=c.find('.else-action-legacy-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
-  onElseActionTypeChange(id);
-  if(data){
-    if(data.type==='notification'){c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')}
-    else if(data.type==='device'&&data.actionName){c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);setTimeout(function(){c.find('.else-action-name-select').val(data.actionName);c.find('.else-action-device-endpoint-input').val(data.endpoint||1)},100)}
-    else if(data.type==='onoff'){c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);c.find('.else-action-legacy-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint||1);c.find('.else-action-value-select').val(data.value)}
-  }
-}
-
-function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();c.find('.else-action-device-fields,.else-action-legacy-fields,.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input,.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select,.else-action-title-input,.else-action-message-input').prop('required',!1);if(t==='device'){c.find('.else-action-device-fields').show();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.else-action-legacy-fields').show();c.find('.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0)}else{c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0)}}
-function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val(),actionSel=c.find('.else-action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.else-action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
-function onElseActionNameChange(id){var c=$('[data-else-action-id="'+id+'"]'),opt=c.find('.else-action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.else-action-device-endpoint-input').val(ep)}}
-function onElseActionLegacyDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
-function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
-
-function loadRule(rule){
-  $('#oldRuleName').val(rule.name);$('#ruleName').val(rule.name);
-  $('#ruleEnabled').prop('checked',rule.enabled!==false);
-  if(rule.trigger){$('#triggerMode').val(rule.trigger.mode||'timer');onTriggerModeChange();if(rule.trigger.mode==='event'){$('#triggerDevice').val(rule.trigger.IEEE);onTriggerDeviceChange();setTimeout(function(){$('#triggerCluster').val(rule.trigger.cluster);onTriggerClusterChange();setTimeout(function(){$('#triggerAttribute').val(rule.trigger.attribute)},100)},100)}}
-  if(rule.timeRanges)rule.timeRanges.forEach(function(tr){addTimeRange(tr)});
-  if(rule.conditions&&rule.conditions.length>0)rule.conditions.forEach(function(c){addCondition(c)});else addCondition();
-  if(rule.actions&&rule.actions.length>0)rule.actions.forEach(function(a){addAction(a)});else addAction();
-  if(rule.elseActions)rule.elseActions.forEach(function(a){addElseAction(a)})
-}
-
-// ========== SUBMIT ==========
-
-$('#ruleForm').on('submit',function(e){
-  e.preventDefault();
-  var rule={oldName:$('#oldRuleName').val(),name:$('#ruleName').val(),enabled:$('#ruleEnabled').is(':checked'),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
-  
-  $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
-  
-  $('.condition-item').each(function(){rule.conditions.push(collectConditionData($(this)))});
-  if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}
-  
-  $('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.action-device-select').val();a.actionName=c.find('.action-name-select').val();a.endpoint=parseInt(c.find('.action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.action-legacy-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val())||1;a.value=c.find('.action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});
-  
-  $('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.else-action-device-select').val();a.actionName=c.find('.else-action-name-select').val();a.endpoint=parseInt(c.find('.else-action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.else-action-legacy-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val())||1;a.value=c.find('.else-action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});
-  
-  $.ajax({url:'/api/rules/edit',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle modifiée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})
-});
 </script>
 )rawstring";
 
@@ -3122,15 +2903,44 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
         </div>
 
         <div class="mb-4">
-          <label class="form-label fw-bold">Plages horaires <span class="text-muted small">(optionnel - filtre d'exécution)</span></label>
-          <div id="timeRangesContainer"></div>
-          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addTimeRange()">+ Plage</button>
+          <label class="form-label fw-bold">SI ... (Conditions)</label>
+          <div id="conditionsContainer"></div>
+          <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="addCondition()">+ Condition</button>
         </div>
 
         <div class="mb-4">
-          <label class="form-label fw-bold">SI ... (Conditions)</label>
-          <div id="conditionsContainer"></div>
-          <button type="button" class="btn btn-sm btn-outline-primary" onclick="addCondition()">+ Condition</button>
+          <label class="form-label fw-bold">Options d'évaluation</label>
+          <div class="d-flex align-items-center gap-4 flex-wrap">
+            <div class="d-flex align-items-center gap-2">
+              <label class="form-label small mb-0 text-nowrap">Mode :</label>
+              <select class="form-select form-select-sm" id="ruleRepeat" style="width:auto;" onchange="updateModeInfo()">
+                <option value="0">Sur changement d'état</option>
+                <option value="1">À chaque évaluation</option>
+              </select>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <label class="form-label small mb-0 text-nowrap">Maintien :</label>
+              <div class="input-group input-group-sm" style="width:150px;">
+                <input type="number" class="form-control" id="ruleDuration" min="0" value="0">
+                <span class="input-group-text">min</span>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2" id="cooldownGroup" style="display:none;">
+              <label class="form-label small mb-0 text-nowrap">Intervalle min :</label>
+              <div class="input-group input-group-sm" style="width:150px;">
+                <input type="number" class="form-control" id="ruleCooldown" min="0" value="0">
+                <span class="input-group-text">min</span>
+              </div>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+              <label class="form-label small mb-0 text-nowrap">Max/jour :</label>
+              <div class="input-group input-group-sm" style="width:120px;">
+                <input type="number" class="form-control" id="ruleMaxExecPerDay" min="0" value="0">
+              </div>
+              <span class="form-text small text-muted mb-0">(0=illimit&eacute;)</span>
+            </div>
+          </div>
+          <div id="modeInfoBox" class="alert alert-info small mt-2 mb-0" style="font-size:0.85em;"></div>
         </div>
 
         <div class="mb-4">
@@ -3145,6 +2955,15 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
           <button type="button" class="btn btn-sm btn-outline-primary" onclick="addElseAction()">+ Action</button>
         </div>
 
+        <div class="mb-4">
+          <label class="form-label fw-bold">Résumé</label>
+          <div id="ruleSummary" class="card bg-light">
+            <div class="card-body py-2" style="font-size:0.9em;">
+              <em class="text-muted">Complétez la règle pour voir le résumé...</em>
+            </div>
+          </div>
+        </div>
+
         <div class="d-flex justify-content-between mt-4">
           <a href="/configRules" class="btn btn-secondary btn-lg">Annuler</a>
           <button type="submit" class="btn btn-primary btn-lg">Créer</button>
@@ -3156,177 +2975,11 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
 )rawstring";
 
 const char HTTP_ADD_RULE_JS[] PROGMEM = R"rawstring(
+<script src='web/js/rules.js'></script>
 <script>
-var devices={},templates={},conditionCount=0,actionCount=0,elseActionCount=0,timeRangeCount=0,devicesLoaded=!1,templatesLoaded=!1;
-
-var clusterNames={'0000':'Basic','0001':'Power','0003':'Identify','0004':'Groups','0005':'Scenes','0006':'On/Off','0008':'Level Control','000A':'Time','0019':'OTA Upgrade','0020':'Poll Control','0100':'Shade Config','0101':'Door Lock','0102':'Window Covering','0201':'Thermostat','0202':'Fan Control','0300':'Color Control','0400':'Illuminance','0402':'Temperature','0403':'Pressure','0405':'Humidity','0406':'Occupancy','0500':'IAS Zone','0502':'IAS WD','0702':'Simple Metering','0B04':'Electrical Measurement','0B05':'Diagnostics','1000':'Touchlink','EF00':'Tuya','FC11':'Sonoff Custom','FF66':'LiXee'};
-function clusterLabel(hex){var n=clusterNames[hex];return n?'0x'+hex+' - '+n:'0x'+hex}
-
 $(document).ready(function(){
-  $.get('/getDevices',function(d){devices=d;devicesLoaded=!0;checkDataLoadedAndInit()});
-  $.get('/getTemplates',function(d){templates=d;templatesLoaded=!0;checkDataLoadedAndInit()})
-});
-
-function checkDataLoadedAndInit(){if(devicesLoaded&&templatesLoaded){populateTriggerDeviceSelect();addCondition();addAction()}}
-
-function populateTriggerDeviceSelect(){var s=$('#triggerDevice').html('<option value="">-- Choisir --</option>');$.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';s.append('<option value="'+ieee+'">'+l+'</option>')}})}
-
-function getDeviceActions(ieee){if(!ieee||!devices[ieee]||!devices[ieee].INFO)return[];var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return[];var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].action)return[];return td[0].action}
-
-function hasCluster0006(ieee){if(!ieee||!devices[ieee]||!devices[ieee].INFO)return false;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return false;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return false;return td[0].status.some(function(item){return item.cluster.toUpperCase()==='0006'})}
-
-function onTriggerModeChange(){var mode=$('#triggerMode').val();if(mode==='event'){$('.trigger-event-fields').show();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!0)}else{$('.trigger-event-fields').hide();$('#triggerDevice,#triggerCluster,#triggerAttribute').prop('required',!1)}}
-function onTriggerDeviceChange(){var ieee=$('#triggerDevice').val(),c=$('#triggerCluster'),a=$('#triggerAttribute');c.html('<option value="">-- Cluster --</option>');a.html('<option value="">-- Attribut --</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){c.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})}
-function onTriggerClusterChange(){var ieee=$('#triggerDevice').val(),cl=parseInt($('#triggerCluster').val()),a=$('#triggerAttribute');a.html('<option value="">-- Attribut --</option>');if(!ieee||!cl)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+cl.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
-
-function addTimeRange(data){var id=timeRangeCount++,html='<div class="card mb-2 timerange-item" data-timerange-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-3"><label class="form-label small">Début</label><input type="time" class="form-control form-control-sm timerange-start" value="08:00" required></div><div class="col-md-3"><label class="form-label small">Fin</label><input type="time" class="form-control form-control-sm timerange-end" value="18:00" required></div><div class="col-md-5"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex">';['L','M','M','J','V','S','D'].forEach(function(d,i){html+='<input type="checkbox" class="btn-check day-check" id="day-'+id+'-'+(i+1)+'" value="'+(i+1)+'" autocomplete="off"><label class="btn btn-outline-primary" for="day-'+id+'-'+(i+1)+'">'+d+'</label>'});html+='</div></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeTimeRange('+id+')">×</button></div></div></div></div>';$('#timeRangesContainer').append(html);if(data){var c=$('[data-timerange-id="'+id+'"]');c.find('.timerange-start').val(data.startTime);c.find('.timerange-end').val(data.endTime);if(data.days)data.days.forEach(function(d){$('#day-'+id+'-'+d).prop('checked',!0)})}}
-function removeTimeRange(id){$('[data-timerange-id="'+id+'"]').remove()}
-
-// ========== CONDITIONS avec types temporels ==========
-
-function addCondition(data){
-  var id=conditionCount++;
-  var type=data?data.type||'device':'device';
-  var html='<div class="card mb-2 condition-item" data-id="'+id+'"><div class="card-body">'+
-    '<div class="row g-2 mb-2">'+
-    '<div class="col-md-3"><label class="form-label small">Type</label>'+
-    '<select class="form-select form-select-sm condition-type-select" onchange="onConditionTypeChange('+id+')" required>'+
-    '<option value="device" '+(type==='device'?'selected':'')+'>📡 Appareil Zigbee</option>'+
-    '<option value="time" '+(type==='time'?'selected':'')+'>🕐 Heure précise</option>'+
-    '<option value="time_range" '+(type==='time_range'?'selected':'')+'>🕐 Plage horaire</option>'+
-    '<option value="weekday" '+(type==='weekday'?'selected':'')+'>📅 Jour de semaine</option>'+
-    '<option value="date" '+(type==='date'?'selected':'')+'>📆 Date</option>'+
-    '<option value="day" '+(type==='day'?'selected':'')+'>📆 Jour du mois</option>'+
-    '<option value="month" '+(type==='month'?'selected':'')+'>📆 Mois</option>'+
-    '</select></div>'+
-    '<div class="col-md-8 condition-fields-wrapper"></div>'+
-    '<div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeCondition('+id+')">×</button></div>'+
-    '</div>'+
-    '<div class="row g-2"><div class="col-md-2"><label class="form-label small">Logique</label>'+
-    '<select class="form-select form-select-sm logic-select"><option value="AND">ET (AND)</option><option value="OR">OU (OR)</option></select></div></div>'+
-    '</div></div>';
-  $('#conditionsContainer').append(html);
-  onConditionTypeChange(id);
-  if(data){
-    var c=$('[data-id="'+id+'"]');
-    c.find('.logic-select').val(data.logic||'AND');
-    setTimeout(function(){loadConditionData(c,data)},50);
-  }
-}
-
-function onConditionTypeChange(id){
-  var c=$('[data-id="'+id+'"]'),type=c.find('.condition-type-select').val();
-  var wrapper=c.find('.condition-fields-wrapper');
-  wrapper.html(getConditionFieldsHTML(type,id));
-  if(type==='device'){
-    var sel=c.find('.device-select');
-    $.each(devices,function(ieee,dev){if(dev.INFO){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee+')';sel.append('<option value="'+ieee+'">'+l+'</option>')}});
-  }
-}
-
-function getConditionFieldsHTML(type,id){
-  switch(type){
-    case 'time':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Heure</label><input type="time" class="form-control form-control-sm time-input" value="08:00" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= (égal)</option><option value="!=">≠ (différent)</option><option value="<">&lt; (avant)</option><option value="<=">&le;</option><option value=">">&gt; (après)</option><option value=">=">&ge;</option></select></div></div>';
-    case 'time_range':
-      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">De</label><input type="time" class="form-control form-control-sm time-start-input" value="08:00" required></div><div class="col-md-3"><label class="form-label small">À</label><input type="time" class="form-control form-control-sm time-end-input" value="18:00" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="in">Dans la plage</option><option value="not_in">Hors plage</option></select></div></div>';
-    case 'weekday':
-      return '<div class="row g-2"><div class="col-md-8"><label class="form-label small">Jours</label><div class="btn-group btn-group-sm d-flex flex-wrap"><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-1" value="1"><label class="btn btn-outline-primary" for="wd-'+id+'-1">Lun</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-2" value="2"><label class="btn btn-outline-primary" for="wd-'+id+'-2">Mar</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-3" value="3"><label class="btn btn-outline-primary" for="wd-'+id+'-3">Mer</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-4" value="4"><label class="btn btn-outline-primary" for="wd-'+id+'-4">Jeu</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-5" value="5"><label class="btn btn-outline-primary" for="wd-'+id+'-5">Ven</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-6" value="6"><label class="btn btn-outline-primary" for="wd-'+id+'-6">Sam</label><input type="checkbox" class="btn-check weekday-check" id="wd-'+id+'-7" value="7"><label class="btn btn-outline-primary" for="wd-'+id+'-7">Dim</label></div></div><div class="col-md-3"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" required><option value="in">Ces jours</option><option value="not_in">Sauf ces jours</option></select></div></div>';
-    case 'date':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Date</label><input type="date" class="form-control form-control-sm date-input" required></div><div class="col-md-3"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= ce jour</option><option value="!=">≠ pas ce jour</option><option value="<">&lt; avant</option><option value=">">&gt; après</option></select></div><div class="col-md-3 d-flex align-items-end"><div class="form-check"><input class="form-check-input ignore-year-check" type="checkbox" checked id="iy-'+id+'"><label class="form-check-label small" for="iy-'+id+'">Récurrent (ignorer année)</label></div></div></div>';
-    case 'day':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Jour du mois</label><input type="number" class="form-control form-control-sm day-input" min="1" max="31" value="1" required></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option><option value="<">&lt;</option><option value=">">&gt;</option></select></div></div>';
-    case 'month':
-      return '<div class="row g-2"><div class="col-md-4"><label class="form-label small">Mois</label><select class="form-select form-select-sm month-input" required><option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option></select></div><div class="col-md-4"><label class="form-label small">Opérateur</label><select class="form-select form-select-sm operator-select" required><option value="==">= égal</option><option value="!=">≠ différent</option></select></div></div>';
-    case 'device':
-    default:
-      return '<div class="row g-2"><div class="col-md-3"><label class="form-label small">Appareil</label><select class="form-select form-select-sm device-select" onchange="onDeviceChange('+id+')" required><option value="">-- Choisir --</option></select></div><div class="col-md-2"><label class="form-label small">Cluster</label><select class="form-select form-select-sm cluster-select" onchange="onClusterChange('+id+')" required><option value="">--</option></select></div><div class="col-md-2"><label class="form-label small">Attribut</label><select class="form-select form-select-sm attribute-select" required><option value="">--</option></select></div><div class="col-md-1"><label class="form-label small">Op.</label><select class="form-select form-select-sm operator-select" onchange="onOperatorChange('+id+')" required><option value="==">==</option><option value="!=">!=</option><option value="<">&lt;</option><option value="<=">&le;</option><option value=">">&gt;</option><option value=">=">&ge;</option></select></div><div class="col-md-2"><label class="form-label small">Valeur</label><input type="text" class="form-control form-control-sm value-input" required></div></div>';
-  }
-}
-
-function loadConditionData(c,data){
-  var type=data.type||'device';
-  c.find('.operator-select').val(data.operator||'==');
-  switch(type){
-    case 'time':c.find('.time-input').val(data.value||'08:00');break;
-    case 'time_range':c.find('.time-start-input').val(data.value||'08:00');c.find('.time-end-input').val(data.value2||'18:00');break;
-    case 'weekday':if(data.value){data.value.split(',').forEach(function(d){c.find('.weekday-check[value="'+d.trim()+'"]').prop('checked',!0)})}break;
-    case 'date':if(data.value){var p=data.value.split('/');if(p.length>=2){var y=p.length===3?p[2]:new Date().getFullYear();c.find('.date-input').val(y+'-'+p[1].padStart(2,'0')+'-'+p[0].padStart(2,'0'));c.find('.ignore-year-check').prop('checked',p.length===2)}}break;
-    case 'day':c.find('.day-input').val(data.value||'1');break;
-    case 'month':c.find('.month-input').val(data.value||'1');break;
-    case 'device':default:c.find('.device-select').val(data.IEEE);onDeviceChange(parseInt(c.attr('data-id')));setTimeout(function(){c.find('.cluster-select').val(data.cluster);onClusterChange(parseInt(c.attr('data-id')));setTimeout(function(){c.find('.attribute-select').val(data.attribute);c.find('.value-input').val(data.value);onOperatorChange(parseInt(c.attr('data-id')))},100)},100);break;
-  }
-}
-
-function onOperatorChange(id){var c=$('[data-id="'+id+'"]'),op=c.find('.operator-select').val(),v=c.find('.value-input');if(op==='=='||op==='!='){v.attr('type','text').attr('placeholder','Texte ou nombre')}else{v.attr('type','number').attr('placeholder','');if(v.val()&&isNaN(v.val()))v.val('')}}
-function onDeviceChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clSel=c.find('.cluster-select');clSel.html('<option value="">--</option>');c.find('.attribute-select').html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;var clAdded={};td[0].status.forEach(function(item){var clStr=item.cluster.toUpperCase();if(!clAdded[clStr]){clSel.append('<option value="'+parseInt(clStr,16)+'">'+clusterLabel(clStr)+'</option>');clAdded[clStr]=!0}})}
-function onClusterChange(id){var c=$('[data-id="'+id+'"]'),ieee=c.find('.device-select').val(),clDec=parseInt(c.find('.cluster-select').val()),a=c.find('.attribute-select');a.html('<option value="">--</option>');if(!ieee||!devices[ieee]||!devices[ieee].INFO||!clDec)return;var dev=devices[ieee],tid=dev.INFO.device_id,m=dev.INFO.model||'default',clHex=('0000'+clDec.toString(16).toUpperCase()).slice(-4),tk=tid+'.json',tf=templates[tk];if(!tf)return;var td=tf[m]||tf['default'];if(!td||!td[0]||!td[0].status)return;td[0].status.forEach(function(item){if(item.cluster.toUpperCase()===clHex){var aid=item.attribut,an=item.name||aid;a.append('<option value="'+aid+'">'+an+' ('+aid+')</option>')}})}
-function removeCondition(id){$('[data-id="'+id+'"]').remove()}
-
-function collectConditionData(c){
-  var type=c.find('.condition-type-select').val(),op=c.find('.operator-select').val(),logic=c.find('.logic-select').val();
-  var cond={type:type,operator:op,logic:logic,IEEE:'',cluster:0,attribute:0,value:'',value2:''};
-  switch(type){
-    case 'time':cond.value=c.find('.time-input').val();break;
-    case 'time_range':cond.value=c.find('.time-start-input').val();cond.value2=c.find('.time-end-input').val();break;
-    case 'weekday':var days=[];c.find('.weekday-check:checked').each(function(){days.push($(this).val())});cond.value=days.join(',');break;
-    case 'date':var dv=c.find('.date-input').val();if(dv){var p=dv.split('-');var iy=c.find('.ignore-year-check').is(':checked');cond.value=iy?p[2]+'/'+p[1]:p[2]+'/'+p[1]+'/'+p[0]}break;
-    case 'day':cond.value=c.find('.day-input').val();break;
-    case 'month':cond.value=c.find('.month-input').val();break;
-    case 'device':default:cond.IEEE=c.find('.device-select').val();cond.cluster=parseInt(c.find('.cluster-select').val())||0;cond.attribute=parseInt(c.find('.attribute-select').val())||0;cond.value=c.find('.value-input').val();break;
-  }
-  return cond;
-}
-
-// ========== ACTIONS ==========
-
-function addAction(data){
-  var id=actionCount++;
-  var html='<div class="card mb-2 action-item" data-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm action-type-select" onchange="onActionTypeChange('+id+')" required><option value="device">Appareil</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div><div class="col-md-3 action-device-fields"><label class="form-label small">Appareil</label><select class="form-select form-select-sm action-device-select" onchange="onActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-3 action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm action-name-select" onchange="onActionNameChange('+id+')"><option value="">-- Action --</option></select></div><div class="col-md-2 action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-device-endpoint-input" value="1" min="1"></div><div class="col-md-4 action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label><select class="form-select form-select-sm action-legacy-device-select" onchange="onActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm action-endpoint-input" value="1" min="1"></div><div class="col-md-2 action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm action-title-input"></div><div class="col-md-4 action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeAction('+id+')">×</button></div></div></div></div>';
-  $('#actionsContainer').append(html);
-  var c=$('[data-action-id="'+id+'"]'),sel=c.find('.action-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
-  var selLegacy=c.find('.action-legacy-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
-  onActionTypeChange(id);
-  if(data){if(data.type==='notification'){c.find('.action-type-select').val('notification');onActionTypeChange(id);c.find('.action-title-input').val(data.title||'');c.find('.action-message-input').val(data.message||'')}else if(data.type==='device'&&data.actionName){c.find('.action-type-select').val('device');onActionTypeChange(id);c.find('.action-device-select').val(data.IEEE);onActionDeviceChange(id);setTimeout(function(){c.find('.action-name-select').val(data.actionName);c.find('.action-device-endpoint-input').val(data.endpoint||1)},100)}else if(data.type==='onoff'){c.find('.action-type-select').val('onoff');onActionTypeChange(id);c.find('.action-legacy-device-select').val(data.IEEE);c.find('.action-endpoint-input').val(data.endpoint||1);c.find('.action-value-select').val(data.value)}}
-}
-function onActionTypeChange(id){var c=$('[data-action-id="'+id+'"]'),t=c.find('.action-type-select').val();c.find('.action-device-fields,.action-legacy-fields,.action-notification-fields').hide();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input,.action-legacy-device-select,.action-endpoint-input,.action-value-select,.action-title-input,.action-message-input').prop('required',!1);if(t==='device'){c.find('.action-device-fields').show();c.find('.action-device-select,.action-name-select,.action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.action-legacy-fields').show();c.find('.action-legacy-device-select,.action-endpoint-input,.action-value-select').prop('required',!0)}else{c.find('.action-notification-fields').show();c.find('.action-title-input,.action-message-input').prop('required',!0)}}
-function onActionDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-device-select').val(),actionSel=c.find('.action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
-function onActionNameChange(id){var c=$('[data-action-id="'+id+'"]'),opt=c.find('.action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.action-device-endpoint-input').val(ep)}}
-function onActionLegacyDeviceChange(id){var c=$('[data-action-id="'+id+'"]'),ieee=c.find('.action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
-function removeAction(id){$('[data-action-id="'+id+'"]').remove()}
-
-// ========== ELSE ACTIONS ==========
-
-function addElseAction(data){
-  var id=elseActionCount++;
-  var html='<div class="card mb-2 else-action-item" data-else-action-id="'+id+'"><div class="card-body"><div class="row g-2"><div class="col-md-2"><label class="form-label small">Type</label><select class="form-select form-select-sm else-action-type-select" onchange="onElseActionTypeChange('+id+')" required><option value="device">Appareil</option><option value="onoff">ON/OFF (legacy)</option><option value="notification">Notification</option></select></div><div class="col-md-3 else-action-device-fields"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-device-select" onchange="onElseActionDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-3 else-action-device-fields"><label class="form-label small">Action</label><select class="form-select form-select-sm else-action-name-select" onchange="onElseActionNameChange('+id+')"><option value="">-- Action --</option></select></div><div class="col-md-2 else-action-device-fields"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-device-endpoint-input" value="1" min="1"></div><div class="col-md-4 else-action-legacy-fields" style="display:none;"><label class="form-label small">Appareil</label><select class="form-select form-select-sm else-action-legacy-device-select" onchange="onElseActionLegacyDeviceChange('+id+')"><option value="">-- Choisir --</option></select></div><div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Endpoint</label><input type="number" class="form-control form-control-sm else-action-endpoint-input" value="1" min="1"></div><div class="col-md-2 else-action-legacy-fields" style="display:none;"><label class="form-label small">Valeur</label><select class="form-select form-select-sm else-action-value-select"><option value="1">ON</option><option value="0">OFF</option><option value="2">TOGGLE</option></select></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Titre</label><input type="text" class="form-control form-control-sm else-action-title-input"></div><div class="col-md-4 else-action-notification-fields" style="display:none;"><label class="form-label small">Message</label><input type="text" class="form-control form-control-sm else-action-message-input"></div><div class="col-md-1 d-flex align-items-end"><button type="button" class="btn btn-sm btn-danger" onclick="removeElseAction('+id+')">×</button></div></div></div></div>';
-  $('#elseActionsContainer').append(html);
-  var c=$('[data-else-action-id="'+id+'"]'),sel=c.find('.else-action-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO){var actions=getDeviceActions(ieee);if(actions.length>0){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';sel.append('<option value="'+ieee+'">'+l+'</option>')}}});
-  var selLegacy=c.find('.else-action-legacy-device-select');
-  $.each(devices,function(ieee,dev){if(dev.INFO&&hasCluster0006(ieee)){var m=dev.INFO.model||'Unknown',a=dev.INFO.alias||'',l=a?a+' ('+m+')':m+' ('+ieee.substring(0,8)+'...)';selLegacy.append('<option value="'+ieee+'">'+l+'</option>')}});
-  onElseActionTypeChange(id);
-  if(data){if(data.type==='notification'){c.find('.else-action-type-select').val('notification');onElseActionTypeChange(id);c.find('.else-action-title-input').val(data.title||'');c.find('.else-action-message-input').val(data.message||'')}else if(data.type==='device'&&data.actionName){c.find('.else-action-type-select').val('device');onElseActionTypeChange(id);c.find('.else-action-device-select').val(data.IEEE);onElseActionDeviceChange(id);setTimeout(function(){c.find('.else-action-name-select').val(data.actionName);c.find('.else-action-device-endpoint-input').val(data.endpoint||1)},100)}else if(data.type==='onoff'){c.find('.else-action-type-select').val('onoff');onElseActionTypeChange(id);c.find('.else-action-legacy-device-select').val(data.IEEE);c.find('.else-action-endpoint-input').val(data.endpoint||1);c.find('.else-action-value-select').val(data.value)}}
-}
-function onElseActionTypeChange(id){var c=$('[data-else-action-id="'+id+'"]'),t=c.find('.else-action-type-select').val();c.find('.else-action-device-fields,.else-action-legacy-fields,.else-action-notification-fields').hide();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input,.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select,.else-action-title-input,.else-action-message-input').prop('required',!1);if(t==='device'){c.find('.else-action-device-fields').show();c.find('.else-action-device-select,.else-action-name-select,.else-action-device-endpoint-input').prop('required',!0)}else if(t==='onoff'){c.find('.else-action-legacy-fields').show();c.find('.else-action-legacy-device-select,.else-action-endpoint-input,.else-action-value-select').prop('required',!0)}else{c.find('.else-action-notification-fields').show();c.find('.else-action-title-input,.else-action-message-input').prop('required',!0)}}
-function onElseActionDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-device-select').val(),actionSel=c.find('.else-action-name-select');actionSel.html('<option value="">-- Action --</option>');var defaultEp=1;if(ieee&&devices[ieee]&&devices[ieee].INFO&&devices[ieee].INFO.endpoint){defaultEp=devices[ieee].INFO.endpoint}c.find('.else-action-device-endpoint-input').val(defaultEp);if(!ieee)return;var actions=getDeviceActions(ieee);actions.forEach(function(act){if(act.visible!==0){actionSel.append('<option value="'+act.name+'" data-endpoint="'+act.endpoint+'">'+act.name+'</option>')}})}
-function onElseActionNameChange(id){var c=$('[data-else-action-id="'+id+'"]'),opt=c.find('.else-action-name-select option:selected'),ep=opt.data('endpoint');if(ep){c.find('.else-action-device-endpoint-input').val(ep)}}
-function onElseActionLegacyDeviceChange(id){var c=$('[data-else-action-id="'+id+'"]'),ieee=c.find('.else-action-legacy-device-select').val();if(ieee&&devices[ieee]&&devices[ieee].INFO){c.find('.else-action-endpoint-input').val(devices[ieee].INFO.endpoint||'1')}}
-function removeElseAction(id){$('[data-else-action-id="'+id+'"]').remove()}
-
-// ========== SUBMIT ==========
-
-$('#ruleForm').on('submit',function(e){
-  e.preventDefault();
-  var rule={name:$('#ruleName').val(),enabled:$('#ruleEnabled').is(':checked'),trigger:{mode:$('#triggerMode').val(),IEEE:$('#triggerDevice').val()||'',cluster:parseInt($('#triggerCluster').val())||0,attribute:parseInt($('#triggerAttribute').val())||0},timeRanges:[],conditions:[],actions:[],elseActions:[]};
-  $('.timerange-item').each(function(){var c=$(this),st=c.find('.timerange-start').val(),et=c.find('.timerange-end').val(),days=[];c.find('.day-check:checked').each(function(){days.push(parseInt($(this).val()))});if(days.length>0)rule.timeRanges.push({startTime:st,endTime:et,days:days})});
-  $('.condition-item').each(function(){rule.conditions.push(collectConditionData($(this)))});
-  if(rule.conditions.length===0){alert('Ajoutez au moins une condition');return!1}
-  $('.action-item').each(function(){var c=$(this),t=c.find('.action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.action-device-select').val();a.actionName=c.find('.action-name-select').val();a.endpoint=parseInt(c.find('.action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.action-legacy-device-select').val();a.endpoint=parseInt(c.find('.action-endpoint-input').val())||1;a.value=c.find('.action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.action-title-input').val();a.message=c.find('.action-message-input').val()}rule.actions.push(a)});
-  $('.else-action-item').each(function(){var c=$(this),t=c.find('.else-action-type-select').val(),a={type:t};if(t==='device'){a.IEEE=c.find('.else-action-device-select').val();a.actionName=c.find('.else-action-name-select').val();a.endpoint=parseInt(c.find('.else-action-device-endpoint-input').val())||1;a.value='';a.title='';a.message=''}else if(t==='onoff'){a.IEEE=c.find('.else-action-legacy-device-select').val();a.endpoint=parseInt(c.find('.else-action-endpoint-input').val())||1;a.value=c.find('.else-action-value-select').val();a.actionName='';a.title='';a.message=''}else{a.IEEE='';a.actionName='';a.endpoint=0;a.value='';a.title=c.find('.else-action-title-input').val();a.message=c.find('.else-action-message-input').val()}rule.elseActions.push(a)});
-  $.ajax({url:'/api/rules/add',type:'POST',contentType:'application/json',data:JSON.stringify(rule),success:function(){alert('Règle créée !');window.location.href='/configRules'},error:function(xhr){alert('Erreur : '+xhr.responseText)}})
+  initRulesEditor('add');
+  setupSubmitHandler('add');
 });
 </script>
 )rawstring";
@@ -3760,26 +3413,6 @@ const char HTTP_LOGIN[] PROGMEM = R"(
     </script>
  )";
 
- const char HTTP_CONFIG_MARSTEK[] PROGMEM = R"(
-    <div class='container p-4'>
-      <h4 class='card-title mb-4'>Config Smartmeter Marstek</h4>
-      <div class='card mx-auto shadow-sm' >
-        <div class="card-body">
-          <form method='POST' action='saveConfigMarstek'>
-          <div class="form-check form-switch mb-3">
-            <input class="form-check-input" type="checkbox" id="enableMarstek" name='enableMarstek' {{checkedMarstek}} {{disableMarstek}}>
-            <label class="form-check-label" for="enableMarstek">Enable Marstek</label>
-          </div> 
-          Smart meter (ZLinky): <strong>{{ZLinky}}</strong><bR>
-          <div class="d-flex justify-content-end">
-            <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Save</button>
-          </div>
-          </form>
-          <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Rebooting ...</div>
-        </div>
-      </div>
-    </div>
- )";
 
 const char HTTP_CONFIG_UDPCLIENT[] PROGMEM =
     
@@ -3880,7 +3513,6 @@ const char HTTP_NETWORK[] PROGMEM =
             "</div>"
             "<div class='card-body'>"
               "{{MQTT card}}"
-              "{{Marstek card}}"
               "<Strong>Température Box:</strong> {{Temperature}} °C<br>"
             "</div>"
           "</div>"
@@ -5622,7 +5254,7 @@ bool TemplateExist(int deviceId)
     const char* path ="/tp/";
     const char* extension =".json";
     char name_with_extension[64];
-    strcpy(name_with_extension,path);
+    strlcpy(name_with_extension,path, sizeof(name_with_extension));
     strcat(name_with_extension,String(deviceId).c_str());
     strcat(name_with_extension,extension);
     File tpFile = LittleFS.open(name_with_extension, FILE_READ);
@@ -5732,11 +5364,11 @@ Template* GetTemplate(int deviceId, String model)
   Template *t = (Template *) ps_malloc(sizeof(Template));
   if (deviceId>0)
   {
-    //String path = "/tp/" + String(deviceId) + ".json";   
+    //String path = "/tp/" + String(deviceId) + ".json";
     const char* path ="/tp/";
     const char* extension =".json";
     char name_with_extension[64];
-    strcpy(name_with_extension,path);
+    strlcpy(name_with_extension,path, sizeof(name_with_extension));
     strcat(name_with_extension,String(deviceId).c_str());
     strcat(name_with_extension,extension);
     File tpFile = LittleFS.open(name_with_extension, FILE_READ);
@@ -6213,7 +5845,7 @@ String createDistributionGraph(String IEEE)
     if (device->getDeviceID() == IEEE)
     {
       
-      goal = strtol(device->getValue(std::string("0B01"),std::string("13")).c_str(),0,16)*230;
+      goal = strtol(device->getValue("0B01","13").c_str(),0,16)*230;
       result += String(goal);
       break;
     }
@@ -6251,9 +5883,9 @@ String createPowerGraph(String IEEE)
     {
       if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
       {
-        goal += strtol(device->getValue(std::string("0B01"), std::string("13")).c_str(), 0, 16) * 200;
+        goal += strtol(device->getValue("0B01", "13").c_str(), 0, 16) * 200;
       }else {
-        goal += strtol(device->getValue(std::string("0B01"), std::string("14")).c_str(), 0, 16) * 1000;
+        goal += strtol(device->getValue("0B01", "14").c_str(), 0, 16) * 1000;
       }
      
       break;
@@ -7454,26 +7086,6 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
     result.replace("{{MQTT card}}", "");
   }
 
-  if (ConfigSettings.enableMarstek)
-  {
-    String MarstekCard =F("<i>Marstek Infos :</i>");
-    MarstekCard +=F("<br>");
-    MarstekCard +=F("<Strong>Smart meter connected :</strong> ");
-    if (ConfigGeneral.connectedMarstek)
-    {
-      MarstekCard +=F("<img src='/web/img/ok.png'>");
-    }else{
-      MarstekCard +=F("<img src='/web/img/nok.png'>");
-    }
-    MarstekCard +="<br>";
-    MarstekCard +="<Strong>Marstek @IP :</strong> ";
-    MarstekCard += ConfigGeneral.marstekIP;
-    MarstekCard +=F(" <br><br>");
-    result.replace("{{Marstek card}}", MarstekCard);
-  }else{
-     result.replace("{{Marstek card}}", "");
-  }
-
   float val;
   float Voltage = 0.0;
   val = analogRead(VOLTAGE);
@@ -7534,7 +7146,7 @@ void handleAPITariff(AsyncWebServerRequest *request)
     if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2))
     {
       // PTEC = Cluster 0x0702 attribut 32 (0x0020)
-      tarif = device->getValue(std::string("0702"), std::string("32"));
+      tarif = device->getValue("0702", "32");
       tarif.trim();
       
       if (tarif.length() > 0)
@@ -7597,7 +7209,7 @@ void handleAPITariff(AsyncWebServerRequest *request)
         // DEMAIN (cluster FF66 attribut 1)
         if (isTempo)
         {
-          String demain = device->getValue(std::string("FF66"), std::string("1"));
+          String demain = device->getValue("FF66", "1");
           if (demain.length() > 0)
           {
             demain.trim();
@@ -7626,13 +7238,13 @@ void handleAPITariff(AsyncWebServerRequest *request)
     else
     {
       // Essayer cluster FF66 attribut 16 (0x10) d'abord
-      tarif = device->getValue(std::string("FF66"), std::string("16"));
+      tarif = device->getValue("FF66", "16");
       tarif.trim();
       
       // FALLBACK : Si vide, utiliser LTARF (attribut 512)
       if (tarif.length() == 0)
       {
-        tarif = device->getValue(std::string("FF66"), std::string("512"));
+        tarif = device->getValue("FF66", "512");
         tarif.trim();
       }
       
@@ -7650,7 +7262,7 @@ void handleAPITariff(AsyncWebServerRequest *request)
       tariffBgColor = isHP ? "#154360" : "#2980b9";
       
       // Récupérer STGE (attribut 535) pour les couleurs Tempo
-      String stge = device->getValue(std::string("FF66"), std::string("535"));
+      String stge = device->getValue("FF66", "535");
       if (stge.length() >= 8)
       {
         auto status = parseStatusRegister(stge);
@@ -7896,7 +7508,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   {
     if ((ConfigGeneral.LinkyMode == 0 ) || (ConfigGeneral.LinkyMode == 2 ))
     {
-      String tmp = device->getValue(std::string("FF66"),std::string(String("5").c_str()));
+      String tmp = device->getValue("FF66","5");
 
       if (tmp.toInt()>0)
       {
@@ -7907,7 +7519,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
         result.replace("{{energyAlertMessage}}", F(""));
       }
     }else{
-      String tmp = device->getValue(std::string("FF66"),std::string(String("535").c_str()));
+      String tmp = device->getValue("FF66","535");
       auto status = parseStatusRegister(tmp);
 
       if (status.depassement_ref_pow)
@@ -8267,7 +7879,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
         if (foundDevice) {
             if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2)) {
-                String tmp = device->getValue(std::string("FF66"), std::string(String("5").c_str()));
+                String tmp = device->getValue("FF66", "5");
                 if (tmp.toInt() > 0) {
                     linky.replace("{{styleEnergyAlert}}", "display:block;");
                     linky.replace("{{energyAlertMessage}}", "Dépassement de puissance souscrite");
@@ -8276,7 +7888,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
                     linky.replace("{{energyAlertMessage}}", "");
                 }
             } else {
-                String tmp = device->getValue(std::string("FF66"), std::string(String("535").c_str()));
+                String tmp = device->getValue("FF66", "535");
                 auto status = parseStatusRegister(tmp);
                 if (status.depassement_ref_pow) {
                     linky.replace("{{styleEnergyAlert}}", "display:block;");
@@ -9515,6 +9127,10 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
       JsonObject rule = rules[i];
       rule["name"] = newName;
       rule["enabled"] = doc["enabled"] | true;
+      rule["duration"] = doc["duration"] | 0;
+      rule["repeat"]   = doc["repeat"] | false;
+      rule["cooldown"] = doc["cooldown"] | 0;
+      rule["maxExecPerDay"] = doc["maxExecPerDay"] | 0;
 
       //Remplacer le trigger
       rule.remove("trigger");
@@ -9524,19 +9140,9 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
       trigger["IEEE"] = triggerDoc["IEEE"] | "";
       trigger["cluster"] = triggerDoc["cluster"] | 0;
       trigger["attribute"] = triggerDoc["attribute"] | 0;
-      
-      //Remplacer les plages horaires
+
+      // Supprimer les anciennes timeRanges si présentes
       rule.remove("timeRanges");
-      JsonArray timeRanges = rule.createNestedArray("timeRanges");
-      for (JsonObject tr : doc["timeRanges"].as<JsonArray>()) {
-        JsonObject t = timeRanges.createNestedObject();
-        t["startTime"] = tr["startTime"];
-        t["endTime"] = tr["endTime"];
-        JsonArray days = t.createNestedArray("days");
-        for (JsonVariant d : tr["days"].as<JsonArray>()) {
-          days.add(d);
-        }
-      }
 
       // Remplacer les conditions
       rule.remove("conditions");
@@ -9551,8 +9157,12 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
         c["value"] = cond["value"];
         c["value2"] = cond["value2"];
         c["logic"] = cond["logic"];
+        // device_compare fields
+        if (cond.containsKey("IEEE2")) c["IEEE2"] = cond["IEEE2"];
+        if (cond.containsKey("cluster2")) c["cluster2"] = cond["cluster2"];
+        if (cond.containsKey("attribute2")) c["attribute2"] = cond["attribute2"];
       }
-      
+
       // Remplacer les actions
       rule.remove("actions");
       JsonArray actions = rule.createNestedArray("actions");
@@ -9563,8 +9173,14 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
         a["actionName"] = act["actionName"];
         a["endpoint"] = act["endpoint"];
         a["value"] = act["value"];
-        a["title"] = act["title"]; 
+        a["title"] = act["title"];
         a["message"] = act["message"];
+        // dynamic action fields
+        if (act.containsKey("sourceIEEE")) a["sourceIEEE"] = act["sourceIEEE"];
+        if (act.containsKey("sourceCluster")) a["sourceCluster"] = act["sourceCluster"];
+        if (act.containsKey("sourceAttribute")) a["sourceAttribute"] = act["sourceAttribute"];
+        if (act.containsKey("coefficient")) a["coefficient"] = act["coefficient"];
+        if (act.containsKey("offset")) a["offset"] = act["offset"];
       }
 
       rule.remove("elseActions");
@@ -9576,8 +9192,14 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
         a["actionName"] = act["actionName"];
         a["endpoint"] = act["endpoint"];
         a["value"] = act["value"];
-        a["title"] = act["title"]; 
+        a["title"] = act["title"];
         a["message"] = act["message"];
+        // dynamic action fields
+        if (act.containsKey("sourceIEEE")) a["sourceIEEE"] = act["sourceIEEE"];
+        if (act.containsKey("sourceCluster")) a["sourceCluster"] = act["sourceCluster"];
+        if (act.containsKey("sourceAttribute")) a["sourceAttribute"] = act["sourceAttribute"];
+        if (act.containsKey("coefficient")) a["coefficient"] = act["coefficient"];
+        if (act.containsKey("offset")) a["offset"] = act["offset"];
       }
       
       break;
@@ -9882,6 +9504,10 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
   
   newRule["name"] = ruleName;
   newRule["enabled"] = doc["enabled"] | true;
+  newRule["duration"] = doc["duration"] | 0;
+  newRule["repeat"]   = doc["repeat"] | false;
+  newRule["cooldown"] = doc["cooldown"] | 0;
+  newRule["maxExecPerDay"] = doc["maxExecPerDay"] | 0;
 
   // Trigger
   JsonObject trigger = newRule.createNestedObject("trigger");
@@ -9891,19 +9517,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
   trigger["cluster"] = triggerDoc["cluster"] | 0;
   trigger["attribute"] = triggerDoc["attribute"] | 0;
 
-  // Plages horaires
-  JsonArray timeRanges = newRule.createNestedArray("timeRanges");
-  for (JsonObject tr : doc["timeRanges"].as<JsonArray>()) {
-    JsonObject t = timeRanges.createNestedObject();
-    t["startTime"] = tr["startTime"];
-    t["endTime"] = tr["endTime"];
-    JsonArray days = t.createNestedArray("days");
-    for (JsonVariant d : tr["days"].as<JsonArray>()) {
-      days.add(d);
-    }
-  }
-
-  // Conditions (avec value2 pour time_range)
+  // Conditions
   JsonArray conditions = newRule.createNestedArray("conditions");
   for (JsonObject cond : doc["conditions"].as<JsonArray>()) {
     JsonObject c = conditions.createNestedObject();
@@ -9913,10 +9527,14 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     c["attribute"] = cond["attribute"];
     c["operator"] = cond["operator"];
     c["value"] = cond["value"];
-    c["value2"] = cond["value2"];  // ← Pour time_range
+    c["value2"] = cond["value2"];
     c["logic"] = cond["logic"];
+    // device_compare fields
+    if (cond.containsKey("IEEE2")) c["IEEE2"] = cond["IEEE2"];
+    if (cond.containsKey("cluster2")) c["cluster2"] = cond["cluster2"];
+    if (cond.containsKey("attribute2")) c["attribute2"] = cond["attribute2"];
   }
-  
+
   // Actions
   JsonArray actions = newRule.createNestedArray("actions");
   for (JsonObject act : doc["actions"].as<JsonArray>()) {
@@ -9926,8 +9544,14 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     a["actionName"] = act["actionName"];
     a["endpoint"] = act["endpoint"];
     a["value"] = act["value"];
-    a["title"] = act["title"];  
+    a["title"] = act["title"];
     a["message"] = act["message"];
+    // dynamic action fields
+    if (act.containsKey("sourceIEEE")) a["sourceIEEE"] = act["sourceIEEE"];
+    if (act.containsKey("sourceCluster")) a["sourceCluster"] = act["sourceCluster"];
+    if (act.containsKey("sourceAttribute")) a["sourceAttribute"] = act["sourceAttribute"];
+    if (act.containsKey("coefficient")) a["coefficient"] = act["coefficient"];
+    if (act.containsKey("offset")) a["offset"] = act["offset"];
   }
 
   // Else Actions
@@ -9939,8 +9563,14 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     a["actionName"] = act["actionName"];
     a["endpoint"] = act["endpoint"];
     a["value"] = act["value"];
-    a["title"] = act["title"];  
+    a["title"] = act["title"];
     a["message"] = act["message"];
+    // dynamic action fields
+    if (act.containsKey("sourceIEEE")) a["sourceIEEE"] = act["sourceIEEE"];
+    if (act.containsKey("sourceCluster")) a["sourceCluster"] = act["sourceCluster"];
+    if (act.containsKey("sourceAttribute")) a["sourceAttribute"] = act["sourceAttribute"];
+    if (act.containsKey("coefficient")) a["coefficient"] = act["coefficient"];
+    if (act.containsKey("offset")) a["offset"] = act["offset"];
   }
 
   // Sauvegarder
@@ -10742,37 +10372,6 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
     response->addHeader(F("Location"), "/configTunnel?error=" + String(error));
     request->send(response);
   }
-}
-
-void handleConfigMarstek(AsyncWebServerRequest *request)
-{
-  if (!checkHeapForPage(request)) return;
-  String result;
-  result += F("<html>");
-  result += FPSTR(HTTP_HEADER);
-  result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_CONFIG_MARSTEK);
-  
-  result+=footer();
-  result += F("</html>");
-
-  if (strlen(ConfigGeneral.ZLinky) >0)
-  {
-    result.replace("{{disableMarstek}}","");
-    result.replace("{{ZLinky}}",ConfigGeneral.ZLinky);
-  }else{
-    result.replace("{{disableMarstek}}","disabled");
-    result.replace("{{ZLinky}}","-- None -- Must be paired");
-  }
-
-  if (ConfigSettings.enableMarstek)
-  {
-    result.replace("{{checkedMarstek}}", "Checked"); 
-  }else{
-    result.replace("{{checkedMarstek}}", "");
-  }
-
-   request->send(200, "text/html", result);
 }
 
 void handleConfigUdpClient(AsyncWebServerRequest *request)
@@ -12333,6 +11932,10 @@ void handleToolBackup(AsyncWebServerRequest *request)
   result += F(".btn-danger{background:#dc3545;color:#fff;}");
   result += F(".btn-danger:hover{background:#bb2d3b;}");
   result += F(".empty-state{text-align:center;padding:30px;color:#666;}");
+  result += F(".btn-primary{background:#0d6efd;color:#fff;}.btn-primary:hover{background:#0b5ed7;}");
+  result += F(".bk-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;display:none;justify-content:center;align-items:center;}");
+  result += F(".bk-modal{background:#fff;border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow:auto;padding:25px;}");
+  result += F(".bk-modal pre{background:#f8f9fa;padding:15px;border-radius:8px;overflow-x:auto;font-size:0.85em;max-height:50vh;overflow-y:auto;}");
   result += F("@media(max-width:576px){.backup-container{padding:15px;}.backup-card{padding:20px;}.backup-info-item{flex-direction:column;align-items:flex-start;}.backup-info-item .label{width:auto;margin-bottom:4px;}}");
   result += F("</style>");
 
@@ -12428,6 +12031,78 @@ void handleToolBackup(AsyncWebServerRequest *request)
   }
 
   result += F("</ul>");
+
+  // Individual backup files (.json) from /bk/
+  result += F("<h5 class='section-title'><svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='#0d6efd' style='margin-right:10px;width:16px' viewBox='0 0 16 16'><path d='M6 .5a.5.5 0 0 0-.5-.5h-3a.5.5 0 0 0-.5.5V3H.5a.5.5 0 0 0 0 1H2v.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5V4h3.5a.5.5 0 0 0 0-1H6V.5zM5 4V1h-2v3h2z'/><path d='M2 7v7a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V7H2zm2 1h8v1H4V8z'/></svg>Backups individuels (appareils)</h5>");
+  result += F("<ul class='file-list' id='bkJsonList'>");
+
+  {
+    File rootBk = LittleFS.open("/bk");
+    File fileBk = rootBk.openNextFile();
+    bool hasBkJson = false;
+
+    while (fileBk)
+    {
+      if (!fileBk.isDirectory())
+      {
+        String bkName = fileBk.name();
+        if (bkName.endsWith(".json"))
+        {
+          hasBkJson = true;
+          int bkSize = fileBk.size();
+          result += F("<li class='file-item'>");
+          result += F("<div class='file-info'>");
+          result += F("<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='#6c757d' style='width:16px' viewBox='0 0 16 16'><path d='M14 4.5V14a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2a2 2 0 0 1 2-2h5.5L14 4.5zM9.5 3A1.5 1.5 0 0 1 8 1.5V0H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4.5H9.5z'/></svg>");
+          result += F("<span class='file-name'>");
+          result += bkName;
+          result += F("</span><span class='file-size'>(");
+          if (bkSize > 1024) {
+            result += String(bkSize / 1024);
+            result += F(" Ko");
+          } else {
+            result += String(bkSize);
+            result += F(" o");
+          }
+          result += F(")</span></div>");
+          result += F("<div class='file-actions'>");
+          // View button (blue eye)
+          result += F("<button class='btn-sm btn-primary' onclick=\"viewBkFile('");
+          result += bkName;
+          result += F("')\" title='Voir le contenu'>");
+          result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' style='width:14px' viewBox='0 0 16 16'><path d='M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8zM1.173 8a13.133 13.133 0 0 1 1.66-2.043C4.12 4.668 5.88 3.5 8 3.5c2.12 0 3.879 1.168 5.168 2.457A13.133 13.133 0 0 1 14.828 8c-.058.087-.122.183-.195.288-.335.48-.83 1.12-1.465 1.755C11.879 11.332 10.119 12.5 8 12.5c-2.12 0-3.879-1.168-5.168-2.457A13.134 13.134 0 0 1 1.172 8z'/><path d='M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM4.5 8a3.5 3.5 0 1 1 7 0 3.5 3.5 0 0 1-7 0z'/></svg>");
+          result += F("</button>");
+          // Restore button (green arrow)
+          result += F("<button class='btn-sm btn-success' onclick=\"restoreBkFile('");
+          result += bkName;
+          result += F("')\" title='Restaurer vers /db/'>");
+          result += F("<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' style='width:14px' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z'/><path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z'/></svg>");
+          result += F("</button>");
+          result += F("</div>");
+          result += F("</li>");
+        }
+      }
+      fileBk.close();
+      vTaskDelay(1);
+      fileBk = rootBk.openNextFile();
+    }
+    rootBk.close();
+    fileBk.close();
+
+    if (!hasBkJson) {
+      result += F("<li class='empty-state'><p>Aucun backup individuel</p></li>");
+    }
+  }
+
+  result += F("</ul>");
+
+  // Modal for viewing backup file content
+  result += F("<div class='bk-overlay' id='bkModal' onclick='closeBkModal(event)'>");
+  result += F("<div class='bk-modal' onclick='event.stopPropagation()'>");
+  result += F("<h4 id='bkModalTitle' style='margin:0 0 15px 0;'>...</h4>");
+  result += F("<pre id='bkModalContent'>Chargement...</pre>");
+  result += F("<button class='btn-backup' onclick='closeBkModal()' style='margin-top:15px;background:#6c757d;color:#fff;'>Fermer</button>");
+  result += F("</div></div>");
+
   result += F("</div>");
 
   // JavaScript
@@ -12455,6 +12130,24 @@ void handleToolBackup(AsyncWebServerRequest *request)
   result += F("function deleteBackup(filename){");
   result += F("if(confirm('Supprimer '+filename+' ?')){");
   result += F("$.post('/deleteBackupFile',{filename:filename},function(){location.reload();});");
+  result += F("}");
+  result += F("}");
+  result += F("function viewBkFile(f){");
+  result += F("var m=$('#bkModal');$('#bkModalTitle').text(f);$('#bkModalContent').text('Chargement...');");
+  result += F("m.css('display','flex');");
+  result += F("$.get('/readFile?0=bk&1='+f,function(d){");
+  result += F("try{$('#bkModalContent').text(JSON.stringify(JSON.parse(d),null,2));}");
+  result += F("catch(e){$('#bkModalContent').text(d);}");
+  result += F("}).fail(function(){$('#bkModalContent').text('Erreur de lecture');});");
+  result += F("}");
+  result += F("function closeBkModal(e){");
+  result += F("if(!e||e.target===$('#bkModal')[0])$('#bkModal').hide();");
+  result += F("}");
+  result += F("function restoreBkFile(f){");
+  result += F("if(confirm('Restaurer '+f+' vers /db/ ?\\nLe fichier actuel sera remplace.')){");
+  result += F("$.post('/restoreBkFile',{filename:f},function(){");
+  result += F("alert('Restauration OK !');location.reload();");
+  result += F("}).fail(function(x){alert('Erreur: '+x.responseText);});");
   result += F("}");
   result += F("}");
   result += F("</script>");
@@ -15652,29 +15345,6 @@ void handleSaveConfigWebPush(AsyncWebServerRequest *request)
   
 }
 
-void handleSaveConfigMarstek(AsyncWebServerRequest *request)
-{
-  String path = "configGeneral.json";
-  String enableMarstek;
-  if (request->arg("enableMarstek") == "on")
-  {
-    enableMarstek = "1";
-    ConfigSettings.enableMarstek = true;
-  }
-  else
-  {
-    enableMarstek = "0";
-    ConfigSettings.enableMarstek = false;
-  }
-  config_write(path, "enableMarstek", enableMarstek);
-
-  executeReboot = true;
-  AsyncWebServerResponse *response = request->beginResponse(303);
-  response->addHeader(F("Location"), F("/"));
-  request->send(response);
-}
-
-
 void handleSaveConfigUDPClient(AsyncWebServerRequest *request)
 {
 
@@ -17308,7 +16978,7 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
     DeviceData* device = devices[i];
     if (device->getDeviceID() == IEEE)
     {
-      String now = Hour+":"+Minute;
+      String now = String(Hour)+":"+Minute;
       request->send(200, F("application/json"), toJson(device->powerHistory,now));
       break;
     }
@@ -17361,7 +17031,7 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
 
   if (time == "hour")
   {
-    int now = Hour.toInt();
+    int now = atoi(Hour);
     int i = 0;
     while (i < 24)
     {
@@ -17397,13 +17067,13 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
     }
   }else if (time == "day")
   {
-    int now = Day.toInt();
+    int now = atoi(Day);
     int reste = 30 - now;
     int lastNbDayMonth;
     String  m;
-    if (Month.toInt()-2>0)
+    if (atoi(Month)-2>0)
     {
-      lastNbDayMonth=maxDayOfTheMonth[(Month.toInt()-2)];
+      lastNbDayMonth=maxDayOfTheMonth[(atoi(Month)-2)];
     }else{
       lastNbDayMonth=31;
     }
@@ -17442,9 +17112,9 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
         {
           tmpm = Month;
         }else{
-          if ((Month.toInt()-1)>0)
+          if ((atoi(Month)-1)>0)
           {
-            tmpm = (Month.toInt()-1) < 10 ? "0" + String((Month.toInt()-1)) : String((Month.toInt()-1));
+            tmpm = (atoi(Month)-1) < 10 ? "0" + String((atoi(Month)-1)) : String((atoi(Month)-1));
           }else{
             tmpm = "12";
           }
@@ -17473,7 +17143,7 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
     }
   }else if (time == "month")
   {
-    int now = Month.toInt();
+    int now = atoi(Month);
     String  y;
     int i = 0;
     while (i < 12)
@@ -17492,7 +17162,7 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
       PsString keyPS(tmpi.c_str(), PsramAllocator<char>());
       if (i<now)
       {
-        y = String((Year.toInt()-1));
+        y = String((atoi(Year)-1));
       }else{
         y = Year;
       }
@@ -17516,7 +17186,7 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
     }
   }else if (time == "year")
   {
-    int now = Year.toInt() - 10;
+    int now = atoi(Year) - 10;
     int i = 0;
     while (i < 11)
     {
@@ -17754,7 +17424,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
   result = "[";
 
   if (time == "hour") {
-    int now = Hour.toInt();
+    int now = atoi(Hour);
     for (int i = 0; i < 24; i++) {
       if (i > 0) result += ",";
       now++;
@@ -17768,9 +17438,9 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
     }
   }
   else if (time == "day") {
-    int now = Day.toInt();
+    int now = atoi(Day);
     int reste = 30 - now;
-    int lastNbDayMonth = (Month.toInt() - 2 > 0) ? maxDayOfTheMonth[Month.toInt() - 2] : 31;
+    int lastNbDayMonth = (atoi(Month) - 2 > 0) ? maxDayOfTheMonth[atoi(Month) - 2] : 31;
     if (reste > 0) now = (lastNbDayMonth - reste) + 1;
     else if (reste < 0) now = 2;
     else now = 1;
@@ -17786,8 +17456,8 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
         if (reste <= 0) {
           tmpm = Month;
         } else {
-          if ((Month.toInt() - 1) > 0) {
-            tmpm = (Month.toInt() - 1) < 10 ? "0" + String(Month.toInt() - 1) : String(Month.toInt() - 1);
+          if ((atoi(Month) - 1) > 0) {
+            tmpm = (atoi(Month) - 1) < 10 ? "0" + String(atoi(Month) - 1) : String(atoi(Month) - 1);
           } else {
             tmpm = "12";
           }
@@ -17804,13 +17474,13 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
     }
   }
   else if (time == "month") {
-    int now = Month.toInt();
+    int now = atoi(Month);
     for (int i = 0; i < 12; i++) {
       if (i > 0) result += ",";
       now++;
       if (now > 12) now = 1;
       String tmpi = now < 10 ? "0" + String(now) : String(now);
-      String y = (i < now) ? String(Year.toInt() - 1) : Year;
+      String y = (i < now) ? String(atoi(Year) - 1) : Year;
       result += "{\"y\":\"";
       result += tmpi;
       result += "/";
@@ -17821,7 +17491,7 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
     }
   }
   else if (time == "year") {
-    int now = Year.toInt() - 10;
+    int now = atoi(Year) - 10;
     for (int i = 0; i < 11; i++) {
       if (i > 0) result += ",";
       result += "{\"y\":\"";
@@ -17886,8 +17556,7 @@ void handleGetPresenceSummary(AsyncWebServerRequest *request) {
     if (request->hasParam("day")) {
         dayNum = request->getParam("day")->value();
     } else {
-        extern String Day;
-        dayNum = String(Day.toInt());
+        dayNum = String(atoi(Day));
     }
     
     if (request->hasParam("device")) {
@@ -18500,8 +18169,11 @@ void APIsetSubMeter(AsyncWebServerRequest *request) {
     
     // Mettre à jour
     strncpy(ConfigGeneral.subMeters[index].IEEE, IEEE.c_str(), 19);
+    ConfigGeneral.subMeters[index].IEEE[sizeof(ConfigGeneral.subMeters[index].IEEE) - 1] = '\0';
     strncpy(ConfigGeneral.subMeters[index].alias, alias.c_str(), 31);
+    ConfigGeneral.subMeters[index].alias[sizeof(ConfigGeneral.subMeters[index].alias) - 1] = '\0';
     strncpy(ConfigGeneral.subMeters[index].color, color.c_str(), 9);
+    ConfigGeneral.subMeters[index].color[sizeof(ConfigGeneral.subMeters[index].color) - 1] = '\0';
     ConfigGeneral.subMeters[index].enabled = enabled;
     
     // Sauvegarder la config
@@ -18551,7 +18223,7 @@ void APIgetEligibleSubMeters(AsyncWebServerRequest *request) {
         
         // Vérifier que le device a le cluster 0x0702 (SimpleMeter)
         // On vérifie si l'attribut 0 existe dans le cluster 0702
-        String val = device->getValue(std::string("0702"), std::string("0"));
+        String val = device->getValue("0702", "0");
         if (val.length() == 0) continue;  // Pas de données énergie
         
         if (!first) json += ",";
@@ -18608,12 +18280,6 @@ void APIgetSystem(AsyncWebServerRequest *request)
   "        \"auth\" : {{webpushauth}},"
   "        \"url\" : \"{{webpushurl}}\""
   "      },"
-  "      \"marstek\" :"
-  "      {"
-  "        \"enable\" : {{marstekenable}},"
-  "        \"connected\" :{{marstekconnected}},"
-  "        \"ip\" : \"{{marstekip}}\""
-  "      },"
   "      \"infos\" :"
   "      {"
   "        \"t\" : {{Temperature}}"
@@ -18640,10 +18306,6 @@ void APIgetSystem(AsyncWebServerRequest *request)
   result.replace("{{webpushenable}}",String(ConfigSettings.enableWebPush));
   result.replace("{{webpushauth}}",String(ConfigGeneral.webPushAuth));
   result.replace("{{webpushurl}}",ConfigGeneral.servWebPush);
-
-  result.replace("{{marstekenable}}",String(ConfigSettings.enableMarstek));
-  result.replace("{{marstekconnected}}",String(ConfigGeneral.connectedMarstek));
-  result.replace("{{marstekip}}",ConfigGeneral.marstekIP);
 
   float temperature = 0;
   temperature = temperatureReadFixed();
@@ -18678,16 +18340,31 @@ void APIgetDevices(AsyncWebServerRequest *request)
     {
       if (filesize > 0)
       {
-        if (i > 0)
-        {
-          result += ",";
-        }
-        result += "\""+inifile.substring(0,16)+"\" : ";
+        // Read entire file content first, then validate
+        String content;
+        content.reserve(filesize);
         while (file.available())
         {
-          result += (char)file.read();
+          content += (char)file.read();
         }
-        i++;
+        // Validate: must start with '{' and end with '}'
+        content.trim();
+        if (content.length() > 2 && content.charAt(0) == '{' && content.charAt(content.length() - 1) == '}')
+        {
+          if (i > 0)
+          {
+            result += ",";
+          }
+          result += "\""+inifile.substring(0,16)+"\" : ";
+          result += content;
+          i++;
+        }
+        else
+        {
+          Serial.printf("WARNING: /db/%s contient du JSON invalide (len=%d, first=0x%02X), ignoré\n",
+            inifile.c_str(), content.length(),
+            content.length() > 0 ? (uint8_t)content.charAt(0) : 0);
+        }
       }
     }
     file.close();
@@ -19340,12 +19017,6 @@ void initWebServer()
     if (!checkAuth(request)) return;
     handleConfigTunnel(request);
   });
-  serverWeb.on("/configMarstek", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
-    if (!checkAuth(request)) return;
-    handleConfigMarstek(request); 
-  });
-  
   serverWeb.on("/configUdpClient", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (!checkAuth(request)) return;
@@ -19426,8 +19097,47 @@ void initWebServer()
       request->send(400, F("text/plain"), F("Missing filename"));
     }
   });
+  serverWeb.on("/restoreBkFile", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    if (!request->hasArg("filename"))
+    {
+      request->send(400, F("text/plain"), F("Missing filename"));
+      return;
+    }
+    String argFilename = request->arg("filename");
+    if (argFilename.indexOf("..") >= 0 || !argFilename.endsWith(".json"))
+    {
+      request->send(400, F("text/plain"), F("Invalid path"));
+      return;
+    }
+    String srcPath = "/bk/" + argFilename;
+    String dstPath = "/db/" + argFilename;
+    File src = LittleFS.open(srcPath, "r");
+    if (!src)
+    {
+      request->send(404, F("text/plain"), F("Backup not found"));
+      return;
+    }
+    File dst = LittleFS.open(dstPath, "w");
+    if (!dst)
+    {
+      src.close();
+      request->send(500, F("text/plain"), F("Cannot write to /db/"));
+      return;
+    }
+    uint8_t buffer[512];
+    size_t n;
+    while ((n = src.read(buffer, sizeof(buffer))) > 0)
+    {
+      dst.write(buffer, n);
+    }
+    src.close();
+    dst.close();
+    request->send(200, F("text/plain"), F("OK"));
+  });
   serverWeb.on("/saveDebug", HTTP_POST, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
     handleSaveDebug(request);  
   });
@@ -19553,11 +19263,6 @@ void initWebServer()
     handleSaveConfigTunnel(request);
   });
 
-  serverWeb.on("/saveConfigMarstek", HTTP_POST, [](AsyncWebServerRequest *request)
-  {
-    if (!checkAuth(request)) return;
-    handleSaveConfigMarstek(request);
-  });
   serverWeb.on("/saveConfigUDPClient", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (!checkAuth(request)) return;

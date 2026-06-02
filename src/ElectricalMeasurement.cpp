@@ -18,7 +18,7 @@
 
 
 // Déclarations extern (conservées)
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigNotification ConfigNotif;
@@ -29,19 +29,19 @@ extern NotificationManager notificationManager;
 
 // Variables globales optimisées
 static float oldPowerOutage = 0.0f;
-static std::map<int, bool> oldOverTension = {
+static std::map<int, bool, std::less<int>, PsramAllocator<std::pair<const int, bool>>> oldOverTension = {
     {1285, false},
     {2309, false},
     {2565, false}
 };
-static std::map<int, bool> oldUnderTension = {
+static std::map<int, bool, std::less<int>, PsramAllocator<std::pair<const int, bool>>> oldUnderTension = {
     {1285, false},
     {2309, false},
     {2565, false}
 };
 
-// Cache pour éviter les recherches répétées
-static std::unordered_map<std::string, DeviceData*> electricalDeviceCache;
+// Cache pour éviter les recherches répétées (PSRAM)
+static PsUnorderedMap<DeviceData*> electricalDeviceCache;
 static bool electricalCacheInitialized = false;
 
 // Structure pour éviter la duplication
@@ -105,7 +105,7 @@ ElectricalMeasurementData createMeasurementData(const String& inifile, int attri
     char value[3]; // Taille optimisée
     
     for(int i = 0; i < len; i++) {
-        sprintf(value, "%02X", datas[i]);
+        snprintf(value, sizeof(value), "%02X", datas[i]);
         tmp += value;
     }
     
@@ -139,10 +139,16 @@ void publishElectricalData(const ElectricalMeasurementData& data, const String& 
         UDPsend(String(data.numericValue));
     }
     
-    // Device list update
+    // Device list update (avec coefficient pour l'affichage web)
     if (!deviceList->isFull()) {
         int shortaddr = GetShortAddr(inifile);
-        deviceList->push(Device{shortaddr, 2820, data.attribute, String(data.numericValue)});
+        DeviceData* dev = nullptr;
+        for (size_t i = 0; i < devices.size(); i++) {
+            if (devices[i]->getDeviceID() == data.deviceId) { dev = devices[i]; break; }
+        }
+        float coeff = (dev != nullptr) ? dev->GetAttributeCoefficient(2820, data.attribute) : 1.0;
+        float adjustedValue = data.numericValue * coeff;
+        deviceList->push(Device{shortaddr, 2820, data.attribute, String(adjustedValue)});
     }
 }
 
@@ -231,8 +237,8 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
                             //mode STANDARD MONOPHASE
                             if (data.attribute == 1295)
                             {
-                                long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16);
-                                long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                long URMS1 =  strtol(device->getValue("0B04", "1285").c_str(),0,16);
+                                long IRMS1 =  strtol(device->getValue("0B04", "1288").c_str(),0,16);
                                 injection = -URMS1 * IRMS1;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
@@ -246,24 +252,24 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
                             //mode STANDARD TRIPHASE
                             if (data.attribute == 1295)
                             {
-                                long URMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1285")).c_str(),0,16);
-                                long IRMS1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                long URMS1 =  strtol(device->getValue("0B04", "1285").c_str(),0,16);
+                                long IRMS1 =  strtol(device->getValue("0B04", "1288").c_str(),0,16);
                                 injection = -URMS1 * IRMS1;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
                                 addMeasurement(device->powerHistory, 1, injection);
                             }else if (data.attribute == 2319)
                             {
-                                long URMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2309")).c_str(),0,16);
-                                long IRMS2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16);
+                                long URMS2 =  strtol(device->getValue("0B04", "2309").c_str(),0,16);
+                                long IRMS2 =  strtol(device->getValue("0B04", "2312").c_str(),0,16);
                                 injection = -URMS2 * IRMS2;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
                                 addMeasurement(device->powerHistory, 2, injection);
                             }else if (data.attribute == 2575)
                             {
-                                long URMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2565")).c_str(),0,16);
-                                long IRMS3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16);
+                                long URMS3 =  strtol(device->getValue("0B04", "2565").c_str(),0,16);
+                                long IRMS3 =  strtol(device->getValue("0B04", "2568").c_str(),0,16);
                                 injection = -URMS3 * IRMS3;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
@@ -277,7 +283,7 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
                             if (data.attribute == 1295)
                             {
                                 long voltage = 200;
-                                long IINST =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                long IINST =  strtol(device->getValue("0B04", "1288").c_str(),0,16);
                                 injection = -voltage * IINST;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
@@ -291,21 +297,21 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
                             long voltage = 200;
                             if (data.attribute == 1295)
                             {
-                                long IINST1 =  strtol(device->getValue(std::string("0B04"), std::string("1288")).c_str(),0,16);
+                                long IINST1 =  strtol(device->getValue("0B04", "1288").c_str(),0,16);
                                 injection = -voltage * IINST1;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
                                 addMeasurement(device->powerHistory, 1, injection);
                             }else if (data.attribute == 2319)
                             {
-                                long IINST2 =  strtol(device->getValue(std::string("0B04"), std::string("2312")).c_str(),0,16);
+                                long IINST2 =  strtol(device->getValue("0B04", "2312").c_str(),0,16);
                                 injection = -voltage * IINST2;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
                                 addMeasurement(device->powerHistory, 2, injection);
                             }else if (data.attribute == 2575)
                             {
-                                long IINST3 =  strtol(device->getValue(std::string("0B04"), std::string("2568")).c_str(),0,16);
+                                long IINST3 =  strtol(device->getValue("0B04", "2568").c_str(),0,16);
                                 injection = -voltage * IINST3;
                                 value = String(injection, HEX);
                                 value.toUpperCase();
@@ -323,9 +329,9 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
     }
     
 
-    device->setValue(std::string("0B04"), 
-                    std::string(data.attributeStr.c_str()), 
-                    std::string(value.c_str()));
+    device->setValue("0B04",
+                    data.attributeStr.c_str(),
+                    value.c_str());
     
     if ((ConfigGeneral.Production == device->getDeviceID().c_str()) && (data.attribute == 519))
     {

@@ -61,7 +61,7 @@ void ResultTreatment(byte datas[512]){
   switch (command) {
     case 0x33:
       
-      strcpy(ZiGateInfos.device, (char *)datas);
+      strlcpy(ZiGateInfos.device, (char *)datas, sizeof(ZiGateInfos.device));
       log_i("chip_id : %s",ZiGateInfos.device);
       break;
     default:

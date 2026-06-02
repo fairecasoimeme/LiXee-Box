@@ -34,6 +34,7 @@
 #include <base64.h>
 #include "mbedtls/base64.h"
 #include "config.h"  // For SpiRamJsonDocument
+#include "PsramAllocator.h"
 #include <utility>
 #include <vector>
 #include <WebSocketsClient.h>
@@ -72,7 +73,7 @@ struct TunnelSlot {
     int statusCode = 200;
     int contentLength = -1;
     bool isChunked = false;
-    std::vector<std::pair<String, String>> respHeaders;
+    std::vector<std::pair<String, String>, PsramAllocator<std::pair<String, String>>> respHeaders;
     String partialLine;       // Incremental line buffer for header parsing
     bool statusLineParsed = false;
 
@@ -573,6 +574,15 @@ private:
 
     // State: READ_BODY_KNOWN - Read body with known Content-Length
     void processReadBodyKnown(TunnelSlot& slot) {
+        // Cap against buffer capacity (contentLength may exceed MAX_BODY_SIZE)
+        if (slot.bodyLen >= slot.bodyCapacity) {
+            Serial.printf("[Tunnel] [%s] Body buffer full: %u/%d bytes (truncated)\n",
+                          slot.reqId.c_str(), slot.bodyLen, slot.contentLength);
+            slot.state = TunnelSlot::READY_TO_SEND;
+            slot.localClient.stop();
+            return;
+        }
+
         int remaining = slot.contentLength - slot.bodyLen;
         if (remaining <= 0) {
             slot.state = TunnelSlot::READY_TO_SEND;
@@ -583,7 +593,9 @@ private:
         int avail = slot.localClient.available();
         if (avail <= 0) return;
 
-        int toRead = min(avail, remaining);
+        // Never read beyond the allocated buffer
+        int bufRemaining = (int)(slot.bodyCapacity - slot.bodyLen);
+        int toRead = min(avail, min(remaining, bufRemaining));
         // Read in bulk
         int r = slot.localClient.read(slot.bodyBuffer + slot.bodyLen, toRead);
         if (r > 0) {
@@ -591,7 +603,7 @@ private:
             slot.stateStartTime = millis();  // Reset timeout on data received
         }
 
-        if ((int)slot.bodyLen >= slot.contentLength) {
+        if ((int)slot.bodyLen >= slot.contentLength || slot.bodyLen >= slot.bodyCapacity) {
             Serial.printf("[Tunnel] [%s] Body complete: %u/%d bytes\n",
                           slot.reqId.c_str(), slot.bodyLen, slot.contentLength);
             slot.state = TunnelSlot::READY_TO_SEND;

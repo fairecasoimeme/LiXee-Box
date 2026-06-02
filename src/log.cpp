@@ -4,11 +4,6 @@
 #include "SPIFFS_ini.h"
 #include "LittleFS.h"
 
-extern String Hour;
-extern String Day;
-extern String Month;
-extern String Year;
-extern String FormattedDate;
 extern ConfigSettingsStruct ConfigSettings;
 
 //LogConsoleType logConsole;
@@ -42,14 +37,14 @@ bool addDebugLog(String text)
 {
   if (ConfigSettings.enableDebug)
   {
-    if (FormattedDate!="")
+    if (FormattedDate[0] != '\0')
     {
       //const String path ="/debug/debug_"+Day+".log";
       const char* path ="/debug/debug_";
       const char* extension =".log";
       char name_with_extension[64];
-      strcpy(name_with_extension,path);
-      strncat(name_with_extension,Day.c_str(),2);
+      strlcpy(name_with_extension,path, sizeof(name_with_extension));
+      strncat(name_with_extension,Day,2);
       strncat(name_with_extension,extension,4);
       File debugLog = safeOpenFile(name_with_extension,"a+");
 
@@ -68,8 +63,8 @@ bool addDebugLog(String text)
 
       char log[256];
       
-      strcpy(log,"[");
-      strncat(log,FormattedDate.c_str(),16);
+      strlcpy(log,"[", sizeof(log));
+      strncat(log,FormattedDate,16);
       strncat(log,"] : Free Mem RAM : ",19);
       char freeHeap[16];
       itoa(ESP.getFreeHeap(),freeHeap,10);

@@ -47,6 +47,7 @@ void scanFilesError(void);
 
 File safeOpenFile(const char *path, const char *mode);
 void safeCloseFile(File &file, const char *path);
+bool atomicWriteJson(const char* path, JsonDocument& doc);
 
 bool saveSubMetersConfig();
 

@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 #include "PsramAllocator.h"
-
-using PsString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
 // Représente un enregistrement ponctuel dans "datas"
 struct DataRecord {
     PsString timeStamp;            // le champ "y"

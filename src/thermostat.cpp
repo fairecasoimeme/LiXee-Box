@@ -9,13 +9,11 @@
 #include "device.h"
 #include <unordered_map>
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 50> *deviceList;
 extern CircularBuffer<Packet, 100> *commandList;
-
-extern String FormattedDate;
 
 // Séquence Tuya pour les transactions
 static uint16_t tuyaSeqNumber = 0;
@@ -23,7 +21,7 @@ static uint16_t tuyaSeqNumber = 0;
 // ============================================================================
 // CACHE POUR ÉVITER LES RECHERCHES RÉPÉTÉES (même schéma que lixee.cpp)
 // ============================================================================
-static std::unordered_map<std::string, DeviceData*> thermostatCache;
+static PsUnorderedMap<DeviceData*> thermostatCache;
 static bool thermostatCacheInitialized = false;
 
 // Structure pour éviter la duplication (même schéma que lixee.cpp)
@@ -224,9 +222,9 @@ void updateThermostatValue(const String& deviceId, const String& cluster,
                            int attribute, const String& value) {
     DeviceData* device = findThermostatDevice(deviceId);
     if (device) {
-        device->setValue(std::string(cluster.c_str()), 
-                        std::string(String(attribute).c_str()), 
-                        std::string(value.c_str()));
+        device->setValue(cluster.c_str(),
+                        String(attribute).c_str(),
+                        value.c_str());
     }
 }
 
@@ -242,7 +240,7 @@ void handleHvacLocalTemperature(const String& inifile, uint8_t* datas, int len) 
     // Sauter les 2 octets de longueur, lire en big-endian (format ZiGate)
     char hexBuf[5];
     int16_t rawTemp = (datas[0] << 8) | datas[1];
-    sprintf(hexBuf, "%04X", (uint16_t)rawTemp);
+    snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)rawTemp);
         
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "0201", "0", String(hexBuf), "numeric", true};
@@ -259,7 +257,7 @@ void handleHvacTempCalibration(const String& inifile, uint8_t* datas, int len) {
     
     char hexBuf[3];
     int8_t calibration = (int8_t)datas[0];
-    sprintf(hexBuf, "%02X", (uint8_t)calibration);
+    snprintf(hexBuf, sizeof(hexBuf), "%02X", (uint8_t)calibration);
     
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "0201", "16", String(hexBuf), "numeric", true};
@@ -276,8 +274,8 @@ void handleHvacCoolingSetpoint(const String& inifile, uint8_t* datas, int len) {
     
     char hexBuf[5];
     int16_t setpoint = (datas[0] << 8) | datas[1];
-    sprintf(hexBuf, "%04X", (uint16_t)setpoint);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)setpoint);
+
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "0201", "17", String(hexBuf), "numeric", true};
     
@@ -295,8 +293,8 @@ void handleHvacHeatingSetpoint(const String& inifile, uint8_t* datas, int len) {
     
     char hexBuf[5];
     int16_t setpoint = (datas[0] << 8) | datas[1];
-    sprintf(hexBuf, "%04X", (uint16_t)setpoint);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)setpoint);
+
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "0201", "18", String(hexBuf), "numeric", true};
     
@@ -312,7 +310,7 @@ void handleHvacSystemMode(const String& inifile, uint8_t* datas, int len) {
     
     char hexBuf[3];
     uint8_t mode = datas[0];
-    sprintf(hexBuf, "%02X", mode);
+    snprintf(hexBuf, sizeof(hexBuf), "%02X", mode);
     
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "0201", "28", String(hexBuf), "numeric", true};
@@ -335,8 +333,8 @@ void handleHvacRunningState(const String& inifile, uint8_t* datas, int len) {
     
     char hexBuf[5];
     int16_t setpoint = (datas[0] << 8) | datas[1];
-    sprintf(hexBuf, "%04X", (uint16_t)setpoint);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)setpoint);
+
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "0201", "41", String(hexBuf), "numeric", true};
     
@@ -353,10 +351,10 @@ void handleHvacDefaultAttribute(const String& inifile, int attribute, uint8_t* d
     String tmp = "";
     char value[3];
     for (int i = 0; i < len && i < 4; i++) {
-        sprintf(value, "%02X", datas[i]);
+        snprintf(value, sizeof(value), "%02X", datas[i]);
         tmp += value;
     }
-    
+
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "0201", String(attribute), tmp, "numeric", true};
     
@@ -392,7 +390,7 @@ void handleSonoffFrostProtection(const String& inifile, uint8_t* datas, int len)
     
     char hexBuf[5];
     int16_t frostTemp = (datas[1] << 8) | datas[0];
-    sprintf(hexBuf, "%04X", (uint16_t)frostTemp);
+    snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)frostTemp);
     
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "FC11", "2", String(hexBuf), "numeric", true};
@@ -425,7 +423,7 @@ void handleSonoffValveOpening(const String& inifile, uint8_t* datas, int len) {
     
     char hexBuf[3];
     uint8_t opening = datas[0];
-    sprintf(hexBuf, "%02X", opening);
+    snprintf(hexBuf, sizeof(hexBuf), "%02X", opening);
     
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "FC11", "13", String(hexBuf), "numeric", true};
@@ -443,10 +441,10 @@ void handleSonoffDefaultAttribute(const String& inifile, int attribute, uint8_t*
     String tmp = "";
     char value[3];
     for (int i = 0; i < len && i < 4; i++) {
-        sprintf(value, "%02X", datas[i]);
+        snprintf(value, sizeof(value), "%02X", datas[i]);
         tmp += value;
     }
-    
+
     String deviceId = inifile.substring(0, 16);
     ThermostatProcessedData data = {deviceId, "FC11", String(attribute), tmp, "numeric", true};
     
@@ -478,11 +476,11 @@ void handleTuyaDatapoint(const String& inifile, uint8_t dpId, uint8_t dpType,
     
     char hexBuf[10];
     if (dataLen == 1) {
-        sprintf(hexBuf, "%02X", (uint8_t)value);
+        snprintf(hexBuf, sizeof(hexBuf), "%02X", (uint8_t)value);
     } else if (dataLen == 2) {
-        sprintf(hexBuf, "%04X", (uint16_t)value);
+        snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
     } else {
-        sprintf(hexBuf, "%08lX", value);
+        snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
     }
     
     String deviceId = inifile.substring(0, 16);

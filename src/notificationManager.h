@@ -7,13 +7,14 @@
 #include <vector>
 #include <functional>
 #include "config.h"
+#include "PsramAllocator.h"
 
 class NotificationManager {
 public:
   typedef std::function<void(const String&, const String&, int, const char*, float, float)> PushCallback;
 
 private:
-  std::vector<Notification*> notifications; // Vecteur en mémoire standard
+  std::vector<Notification*, PsramAllocator<Notification*>> notifications; // Vecteur en PSRAM
   const char* jsonFilePath;
   size_t maxNotifications;
   PushCallback _pushCallback = nullptr;

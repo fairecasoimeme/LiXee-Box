@@ -11,7 +11,7 @@
 #include "notificationManager.h"
 #include <unordered_map>
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -21,8 +21,8 @@ extern CircularBuffer<Notification, 10> *notifList;
 
 extern NotificationManager notificationManager;
 
-// Cache pour éviter les recherches répétées
-static std::unordered_map<std::string, DeviceData*> deviceCache;
+// Cache pour éviter les recherches répétées (PSRAM)
+static PsUnorderedMap<DeviceData*> deviceCache;
 static bool cacheInitialized = false;
 
 // Structure pour éviter la duplication
@@ -98,9 +98,9 @@ void publishData(const ProcessedData& data) {
 void updateDeviceValue(const String& deviceId, int attribute, const String& value) {
     DeviceData* device = findDevice(deviceId);
     if (device) {
-        device->setValue(std::string("FF66"), 
-                        std::string(String(attribute).c_str()), 
-                        std::string(value.c_str()));
+        device->setValue("FF66",
+                        String(attribute).c_str(),
+                        value.c_str());
     }
 }
 
@@ -130,7 +130,7 @@ void handleDelestage() {
     while (pch != NULL) {
         DeviceData* device = findDevice(String(pch));
         if (device) {
-            String oldState = device->getValue(std::string("0006"), std::string("0"));
+            String oldState = device->getValue("0006", "0");
             if (oldState != "") {
                 config_write("delestage.json", device->getDeviceID(), oldState);
             }
@@ -148,12 +148,12 @@ void handleAttribute5(const String& inifile, uint8_t* datas, int len) {
     char value[3]; // Taille optimisée
     
     for(int i = 0; i < len; i++) {
-        sprintf(value, "%02X", datas[i]);
+        snprintf(value, sizeof(value), "%02X", datas[i]);
         tmp += value;
     }
-    
+
     if (!ini_exist(inifile)) return;
-    
+
     String deviceId = inifile.substring(0, 16);
     ProcessedData data = {deviceId, "65382", "5", tmp, "numeric", true};
     
@@ -188,7 +188,7 @@ void handleAttribute514(const String& inifile, uint8_t* datas, int len) {
 
 void handleAttribute519(const String& inifile, uint8_t* datas, int len) {
     char value[5];
-    sprintf(value, "%02X%02X", datas[1], datas[0]);
+    snprintf(value, sizeof(value), "%02X%02X", datas[1], datas[0]);
     String tmp = String(value);
     
     if (!ini_exist(inifile)) return;
@@ -200,7 +200,7 @@ void handleAttribute519(const String& inifile, uint8_t* datas, int len) {
     
     DeviceData* device = findDevice(deviceId);
     if (device) {
-        device->setValue(std::string("FF66"), std::string("519"), std::string(tmp.c_str()));
+        device->setValue("FF66", "519", tmp.c_str());
         addMeasurement(device->powerHistory, 519, strtol(tmp.c_str(), NULL, 16));
         
         // Gestion production supérieure consommation
@@ -209,8 +209,8 @@ void handleAttribute519(const String& inifile, uint8_t* datas, int len) {
             
             DeviceData* zlinkyDevice = findDevice(ConfigGeneral.ZLinky);
             if (zlinkyDevice) {
-                int conso = strtol(zlinkyDevice->getValue(std::string("0B04"), 
-                                  std::string("1295")).c_str(), NULL, 16);
+                int conso = strtol(zlinkyDevice->getValue("0B04",
+                                  "1295").c_str(), NULL, 16);
                 
                 if (conso > 0) {
                     int production = strtol(tmp.c_str(), NULL, 16);
@@ -287,7 +287,7 @@ void handleAttribute768(const String& inifile, uint8_t* datas, int len) {
     String tmp = "";
     
     for(int i = 0; i < len; i++) {
-        sprintf(value, "%02X", datas[i]);
+        snprintf(value, sizeof(value), "%02X", datas[i]);
         tmp += value;
     }
     String deviceId = inifile.substring(0, 16);
@@ -303,7 +303,7 @@ void handleAttribute768(const String& inifile, uint8_t* datas, int len) {
     
     DeviceData* device = findDevice(deviceId);
     if (device) {
-        device->setValue(std::string("FF66"), std::string("768"), std::string(tmp.c_str()));
+        device->setValue("FF66", "768", tmp.c_str());
         device->setInfoLinkyMode(String(strtol(tmp.c_str(), NULL, 16)));
     }
 }
@@ -329,7 +329,7 @@ void handleDefaultAttribute(const String& inifile, int attribute, uint8_t dataty
     } else {
         char value[3];
         for(int i = 0; i < len; i++) {
-            sprintf(value, "%02X", datas[i]);
+            snprintf(value, sizeof(value), "%02X", datas[i]);
             tmp += value;
         }
     }
@@ -422,7 +422,7 @@ void publishLinkyTariffInfo(const String& deviceId) {
     String couleurDemain = "";
 
     // Lire l'attribut 16 (PTEC) — source principale
-    String ptec = device->getValue(std::string("FF66"), std::string("16"));
+    String ptec = device->getValue("FF66", "16");
     ptec.trim();
 
     if (ptec.length() == 0) return; // Pas encore de donnée
@@ -480,7 +480,7 @@ void publishLinkyTariffInfo(const String& deviceId) {
 
         // Couleur demain : lire attribut 1 (DEMAIN) — mode historique Tempo
         if (couleurJour.length() > 0) {
-            String demain = device->getValue(std::string("FF66"), std::string("1"));
+            String demain = device->getValue("FF66", "1");
             demain.trim();
             demain.toUpperCase();
             if (demain.startsWith("BLEU")) {
@@ -499,7 +499,7 @@ void publishLinkyTariffInfo(const String& deviceId) {
         tarif = ptec;
 
         // Couleurs via STGE (attribut 535)
-        String stge = device->getValue(std::string("FF66"), std::string("535"));
+        String stge = device->getValue("FF66", "535");
         if (stge.length() >= 4) {
             auto status = parseStatusRegister(stge);
 

@@ -10,7 +10,7 @@
 
 #include "presence.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -30,7 +30,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
       {   
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -61,7 +61,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0406"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0406",String(attribute).c_str(),tmp.c_str());
             handleOccupancyChange(device->getDeviceID(), device->getInfo().model, strtol(tmp.c_str(), NULL, 16));
             break;
           }
@@ -73,7 +73,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
         
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -102,7 +102,7 @@ void OccupancyManage(String inifile,int attribute,uint8_t datatype,int len, char
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0406"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0406",String(attribute).c_str(),tmp.c_str());
             break;
           }
         }

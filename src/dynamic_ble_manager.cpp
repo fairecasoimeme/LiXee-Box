@@ -127,7 +127,7 @@ String DynamicBLEManager::generateDeviceName(const String& prefix) {
     uint8_t baseMac[6];
     esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
     char macSuffix[5];
-    sprintf(macSuffix, "%02X%02X", baseMac[4], baseMac[5]);
+    snprintf(macSuffix, sizeof(macSuffix), "%02X%02X", baseMac[4], baseMac[5]);
     return prefix + "-" + String(macSuffix);
 }
 

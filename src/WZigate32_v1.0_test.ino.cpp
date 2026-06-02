@@ -37,8 +37,6 @@ extern "C" {
 #include <lwip/ip_addr.h>
 #include <esp_log.h>
 #include "mail.h"
-#include "AsyncUDP.h"
-
 #include "rules.h"
 
 #include <esp_heap_caps.h>
@@ -75,7 +73,7 @@ bool zigbeeInitialized = false;
 // Tunnel reverse proxy
 LiXeeBoxTunnel* tunnel = nullptr;
 
-std::vector<DeviceData*> devices;
+DeviceList devices;
 TemplateCache templateCache(true);
 
 bool executeReboot=false;
@@ -147,8 +145,8 @@ LinkyData collectLinkyData() {
     data.puissance_souscrite = 9;       // kVA
     data.nb_jours = 120;
     
-    strcpy(data.horaires_hc, "00h00-08h00");
-    strcpy(data.type_abonnement, "HCHP");
+    strlcpy(data.horaires_hc, "00h00-08h00", sizeof(data.horaires_hc));
+    strlcpy(data.type_abonnement, "HCHP", sizeof(data.type_abonnement));
     
     // Calcul des statistiques
     LinkyUtils::calculateStats(data);
@@ -168,8 +166,8 @@ void performDetailedAnalysis() {
     summary.puissance_max_totale = 2700;
     summary.puissance_souscrite = 6;
     summary.nb_jours = 365;
-    strcpy(summary.type_abonnement, "HCHP");
-    strcpy(summary.horaires_hc, "22h30-06h30");
+    strlcpy(summary.type_abonnement, "HCHP", sizeof(summary.type_abonnement));
+    strlcpy(summary.horaires_hc, "22h30-06h30", sizeof(summary.horaires_hc));
     LinkyUtils::calculateStats(summary);
     
     // 2. Vos JSON complets (stockés en PSRAM ou SPIFFS)
@@ -304,21 +302,18 @@ MDNSResponder mdns;
 unsigned long previousTime = 0; // Variable pour stocker le temps précédent
 unsigned long interval = 60000; // Intervalle de 1 minute en millisecondes
 
-//UDP Async
-AsyncUDP UdpServer;
-AsyncServer *TcpServer;
 AsyncMqttClient mqttClient;
 TimerHandle_t mqttReconnectTimer;
 TimerHandle_t WifiReconnectTimer;
 
 #define NTP_UPDATE_INTERVAL_MS          60000L
-String FormattedDate;
-String Hour;
-String Day;
-String Month;
-String Year;
-String Minute;
-String Yesterday;
+char FormattedDate[24] = "";
+char Hour[4] = "";
+char Day[4] = "";
+char Month[4] = "";
+char Year[6] = "";
+char Minute[4] = "";
+char Yesterday[4] = "";
 String epochTime;
 String firstStart;
 
@@ -340,22 +335,33 @@ Scheduler runner;
 
 void initCircularBuffer()
 {
-
   commandList = (CircularBuffer<Packet,100>*)heap_caps_malloc(sizeof(*commandList), MALLOC_CAP_SPIRAM);
+  if (!commandList) { log_e("PSRAM alloc failed: commandList"); ESP.restart(); }
   new(commandList) CircularBuffer<Packet,100>();
-  PrioritycommandList = (CircularBuffer<Packet,70>*)heap_caps_malloc(sizeof(*PrioritycommandList), MALLOC_CAP_SPIRAM);
-  new(PrioritycommandList) CircularBuffer<Packet,70>();
-  PriorityQueuePacket = (CircularBuffer<SerialPacket,30>*)heap_caps_malloc(sizeof(*PriorityQueuePacket), MALLOC_CAP_SPIRAM);
-  new(PriorityQueuePacket) CircularBuffer<SerialPacket,30>();
-  alertList = (CircularBuffer<Alert,10>*)heap_caps_malloc(sizeof(*alertList), MALLOC_CAP_SPIRAM);
-  new(alertList) CircularBuffer<Alert,10>();
-  notifList = (CircularBuffer<Notification,10>*)heap_caps_malloc(sizeof(*notifList), MALLOC_CAP_SPIRAM);
-  new(notifList) CircularBuffer<Notification,10>();
-  deviceList = (CircularBuffer<Device,50>*)heap_caps_malloc(sizeof(*deviceList), MALLOC_CAP_SPIRAM);
-  new(deviceList) CircularBuffer<Device,50>();
-  QueuePacket = (CircularBuffer<SerialPacket,300>*)heap_caps_malloc(sizeof(*QueuePacket), MALLOC_CAP_SPIRAM);
-  new(QueuePacket) CircularBuffer<SerialPacket,300>();
 
+  PrioritycommandList = (CircularBuffer<Packet,70>*)heap_caps_malloc(sizeof(*PrioritycommandList), MALLOC_CAP_SPIRAM);
+  if (!PrioritycommandList) { log_e("PSRAM alloc failed: PrioritycommandList"); ESP.restart(); }
+  new(PrioritycommandList) CircularBuffer<Packet,70>();
+
+  PriorityQueuePacket = (CircularBuffer<SerialPacket,30>*)heap_caps_malloc(sizeof(*PriorityQueuePacket), MALLOC_CAP_SPIRAM);
+  if (!PriorityQueuePacket) { log_e("PSRAM alloc failed: PriorityQueuePacket"); ESP.restart(); }
+  new(PriorityQueuePacket) CircularBuffer<SerialPacket,30>();
+
+  alertList = (CircularBuffer<Alert,10>*)heap_caps_malloc(sizeof(*alertList), MALLOC_CAP_SPIRAM);
+  if (!alertList) { log_e("PSRAM alloc failed: alertList"); ESP.restart(); }
+  new(alertList) CircularBuffer<Alert,10>();
+
+  notifList = (CircularBuffer<Notification,10>*)heap_caps_malloc(sizeof(*notifList), MALLOC_CAP_SPIRAM);
+  if (!notifList) { log_e("PSRAM alloc failed: notifList"); ESP.restart(); }
+  new(notifList) CircularBuffer<Notification,10>();
+
+  deviceList = (CircularBuffer<Device,50>*)heap_caps_malloc(sizeof(*deviceList), MALLOC_CAP_SPIRAM);
+  if (!deviceList) { log_e("PSRAM alloc failed: deviceList"); ESP.restart(); }
+  new(deviceList) CircularBuffer<Device,50>();
+
+  QueuePacket = (CircularBuffer<SerialPacket,300>*)heap_caps_malloc(sizeof(*QueuePacket), MALLOC_CAP_SPIRAM);
+  if (!QueuePacket) { log_e("PSRAM alloc failed: QueuePacket"); ESP.restart(); }
+  new(QueuePacket) CircularBuffer<SerialPacket,300>();
 }
 
 void delayRebootCallBack()
@@ -379,10 +385,10 @@ bool ScanDevicesToRAZ() {
   // ============================================
   // RAZ PRÉSENCE (UNE SEULE FOIS, AVANT LA BOUCLE)
   // ============================================
-  if (Minute == "00") 
+  if (strcmp(Minute, "00") == 0)
   {
       // RAZ présence pour l'heure courante
-      presenceResetHour(Day.toInt(), Hour.toInt());
+      presenceResetHour(atoi(Day), atoi(Hour));
   }
 
   // Parcours de tous les devices
@@ -407,11 +413,11 @@ bool ScanDevicesToRAZ() {
     // ============================================
     // RAZ HORAIRE (à chaque heure, minute == 00)
     // ============================================
-    if (Minute == "00") 
+    if (strcmp(Minute, "00") == 0)
     {
       log_e("RAZ energy hour for device %s", deviceId.c_str());
-      
-      PsString hourKey(Hour.c_str(), PsramAllocator<char>());
+
+      PsString hourKey(Hour, PsramAllocator<char>());
       
       if (isSubMeterDevice) {
         // Sous-compteur : RAZ tous les attributs tarifaires
@@ -460,7 +466,7 @@ bool ScanDevicesToRAZ() {
     // ============================================
     // RAZ JOURNALIERE (à minuit, Hour == 00 && Minute == 00)
     // ============================================
-    if ((Hour == "00") && (Minute == "00")) {
+    if ((strcmp(Hour, "00") == 0) && (strcmp(Minute, "00") == 0)) {
       
       // Notification Journalière (uniquement pour ZLinky)
       if (strcmp(ConfigGeneral.ZLinky, deviceId.c_str()) == 0 && ConfigNotif.OverBudget) {
@@ -495,7 +501,7 @@ bool ScanDevicesToRAZ() {
       // RAZ du jour courant
       log_e("RAZ energy day for device %s", deviceId.c_str());
       
-      PsString dayKey(Day.c_str(), PsramAllocator<char>());
+      PsString dayKey(Day, PsramAllocator<char>());
       
       if (isSubMeterDevice) {
         // Sous-compteur : RAZ tous les attributs tarifaires
@@ -541,10 +547,10 @@ bool ScanDevicesToRAZ() {
     // ============================================
     // RAZ MENSUELLE (1er du mois à minuit)
     // ============================================
-    if ((Day == "01") && (Hour == "00") && (Minute == "00")) {
+    if ((strcmp(Day, "01") == 0) && (strcmp(Hour, "00") == 0) && (strcmp(Minute, "00") == 0)) {
       log_e("RAZ energy month for device %s", deviceId.c_str());
-      
-      PsString monthKey(Month.c_str(), PsramAllocator<char>());
+
+      PsString monthKey(Month, PsramAllocator<char>());
       
       if (isSubMeterDevice) {
         // Sous-compteur : RAZ tous les attributs tarifaires
@@ -590,10 +596,10 @@ bool ScanDevicesToRAZ() {
     // ============================================
     // RAZ ANNUELLE (1er janvier à minuit)
     // ============================================
-    if ((Month == "01") && (Day == "01") && (Hour == "00") && (Minute == "00")) {
+    if ((strcmp(Month, "01") == 0) && (strcmp(Day, "01") == 0) && (strcmp(Hour, "00") == 0) && (strcmp(Minute, "00") == 0)) {
       log_e("RAZ energy year for device %s", deviceId.c_str());
-      
-      PsString yearKey(Year.c_str(), PsramAllocator<char>());
+
+      PsString yearKey(Year, PsramAllocator<char>());
       
       if (isSubMeterDevice) {
         // Sous-compteur : RAZ tous les attributs tarifaires
@@ -643,16 +649,17 @@ bool ScanDevicesToRAZ() {
       continue;
 
     // POWER (RAZ de la minute suivante)
-    int nextMin = Minute.toInt() + 1;
-    String nextHour = Hour;
+    int nextMin = atoi(Minute) + 1;
+    char nextHourBuf[4];
+    strlcpy(nextHourBuf, Hour, sizeof(nextHourBuf));
     if (nextMin > 59) {
       nextMin = 0;
-      int h = Hour.toInt() + 1;
+      int h = atoi(Hour) + 1;
       if (h > 23) h = 0;
-      nextHour = h < 10 ? "0" + String(h) : String(h);
+      snprintf(nextHourBuf, sizeof(nextHourBuf), "%02d", h);
     }
-    String nextMinStr = nextMin < 10 ? "0" + String(nextMin) : String(nextMin);
-    String currentTime = nextHour + ":" + nextMinStr;
+    char currentTime[6];
+    snprintf(currentTime, sizeof(currentTime), "%s:%02d", nextHourBuf, nextMin);
     resetMeasurements(device->powerHistory, currentTime);
 
     // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
@@ -663,9 +670,9 @@ bool ScanDevicesToRAZ() {
       String textError = "device : " + deviceId + " - Pas vu depuis plus de 1 heure";
       addDebugLog(textError);
 
-      device->setValue(std::string("0B04"), std::string("1295"), std::string("0"));
-      device->setValue(std::string("0B04"), std::string("2319"), std::string("0"));
-      device->setValue(std::string("0B04"), std::string("2575"), std::string("0"));
+      device->setValue("0B04", "1295", "0");
+      device->setValue("0B04", "2319", "0");
+      device->setValue("0B04", "2575", "0");
 
       addMeasurement(device->powerHistory, 1, 0);
       addMeasurement(device->powerHistory, 2, 0);
@@ -709,13 +716,13 @@ void scanCallback()
 
   ScanDeviceToPoll();
 DEBUG_PRINTLN(F("ScanDeviceToPoll OK"));
-  FormattedDate = timeClient.getFullFormattedTime();
-  Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
-  Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
-  Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
-  Year = String(timeClient.getYear());
-  Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute()); 
-  Yesterday = timeClient.getYesterday();
+  strlcpy(FormattedDate, timeClient.getFullFormattedTime().c_str(), sizeof(FormattedDate));
+  snprintf(Hour, sizeof(Hour), "%02d", timeClient.getHour());
+  snprintf(Day, sizeof(Day), "%02d", timeClient.getDate());
+  snprintf(Month, sizeof(Month), "%02d", timeClient.getMonth());
+  snprintf(Year, sizeof(Year), "%d", timeClient.getYear());
+  snprintf(Minute, sizeof(Minute), "%02d", timeClient.getMinute());
+  strlcpy(Yesterday, timeClient.getYesterday().c_str(), sizeof(Yesterday));
   epochTime = String(timeClient.getEpochTime());
   String path = "configGeneral.json";
 DEBUG_PRINTLN(F("config_write"));
@@ -841,119 +848,6 @@ SemaphoreHandle_t inifile_Mutex = NULL;
 SemaphoreHandle_t Queue_Mutex = NULL;
 SemaphoreHandle_t QueuePrio_Mutex = NULL;
 
-
-TaskHandle_t taskTCP;
-
-void TcpTreatment(void * pvParameters)
-{
-  AsyncClient *client;
-  client =  (AsyncClient *)pvParameters;
-  log_d("TcpTreatment\n");
-  while (1)
-  {
-    esp_task_wdt_reset();
-
-    String datas = "HM:";
-    datas +=String(strtol(getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","0B04","1295").c_str(),0,16));
-    datas +="|";
-    datas +=String(strtol(getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","0B04","2319").c_str(),0,16));
-    datas +="|";
-    datas +=String(strtol(getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","0B04","2575").c_str(),0,16));
-    
-    if (client->space() > strlen(datas.c_str()) && client->canSend())
-    {
-      log_i("send to Marstek infos : %s\n",datas.c_str());
-      client->add(datas.c_str(), strlen(datas.c_str()));
-      client->send();
-    }
-    log_w("TcpTreatement : uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
-
-    vTaskDelay(10000/portTICK_PERIOD_MS);
-  }
-}
-
-
-
-static void handleData(void *arg, AsyncClient *client, void *data, size_t len)
-{
-	log_d("\n data received from client %s \n", client->remoteIP().toString().c_str());
-  strncpy(ConfigGeneral.marstekIP,client->remoteIP().toString().c_str(),18);
-  if (memcmp(data,"hello",5)==0)
-  {
-    log_d("get hello\n");
-    ConfigGeneral.connectedMarstek = true;
-    log_d("create thread : %d\n",taskTCP);
-    if (taskTCP!=NULL)
-    {
-      vTaskDelete(taskTCP);
-    }
-    
-    xTaskCreatePinnedToCore(
-                TcpTreatment,   // Function to implement the task 
-                "TcpTreatment", // Name of the task 
-                8*1024,      // Stack size in words 
-                (void *) client,       // Task input parameter 
-                18,          // Priority of the task 
-                &taskTCP,       // Task handle. 
-                0);
-  }
-}
-
-static void handleError(void *arg, AsyncClient *client, int8_t error)
-{
-	log_e("\n connection error %s from client %s \n", client->errorToString(error), client->remoteIP().toString().c_str());
-  //ConfigGeneral.connectedMarstek = false;
-}
-
-static void handleDisconnect(void *arg, AsyncClient *client)
-{
-	log_e("\n client %s disconnected \n", client->remoteIP().toString().c_str());
-  ConfigGeneral.connectedMarstek = false;
-  strcpy(ConfigGeneral.marstekIP,"");
-}
-
-static void handleTimeOut(void *arg, AsyncClient *client, uint32_t time)
-{
-	log_e("\n client ACK timeout ip: %s \n", client->remoteIP().toString().c_str());
- // ConfigGeneral.connectedMarstek = false;
-}
-
-static void handleNewClient(void *arg, AsyncClient *client)
-{
-	// register events
-	client->onData(&handleData, NULL);
-	client->onError(&handleError, NULL);
-	client->onDisconnect(&handleDisconnect, NULL);
-	client->onTimeout(&handleTimeOut, NULL);
-}
-
-void tcpProcess()
-{
-  TcpServer = new AsyncServer(12345); 
-	TcpServer->onClient(&handleNewClient, TcpServer);
-	TcpServer->begin();
-}
-
-void udpProcess()
-{
-  if (UdpServer.listen(12345)) 
-  {
-    log_i("UDP listening on ip : %d - port : 12345",WiFi.localIP().toString());
-    UdpServer.onPacket([](AsyncUDPPacket packet) 
-    {
-      log_i("receive data : %s",packet.data());
-      if (memcmp(packet.data(), "hame", 4)==0)
-      {
-        log_i("send ACK");
-        packet.print("ack");
-      }else{
-        log_i("send ACK");
-        packet.print("ack");
-      }
-    });
-  }
-
-}
 
 void datasTreatment(void * pvParameters)
 {
@@ -1711,8 +1605,6 @@ bool loadConfigGeneral() {
   strlcpy(ConfigGeneral.portUDP, doc["portUDP"] | "", sizeof(ConfigGeneral.portUDP));
   ConfigGeneral.customUDPJson =doc["customUDPJson"].as<String>();
 
-  ConfigSettings.enableMarstek = (int)doc["enableMarstek"];
-
   ConfigSettings.enableNotif = (int)doc["enableNotif"];
   strlcpy(ConfigGeneral.servSMTP, doc["servSMTP"] | "", sizeof(ConfigGeneral.servSMTP));
   strlcpy(ConfigGeneral.portSMTP, doc["portSMTP"] | "", sizeof(ConfigGeneral.portSMTP));
@@ -1814,7 +1706,7 @@ String getIDWifi()
   uint8_t baseMac[6];
   esp_read_mac(baseMac, ESP_MAC_WIFI_STA);
   char macSuffix[5];
-  sprintf(macSuffix, "%02X%02X", baseMac[4], baseMac[5]);
+  snprintf(macSuffix, sizeof(macSuffix), "%02X%02X", baseMac[4], baseMac[5]);
   return String(macSuffix);
 }
 
@@ -2040,24 +1932,24 @@ void initWiFiServices() {
         xPortGetCoreID(), ESP.getHeapSize(), ESP.getFreeHeap(), ESP.getFreePsram());
 
   if (NTPOK) {
-    FormattedDate = timeClient.getFullFormattedTime();
-    Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
-    Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
-    Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
-    Year = String(timeClient.getYear());
-    Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute());
-    Yesterday = timeClient.getYesterday();
+    strlcpy(FormattedDate, timeClient.getFullFormattedTime().c_str(), sizeof(FormattedDate));
+    snprintf(Hour, sizeof(Hour), "%02d", timeClient.getHour());
+    snprintf(Day, sizeof(Day), "%02d", timeClient.getDate());
+    snprintf(Month, sizeof(Month), "%02d", timeClient.getMonth());
+    snprintf(Year, sizeof(Year), "%d", timeClient.getYear());
+    snprintf(Minute, sizeof(Minute), "%02d", timeClient.getMinute());
+    strlcpy(Yesterday, timeClient.getYesterday().c_str(), sizeof(Yesterday));
     String path = "configGeneral.json";
     config_write(path, "epoch", String(timeClient.getEpochTime()));
   } else {
     timeClient.setEpochTime(ConfigGeneral.epochTime);
-    FormattedDate = timeClient.getFullFormattedTime();
-    Hour = timeClient.getHour() < 10 ? "0" + String(timeClient.getHour()) : String(timeClient.getHour());
-    Day = timeClient.getDate() < 10 ? "0" + String(timeClient.getDate()) : String(timeClient.getDate());
-    Month = timeClient.getMonth() < 10 ? "0" + String(timeClient.getMonth()) : String(timeClient.getMonth());
-    Year = String(timeClient.getYear());
-    Minute = timeClient.getMinute() < 10 ? "0" + String(timeClient.getMinute()) : String(timeClient.getMinute());
-    Yesterday = timeClient.getYesterday();
+    strlcpy(FormattedDate, timeClient.getFullFormattedTime().c_str(), sizeof(FormattedDate));
+    snprintf(Hour, sizeof(Hour), "%02d", timeClient.getHour());
+    snprintf(Day, sizeof(Day), "%02d", timeClient.getDate());
+    snprintf(Month, sizeof(Month), "%02d", timeClient.getMonth());
+    snprintf(Year, sizeof(Year), "%d", timeClient.getYear());
+    snprintf(Minute, sizeof(Minute), "%02d", timeClient.getMinute());
+    strlcpy(Yesterday, timeClient.getYesterday().c_str(), sizeof(Yesterday));
   }
 
   if (firstInit) {
@@ -2068,11 +1960,6 @@ void initWiFiServices() {
     initWebServer();
     MDNS.addService("http", "tcp", 80);
 
-    // Marstek (une seule fois)
-    if (ConfigSettings.enableMarstek && strcmp(ConfigGeneral.ZLinky, "") != 0) {
-      udpProcess();
-      tcpProcess();
-    }
   }
 
   // === Tunnel reverse proxy ===
@@ -2263,6 +2150,16 @@ void setup(void)
     DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
     while (true) {
       DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
+      delay(1000);
+    }
+  }
+
+  // creates a mutex object to control access to LittleFS files
+  file_Mutex = xSemaphoreCreateMutex();
+  if (file_Mutex == NULL) {
+    DEBUG_PRINTLN(F("Error creating file_Mutex. Sketch will fail."));
+    while (true) {
+      DEBUG_PRINTLN(F("file_Mutex error (NULL). Program halted."));
       delay(1000);
     }
   }

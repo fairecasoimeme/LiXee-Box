@@ -8,7 +8,7 @@
 #include "mqtt.h"
 #include "device.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -28,7 +28,7 @@ void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char*
         
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -54,7 +54,7 @@ void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char*
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0405"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0405",String(attribute).c_str(),tmp.c_str());
 
             if (!deviceList->isFull())
             {
@@ -71,7 +71,7 @@ void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char*
         
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -91,19 +91,25 @@ void humidityManage(String inifile,int attribute,uint8_t datatype,int len, char*
             WebPush(inifile.substring(0,16),"1029",(String)attribute,tmpvalue.c_str());
           }
 
-          // Device update value;
+          // Device update value (avec coefficient pour l'affichage web)
           if (!deviceList->isFull())
           {
             int shortaddr = GetShortAddr(inifile);
-            deviceList->push(Device{shortaddr,1029,attribute,tmp});
+            DeviceData* dev = nullptr;
+            for (size_t j = 0; j < devices.size(); j++) {
+              if (devices[j]->getDeviceID() == inifile.substring(0, 16)) { dev = devices[j]; break; }
+            }
+            float coeff = (dev != nullptr) ? dev->GetAttributeCoefficient(1029, attribute) : 1.0;
+            float adjustedValue = strtol(tmp.c_str(), NULL, 16) * coeff;
+            deviceList->push(Device{shortaddr,1029,attribute,String(adjustedValue)});
           }
         }
-        for (size_t i = 0; i < devices.size(); i++) 
+        for (size_t i = 0; i < devices.size(); i++)
         {
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0405"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0405",String(attribute).c_str(),tmp.c_str());
             break;
           }
         }

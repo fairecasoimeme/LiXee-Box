@@ -8,7 +8,7 @@
 #include "mqtt.h"
 #include "device.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -28,7 +28,7 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
         
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         char clusterHex[5];
@@ -65,7 +65,7 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string(clusterHex),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue(clusterHex,String(attribute).c_str(),tmp.c_str());
 
             if (!deviceList->isFull())
             {

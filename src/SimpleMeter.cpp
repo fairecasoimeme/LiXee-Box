@@ -13,14 +13,14 @@
 #include <unordered_set>
 
 // Déclarations extern (conservées)
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 50> *deviceList;
 
 // Cache pour éviter les recherches répétées
-static std::unordered_map<std::string, DeviceData*> simpleMeterDeviceCache;
+static PsUnorderedMap<DeviceData*> simpleMeterDeviceCache;
 static bool simpleMeterCacheInitialized = false;
 
 // Set des attributs d'énergie standard pour optimiser les comparaisons
@@ -80,7 +80,7 @@ SimpleMeterData createHexMeterData(const String& inifile, int attribute,
     char value[3]; // Taille optimisée
     
     for(int i = 0; i < len; i++) {
-        sprintf(value, "%02X", datas[i]);
+        snprintf(value, sizeof(value), "%02X", datas[i]);
         tmp += value;
     }
     
@@ -161,7 +161,7 @@ int getCurrentTariffAttributeId() {
     }
     
     // Récupérer la période tarifaire (cluster FF66, attribut 16 = 0x0010)
-    String ptec = zlinkyDevice->getValue(std::string("FF66"), std::string("16"));
+    String ptec = zlinkyDevice->getValue("FF66", "16");
     if (ptec.length() == 0) {
         return 256;  // Par défaut
     }
@@ -214,16 +214,16 @@ void updateSimpleMeterDeviceValue(const SimpleMeterData& data) {
     
     // Cas spécial pour ZLinky_TIC avec attribut 0
     if (device->getInfo().model == "ZLinky_TIC" && data.attribute == 0) {
-        device->setValue(std::string("0702"), 
-                        std::string(data.attributeStr.c_str()), 
-                        std::string(data.value.c_str()));
+        device->setValue("0702",
+                        data.attributeStr.c_str(),
+                        data.value.c_str());
         return;
     }
-    
+
     // Cas général
-    device->setValue(std::string("0702"), 
-                    std::string(data.attributeStr.c_str()), 
-                    std::string(data.value.c_str()));
+    device->setValue("0702",
+                    data.attributeStr.c_str(),
+                    data.value.c_str());
     
     // Ajout aux mesures d'énergie si numérique
     if (data.attribute == 0 && data.isNumeric) {
@@ -276,9 +276,9 @@ void handleSpecialAttribute1Logic(const SimpleMeterData& data) {
         
         DeviceData* zlinkyDevice = findSimpleMeterDevice(ConfigGeneral.ZLinky);
         if (zlinkyDevice) {
-            zlinkyDevice->setValue(std::string("0702"), 
-                                  std::string(data.attributeStr.c_str()), 
-                                  std::string(data.value.c_str()));
+            zlinkyDevice->setValue("0702",
+                                  data.attributeStr.c_str(),
+                                  data.value.c_str());
             
             if (data.isNumeric) {
                 addEnergyMeasurement(zlinkyDevice->energyHistory, data.attributeStr, data.numericValue);
@@ -325,39 +325,39 @@ void handleAttribute32(const String& inifile, uint8_t* datas, int len) {
     // Pour l'attribut 32, on met à jour sans les fonctionnalités d'énergie
     DeviceData* device = findSimpleMeterDevice(data.deviceId);
     if (device) {
-        device->setValue(std::string("0702"), 
-                        std::string(data.attributeStr.c_str()), 
-                        std::string(data.value.c_str()));
+        device->setValue("0702",
+                        data.attributeStr.c_str(),
+                        data.value.c_str());
     }
 }
 
 // Gestionnaire pour l'attribut 776 (données string)
 void handleAttribute776(const String& inifile, uint8_t* datas, int len) {
     auto data = createTextMeterData(inifile, 776, datas, len, true);
-    
+
     publishSimpleMeterData(data, inifile);
-    
+
     // Pour l'attribut 776, on met à jour sans les fonctionnalités d'énergie
     DeviceData* device = findSimpleMeterDevice(data.deviceId);
     if (device) {
-        device->setValue(std::string("0702"), 
-                        std::string(data.attributeStr.c_str()), 
-                        std::string(data.value.c_str()));
+        device->setValue("0702",
+                        data.attributeStr.c_str(),
+                        data.value.c_str());
     }
 }
 
 // Gestionnaire pour les attributs par défaut
 void handleDefaultAttribute(const String& inifile, int attribute, uint8_t* datas, int len) {
     auto data = createHexMeterData(inifile, attribute, datas, len);
-    
+
     publishSimpleMeterData(data, inifile);
-    
+
     // Pour les attributs par défaut, mise à jour simple sans fonctionnalités d'énergie
     DeviceData* device = findSimpleMeterDevice(data.deviceId);
     if (device) {
-        device->setValue(std::string("0702"), 
-                        std::string(data.attributeStr.c_str()), 
-                        std::string(data.value.c_str()));
+        device->setValue("0702",
+                        data.attributeStr.c_str(),
+                        data.value.c_str());
     }
 }
 

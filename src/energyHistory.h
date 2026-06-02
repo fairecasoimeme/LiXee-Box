@@ -5,8 +5,6 @@
 #include <map>
 #include "PsramAllocator.h"
 
-using PsString = std::basic_string<char, std::char_traits<char>, PsramAllocator<char>>;
-
 struct ValueMap {
     std::map<int, long, std::less<int>,
              PsramAllocator<std::pair<const int, long>>> attributes;

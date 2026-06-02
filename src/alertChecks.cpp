@@ -6,16 +6,12 @@
 #include "zigbee.h"
 #include <ArduinoJson.h>
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern ConfigNotification ConfigNotif;
 extern ConfigGeneralStruct ConfigGeneral;
 extern NotificationManager notificationManager;
 extern CircularBuffer<Notification, 10> *notifList;
 extern LiXeeBoxTunnel* tunnel;
-extern String Hour;
-extern String Minute;
-extern String Day;
-extern String FormattedDate;
 extern String section[12];
 
 // --- État statique (non persisté, reset au reboot) ---
@@ -74,7 +70,7 @@ static void checkOverPower() {
     DeviceData* device = findDeviceByIEEE(ConfigGeneral.ZLinky);
     if (!device) return;
 
-    String powerHex = device->getValue(std::string("0B04"), std::string("1295"));
+    String powerHex = device->getValue("0B04", "1295");
     if (powerHex.length() == 0) return;
 
     long powerW = strtol(powerHex.c_str(), NULL, 16);
@@ -110,7 +106,7 @@ static void checkFreeze() {
     DeviceData* device = findDeviceByIEEE(ConfigNotif.FreezeSensorIEEE);
     if (!device) return;
 
-    String tempHex = device->getValue(std::string("0402"), std::string("0"));
+    String tempHex = device->getValue("0402", "0");
     if (tempHex.length() == 0) return;
 
     long tempCenti = strtol(tempHex.c_str(), NULL, 16);
@@ -140,7 +136,7 @@ static void checkDailyAnomaly() {
     if (!device) return;
 
     // Récupérer la conso du jour depuis l'historique
-    PsString dayKey(Day.c_str(), PsramAllocator<char>());
+    PsString dayKey(Day, PsramAllocator<char>());
     auto it = device->energyHistory.days.graph.find(dayKey);
     long todayWh = 0;
     if (it != device->energyHistory.days.graph.end()) {
@@ -190,7 +186,7 @@ static void checkWaterLeak() {
     if (!device) return;
 
     // Récupérer la conso eau du jour
-    PsString dayKey(Day.c_str(), PsramAllocator<char>());
+    PsString dayKey(Day, PsramAllocator<char>());
     auto it = device->energyHistory.days.graph.find(dayKey);
     long todayL = 0;
     if (it != device->energyHistory.days.graph.end()) {
@@ -245,8 +241,8 @@ static void sendDailyMetrics() {
         return;
     }
 
-    Serial.printf("[DailyMetrics] Generating summary for day=%s\n", Day.c_str());
-    PsString dayKey(Day.c_str(), PsramAllocator<char>());
+    Serial.printf("[DailyMetrics] Generating summary for day=%s\n", Day);
+    PsString dayKey(Day, PsramAllocator<char>());
     String msg = "";
     float totalCost = 0;
     size_t arrayLength = sizeof(section) / sizeof(section[0]);
@@ -361,9 +357,9 @@ void alertChecksLoop() {
     unsigned long now = millis();
 
     // Reset des flags quotidiens à minuit
-    if (Day != lastCheckedDay) {
+    if (lastCheckedDay != Day) {
         Serial.printf("[AlertChecks] New day detected: %s -> %s, resetting daily flags\n",
-                      lastCheckedDay.c_str(), Day.c_str());
+                      lastCheckedDay.c_str(), Day);
         lastCheckedDay = Day;
         dailyAnomalyCheckedToday = false;
         waterLeakCheckedToday = false;
@@ -383,29 +379,29 @@ void alertChecksLoop() {
         checkFreeze();
     }
 
-    int min = Minute.toInt();
+    int min = atoi(Minute);
 
     // Anomalie conso journalière : entre 23h50 et 23h59
-    if (Hour == "23" && min >= 50 && !dailyAnomalyCheckedToday) {
+    if (strcmp(Hour, "23") == 0 && min >= 50 && !dailyAnomalyCheckedToday) {
         dailyAnomalyCheckedToday = true;
         Serial.println("[AlertChecks] Running daily anomaly check");
         checkDailyAnomaly();
     }
 
     // Fuite d'eau : entre 06h00 et 06h09
-    if (Hour == "06" && min <= 9 && !waterLeakCheckedToday) {
+    if (strcmp(Hour, "06") == 0 && min <= 9 && !waterLeakCheckedToday) {
         waterLeakCheckedToday = true;
         checkWaterLeak();
     }
 
     // Fuite d'eau nocturne : entre 06h00 et 06h09
-    if (Hour == "06" && min <= 9 && !nightWaterLeakCheckedToday) {
+    if (strcmp(Hour, "06") == 0 && min <= 9 && !nightWaterLeakCheckedToday) {
         nightWaterLeakCheckedToday = true;
         checkNightWaterLeak();
     }
 
     // Résumé quotidien : entre 23h50 et 23h59
-    if (Hour == "23" && min >= 50 && !dailyMetricsSentToday) {
+    if (strcmp(Hour, "23") == 0 && min >= 50 && !dailyMetricsSentToday) {
         dailyMetricsSentToday = true;
         Serial.println("[AlertChecks] Running daily metrics");
         sendDailyMetrics();

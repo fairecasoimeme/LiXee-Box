@@ -5,13 +5,8 @@
 #include "log.h"
 #include "device.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern ConfigGeneralStruct ConfigGeneral;
-extern String FormattedDate;
-extern String Hour;
-extern String Day;
-extern String Month;
-extern String Year;
 
 // Fichier unique de présence
 static const char* PRESENCE_FILE = "/hst/presence.json";
@@ -23,7 +18,7 @@ struct PresenceStatus {
     unsigned long lastUpdate;
 };
 
-static std::vector<PresenceStatus> presenceCache;
+static std::vector<PresenceStatus, PsramAllocator<PresenceStatus>> presenceCache;
 
 // ============================================================================
 // INITIALISATION
@@ -107,8 +102,8 @@ static bool savePresenceFile(JsonDocument& doc) {
 // ============================================================================
 
 void presenceRecordEvent(const String& deviceId, bool occupied) {
-    int currentDay = Day.toInt();   // 1-31
-    int currentHour = Hour.toInt(); // 0-23
+    int currentDay = atoi(Day);   // 1-31
+    int currentHour = atoi(Hour); // 0-23
     String dayKey = String(currentDay);
     String devKey = deviceId.substring(0, 16);
     
@@ -261,8 +256,8 @@ String getPresenceSummaryAll(const String& dayNum) {
 String getPresenceSummary24hSliding() {
     SpiRamJsonDocument doc(16384);
     
-    int currentDay = Day.toInt();    // 1-31
-    int currentHour = Hour.toInt();  // 0-23
+    int currentDay = atoi(Day);    // 1-31
+    int currentHour = atoi(Hour);  // 0-23
     
     // Calcul du jour précédent (gestion du passage de mois)
     // Note: simplifié - on prend juste le jour -1, si 1 alors 31
@@ -348,8 +343,8 @@ String getPresenceSummary24hSliding() {
 String getPresenceSummary24hSliding(const String& deviceId) {
     SpiRamJsonDocument doc(16384);
     
-    int currentDay = Day.toInt();
-    int currentHour = Hour.toInt();
+    int currentDay = atoi(Day);
+    int currentHour = atoi(Hour);
     int previousDay = (currentDay == 1) ? 31 : currentDay - 1;
     
     String todayKey = String(currentDay);

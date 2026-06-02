@@ -9,7 +9,7 @@
 
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 
 // Instance singleton
 ZosungIRManager* ZosungIRManager::instance = nullptr;

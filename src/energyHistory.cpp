@@ -5,13 +5,7 @@
 #include "SPIFFS_ini.h"
 #include "energyHistory.h"
 
-extern String FormattedDate;
-extern String Hour;
-extern String Day;
-extern String Month;
-extern String Minute;
-extern String Year;
-extern String Yesterday;
+#include "config.h"
 
 // Seuil anti-spike : delta maximum acceptable (en Wh) entre deux mesures consécutives.
 // Au-delà, on considère que l'appareil s'est reconnecté après une période hors-ligne
@@ -238,21 +232,7 @@ bool saveEnergyHistory(String IEEE,const DeviceEnergyHistory &hist)
     // --------------------------------------------------------------------------------------
     
     String path= "/hst/nrg_"+IEEE+".json";
-
-    File f = safeOpenFile(path.c_str(), "w+");
-    if (!f) {     
-        safeCloseFile(f,path.c_str());
-        return false;
-    }
-
-    if (serializeJson(doc, f) == 0 )
-    {
-        safeCloseFile(f,path.c_str());
-        return false;
-    }
-    safeCloseFile(f,path.c_str());
-
-    return true;
+    return atomicWriteJson(path.c_str(), doc);
 }
 
 
@@ -264,7 +244,7 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
                             int tariffAttrId,
                             long totalValue)
 {
-    if (totalValue == 0 || Year == "") {
+    if (totalValue == 0 || Year[0] == '\0') {
         return false;
     }
     
@@ -278,10 +258,10 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
     }
 
     // Mettre à jour la valeur totale dans l'attribut 0
-    hist.hours.data[PsString(Hour.c_str())].attributes[0] = totalValue;
-    hist.days.data[PsString(Day.c_str())].attributes[0] = totalValue;
-    hist.months.data[PsString(Month.c_str())].attributes[0] = totalValue;
-    hist.years.data[PsString(Year.c_str())].attributes[0] = totalValue;
+    hist.hours.data[PsString(Hour)].attributes[0] = totalValue;
+    hist.days.data[PsString(Day)].attributes[0] = totalValue;
+    hist.months.data[PsString(Month)].attributes[0] = totalValue;
+    hist.years.data[PsString(Year)].attributes[0] = totalValue;
     hist.hours.last.attributes[0] = totalValue;
     hist.days.last.attributes[0] = totalValue;
     hist.months.last.attributes[0] = totalValue;
@@ -303,10 +283,10 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
             lastYear  = hist.lastUpdate.substring(6, 10).toInt();
         }
 
-        int curDay   = Day.toInt();
-        int curMonth = Month.toInt();
-        int curYear  = Year.toInt();
-        int curHour  = Hour.toInt();
+        int curDay   = atoi(Day);
+        int curMonth = atoi(Month);
+        int curYear  = atoi(Year);
+        int curHour  = atoi(Hour);
 
         int gapDays = 1;
         if (lastYear > 0) {
@@ -340,11 +320,11 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
         hist.hours.trend.attributes[tariffAttrId] = deltaPerHour;
 
         // MONTHLY
-        hist.months.graph[PsString(Month.c_str())].attributes[tariffAttrId] += delta;
+        hist.months.graph[PsString(Month)].attributes[tariffAttrId] += delta;
         hist.months.trend.attributes[tariffAttrId] = delta;
 
         // YEARLY
-        hist.years.graph[PsString(Year.c_str())].attributes[tariffAttrId] += delta;
+        hist.years.graph[PsString(Year)].attributes[tariffAttrId] += delta;
         hist.years.trend.attributes[tariffAttrId] = delta;
 
         hist.lastUpdate = FormattedDate;
@@ -354,19 +334,19 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
     // --- Fonctionnement normal (pas de spike) ---
     // Accumuler le delta dans l'attribut tarifaire (graph seulement)
     // Hours
-    hist.hours.graph[PsString(Hour.c_str())].attributes[tariffAttrId] += delta;
+    hist.hours.graph[PsString(Hour)].attributes[tariffAttrId] += delta;
     hist.hours.trend.attributes[tariffAttrId] = delta;
 
     // Days
-    hist.days.graph[PsString(Day.c_str())].attributes[tariffAttrId] += delta;
+    hist.days.graph[PsString(Day)].attributes[tariffAttrId] += delta;
     hist.days.trend.attributes[tariffAttrId] += delta;
 
     // Months
-    hist.months.graph[PsString(Month.c_str())].attributes[tariffAttrId] += delta;
+    hist.months.graph[PsString(Month)].attributes[tariffAttrId] += delta;
     hist.months.trend.attributes[tariffAttrId] += delta;
 
     // Years
-    hist.years.graph[PsString(Year.c_str())].attributes[tariffAttrId] += delta;
+    hist.years.graph[PsString(Year)].attributes[tariffAttrId] += delta;
     hist.years.trend.attributes[tariffAttrId] += delta;
 
     hist.lastUpdate = FormattedDate;
@@ -389,12 +369,12 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
 
     if (value != 0)
     {
-        if (Year != "")
+        if (Year[0] != '\0')
         {
-            hist.hours.data[PsString(Hour.c_str())].attributes[attrId] = value;
-            hist.days.data[PsString(Day.c_str())].attributes[attrId] = value;
-            hist.months.data[PsString(Month.c_str())].attributes[attrId] = value;
-            hist.years.data[PsString(Year.c_str())].attributes[attrId] = value;
+            hist.hours.data[PsString(Hour)].attributes[attrId] = value;
+            hist.days.data[PsString(Day)].attributes[attrId] = value;
+            hist.months.data[PsString(Month)].attributes[attrId] = value;
+            hist.years.data[PsString(Year)].attributes[attrId] = value;
 
             // --- Anti-spike avec lissage ---
             // Si la valeur a sauté de plus de MAX_ENERGY_DELTA_WH depuis la dernière mesure,
@@ -415,10 +395,10 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
                         lastHour  = hist.lastUpdate.substring(11, 13).toInt();
                     }
 
-                    int curDay   = Day.toInt();
-                    int curMonth = Month.toInt();
-                    int curYear  = Year.toInt();
-                    int curHour  = Hour.toInt();
+                    int curDay   = atoi(Day);
+                    int curMonth = atoi(Month);
+                    int curYear  = atoi(Year);
+                    int curHour  = atoi(Hour);
 
                     // Gap en jours (approximatif si cross-mois)
                     int gapDays = 1;
@@ -464,12 +444,12 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
                         if (gapMonths < 1) gapMonths = 1;
                     }
                     long deltaPerMonth = totalDelta / gapMonths;
-                    hist.months.graph[PsString(Month.c_str())].attributes[attrId] = deltaPerMonth;
+                    hist.months.graph[PsString(Month)].attributes[attrId] = deltaPerMonth;
                     hist.months.trend.attributes[attrId] = deltaPerMonth;
                     hist.months.last.attributes[attrId] = value;
 
                     // --- YEARLY ---
-                    hist.years.graph[PsString(Year.c_str())].attributes[attrId] += totalDelta;
+                    hist.years.graph[PsString(Year)].attributes[attrId] += totalDelta;
                     hist.years.trend.attributes[attrId] = totalDelta;
                     hist.years.last.attributes[attrId] = value;
 
@@ -484,7 +464,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
             if (hist.hours.last.attributes[attrId]!=0)
             {
               signed int result;
-              int tmpHour = (Hour.toInt() - 1);
+              int tmpHour = (atoi(Hour) - 1);
               if (tmpHour < 0)
               {
                 tmpHour = 23;
@@ -498,7 +478,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
               result = tmp - hist.hours.data[PsString(hourtmp.c_str())].attributes[attrId];
               if (hist.hours.data[PsString(hourtmp.c_str())].attributes[attrId]!=0)
               {
-                hist.hours.graph[PsString(Hour.c_str())].attributes[attrId] = result;
+                hist.hours.graph[PsString(Hour)].attributes[attrId] = result;
               }
               hist.hours.trend.attributes[attrId] = result;
             }
@@ -508,7 +488,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
             if (hist.days.last.attributes[attrId]!=0)
             {
               signed int result;
-              int tmpDay = Yesterday.toInt();
+              int tmpDay = atoi(Yesterday);
               String daytmp = tmpDay < 10 ? "0" + String(tmpDay) : String(tmpDay);
               int tmp = hist.days.last.attributes[attrId];
 
@@ -520,7 +500,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
 
               if (hist.days.data[PsString(daytmp.c_str())].attributes[attrId]!=0)
               {
-                hist.days.graph[PsString(Day.c_str())].attributes[attrId] = result;
+                hist.days.graph[PsString(Day)].attributes[attrId] = result;
               }
               hist.days.trend.attributes[attrId] = result;
             }
@@ -531,7 +511,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
             {
               signed int result;
 
-              int tmpMonth = (Month.toInt() - 1);
+              int tmpMonth = (atoi(Month) - 1);
               if (tmpMonth < 1)
               {
                 tmpMonth = 12;
@@ -547,7 +527,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
               result = tmp - hist.months.data[PsString(monthtmp.c_str())].attributes[attrId];
               if (hist.months.data[PsString(monthtmp.c_str())].attributes[attrId]!=0)
               {
-                hist.months.graph[PsString(Month.c_str())].attributes[attrId] = result;
+                hist.months.graph[PsString(Month)].attributes[attrId] = result;
               }
               hist.months.trend.attributes[attrId] = result;
             }
@@ -558,7 +538,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
             {
 
               signed int result;
-              int tmpYear = (Year.toInt() - 1);
+              int tmpYear = (atoi(Year) - 1);
               String yeartmp = tmpYear < 10 ? "0" + String(tmpYear) : String(tmpYear);
               int tmp = hist.years.last.attributes[attrId];
               if (hist.years.data[PsString(yeartmp.c_str())].attributes[attrId]==0)
@@ -569,7 +549,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
               result = tmp - hist.years.data[PsString(yeartmp.c_str())].attributes[attrId];
               if (hist.years.data[PsString(yeartmp.c_str())].attributes[attrId]!=0)
               {
-                hist.years.graph[PsString(Year.c_str())].attributes[attrId] = result;
+                hist.years.graph[PsString(Year)].attributes[attrId] = result;
               }
 
               hist.years.trend.attributes[attrId] = result;

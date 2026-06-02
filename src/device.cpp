@@ -103,6 +103,23 @@ void DeviceData::setValue(const std::string &cluster, const std::string &attrib,
     _values[c][a] = v;
 }
 
+String DeviceData::getValue(const char* cluster, const char* attrib) {
+    PsString c(cluster, PsramAllocator<char>());
+    auto itC = _values.find(c);
+    if (itC == _values.end()) return String();
+    PsString a(attrib, PsramAllocator<char>());
+    auto itA = itC->second.find(a);
+    if (itA == itC->second.end()) return String();
+    return String(itA->second.c_str());
+}
+
+void DeviceData::setValue(const char* cluster, const char* attrib, const char* val) {
+    PsString c(cluster, PsramAllocator<char>());
+    PsString a(attrib, PsramAllocator<char>());
+    PsString v(val, PsramAllocator<char>());
+    _values[c][a] = v;
+}
+
 float DeviceData::updateIndex(size_t logicalPos, float currentWh) {
     if (logicalPos >= 11) return 0.0f;  // hors limites
     IndexData &d = _indexMem[logicalPos];

@@ -18,9 +18,6 @@
 #define ARDUINOJSON_ENABLE_ARDUINO_STRING 1
 #define ARDUINOJSON_ENABLE_STD_STRING 1
 
-extern String Hour;
-extern String Minute;
-
 bool parsePowerHistory(const String IEEE, PowerHistory &history) {
 
     String path="/hst/pwr_"+IEEE+".json";
@@ -392,20 +389,7 @@ bool savePowerHistory(String IEEE, const PowerHistory &history) {
     }
 
     String path= "/hst/pwr_"+IEEE+".json";
-
-    File f = safeOpenFile(path.c_str(), "w+");
-    if (!f) {     
-        safeCloseFile(f,path.c_str());
-        return false;
-    }
-
-    if (serializeJson(doc, f) == 0 )
-    {
-        safeCloseFile(f,path.c_str());
-        return false;
-    }
-    safeCloseFile(f,path.c_str());
-    return true;
+    return atomicWriteJson(path.c_str(), doc);
 }
 
 void addMeasurement(PowerHistory &history, int attrId,long newValue) {
@@ -413,7 +397,7 @@ void addMeasurement(PowerHistory &history, int attrId,long newValue) {
     DataRecord *found = nullptr;
     PsString hourMinute;
     for (auto &rec : history.datas) {
-        String tmp = Hour+":"+Minute;
+        String tmp = String(Hour)+":"+Minute;
         hourMinute = PsString(tmp.c_str());
         if (rec.timeStamp == hourMinute) {
             found = &rec;

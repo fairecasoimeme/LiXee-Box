@@ -8,7 +8,7 @@
 #include "mqtt.h"
 #include "device.h"
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
@@ -28,7 +28,7 @@ void temperatureManage(String inifile,int attribute,uint8_t datatype,int len, ch
         
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -56,7 +56,7 @@ void temperatureManage(String inifile,int attribute,uint8_t datatype,int len, ch
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0402"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0402",String(attribute).c_str(),tmp.c_str());
 
             if (!deviceList->isFull())
             {
@@ -71,7 +71,7 @@ void temperatureManage(String inifile,int attribute,uint8_t datatype,int len, ch
         
         for(int i=0;i<len;i++)
         {
-          sprintf(value, "%02X",datas[i]);
+          snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
         }
         if (ini_exist(inifile))
@@ -103,7 +103,7 @@ void temperatureManage(String inifile,int attribute,uint8_t datatype,int len, ch
           DeviceData* device = devices[i];
           if (device->getDeviceID() == inifile.substring(0, 16))
           {
-            device->setValue(std::string("0402"),std::string(String(attribute).c_str()),std::string(tmp.c_str()));
+            device->setValue("0402",String(attribute).c_str(),tmp.c_str());
             break;
           }
         }

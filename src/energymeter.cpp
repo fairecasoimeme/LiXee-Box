@@ -9,18 +9,16 @@
 #include "device.h"
 #include <unordered_map>
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigSettingsStruct ConfigSettings;
 extern CircularBuffer<Device, 50> *deviceList;
 extern CircularBuffer<Packet, 100> *commandList;
 
-extern String FormattedDate;
-
 // ============================================================================
 // CACHE POUR ÉVITER LES RECHERCHES RÉPÉTÉES
 // ============================================================================
-static std::unordered_map<std::string, DeviceData*> energyMeterCache;
+static PsUnorderedMap<DeviceData*> energyMeterCache;
 static bool energyMeterCacheInitialized = false;
 
 // Structure pour éviter la duplication
@@ -202,9 +200,9 @@ static void updateEnergyMeterValue(const String& deviceId, const String& cluster
                                    int attribute, const String& value) {
     DeviceData* device = findEnergyMeterDevice(deviceId);
     if (device) {
-        device->setValue(std::string(cluster.c_str()), 
-                        std::string(String(attribute).c_str()), 
-                        std::string(value.c_str()));
+        device->setValue(cluster.c_str(),
+                        String(attribute).c_str(),
+                        value.c_str());
     }
 }
 
@@ -233,14 +231,14 @@ static void handleTotalForwardEnergy(const String& inifile, uint32_t value, Tuya
     float energyKwh = value / divisor;
     
     char hexBuf[10];
-    sprintf(hexBuf, "%08lX", value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+
     String deviceId = inifile.substring(0, 16);
     EnergyMeterProcessedData data = {deviceId, "EF00", "1", String(hexBuf), "numeric", true};
-    
+
     publishEnergyMeterData(data);
     updateEnergyMeterValue(deviceId, "EF00", 1, String(hexBuf));
-    
+
     log_i("Total Forward Energy: %lu raw (%.2f kWh)", value, energyKwh);
 }
 
@@ -251,8 +249,8 @@ static void handleNeutralCurrent(const String& inifile, uint32_t value) {
     float currentA = value / 1000.0f;
     
     char hexBuf[10];
-    sprintf(hexBuf, "%08lX", value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+
     String deviceId = inifile.substring(0, 16);
     EnergyMeterProcessedData data = {deviceId, "EF00", "2", String(hexBuf), "numeric", true};
     
@@ -283,7 +281,7 @@ static void handlePhaseDataRaw(const String& inifile, uint8_t dpId, uint8_t* dpD
     {
         char hexBuf[10];
         uint16_t rawV = (uint16_t)(phase.voltage * 10);
-        sprintf(hexBuf, "%04X", rawV);
+        snprintf(hexBuf, sizeof(hexBuf), "%04X", rawV);
         
         int attrVoltage = 100 + phaseIndex * 10;
         EnergyMeterProcessedData data = {deviceId, "EF00", String(attrVoltage), String(hexBuf), "numeric", true};
@@ -297,7 +295,7 @@ static void handlePhaseDataRaw(const String& inifile, uint8_t dpId, uint8_t* dpD
     {
         char hexBuf[10];
         uint32_t rawI = (uint32_t)(phase.current * 1000);
-        sprintf(hexBuf, "%08lX", rawI);
+        snprintf(hexBuf, sizeof(hexBuf), "%08lX", rawI);
         
         int attrCurrent = 101 + phaseIndex * 10;
         EnergyMeterProcessedData data = {deviceId, "EF00", String(attrCurrent), String(hexBuf), "numeric", true};
@@ -311,7 +309,7 @@ static void handlePhaseDataRaw(const String& inifile, uint8_t dpId, uint8_t* dpD
     {
         char hexBuf[10];
         uint32_t rawP = (uint32_t)phase.power;
-        sprintf(hexBuf, "%08lX", rawP);
+        snprintf(hexBuf, sizeof(hexBuf), "%08lX", rawP);
         
         int attrPower = 102 + phaseIndex * 10;
         EnergyMeterProcessedData data = {deviceId, "EF00", String(attrPower), String(hexBuf), "numeric", true};
@@ -324,7 +322,7 @@ static void handlePhaseDataRaw(const String& inifile, uint8_t dpId, uint8_t* dpD
     String rawHex = "";
     char tmp[3];
     for (int i = 0; i < dataLen && i < 16; i++) {
-        sprintf(tmp, "%02X", dpData[i]);
+        snprintf(tmp, sizeof(tmp), "%02X", dpData[i]);
         rawHex += tmp;
     }
     updateEnergyMeterValue(deviceId, "EF00", dpId, rawHex);
@@ -339,8 +337,8 @@ static void handleTotalReverseEnergy(const String& inifile, uint32_t value, Tuya
     float energyKwh = value / divisor;
     
     char hexBuf[10];
-    sprintf(hexBuf, "%08lX", value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+
     String deviceId = inifile.substring(0, 16);
     EnergyMeterProcessedData data = {deviceId, "EF00", "15", String(hexBuf), "numeric", true};
     
@@ -361,8 +359,8 @@ static void handleFrequency(const String& inifile, uint32_t value) {
     float freqHz = value / 100.0f;
     
     char hexBuf[10];
-    sprintf(hexBuf, "%04X", (uint16_t)value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
+
     String deviceId = inifile.substring(0, 16);
     EnergyMeterProcessedData data = {deviceId, "EF00", "201", String(hexBuf), "numeric", true};
     
@@ -380,8 +378,8 @@ static void handleVoltageDetailed(const String& inifile, uint8_t dpId, uint32_t 
     int phaseNum = (dpId - 102) / 3 + 1;  // 1, 2, 3
     
     char hexBuf[10];
-    sprintf(hexBuf, "%04X", (uint16_t)value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
+
     // Mapper vers attributs cohérents: 100, 110, 120
     int attrId = 100 + (phaseNum - 1) * 10;
     
@@ -402,8 +400,8 @@ static void handleCurrentDetailed(const String& inifile, uint8_t dpId, uint32_t 
     int phaseNum = (dpId - 103) / 3 + 1;  // 1, 2, 3
     
     char hexBuf[10];
-    sprintf(hexBuf, "%08lX", value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+
     // Mapper vers attributs cohérents: 101, 111, 121
     int attrId = 101 + (phaseNum - 1) * 10;
     
@@ -423,8 +421,8 @@ static void handlePowerDetailed(const String& inifile, uint8_t dpId, uint32_t va
     int phaseNum = (dpId - 104) / 3 + 1;  // 1, 2, 3
     
     char hexBuf[10];
-    sprintf(hexBuf, "%08lX", value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+
     // Mapper vers attributs cohérents: 102, 112, 122
     int attrId = 102 + (phaseNum - 1) * 10;
     
@@ -442,8 +440,8 @@ static void handleTotalPower(const String& inifile, uint32_t value) {
     if (!ini_exist(inifile)) return;
     
     char hexBuf[10];
-    sprintf(hexBuf, "%08lX", value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+
     String deviceId = inifile.substring(0, 16);
     EnergyMeterProcessedData data = {deviceId, "EF00", "200", String(hexBuf), "numeric", true};
     
@@ -462,11 +460,11 @@ static void handleEnergyMeterGenericDP(const String& inifile, uint8_t dpId, uint
     
     char hexBuf[10];
     if (dataLen == 1) {
-        sprintf(hexBuf, "%02X", (uint8_t)value);
+        snprintf(hexBuf, sizeof(hexBuf), "%02X", (uint8_t)value);
     } else if (dataLen == 2) {
-        sprintf(hexBuf, "%04X", (uint16_t)value);
+        snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
     } else {
-        sprintf(hexBuf, "%08lX", value);
+        snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
     }
     
     String deviceId = inifile.substring(0, 16);
@@ -489,14 +487,14 @@ static void handleEnergyDP32(const String& inifile, uint32_t value) {
     float energyKwh = value / 100.0f;
     
     char hexBuf[10];
-    sprintf(hexBuf, "%08lX", value);
-    
+    snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+
     String deviceId = inifile.substring(0, 16);
     EnergyMeterProcessedData data = {deviceId, "EF00", "1", String(hexBuf), "numeric", true};
-    
+
     publishEnergyMeterData(data);
     updateEnergyMeterValue(deviceId, "EF00", 1, String(hexBuf));
-    
+
     log_i("Total Energy (DP32 -> attr 1): %lu raw (%.2f kWh)", value, energyKwh);
 }
 
@@ -551,7 +549,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         {
             float voltageV = value / 10.0f;
             char hexBuf[10];
-            sprintf(hexBuf, "%04X", (uint16_t)value);
+            snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "100", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -564,7 +562,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         {
             float currentA = value / 1000.0f;
             char hexBuf[10];
-            sprintf(hexBuf, "%08lX", value);
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "101", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -576,7 +574,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         case 105:  // Power L1
         {
             char hexBuf[10];
-            sprintf(hexBuf, "%08lX", value);
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "102", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -594,7 +592,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         {
             float voltageV = value / 10.0f;
             char hexBuf[10];
-            sprintf(hexBuf, "%04X", (uint16_t)value);
+            snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "110", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -608,7 +606,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         {
             float currentA = value / 1000.0f;
             char hexBuf[10];
-            sprintf(hexBuf, "%08lX", value);
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "111", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -621,7 +619,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         case 114:  // Power L2 (autres firmwares)
         {
             char hexBuf[10];
-            sprintf(hexBuf, "%08lX", value);
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "112", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -636,7 +634,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         {
             float voltageV = value / 10.0f;
             char hexBuf[10];
-            sprintf(hexBuf, "%04X", (uint16_t)value);
+            snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "120", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -650,7 +648,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         {
             float currentA = value / 1000.0f;
             char hexBuf[10];
-            sprintf(hexBuf, "%08lX", value);
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "121", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);
@@ -666,7 +664,7 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         case 123:  // Power L3
         {
             char hexBuf[10];
-            sprintf(hexBuf, "%08lX", value);
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
             String deviceId = inifile.substring(0, 16);
             EnergyMeterProcessedData data = {deviceId, "EF00", "122", String(hexBuf), "numeric", true};
             publishEnergyMeterData(data);

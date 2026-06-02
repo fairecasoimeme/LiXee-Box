@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <map>
+#include "PsramAllocator.h"
 
 // Clusters Zosung IR
 #define CLUSTER_ZOSUNG_IR_CONTROL   0xE004  // 57348 - Contrôle apprentissage
@@ -75,8 +76,8 @@ struct ZosungIRSendContext {
 class ZosungIRManager {
 private:
     static ZosungIRManager* instance;
-    std::map<uint16_t, ZosungIRMessage*> pendingMessages;  // Messages en réception par shortAddr
-    std::map<uint16_t, ZosungIRSendContext*> sendContexts; // Contextes d'envoi par shortAddr
+    std::map<uint16_t, ZosungIRMessage*, std::less<uint16_t>, PsramAllocator<std::pair<const uint16_t, ZosungIRMessage*>>> pendingMessages;
+    std::map<uint16_t, ZosungIRSendContext*, std::less<uint16_t>, PsramAllocator<std::pair<const uint16_t, ZosungIRSendContext*>>> sendContexts;
     uint16_t seqCounter;
     
     ZosungIRManager() : seqCounter(0) {}

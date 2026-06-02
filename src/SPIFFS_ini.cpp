@@ -29,29 +29,24 @@
 #include "stdlib.h"
 #include "log.h"
 #include "config.h"
+#include "PsramAllocator.h"
 
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 
-extern String FormattedDate;
-extern String Hour;
-extern String Day;
-extern String Month;
-extern String Minute;
-extern String Year;
-extern String Yesterday;
-
 extern SemaphoreHandle_t file_Mutex;
 extern SemaphoreHandle_t inifile_Mutex;
 
-// Carte pour suivre les fichiers ouverts
-std::map<String, bool> openFilesMap;
+// Carte pour suivre les fichiers ouverts (PSRAM)
+std::map<String, bool, std::less<String>, PsramAllocator<std::pair<const String, bool>>> openFilesMap;
 
 // Fonction pour ouvrir un fichier avec suivi d'état
 
 File safeOpenFile(const char *path, const char *mode) {
   int i=0;
+  if (file_Mutex != NULL) xSemaphoreTake(file_Mutex, portMAX_DELAY);
   while (openFilesMap[String(path)]) {
+    if (file_Mutex != NULL) xSemaphoreGive(file_Mutex);
     esp_task_wdt_reset();
     log_e("Fichier déjà ouvert : %s\n",path);
     vTaskDelay(20);
@@ -60,22 +55,55 @@ File safeOpenFile(const char *path, const char *mode) {
     {
       return (File)NULL;
     }
+    if (file_Mutex != NULL) xSemaphoreTake(file_Mutex, portMAX_DELAY);
   }
 
   File file = LittleFS.open(path, mode);
   if (file) {
     openFilesMap[String(path)] = true;
   }
+  if (file_Mutex != NULL) xSemaphoreGive(file_Mutex);
   return file;
 }
 
 // Fonction pour fermer un fichier avec mise à jour de l'état
 void safeCloseFile(File &file, const char *path) {
+  if (file_Mutex != NULL) xSemaphoreTake(file_Mutex, portMAX_DELAY);
   if (file) {
     file.close();
     openFilesMap[String(path)] = false;
   }
+  if (file_Mutex != NULL) xSemaphoreGive(file_Mutex);
+}
 
+bool atomicWriteJson(const char* path, JsonDocument& doc) {
+  String tmpPath = String(path) + ".tmp";
+
+  // 1. Write to temp file
+  File f = safeOpenFile(tmpPath.c_str(), "w");
+  if (!f) {
+    log_e("[atomicWrite] Failed to open temp file: %s", tmpPath.c_str());
+    return false;
+  }
+  size_t written = serializeJson(doc, f);
+  safeCloseFile(f, tmpPath.c_str());
+
+  if (written == 0) {
+    log_e("[atomicWrite] serializeJson failed for %s", path);
+    LittleFS.remove(tmpPath);
+    return false;
+  }
+
+  // 2. Remove old file and rename temp to final
+  if (LittleFS.exists(path)) {
+    LittleFS.remove(path);
+  }
+  if (!LittleFS.rename(tmpPath, path)) {
+    log_e("[atomicWrite] rename failed: %s -> %s", tmpPath.c_str(), path);
+    return false;
+  }
+
+  return true;
 }
 
 bool copyFile(String srcPath) {
@@ -314,9 +342,9 @@ bool ini_energy(String path, String section, String value)
     {
       const char* prefix ="/db/nrg_";
       char name_with_extension[64];
-      strcpy(name_with_extension,prefix);
+      strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
       strcat(name_with_extension,path.c_str());
-      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE)
       //{
         File file = LittleFS.open(name_with_extension, "r+");
         if (!file)
@@ -357,7 +385,7 @@ bool ini_energy(String path, String section, String value)
 
         if (tmpvalue >0)
         {
-          if (Year != "")
+          if (Year[0] != '\0')
           {
 
             doc[F("hours")][Hour][section] = tmpvalue;
@@ -415,9 +443,9 @@ bool ini_trendEnergy(String path, String section, String value)
     {
       const char* prefix ="/db/nrg_";
       char name_with_extension[64];
-      strcpy(name_with_extension,prefix);
+      strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
       strcat(name_with_extension,path.c_str());
-      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
+      //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE)
       //{
         File file = LittleFS.open(name_with_extension, "r");
         if (!file)
@@ -451,7 +479,7 @@ bool ini_trendEnergy(String path, String section, String value)
         long tmpvalue = strtol(value.c_str(), NULL, 16);
         if (tmpvalue >0)
         {
-          if (Year != "")
+          if (Year[0] != '\0')
           {
             // hour
             if (!doc[F("hours")][F("last")][section])
@@ -461,7 +489,7 @@ bool ini_trendEnergy(String path, String section, String value)
             else
             {
               signed int result;
-              int tmpHour = (Hour.toInt() - 1);
+              int tmpHour = (atoi(Hour) - 1);
               if (tmpHour < 0)
               {
                 tmpHour = 23;
@@ -498,7 +526,7 @@ bool ini_trendEnergy(String path, String section, String value)
 
               signed int result;
 
-              int tmpDay = Yesterday.toInt();
+              int tmpDay = atoi(Yesterday);
 
               String daytmp = tmpDay < 10 ? "0" + String(tmpDay) : String(tmpDay);
               int tmp = doc[F("days")][F("last")][section].as<int>();
@@ -533,7 +561,7 @@ bool ini_trendEnergy(String path, String section, String value)
 
               signed int result;
 
-              int tmpMonth = (Month.toInt() - 1);
+              int tmpMonth = (atoi(Month) - 1);
               if (tmpMonth < 1)
               {
                 tmpMonth = 12;
@@ -571,7 +599,7 @@ bool ini_trendEnergy(String path, String section, String value)
 
               signed int result;
 
-              int tmpYear = (Year.toInt() - 1);
+              int tmpYear = (atoi(Year) - 1);
 
               String yeartmp = tmpYear < 10 ? "0" + String(tmpYear) : String(tmpYear);
               int tmp = doc[F("years")][F("last")][section].as<int>();
@@ -652,7 +680,7 @@ bool ini_trendPower(String path, String section, String value)
     {
       const char* prefix ="/db/pwr_";
       char name_with_extension[64];
-      strcpy(name_with_extension,prefix);
+      strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
       strcat(name_with_extension,path.c_str());
       //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
       //{
@@ -688,7 +716,7 @@ bool ini_trendPower(String path, String section, String value)
         long tmpvalue = strtol(value.c_str(), NULL, 16);
 
         // if ((Year != "1970")||(Year != ""))
-        if (Year != "")
+        if (Year[0] != '\0')
         {
           if (!doc[section][F("last")])
           {
@@ -751,12 +779,12 @@ bool ini_power2(String path,String section,String value)
     {
       const char* tmp = "/tmppwr";
       char tmpFilenamePower[64];
-      strcpy(tmpFilenamePower,tmp);
+      strlcpy(tmpFilenamePower,tmp, sizeof(tmpFilenamePower));
       strcat(tmpFilenamePower,path.c_str());
 
       const char* prefix ="/db/pwr_";
       char name_with_extension[64];
-      strcpy(name_with_extension,prefix);
+      strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
       strcat(name_with_extension,path.c_str());
       //if (xSemaphoreTake(file_Mutex, portMAX_DELAY) == pdTRUE) 
       //{
@@ -801,21 +829,21 @@ bool ini_power2(String path,String section,String value)
         long tmpvalue = strtol(value.c_str(), NULL, 16);
 
         // if ((Year != "1970")||(Year != ""))
-        if (Year != "")
+        if (Year[0] != '\0')
         {
           JsonArray powerArray = doc[F("datas")].as<JsonArray>();
           int sizeArray = powerArray.size();
           DEBUG_PRINTLN(sizeArray);
           DEBUG_PRINTLN(ConfigGeneral.powerMaxDatas);
           // doc[section]["minute"][sizeArray][Hour +":"+ Minute]=tmpvalue;
-          DEBUG_PRINTLN(Hour + ":" + Minute);
+          DEBUG_PRINTLN(String(Hour) + ":" + Minute);
           DEBUG_PRINTLN(doc[F("datas")][(sizeArray-1)][F("y")].as<String>());
-          if (( doc[F("datas")][(sizeArray-1)][F("y")].as<String>() == Hour + ":" + Minute))
+          if (( doc[F("datas")][(sizeArray-1)][F("y")].as<String>() == String(Hour) + ":" + Minute))
           {
             sizeArray--;
           }
           DEBUG_PRINTLN(sizeArray);
-          doc[F("datas")][sizeArray][F("y")] = Hour + ":" + Minute;
+          doc[F("datas")][sizeArray][F("y")] = String(Hour) + ":" + Minute;
           doc[F("datas")][sizeArray][section] = tmpvalue;
           if (sizeArray >= ConfigGeneral.powerMaxDatas)
           {
@@ -956,14 +984,14 @@ using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;*/
 
     long tmpvalue = strtol(value.c_str(), NULL, 16);
 
-    if ((Year != "1970")||(Year != ""))
+    if ((strcmp(Year, "1970") != 0)||(Year[0] != '\0'))
     {
       JsonArray powerArray = doc[section][F("minute")].as<JsonArray>();
       int sizeArray = powerArray.size();
       DEBUG_PRINTLN(sizeArray);
       DEBUG_PRINTLN(ConfigGeneral.powerMaxDatas);
       // doc[section]["minute"][sizeArray][Hour +":"+ Minute]=tmpvalue;
-      doc[section][F("minute")][sizeArray][F("y")] = Hour + ":" + Minute;
+      doc[section][F("minute")][sizeArray][F("y")] = String(Hour) + ":" + Minute;
       doc[section][F("minute")][sizeArray][F("a")] = tmpvalue;
       if (sizeArray >= ConfigGeneral.powerMaxDatas)
       {
@@ -1030,10 +1058,10 @@ using SpiRamJsonDocument = BasicJsonDocument<SpiRamAllocator>;*/
 
 bool ini_writes(String path, WriteIni ini, bool create)
 {
-  
+
   const char* prefix ="/db/";
   char name_with_extension[64];
-  strcpy(name_with_extension,prefix);
+  strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
   strcat(name_with_extension,path.c_str());
 
   if (path.length()>0)
@@ -1110,10 +1138,10 @@ bool ini_writes(String path, WriteIni ini, bool create)
 bool ini_write(String path, String section, String key, String value)
 {
 
-  
+
   const char* prefix ="/db/";
   char name_with_extension[64];
-  strcpy(name_with_extension,prefix);
+  strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
   strcat(name_with_extension,path.c_str());
 
   if (path.length()>0)
@@ -1193,7 +1221,7 @@ String ini_read(String path, String section, String key)
 {
   const char* prefix ="/db/";
   char name_with_extension[64];
-  strcpy(name_with_extension,prefix);
+  strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
   strcat(name_with_extension,path.c_str());
 
   //if (xSemaphoreTake(inifile_Mutex, portMAX_DELAY) == pdTRUE) 
@@ -1231,7 +1259,7 @@ DeviceInfo getDeviceInfo(String path)
 {
   const char* prefix ="/db/";
   char name_with_extension[64];
-  strcpy(name_with_extension,prefix);
+  strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
   strcat(name_with_extension,path.c_str());
 
   DeviceInfo di;
@@ -1273,7 +1301,7 @@ String config_read(String path,String key)
 {
   const char* prefix ="/config/";
   char name_with_extension[64];
-  strcpy(name_with_extension,prefix);
+  strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
   strcat(name_with_extension,path.c_str());
   File file = LittleFS.open(name_with_extension, "r+");
   if (!file)
@@ -1304,12 +1332,12 @@ bool config_write(String path, String key, String value)
 {
   const char* tmp = "/config/tmpFile";
   char tempFileName[64];
-  strcpy(tempFileName,tmp);
+  strlcpy(tempFileName,tmp, sizeof(tempFileName));
   strcat(tempFileName,path.c_str());
 
   const char* prefix ="/config/";
   char name_with_extension[64];
-  strcpy(name_with_extension,prefix);
+  strlcpy(name_with_extension,prefix, sizeof(name_with_extension));
   strcat(name_with_extension,path.c_str());
   //  xSemaphoreTake(file_Mutex, portMAX_DELAY);
     File fileRead = LittleFS.open(name_with_extension, "r");

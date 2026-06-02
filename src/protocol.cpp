@@ -22,7 +22,7 @@
 #include "TemplateCache.h"
 extern TemplateCache templateCache;
 
-extern std::vector<DeviceData*> devices;
+extern DeviceList devices;
 
 extern struct ZigbeeConfig ZConfig;
 extern ConfigNotification ConfigNotif;
@@ -41,11 +41,6 @@ extern CircularBuffer<Alert, 10> *alertList;
 extern SemaphoreHandle_t Queue_Mutex ;
 extern SemaphoreHandle_t QueuePrio_Mutex;
 
-extern String FormattedDate;
-extern String Minute;
-extern String Hour;
-extern String Day;
-extern String Month;
 extern String epochTime;
 extern unsigned long timeLog;
 
@@ -172,13 +167,13 @@ String GetValueStatus(String IEEE, int key, int attribut, String type, float coe
 {
   String tmp;
   char tmpKey[5];
-  sprintf(tmpKey,"%04X",key);
-  for (size_t i = 0; i < devices.size(); i++) 
+  snprintf(tmpKey, sizeof(tmpKey), "%04X",key);
+  for (size_t i = 0; i < devices.size(); i++)
   {
       DeviceData* device = devices[i];
       if (device->getDeviceID() == IEEE)
       {
-        tmp = device->getValue(std::string(tmpKey),std::string(String(attribut).c_str()));
+        tmp = device->getValue(tmpKey,String(attribut).c_str());
         break;
       }
   }
@@ -208,8 +203,8 @@ String GetValueStatus(String IEEE, int key, int attribut, String type, float coe
 /*String GetValueStatus(String inifile, int key, int attribut, String type, float coefficient)
 {
    char tmpKey[5];
-   sprintf(tmpKey,"%04X",key);
-   String tmp= ini_read(inifile, tmpKey, (String)attribut);  
+   snprintf(tmpKey, sizeof(tmpKey), "%04X",key);
+   String tmp= ini_read(inifile, tmpKey, (String)attribut);
    
    if (type =="float")
    {
@@ -744,8 +739,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       int SA = (int)(ShortAddr[0] * 256)+ShortAddr[1];
       inifile = GetMacAdrr(SA);
       char tmpStatus[4];
-      sprintf(tmpStatus,"%02x",protocol.payload[0]);
-      //ini_write(inifile,"INFO","Status",String(tmpStatus));  
+      snprintf(tmpStatus, sizeof(tmpStatus), "%02x",protocol.payload[0]);
+      //ini_write(inifile,"INFO","Status",String(tmpStatus));
       SetInfoStatus(inifile,String(tmpStatus));
       
       String deviceAlias = ini_read(inifile, "INFO", "alias");
@@ -969,7 +964,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
     case 0x8010:
       ZConfig.type = protocol.payload[0];
       ZConfig.sdk = protocol.payload[1];
-      sprintf(ZConfig.application,"%02x%02x",protocol.payload[2],protocol.payload[3]);
+      snprintf(ZConfig.application, sizeof(ZConfig.application), "%02x%02x",protocol.payload[2],protocol.payload[3]);
       log_d("Version - SDK: %d%d - APP: %s",int(ZConfig.type),int(ZConfig.sdk),ZConfig.application);
      //SAVE CONFIG JSON
       break;
@@ -1179,7 +1174,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         int SA = (ShortAddr[0] * 256)+ShortAddr[1];
         inifile = GetMacAdrr(SA);
         char tmpStatus[4];
-        sprintf(tmpStatus,"%02x",protocol.payload[0]);
+        snprintf(tmpStatus, sizeof(tmpStatus), "%02x",protocol.payload[0]);
 
         SetInfoStatus(inifile,String(tmpStatus));
 
@@ -1470,7 +1465,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
          Serial.println(protocol.payload[6], HEX);
          log_d("Config report response : ");
          char configReport[200];
-         sprintf(configReport,"Config Report (%02X%02X) : Cluster : %02X%02X - Status : %02X",protocol.payload[1],protocol.payload[2],protocol.payload[4],protocol.payload[5],protocol.payload[6]);
+         snprintf(configReport, sizeof(configReport), "Config Report (%02X%02X) : Cluster : %02X%02X - Status : %02X",protocol.payload[1],protocol.payload[2],protocol.payload[4],protocol.payload[5],protocol.payload[6]);
          //alertList->push(Alert{configReport, 2});
          
       }
@@ -1485,7 +1480,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           mac[i]=protocol.payload[i];
         }
         char adMac[20];
-        sprintf(adMac,"%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],mac[6],mac[7]);
+        snprintf(adMac, sizeof(adMac), "%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],mac[6],mac[7]);
         log_d("Leave Network : %02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx%02hhx",mac[0],mac[1],mac[2],mac[3],mac[4],mac[5],mac[6],mac[7]);
         alertList->push(Alert{"Device leaved : "+String(adMac), 1});
         //Supprimer dans la base
@@ -1786,7 +1781,7 @@ void transcode(uint8_t c)
   {
     Serial1.write(c);
     logPush(' ');
-    sprintf(output_sprintf,"%02x",c);
+    snprintf(output_sprintf, sizeof(output_sprintf), "%02x",c);
     logPush(output_sprintf[0]);
     logPush(output_sprintf[1]);
   }else{
@@ -1796,7 +1791,7 @@ void transcode(uint8_t c)
     logPush('1');
     Serial1.write((c ^ 0x10));
     logPush(' ');
-    sprintf(output_sprintf,"%02x",(c ^ 0x10));
+    snprintf(output_sprintf, sizeof(output_sprintf), "%02x",(c ^ 0x10));
     logPush(output_sprintf[0]);
     logPush(output_sprintf[1]);
   }
@@ -1806,7 +1801,7 @@ void sendPacket(Packet p){
 
 
   logPush('[');
-  for (int j =0;j<FormattedDate.length();j++)
+  for (int j =0;j<(int)strlen(FormattedDate);j++)
   {
     logPush(FormattedDate[j]);
   }

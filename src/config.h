@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.19"
+#define VERSION "v2.20"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -24,7 +24,13 @@
 #define TXD2 18//18//16 
 
 #define MAXHEAP 1000000//ESP.getMaxAllocHeap() //(ESP.getFreeHeap() / 2) //96000
-extern String FormattedDate;
+extern char FormattedDate[];
+extern char Hour[];
+extern char Day[];
+extern char Month[];
+extern char Year[];
+extern char Minute[];
+extern char Yesterday[];
 
 
 #define MAX_SUBMETERS 10
@@ -66,7 +72,6 @@ struct ConfigSettingsStruct {
   bool enableSecureHttp;
   bool enableMqtt;
   bool enableUDP;
-  bool enableMarstek;
   bool enableHistory;
   bool enableHWFlow;
   
@@ -173,8 +178,6 @@ struct ConfigGeneralStruct {
   char userWebPush[50];
   char passWebPush[50];
   bool webPushAuth;
-  bool connectedMarstek;
-  char marstekIP[18];
   char servUDP[50];
   char portUDP[50];
   String customUDPJson;
@@ -481,7 +484,7 @@ private:
             buffer = newBuf;
             capacity = newCap;
         }
-        strcpy(buffer + len, str);
+        strlcpy(buffer + len, str, capacity - len);
         len += strLen;
     }
 };
