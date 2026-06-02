@@ -359,9 +359,11 @@ Une section **Configuration avancée** repliable permet également une connexion
 
 ## Les règles (automatismes)
 
-Pour accéder à toutes les règles, il faut suivre **Config** --> **Règles**  
-La page permet de suivre la liste des règles avec leur état et la date de dernière exécution.  
-Vous pourrez **créer**, **modifier** ou **supprimer** une règle.  
+> **Documentation complète** : voir [RULES.md](RULES.md) pour le guide détaillé de toutes les fonctionnalités (9 types de conditions, 3 types d'actions, exemples, variables de notification, etc.)
+
+Pour accéder à toutes les règles, il faut suivre **Config** --> **Règles**
+La page permet de suivre la liste des règles avec leur état et la date de dernière exécution.
+Vous pourrez **créer**, **modifier** ou **supprimer** une règle.
 
 ![Liste des règles](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Rules_status.png)
 
