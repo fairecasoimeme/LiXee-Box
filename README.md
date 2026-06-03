@@ -521,7 +521,7 @@ Les notifications permettent d'être informé ou alerté des évènements de vot
 
 ## 📦 Appareils Compatibles (à partir de la v2.12)
 
-La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâce à sa prise en charge des clusters standards. Voici la liste détaillée du matériel compatible.
+La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâce à sa prise en charge des clusters standards. Les appareils marqués **📋 Template** disposent d'un template dédié intégré au firmware pour une compatibilité optimale. Les autres fonctionnent via les clusters Zigbee standards.
 
 ### Clusters Zigbee Supportés
 
@@ -530,125 +530,170 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | 0x0000 | Basic | Informations de base de l'appareil |
 | 0x0001 | Power Configuration | Gestion batterie |
 | 0x0006 | On/Off | Commandes marche/arrêt |
+| 0x0012 | Multistate Input | Entrées multi-états (boutons) |
 | 0x0102 | Window Covering | Contrôle volets/stores |
+| 0x0201 | Thermostat | Contrôle thermostatique |
+| 0x0202 | Fan Control | Contrôle ventilation |
 | 0x0402 | Temperature Measurement | Mesure de température |
 | 0x0405 | Relative Humidity | Mesure d'humidité |
 | 0x0406 | Occupancy Sensing | Détection de présence |
 | 0x0702 | Simple Metering | Comptage d'énergie |
 | 0x0B04 | Electrical Measurement | Mesures électriques |
+| 0xEF00 | Tuya | Cluster propriétaire Tuya |
+| 0xFC00 | NodOn Heating | Cluster propriétaire NodOn (fil pilote) |
+| 0xFC11 | Sonoff/Xiaomi Custom | Cluster propriétaire Sonoff/Xiaomi |
+| 0xFC41 | Legrand | Cluster propriétaire Legrand |
+| 0xFCC0 | Aqara Presence | Cluster propriétaire Aqara (présence) |
 | 0xFF66 | LiXee | Cluster propriétaire LiXee |
 
 ---
 
 ### ⚡ Appareils LiXee (Compatibilité Complète)
 
-| Appareil | Device Type | Description | Testé |
-|----------|-------------|-------------|:-----:|
-| **ZLinky_TIC** | 0x0061 | Téléinformation Linky | ✅ |
-| **ZiPulses** | 0x0107 | Compteur d'impulsions (eau, gaz) | ✅ |
+| Appareil | Device Type | Description | Template | Testé |
+|----------|-------------|-------------|:--------:|:-----:|
+| **ZLinky_TIC** | 0x0051, 0x0061, 0x0101 | Téléinformation Linky (70+ attributs TIC) | 📋 | ✅ |
+| **ZiPulses** | 0x0107 | Compteur d'impulsions (eau, gaz), batterie, température | 📋 | ✅ |
 
 ---
 
 ### 🔌 Prises Connectées
-**Device Type : 0x0107, 0x0101, 0x0061**
+**Device Type : 0x0010, 0x0051, 0x0061, 0x0101, 0x0107, 0x0302**
 
-#### Marques testées et compatibles
-
-| Marque | Modèles | Mesure énergie | Notes | Testé |
-|--------|---------|----------------|-------|:-----:|
-| **Aqara** | SP-EUC01, ZNCZ12LM | ✅ | 10A max, capteur température intégré | ✅ |
-| **Sonoff** | S31 Lite ZB, S40 Lite | ✅ | 15-16A, bon rapport qualité/prix | |
-| **IKEA** | TRÅDFRI, Grillplats | ❌ | Répéteur Zigbee | |
-| **Tuya/Moes** | Diverses prises Smart Life | ✅ | 16A, économique | |
-| **Neo Coolcam** | Plug-007SPB2 | ✅ | Basé Tuya | |
-| **Nous** | Smart Zigbee Socket A1Z | ✅ | Version EU | ✅ |
-| **Lidl** | SilverCrest Smart Plug | ✅ | Basé Tuya | ✅ |
-| **BlitzWolf** | BW-SHP13 | ✅ | 16A, bon routeur Zigbee | |
-| **Innr** | SP 120, SP 220, SP 222 | ✅ | Compatible Hue | |
-| **Osram** | Smart+ | ✅ | |✅ |
-| **Philips** | LOM001 | ✅ |  |✅ |
+| Marque | Modèles | Mesure énergie | Notes | Template | Testé |
+|--------|---------|:--------------:|-------|:--------:|:-----:|
+| **Aqara** | lumi.plug.maeu01 | ❌ | On/Off simple, prise EU | 📋 | |
+| **Aqara** | SP-EUC01, ZNCZ12LM | ✅ | 10A max, capteur température intégré | | ✅ |
+| **Xiaomi** | lumi.plug | ❌ | On/Off simple | 📋 | |
+| **Innr** | S60ZBTPF | ✅ | Puissance, tension, courant, consommation | 📋 | |
+| **Innr** | SP 120, SP 220, SP 222 | ✅ | Compatible Hue | | |
+| **Third Reality** | 3RSPE01044BZ | ✅ | Puissance, tension, courant, consommation | 📋 | |
+| **Sonoff** | S31 Lite ZB, S40 Lite | ✅ | 15-16A, bon rapport qualité/prix | | |
+| **Osram** | Smart+ | ✅ | | | ✅ |
+| **Philips** | LOM001 | ✅ | | | ✅ |
+| **IKEA** | TRÅDFRI, Grillplats | ❌ | Répéteur Zigbee | | |
+| **Tuya/Moes** | Diverses prises Smart Life | ✅ | 16A, économique | | |
+| **Neo Coolcam** | Plug-007SPB2 | ✅ | Basé Tuya | | |
+| **Nous** | Smart Zigbee Socket A1Z | ✅ | Version EU | | ✅ |
+| **Lidl** | SilverCrest Smart Plug | ✅ | Basé Tuya | | ✅ |
+| **BlitzWolf** | BW-SHP13 | ✅ | 16A, bon routeur Zigbee | | |
 
 #### Autres prises compatibles (clusters standards)
-Tout appareil Zigbee avec Device Type 0x0107, 0x0101 ou 0x0061 utilisant les clusters On/Off (0x0006) et Electrical Measurement (0x0B04) devrait fonctionner.
+Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement Electrical Measurement (0x0B04) ou Simple Metering (0x0702) devrait fonctionner.
+
+---
+
+### 🏠 Contacteur / Relais de puissance
+
+| Marque | Modèles | Mesure énergie | Notes | Template | Testé |
+|--------|---------|:--------------:|-------|:--------:|:-----:|
+| **Legrand** | Contacteur (DIN) | ✅ | Puissance, tension, courant, conso. Modes : Auto / Force ON / Force OFF | 📋 | |
+
+---
+
+### 🔥 Fil Pilote / Chauffage
+**Cluster propriétaire NodOn (0xFC00)**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **NodOn** | SIN-4-FP-21 | Module fil pilote 6 ordres : Confort, Éco, Hors-Gel, Confort -1, Confort -2, Arrêt. Mesure consommation | 📋 | |
+
+---
+
+### ❄️ Climatisation / Thermostat IR
+**Clusters : Thermostat (0x0201), Fan Control (0x0202)**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Saswell/Tuya** | AC201A | Contrôle climatiseur : chaud, froid, ventilo, déshumidification. Consignes prédéfinies (18-26 °C) | 📋 | |
+| **NodOn** | IRB-4-1-00 | Blaster IR pour climatiseur : chaud, froid, ventilo, auto, déshumidification. Consignes, vitesse ventilateur, position volet | 📋 | |
 
 ---
 
 ### 🪟 Volets Roulants / Stores
-**Device Type : 0x0202**
+**Device Type : 0x0202, 0xFFF0**
 
-#### Marques testées et compatibles
-
-| Marque | Modèles | Notes | Testé |
-|--------|---------|-------|:-----:|
-| **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | |
-| **Tuya/Moes** | Curtain Switch, Roller Shutter Module | Nombreux modèles disponibles | ✅ |
-| **LoraTap** | SC500ZB, divers modèles | Compatible Zigbee2MQTT | |
-| **Legrand** | Céliane/Mosaic Zigbee | Volet roulant connecté | |
-| **Aqara** | Curtain Driver E1 | Moteur pour rideaux | |
-| **Zemismart** | Roller Shade Motor | Moteur tubulaire | |
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Tuya/Moes** | TS130F | Position, calibration, inversion moteur | 📋 | ✅ |
+| **Tuya/Moes** | Curtain Switch, Roller Shutter Module | Nombreux modèles disponibles | | ✅ |
+| **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | | |
+| **LoraTap** | SC500ZB, divers modèles | Compatible Zigbee2MQTT | | |
+| **Legrand** | Céliane/Mosaic Zigbee | Volet roulant connecté | | |
+| **Aqara** | Curtain Driver E1 | Moteur pour rideaux | | |
+| **Zemismart** | Roller Shade Motor | Moteur tubulaire | | |
 
 #### Autres volets compatibles (clusters standards)
-Tout appareil avec Device Type 0x0202 utilisant le cluster Window Covering (0x0102) avec les commandes Up/Down/Stop.
+Tout appareil utilisant le cluster Window Covering (0x0102) avec les commandes Up/Down/Stop.
 
 ---
 
 ### 🌡️ Capteurs Température / Humidité
 **Device Type : 0x0302**
 
-#### Marques testées et compatibles
-
-| Marque | Modèles | Pression | Écran | Notes | Testé |
-|--------|---------|----------|-------|-------|:-----:|
-| **Aqara** | WSDCGQ11LM, T1 (TH-S02D) | ✅ | ❌ | Capteur Sensirion, très précis | |
-| **Sonoff** | SNZB-02, SNZB-02D, SNZB-02P | ❌ | ✅ (02D) | Économique, écran LCD sur 02D | ✅ |
-| **IKEA** | VINDSTYRKA, Timmerflotte | ❌ | ✅ | Qualité de l'air sur VINDSTYRKA | |
-| **iHorn** | 113D | ❌ |  ✅ |  | ✅ |
-| **Tuya/Moes** | ZSS-ZK-THL, TS0201, divers | Variable | Variable | Large choix de modèles | |
-| **Nous** | E5 | ❌ | ❌ | Compact | |
-| **OWON** | THS317-ET | ❌ | ❌ | Sonde externe sur câble | |
-| **Xiaomi/Mijia** | WSDCGQ01LM | ❌ | ❌ | ⚠️ Non Zigbee 3.0 | |
+| Marque | Modèles | Pression | Écran | Notes | Template | Testé |
+|--------|---------|:--------:|:-----:|-------|:--------:|:-----:|
+| **Sonoff** | SNZB-02D | ❌ | ✅ | Écran LCD, calibration, plages de confort | 📋 | ✅ |
+| **Sonoff** | SNZB-02, SNZB-02P | ❌ | ❌ | Économique | | ✅ |
+| **Aqara** | WSDCGQ11LM, T1 (TH-S02D) | ✅ | ❌ | Capteur Sensirion, très précis | | |
+| **IKEA** | VINDSTYRKA, Timmerflotte | ❌ | ✅ | Qualité de l'air sur VINDSTYRKA | | |
+| **iHorn** | 113D | ❌ | ✅ | | | ✅ |
+| **Tuya/Moes** | ZSS-ZK-THL, TS0201, divers | Variable | Variable | Large choix de modèles | | |
+| **Nous** | E5 | ❌ | ❌ | Compact | | |
+| **OWON** | THS317-ET | ❌ | ❌ | Sonde externe sur câble | | |
+| **Xiaomi/Mijia** | WSDCGQ01LM | ❌ | ❌ | ⚠️ Non Zigbee 3.0 | | |
 
 #### Autres capteurs compatibles (clusters standards)
-Tout appareil avec Device Type 0x0302 utilisant les clusters Temperature Measurement (0x0402) et Relative Humidity (0x0405).
+Tout appareil utilisant les clusters Temperature Measurement (0x0402) et/ou Relative Humidity (0x0405).
 
 ---
 
 ### 👁️ Capteurs de Présence / Mouvement
-**Device Type : 0x0107**
+**Device Type : 0x0107, 0xC1A4**
 
-#### Marques testées et compatibles
-
-| Marque | Modèles | Luminosité | Type | Notes | Testé |
-|--------|---------|------------|------|-------|:-----:|
-| **Aqara** | RTCGQ11LM, P1 | ✅ | PIR | Délai 60-90s | |
-| **Aqara** | FP1, FP2 | ✅ | mmWave | Détection présence statique, zones | |
-| **Sonoff** | SNZB-03 | ❌ | PIR | Délai 60s | |
-| **Sonoff** | SNZB-06P | ✅ | Radar 5.8GHz | Présence statique | ✅ |
-| **Philips Hue** | Indoor/Outdoor Motion | ✅ | PIR | Température intégrée | |
-| **IKEA** | TRÅDFRI E1745, Myggspray | ❌ | PIR | IP44 (extérieur) | |
-| **Tuya/Moes** | ZY-M100, MTG075-ZB | Variable | mmWave | Présence statique | |
+| Marque | Modèles | Luminosité | Type | Notes | Template | Testé |
+|--------|---------|:----------:|------|-------|:--------:|:-----:|
+| **Sonoff** | SNZB-06P | ✅ | Radar 5.8GHz | Présence statique, sensibilité et timeout configurables | 📋 | ✅ |
+| **Aqara** | FP1 (lumi.motion.ac01) | ❌ | mmWave | Détection présence statique, délais configurables | 📋 | |
+| **Aqara** | FP2 | ✅ | mmWave | Zones, présence statique | | |
+| **Aqara** | RTCGQ11LM, P1 | ✅ | PIR | Délai 60-90s | | |
+| **Sonoff** | SNZB-03 | ❌ | PIR | Délai 60s | | |
+| **Philips Hue** | Indoor/Outdoor Motion | ✅ | PIR | Température intégrée | | |
+| **IKEA** | TRÅDFRI E1745, Myggspray | ❌ | PIR | IP44 (extérieur) | | |
+| **Tuya/Moes** | ZY-M100, MTG075-ZB | Variable | mmWave | Présence statique | | |
 
 #### Autres capteurs compatibles (clusters standards)
-Tout appareil avec Device Type 0x0107 utilisant le cluster Occupancy Sensing (0x0406).
+Tout appareil utilisant le cluster Occupancy Sensing (0x0406).
 
 ---
 
 ### 🔥 Vannes Thermostatiques (TRV)
-**Compatibilité via clusters standards**
+**Clusters : Thermostat (0x0201), Tuya (0xEF00)**
 
-| Marque | Modèles | Notes | Testé |
-|--------|---------|-------|:-----:|
-| **Moes/Tuya** | BRT-100, TV01, TRV601 | Programmable, détection fenêtre ouverte | ✅ |
-| **Danfoss** | Ally | Haute qualité | |
-| **Eurotronic** | Spirit Zigbee | | |
-| **Popp** | POPZ701721 | | |
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Sonoff** | TRVZB | Consigne, calibration, protection gel, détection fenêtre, vanne %, verrouillage enfant | 📋 | |
+| **Moes/Tuya** | BRT-100, TV01, TRV601 | Programmable, détection fenêtre ouverte | 📋 | ✅ |
+| **Danfoss** | Ally | Haute qualité | | |
+| **Eurotronic** | Spirit Zigbee | | | |
+| **Popp** | POPZ701721 | | | |
 
-> ⚠️ **Note** : Les TRV utilisent souvent des clusters propriétaires Tuya (TS0601). La compatibilité peut varier selon les modèles.
+> ⚠️ **Note** : Les TRV Tuya utilisent souvent le cluster propriétaire (0xEF00 / TS0601). La compatibilité peut varier selon les modèles.
+
+---
+
+### 🔘 Boutons / Interrupteurs sans fil
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Xiaomi/Aqara** | lumi.sensor_switch.aq2 (WXKG11LM) | Bouton simple clic, multi-clic | 📋 | |
+| **IKEA** | TRÅDFRI Shortcut Button | Compatible clusters standards | | |
+| **Tuya/Moes** | Boutons scène, télécommandes | Via cluster 0x0006 ou 0x0012 | | |
 
 ---
 
 ### 💡 Ampoules et Éclairage
-**Compatibilité partielle via cluster On/Off**
+**Compatibilité via cluster On/Off (0x0006)**
 
 | Marque | Notes | Testé |
 |--------|-------|:-----:|
@@ -659,6 +704,7 @@ Tout appareil avec Device Type 0x0107 utilisant le cluster Occupancy Sensing (0x
 
 > ℹ️ La LiXee-Box supporte le cluster On/Off (0x0006). Le contrôle des couleurs (cluster 0x0300) n'est pas encore implémenté.
 
+---
 
 ### ❓ Vérifier la Compatibilité
 
@@ -669,6 +715,7 @@ Pour vérifier si un appareil Zigbee est compatible :
 3. Un appareil est compatible si :
    - Son Device Type correspond à ceux listés ci-dessus
    - Il utilise les clusters standards supportés
+4. Les appareils avec **📋 Template** ont un template dédié intégré au firmware et sont donc immédiatement fonctionnels sans configuration supplémentaire
 
 ## 📝 Créer un Template Personnalisé
 
