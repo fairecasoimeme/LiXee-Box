@@ -369,143 +369,209 @@ Vous pourrez **créer**, **modifier** ou **supprimer** une règle.
 
 ### Comment créer des règles
 
-* Les règles sont stockées dans un fichier JSON.
+* Les règles sont stockées dans un fichier JSON (`/config/rules.json`).
 * Une règle peut être déclenchée :
-  * toutes les 60 secondes
-  * dès que le couple cluster/attribut choisi est mis à jour  
-* Une règle peut contenir une ou plusieurs conditions.
-  * <img width="1305" height="329" alt="image" src="https://github.com/user-attachments/assets/96e995dc-7375-4e07-84a8-7ccbe7731e0b" />
- 
-* Une règle peut contenir une ou plusieurs actions si les conditions sont réunis.
-* Une règle peut contenir une ou plusieurs actions si les conditions ne sont pas réunis
-* Une règle peut intégrer une plage horaire (Optionnel)
-
-![Ajouter/modifier une règles](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-box-regle-v2.11.PNG)
+  * **Timer** : évaluée toutes les ~30 secondes automatiquement
+  * **Événement** : évaluée dès qu'un attribut Zigbee spécifique est mis à jour
+* Une règle peut contenir une ou plusieurs **conditions** combinées en ET / OU.
+* **9 types de conditions** : appareil Zigbee, comparaison de 2 appareils, heure, plage horaire, jour de semaine, date, date+heure, jour du mois, mois.
+* **3 types d'actions** : commande appareil, valeur dynamique (calcul linéaire), notification.
+* **Actions SINON** : exécutées quand les conditions redeviennent fausses.
+* **Options d'évaluation** : durée de maintien, mode une fois / répété, intervalle minimum, limite par jour.
 
 ### Structure
-Voici la structure :  
 
-    ├── Rule     
-    │   ├── name   
-	|   ├── TimeRanges
-	│   │   ├── startTime   
-    │   │   ├── endTime   
-    │   │   ├── days[...]  //1,2,3,4,5,6,7
-	|   ├── trigger
-	│   │   ├── mode   
-    │   │   ├── IEEE   
-    │   │   ├── cluster
-	│   │   ├── attribut
-    │   ├── conditions   
-    │   │   ├── type   
-    │   │   ├── IEEE   
-    │   │   ├── cluster  
-    │   │   ├── attribut  
-    │   │   ├── operator   
-    │   │   ├── value  
-    │   │   ├── logic  
-    │   ├── actions   
-    │   │   ├── type   
-    │   │   ├── IEEE  
-    │   │   ├── endpoint  
-    │   │   ├── value    
+```
+├── Rule
+│   ├── name
+│   ├── enabled
+│   ├── duration              // Durée de maintien en secondes (0 = immédiat)
+│   ├── repeat                // true = exécuter à chaque évaluation
+│   ├── cooldown              // Secondes min entre 2 exécutions (0 = pas de limite)
+│   ├── maxExecPerDay         // Max exécutions par jour (0 = illimité)
+│   ├── trigger
+│   │   ├── mode              // "timer" ou "event"
+│   │   ├── IEEE              // (event) Adresse MAC du device déclencheur
+│   │   ├── cluster           // (event) Cluster à surveiller
+│   │   └── attribute         // (event) Attribut à surveiller
+│   ├── conditions[...]
+│   │   ├── type              // "device", "device_compare", "time", "time_range",
+│   │   │                     //  "weekday", "date", "datetime", "day", "month"
+│   │   ├── IEEE              // (device, device_compare)
+│   │   ├── cluster           // (device, device_compare)
+│   │   ├── attribute         // (device, device_compare)
+│   │   ├── operator
+│   │   ├── value
+│   │   ├── value2            // (time_range) endTime
+│   │   ├── logic             // "AND" ou "OR"
+│   │   ├── IEEE2             // (device_compare) 2e appareil
+│   │   ├── cluster2          // (device_compare) 2e cluster
+│   │   └── attribute2        // (device_compare) 2e attribut
+│   ├── actions[...]
+│   │   ├── type              // "device", "dynamic", "notification"
+│   │   ├── IEEE              // (device, dynamic) Appareil cible
+│   │   ├── actionName        // (device, dynamic) Nom de l'action template
+│   │   ├── endpoint          // (device, dynamic) Endpoint Zigbee
+│   │   ├── sourceIEEE        // (dynamic) Appareil source
+│   │   ├── sourceCluster     // (dynamic) Cluster source
+│   │   ├── sourceAttribute   // (dynamic) Attribut source
+│   │   ├── coefficient       // (dynamic) Multiplicateur (défaut 1.0)
+│   │   ├── offset            // (dynamic) Valeur ajoutée (défaut 0)
+│   │   ├── title             // (notification) Titre
+│   │   └── message           // (notification) Message (supporte les variables)
+│   └── elseActions[...]      // Même structure que actions
+```
 
-### Paramètres des trigger
+### Paramètres du trigger
 
-par défaut mode = timer
-
-| Paramètre | Obligatoire | Type | Valeur | Commentaire |
-|-----------|-------------|------|--------|-------------|
-| `mode` | ✓ | String | "event" ou "timer" | |
-| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
-| `cluster` | ✓ | Decimal | ID du cluster en décimal | |
-| `attribut` | ✓ | Decimal | Numéro d'attribut | |
-
-### Paramètres de Condition
-
-| Paramètre | Obligatoire | Type | Valeur | Commentaire |
-|-----------|-------------|------|--------|-------------|
-| `type` | ✓ | String | "device" / "time" / "time_range" / "weekday" / "date" / "day" / "month" | |
-| `IEEE` |  | si type == 'device' --> String sinon 0 | Adresse MAC sans ':' ou '-' | |
-| `cluster` |  | si type == 'device' --> Decimal sinon 0 | ID du cluster en décimal | |
-| `attribut` |  | si type == 'device' --> Decimal sinon 0| Numéro d'attribut | |
-| `operator` | ✓ | String | "<", ">", "==", "!=", ">=", "<=", "in", "not_in" | |
-| `value` | ✓ | Decimal/String | Valeur de comparaison | Peut être un String sur les opérateurs == ou != uniquement |
-| `logic` | | String | "AND", "OR" | Uniquement pour conditions multiples |
-
-### Paramètres d'Action
+Par défaut : `mode = "timer"`
 
 | Paramètre | Obligatoire | Type | Valeur | Commentaire |
-|-----------|-------------|------|--------|-------------|
-| `type` | ✓ | String | "device" / "onoff (à disparaitre)" / "notification" | |
-| `IEEE` | ✓ | String | Adresse MAC sans ':' ou '-' | |
-| `actionName` | ✓ | String | Nom de l'action | |
-| `command` | ✓ | Decimal | -1 = utilisation du template sinon override | |
-| `endpoint` | ✓ | Decimal | ID du point de terminaison | |
-| `value` | ✓ | String | Valeur de l'action | |
-| `title` | ✓ | String | pour type "notification" | |
-| `message` | ✓ | String |  pour type "notification" | |
+|-----------|:-----------:|------|--------|-------------|
+| `mode` | ✓ | String | `"timer"` ou `"event"` | |
+| `IEEE` | event | String | Adresse MAC sans ':' ni '-' | Requis si mode = event |
+| `cluster` | event | Decimal | ID du cluster en décimal | Requis si mode = event |
+| `attribute` | event | Decimal | Numéro d'attribut | Requis si mode = event |
 
-### Paramètres plage horaire (Optionnel)
+### Paramètres de condition
 
 | Paramètre | Obligatoire | Type | Valeur | Commentaire |
-|-----------|-------------|------|--------|-------------|
-| `startTime` | ✓ | String | "HH:mm" | |
-| `endTime` | ✓ | String | "HH:mm" | |
-| `days` | ✓ | Array | [1,2,3,4,5,6,7] | Chaque chiffre correspond au numéro du jour|
+|-----------|:-----------:|------|--------|-------------|
+| `type` | ✓ | String | `"device"` `"device_compare"` `"time"` `"time_range"` `"weekday"` `"date"` `"datetime"` `"day"` `"month"` | |
+| `IEEE` | device | String | Adresse MAC | Pour `device` et `device_compare` |
+| `cluster` | device | Decimal | ID du cluster | Pour `device` et `device_compare` |
+| `attribute` | device | Decimal | Numéro d'attribut | Pour `device` et `device_compare` |
+| `operator` | ✓ | String | `<` `>` `==` `!=` `>=` `<=` `in` `not_in` | `in`/`not_in` pour `time_range` et `weekday` |
+| `value` | ✓ | String | Valeur de comparaison | Heure `"08:00"`, date `"25/12"`, offset pour `device_compare` |
+| `value2` | time_range | String | Heure de fin `"HH:MM"` | Uniquement pour `time_range` |
+| `logic` | | String | `"AND"` ou `"OR"` | Logique avec la condition suivante |
+| `IEEE2` | device_compare | String | Adresse MAC du 2e appareil | |
+| `cluster2` | device_compare | Decimal | Cluster du 2e appareil | |
+| `attribute2` | device_compare | Decimal | Attribut du 2e appareil | |
 
+### Paramètres d'action
 
-Par exemple :  
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|:-----------:|------|--------|-------------|
+| `type` | ✓ | String | `"device"` `"dynamic"` `"notification"` | |
+| `IEEE` | device/dynamic | String | Adresse MAC cible | |
+| `actionName` | device/dynamic | String | Nom de l'action template | ex : `"ON"`, `"OFF"`, `"SetPoint"` |
+| `endpoint` | device/dynamic | Decimal | Endpoint Zigbee | Défaut : 1 |
+| `command` | | Decimal | Override commande | -1 = utiliser le template |
+| `sourceIEEE` | dynamic | String | Adresse MAC source | |
+| `sourceCluster` | dynamic | Decimal | Cluster source | |
+| `sourceAttribute` | dynamic | Decimal | Attribut source | |
+| `coefficient` | dynamic | Double | Multiplicateur | Défaut : 1.0 |
+| `offset` | dynamic | Double | Valeur ajoutée | Défaut : 0 |
+| `title` | notification | String | Titre de la notification | Supporte les variables `{rule}` `{value}` etc. |
+| `message` | notification | String | Corps du message | Supporte les variables `{rule}` `{date}` `{value}` `{device}` `{threshold}` `{value_N}` `{device_N}` |
 
-```json 
+### Exemple JSON
+
+```json
 {
-   "rules":[
+  "rules": [
     {
-        "name":"rule_1",
-        "conditions" : [
-		{
-		   "type" : "device",
-		   "IEEE" : "00158d0006204fcf",
-		   "cluster" : 2820,
-		   "attribute" : 1295,
-		   "operator" : "<",
-		   "value" : 1000,
-		   "logic" : "AND"
-		}
-        ],
-        "actions" : [
-		{
-		   "type" : "onoff",
-		   "IEEE" : "a4c138bb23185d2c",
-                   "endpoint":1,
-		   "value": "1"
-		}
-        ]
-    }, {
-        "name":"rule_2",
-        "conditions" : [
-		{
-		   "type" : "device",
-		   "IEEE" : "00158d0006204fcf",
-		   "cluster" : 2820,
-		   "attribute" : 1295,
-		   "operator" : ">",
-		   "value" : 1000,
-		   "logic" : "AND"
-		}
-        ],
-        "actions" : [
-		{
-		   "type":"notification",
-           "IEEE":"",
-           "endpoint":0,
-           "value":"",
-           "title":"🚨⚡puissance > 1000",
-           "message":"🚨⚡puissance > 1000"
-		}
-        ]
+      "name": "Délestage puissance",
+      "enabled": true,
+      "duration": 300,
+      "repeat": false,
+      "cooldown": 600,
+      "maxExecPerDay": 5,
+      "trigger": {
+        "mode": "event",
+        "IEEE": "00158d0006204fcf",
+        "cluster": 2820,
+        "attribute": 1295
+      },
+      "conditions": [
+        {
+          "type": "device",
+          "IEEE": "00158d0006204fcf",
+          "cluster": 2820,
+          "attribute": 1295,
+          "operator": ">",
+          "value": "3000",
+          "logic": "AND"
+        },
+        {
+          "type": "time_range",
+          "operator": "in",
+          "value": "06:00",
+          "value2": "22:00",
+          "logic": "AND"
+        },
+        {
+          "type": "weekday",
+          "operator": "in",
+          "value": "1,2,3,4,5",
+          "logic": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "type": "device",
+          "IEEE": "a4c138bb23185d2c",
+          "actionName": "OFF",
+          "endpoint": 1
+        },
+        {
+          "type": "notification",
+          "title": "Délestage activé",
+          "message": "Puissance {value} dépasse le seuil de {threshold}. Prise coupée le {date}."
+        }
+      ],
+      "elseActions": [
+        {
+          "type": "device",
+          "IEEE": "a4c138bb23185d2c",
+          "actionName": "ON",
+          "endpoint": 1
+        }
+      ]
+    },
+    {
+      "name": "Régulation solaire",
+      "enabled": true,
+      "duration": 0,
+      "repeat": true,
+      "cooldown": 300,
+      "maxExecPerDay": 0,
+      "trigger": { "mode": "timer" },
+      "conditions": [
+        {
+          "type": "device",
+          "IEEE": "00158d0006204fcf",
+          "cluster": 2820,
+          "attribute": 1295,
+          "operator": ">",
+          "value": "500",
+          "logic": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "type": "dynamic",
+          "IEEE": "b4e3f9d012345678",
+          "actionName": "SetLevel",
+          "endpoint": 1,
+          "sourceIEEE": "00158d0006204fcf",
+          "sourceCluster": 2820,
+          "sourceAttribute": 1295,
+          "coefficient": 0.033,
+          "offset": 0
+        }
+      ],
+      "elseActions": [
+        {
+          "type": "device",
+          "IEEE": "b4e3f9d012345678",
+          "actionName": "OFF",
+          "endpoint": 1
+        }
+      ]
     }
-   ]
+  ]
 }
 ```
 
