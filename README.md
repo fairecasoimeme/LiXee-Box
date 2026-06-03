@@ -603,6 +603,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | 0x0402 | Temperature Measurement | Mesure de température |
 | 0x0405 | Relative Humidity | Mesure d'humidité |
 | 0x0406 | Occupancy Sensing | Détection de présence |
+| 0x0500 | IAS Zone | Alarmes (fuite d'eau, ouverture, etc.) |
 | 0x0702 | Simple Metering | Comptage d'énergie |
 | 0x0B04 | Electrical Measurement | Mesures électriques |
 | 0xEF00 | Tuya | Cluster propriétaire Tuya |
@@ -736,10 +737,32 @@ Tout appareil utilisant les clusters Temperature Measurement (0x0402) et/ou Rela
 | **Sonoff** | SNZB-03 | ❌ | PIR | Délai 60s | | |
 | **Philips Hue** | Indoor/Outdoor Motion | ✅ | PIR | Température intégrée | | |
 | **IKEA** | TRÅDFRI E1745, Myggspray | ❌ | PIR | IP44 (extérieur) | | |
-| **Tuya/Moes** | ZY-M100, MTG075-ZB | Variable | mmWave | Présence statique | | |
+| **Tuya/Moes** | ZY-M100 (_TZE204_qasjif9e) | ✅ | Radar 5.8GHz | Présence, distance cible, luminosité, sensibilité configurable. Cluster Tuya 0xEF00, device_id 0x0051 | 📋 | ✅ |
+| **Tuya/Moes** | MTG075-ZB et autres | Variable | mmWave | Présence statique | | |
 
 #### Autres capteurs compatibles (clusters standards)
 Tout appareil utilisant le cluster Occupancy Sensing (0x0406).
+
+---
+
+### 💧 Capteurs de Fuite d'Eau
+**Cluster : IAS Zone (0x0500)**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Tuya** | TS0207 (_TYZB01_o63ssaah) | Détection fuite d'eau, batterie. Device type 0x0402 | 📋 | ✅ |
+
+#### Autres capteurs compatibles (clusters standards)
+Tout appareil utilisant le cluster IAS Zone (0x0500) avec Zone Type Water Sensor.
+
+---
+
+### 🌿 Vannes d'Irrigation
+**Cluster Tuya propriétaire (0xEF00) — Modèle TS0601**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **QOTO** | QT-05M (_TZE200_arge1ptm) | Contrôle vanne 0-100%, timer auto-fermeture, débit eau, temps restant, batterie. Device type 0x0051 | 📋 | ✅ |
 
 ---
 
