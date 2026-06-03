@@ -562,12 +562,12 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 
 | Marque | Modèles | Mesure énergie | Notes | Template | Testé |
 |--------|---------|:--------------:|-------|:--------:|:-----:|
-| **Aqara** | lumi.plug.maeu01 | ❌ | On/Off simple, prise EU | 📋 | |
+| **Aqara** | lumi.plug.maeu01 | ❌ | On/Off simple, prise EU | 📋 | ✅ |
 | **Aqara** | SP-EUC01, ZNCZ12LM | ✅ | 10A max, capteur température intégré | | ✅ |
-| **Xiaomi** | lumi.plug | ❌ | On/Off simple | 📋 | |
-| **Innr** | S60ZBTPF | ✅ | Puissance, tension, courant, consommation | 📋 | |
+| **Xiaomi** | lumi.plug | ❌ | On/Off simple | 📋 | ✅ |
+| **Innr** | S60ZBTPF | ✅ | Puissance, tension, courant, consommation | 📋 | ✅ |
 | **Innr** | SP 120, SP 220, SP 222 | ✅ | Compatible Hue | | |
-| **Third Reality** | 3RSPE01044BZ | ✅ | Puissance, tension, courant, consommation | 📋 | |
+| **Third Reality** | 3RSPE01044BZ | ✅ | Puissance, tension, courant, consommation | 📋 | ✅ |
 | **Sonoff** | S31 Lite ZB, S40 Lite | ✅ | 15-16A, bon rapport qualité/prix | | |
 | **Osram** | Smart+ | ✅ | | | ✅ |
 | **Philips** | LOM001 | ✅ | | | ✅ |
@@ -587,7 +587,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 
 | Marque | Modèles | Mesure énergie | Notes | Template | Testé |
 |--------|---------|:--------------:|-------|:--------:|:-----:|
-| **Legrand** | Contacteur (DIN) | ✅ | Puissance, tension, courant, conso. Modes : Auto / Force ON / Force OFF | 📋 | |
+| **Legrand** | Contacteur (DIN) | ✅ | Puissance, tension, courant, conso. Modes : Auto / Force ON / Force OFF | 📋 | ✅ |
 
 ---
 
@@ -596,7 +596,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
-| **NodOn** | SIN-4-FP-21 | Module fil pilote 6 ordres : Confort, Éco, Hors-Gel, Confort -1, Confort -2, Arrêt. Mesure consommation | 📋 | |
+| **NodOn** | SIN-4-FP-21 | Module fil pilote 6 ordres : Confort, Éco, Hors-Gel, Confort -1, Confort -2, Arrêt. Mesure consommation | 📋 | ✅ |
 
 ---
 
@@ -605,8 +605,8 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
-| **Saswell/Tuya** | AC201A | Contrôle climatiseur : chaud, froid, ventilo, déshumidification. Consignes prédéfinies (18-26 °C) | 📋 | |
-| **NodOn** | IRB-4-1-00 | Blaster IR pour climatiseur : chaud, froid, ventilo, auto, déshumidification. Consignes, vitesse ventilateur, position volet | 📋 | |
+| **Saswell/Tuya** | AC201A | Contrôle climatiseur : chaud, froid, ventilo, déshumidification. Consignes prédéfinies (18-26 °C) | 📋 | ✅ |
+| **NodOn** | IRB-4-1-00 | Blaster IR pour climatiseur : chaud, froid, ventilo, auto, déshumidification. Consignes, vitesse ventilateur, position volet | 📋 | ✅ |
 
 ---
 
@@ -654,7 +654,7 @@ Tout appareil utilisant les clusters Temperature Measurement (0x0402) et/ou Rela
 | Marque | Modèles | Luminosité | Type | Notes | Template | Testé |
 |--------|---------|:----------:|------|-------|:--------:|:-----:|
 | **Sonoff** | SNZB-06P | ✅ | Radar 5.8GHz | Présence statique, sensibilité et timeout configurables | 📋 | ✅ |
-| **Aqara** | FP1 (lumi.motion.ac01) | ❌ | mmWave | Détection présence statique, délais configurables | 📋 | |
+| **Aqara** | FP1 (lumi.motion.ac01) | ❌ | mmWave | Détection présence statique, délais configurables | 📋 | ✅ |
 | **Aqara** | FP2 | ✅ | mmWave | Zones, présence statique | | |
 | **Aqara** | RTCGQ11LM, P1 | ✅ | PIR | Délai 60-90s | | |
 | **Sonoff** | SNZB-03 | ❌ | PIR | Délai 60s | | |
@@ -672,7 +672,7 @@ Tout appareil utilisant le cluster Occupancy Sensing (0x0406).
 
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
-| **Sonoff** | TRVZB | Consigne, calibration, protection gel, détection fenêtre, vanne %, verrouillage enfant | 📋 | |
+| **Sonoff** | TRVZB | Consigne, calibration, protection gel, détection fenêtre, vanne %, verrouillage enfant | 📋 | ✅ |
 | **Moes/Tuya** | BRT-100, TV01, TRV601 | Programmable, détection fenêtre ouverte | 📋 | ✅ |
 | **Danfoss** | Ally | Haute qualité | | |
 | **Eurotronic** | Spirit Zigbee | | | |
@@ -686,7 +686,7 @@ Tout appareil utilisant le cluster Occupancy Sensing (0x0406).
 
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
-| **Xiaomi/Aqara** | lumi.sensor_switch.aq2 (WXKG11LM) | Bouton simple clic, multi-clic | 📋 | |
+| **Xiaomi/Aqara** | lumi.sensor_switch.aq2 (WXKG11LM) | Bouton simple clic, multi-clic | 📋 | ✅ |
 | **IKEA** | TRÅDFRI Shortcut Button | Compatible clusters standards | | |
 | **Tuya/Moes** | Boutons scène, télécommandes | Via cluster 0x0006 ou 0x0012 | | |
 
