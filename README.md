@@ -623,6 +623,15 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 
 ---
 
+### 📊 Compteurs d'énergie DIN (Tuya)
+**Cluster Tuya propriétaire (0xEF00) — Modèle TS0601**
+
+| Marque | Modèles | Mesures | Notes | Template | Testé |
+|--------|---------|---------|-------|:--------:|:-----:|
+| **Hiking / TOMZN** | DDS238-2 | Tension, courant, puissance, énergie | Compteur monophasé DIN rail 65A, énergie bidirectionnelle | 📋 | ✅ |
+
+---
+
 ### 🔌 Prises Connectées
 **Device Type : 0x0010, 0x0051, 0x0061, 0x0101, 0x0107, 0x0302**
 
@@ -654,6 +663,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 | Marque | Modèles | Mesure énergie | Notes | Template | Testé |
 |--------|---------|:--------------:|-------|:--------:|:-----:|
 | **Legrand** | Contacteur (DIN) | ✅ | Puissance, tension, courant, conso. Modes : Auto / Force ON / Force OFF | 📋 | ✅ |
+| **NodOn** | SIN-4-1-20 | ❌ | Module multifonction 16A, contact sec, On/Off simple | 📋 | ✅ |
 
 ---
 
