@@ -683,7 +683,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 |--------|---------|-------|:--------:|:-----:|
 | **Tuya/Moes** | TS130F | Position, calibration, inversion moteur | 📋 | ✅ |
 | **Tuya/Moes** | Curtain Switch, Roller Shutter Module | Nombreux modèles disponibles | | ✅ |
-| **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | | |
+| **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | | ✅ |
 | **LoraTap** | SC500ZB, divers modèles | Compatible Zigbee2MQTT | | |
 | **Legrand** | Céliane/Mosaic Zigbee | Volet roulant connecté | | |
 | **Aqara** | Curtain Driver E1 | Moteur pour rideaux | | |
