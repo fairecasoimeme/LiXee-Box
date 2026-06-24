@@ -605,6 +605,9 @@ Le **thermostat virtuel** transforme la LiXee-Box en régulateur de température
 
 Configuration dans **Config → Thermostat**, visuel temps réel dans **Mesures → Thermostat**.
 
+![Cadran thermostat — climatisation](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_climatisation.jpg)
+![Cadran thermostat — chauffage](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_chauffage.jpg)
+
 > **Documentation complète** : voir [THERMOSTATS.md](THERMOSTATS.md) pour le guide détaillé (modes de régulation, capteurs, actionneurs, algorithmes TPI/hystérésis, paramètres avancés, cadran, priorités, cas d'usage, dépannage).
 
 ## 📦 Appareils Compatibles (à partir de la v2.12)

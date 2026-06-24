@@ -53,6 +53,12 @@ Dans **Config → Thermostat**, chaque zone est représentée par une **fiche** 
 
 La fiche récapitule : Mode, Consigne, Hors-gel, Capteur, Prise (+N si prises supplémentaires), Présence, nombre d'Ouvertures.
 
+![Fiches de configuration des thermostats](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Config.jpg)
+
+Le formulaire de configuration regroupe la **Régulation** (mode, consigne, hors-gel, fonctionnement), les **Capteurs / actionneurs**, et les **Paramètres avancés** (repliés) :
+
+![Formulaire de configuration d'une zone](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Edit.jpg)
+
 ---
 
 ## 3. Régulation : mode, consigne, hors-gel
@@ -201,6 +207,9 @@ Les valeurs par défaut conviennent à la plupart des cas. Augmentez `minOn/minO
 ## 9. La vignette / cadran (lecture et contrôles)
 
 Dans **Mesures → Thermostat**, chaque zone est un **cadran circulaire** (échelle 5–35 °C) mis à jour en temps réel.
+
+![Cadran — climatisation (rafraîchissement)](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_climatisation.jpg)
+![Cadran — chauffage (hors-gel)](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_chauffage.jpg)
 
 ### Lecture
 
