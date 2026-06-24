@@ -113,6 +113,34 @@ struct TunnelSlot {
     }
 };
 
+// Sous-classe : envoie un gros message texte en FRAGMENTS WebSocket (frame TEXT + frames
+// CONTINUATION) en traitant les pings/pongs entre chaque fragment. Sans ça, l'écriture
+// bloquante d'une grosse frame (~90 Ko) monopolise la boucle et le relais coupe la connexion
+// (les pings ne sont plus traités). Le relais réassemble les fragments de façon transparente.
+class ChunkedWsClient : public WebSocketsClient {
+public:
+    bool sendTXTChunked(uint8_t* payload, size_t length, size_t chunk = 8192) {
+        if (_client.status != WSC_CONNECTED) return false;
+        if (length <= chunk) {
+            return sendFrame(&_client, WSop_text, payload, length, true);
+        }
+        size_t offset = 0;
+        bool first = true;
+        while (offset < length) {
+            if (_client.status != WSC_CONNECTED) return false;
+            size_t n = length - offset;
+            if (n > chunk) n = chunk;
+            bool fin = (offset + n >= length);
+            WSopcode_t op = first ? WSop_text : WSop_continuation;
+            if (!sendFrame(&_client, op, payload + offset, n, fin)) return false;
+            offset += n;
+            first = false;
+            WebSocketsClient::loop();  // répondre aux pings entre les fragments
+        }
+        return true;
+    }
+};
+
 class LiXeeBoxTunnel {
 public:
     LiXeeBoxTunnel(const char* tunnelUrl, uint16_t localPort = 80)
@@ -142,11 +170,40 @@ public:
 
         if (!_connected) return;
 
-        // Process all active slots (non-blocking)
+        // Concurrence adaptative selon le heap INTERNE (≈292 Ko, partagé WiFi/TLS/MQTT/Zigbee).
+        // Sous pression, on sérialise les fetchs locaux pour éviter l'épuisement -> reboot watchdog
+        // (cas : page d'accueil lourde + rafale de grosses libs JS chargées en parallèle).
+        uint32_t freeHeap = ESP.getFreeHeap();
+        int maxActive = (freeHeap > 120000) ? MAX_CONCURRENT : (freeHeap > 80000 ? 2 : 1);
+
+        // Compte les slots déjà connectés (en cours de transfert depuis le serveur local)
+        int activeXfer = 0;
         for (int i = 0; i < MAX_CONCURRENT; i++) {
-            if (_slots[i].state != TunnelSlot::IDLE) {
-                processSlot(_slots[i]);
+            switch (_slots[i].state) {
+                case TunnelSlot::WAIT_RESPONSE:
+                case TunnelSlot::READ_HEADERS:
+                case TunnelSlot::READ_BODY_KNOWN:
+                case TunnelSlot::READ_BODY_CHUNKED:
+                case TunnelSlot::READ_BODY_CLOSE:
+                    activeXfer++;
+                    break;
+                default:
+                    break;
             }
+        }
+
+        // Process active slots (non-blocking), en limitant le démarrage de nouveaux fetchs
+        for (int i = 0; i < MAX_CONCURRENT; i++) {
+            TunnelSlot& s = _slots[i];
+            if (s.state == TunnelSlot::IDLE) continue;
+            // Ne pas démarrer une nouvelle connexion locale si trop de transferts sont déjà en cours.
+            // Le slot reste en attente (on repousse son chrono pour ne pas déclencher le timeout).
+            if (s.state == TunnelSlot::CONNECT_SEND && activeXfer >= maxActive) {
+                s.stateStartTime = millis();
+                continue;
+            }
+            if (s.state == TunnelSlot::CONNECT_SEND) activeXfer++;  // va devenir actif
+            processSlot(s);
         }
 
         // Send application-level heartbeat every 15 seconds (aligned with WS heartbeat)
@@ -205,7 +262,7 @@ public:
     }
 
 private:
-    WebSocketsClient _ws;
+    ChunkedWsClient _ws;
     String _host;
     String _path;
     uint16_t _localPort;
@@ -328,6 +385,13 @@ private:
             // PSRAM guard
             if (ESP.getFreePsram() < 200000) {
                 Serial.printf("[Tunnel] WARN: PSRAM low (%u), rejecting request\n", ESP.getFreePsram());
+                sendErrorResponse(reqId, 503, "Low memory");
+                return;
+            }
+            // Plancher heap INTERNE : refuser plutôt que risquer le reboot watchdog (<40 Ko).
+            // Le navigateur réessaiera l'asset ; mieux qu'un crash de toute la passerelle.
+            if (ESP.getFreeHeap() < 55000) {
+                Serial.printf("[Tunnel] WARN: heap low (%u), rejecting request\n", ESP.getFreeHeap());
                 sendErrorResponse(reqId, 503, "Low memory");
                 return;
             }
@@ -812,7 +876,9 @@ private:
             // Process pending pings/pongs before sending
             _ws.loop();
 
-            _ws.sendTXT((uint8_t*)respBuf, offset);
+            // Envoi fragmenté pour les gros corps : évite que l'écriture bloquante d'une
+            // grosse frame ne fasse couper la connexion (pings traités entre fragments).
+            _ws.sendTXTChunked((uint8_t*)respBuf, offset);
 
             // Traiter pings/pongs immédiatement après un gros envoi
             // pour éviter un timeout côté serveur

@@ -1320,13 +1320,19 @@
     {
       "status": [
         {
-          "name": "On/Off", "cluster": "0006", "attribut": 0,
-          "mqtt_device_class": null, "mqtt_icon": "power-plug", "mqtt_state_class": null,
+          "name": "On/Off",
+          "cluster": "0006",
+          "attribut": 0,
+          "mqtt_device_class": null,
+          "mqtt_icon": "power-plug",
+          "mqtt_state_class": null,
           "visible": 1,
           "poll": 1
         },
         {
-          "name": "Puissance", "cluster": "0B04", "attribut": 1291,
+          "name": "Puissance",
+          "cluster": "0B04",
+          "attribut": 1291,
           "mqtt_device_class": "power",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1339,7 +1345,9 @@
           "unit": "W"
         },
         {
-          "name": "Tension", "cluster": "0B04", "attribut": 1285,
+          "name": "Tension",
+          "cluster": "0B04",
+          "attribut": 1285,
           "mqtt_device_class": "voltage",
           "mqtt_icon": "home-lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1349,7 +1357,9 @@
           "unit": "V"
         },
         {
-          "name": "Intensite", "cluster": "0B04", "attribut": 1288,
+          "name": "Intensite",
+          "cluster": "0B04",
+          "attribut": 1288,
           "mqtt_device_class": "current",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1359,13 +1369,15 @@
           "unit": "mA"
         },
         {
-          "name": "Consommation", "cluster": "0702", "attribut": 0,
+          "name": "Consommation",
+          "cluster": "0702",
+          "attribut": 0,
           "mqtt_device_class": "energy",
           "mqtt_icon": "transmission-tower",
           "mqtt_state_class": "total_increasing",
           "type": "float",
           "visible": 1,
-          "coefficient": 0.000000278,
+          "coefficient": 2.78e-7,
           "jauge": "text",
           "unit": "Wh"
         }
@@ -1373,21 +1385,29 @@
       "bind": "6;1794;2820",
       "report": [
         {
-          "cluster": "0006", "attribut": 0, "type": 16,
+          "cluster": "0006",
+          "attribut": 0,
+          "type": 16,
           "min": 10,
           "max": 60,
           "timeout": 0,
           "change": 1
         },
         {
-          "cluster": "0702", "attribut": 0, "type": 37,
-          "min": 60, "max": 300,
+          "cluster": "0702",
+          "attribut": 0,
+          "type": 37,
+          "min": 60,
+          "max": 300,
           "timeout": 0,
           "change": 1
         },
         {
-          "cluster": "0B04", "attribut": 1291, "type": 41,
-          "min": 10, "max": 60,
+          "cluster": "0B04",
+          "attribut": 1291,
+          "type": 41,
+          "min": 10,
+          "max": 60,
           "timeout": 0,
           "change": 1
         },
@@ -1430,6 +1450,244 @@
           "command": 146,
           "endpoint": 1,
           "value": 2,
+          "visible": 1
+        }
+      ]
+    }
+  ],
+  "TS0601": [
+    {
+      "status": [
+        {
+          "name": "Energie",
+          "cluster": "EF00",
+          "attribut": 1,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "jauge": "text",
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie Reverse",
+          "cluster": "EF00",
+          "attribut": 15,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Tension",
+          "cluster": "EF00",
+          "attribut": 100,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "Courant",
+          "cluster": "EF00",
+          "attribut": 101,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.001,
+          "unit": "A"
+        },
+        {
+          "name": "Puissance",
+          "cluster": "EF00",
+          "attribut": 102,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 8000,
+          "unit": "W"
+        }
+      ]
+    }
+  ],
+  "_TZE204_qasjif9e": [
+    {
+      "status": [
+        {
+          "name": "Presence",
+          "cluster": "EF00",
+          "attribut": 1,
+          "mqtt_device_class": "occupancy",
+          "mqtt_icon": "motion-sensor",
+          "type": "numeric",
+          "visible": 1
+        },
+        {
+          "name": "Sensibilite",
+          "cluster": "EF00",
+          "attribut": 2,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 2
+        },
+        {
+          "name": "Distance min",
+          "cluster": "EF00",
+          "attribut": 3,
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "m",
+          "writable": true,
+          "typewritable": 2
+        },
+        {
+          "name": "Distance max",
+          "cluster": "EF00",
+          "attribut": 4,
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "m",
+          "writable": true,
+          "typewritable": 2
+        },
+        {
+          "name": "Distance cible",
+          "cluster": "EF00",
+          "attribut": 9,
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "m"
+        },
+        {
+          "name": "Luminosite",
+          "cluster": "EF00",
+          "attribut": 104,
+          "mqtt_device_class": "illuminance",
+          "mqtt_icon": "brightness-5",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "lux"
+        }
+      ]
+    }
+  ],
+  "_TZE200_arge1ptm": [
+    {
+      "status": [
+        {
+          "name": "Vanne",
+          "cluster": "EF00",
+          "attribut": 102,
+          "mqtt_device_class": "opening",
+          "mqtt_icon": "water-pump",
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 2,
+          "unit": "%",
+          "jauge": "gauge",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "name": "Vanne auto-fermeture",
+          "cluster": "EF00",
+          "attribut": 2,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 2,
+          "unit": "%"
+        },
+        {
+          "name": "Timer fermeture",
+          "cluster": "EF00",
+          "attribut": 11,
+          "type": "numeric",
+          "visible": 1,
+          "writable": true,
+          "typewritable": 2,
+          "unit": "s"
+        },
+        {
+          "name": "Debit eau",
+          "cluster": "EF00",
+          "attribut": 3,
+          "mqtt_icon": "water",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%"
+        },
+        {
+          "name": "Temps restant",
+          "cluster": "EF00",
+          "attribut": 101,
+          "type": "numeric",
+          "visible": 1,
+          "unit": "s"
+        },
+        {
+          "name": "Duree derniere irrigation",
+          "cluster": "EF00",
+          "attribut": 107,
+          "type": "numeric",
+          "visible": 1,
+          "unit": "s"
+        },
+        {
+          "name": "Batterie",
+          "cluster": "EF00",
+          "attribut": 110,
+          "mqtt_device_class": "battery",
+          "mqtt_icon": "battery",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%",
+          "jauge": "battery",
+          "min": 0,
+          "max": 100
+        }
+      ],
+      "action": [
+        {
+          "name": "OUVRIR 100%",
+          "command": 301,
+          "endpoint": 102,
+          "value": 100,
+          "visible": 1
+        },
+        {
+          "name": "OUVRIR 50%",
+          "command": 301,
+          "endpoint": 102,
+          "value": 50,
+          "visible": 1
+        },
+        {
+          "name": "FERMER",
+          "command": 301,
+          "endpoint": 102,
+          "value": 0,
           "visible": 1
         }
       ]

@@ -6,6 +6,20 @@ var powerChart;
 var energyChart;
 var donutChart;
 
+function formatEnergy(val) {
+	var v = parseFloat(val);
+	var absVal = Math.abs(v);
+	if (absVal >= 1000000000) {
+		return (v / 1000000000).toFixed(2) + ' GWh';
+	} else if (absVal >= 1000000) {
+		return (v / 1000000).toFixed(2) + ' MWh';
+	} else if (absVal >= 1000) {
+		return (v / 1000).toFixed(2) + ' kWh';
+	} else {
+		return Math.round(v) + ' Wh';
+	}
+}
+
 function getXhr(){
 	var xhr = null; 
 	if(window.XMLHttpRequest) // Firefox et autres
@@ -208,7 +222,7 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 					labelTime= Math.floor(datas[2]) + ' W';
 				}else{
 					unit=' Wh';
-					labelTime='Wh';
+					labelTime='';
 				}
 				powerGaugeAbo1 = new JustGage({
 					id: 'power_gauge_global',
@@ -220,6 +234,7 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 					gaugeWidthScale: 0.6,
 					pointer: true,
 					textRenderer: function (val) {
+						if (time!='hour') return formatEnergy(val);
 						return val+unit;
 					},
 					pointerOptions: {
@@ -254,6 +269,7 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 					gaugeWidthScale: 0.6,
 					pointer: true,
 					textRenderer: function (val) {
+						if (time!='hour') return formatEnergy(val);
 						return val+unit;
 					},
 					pointerOptions: {
@@ -287,6 +303,7 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 					gaugeWidthScale: 0.6,
 					pointer: true,
 					textRenderer: function (val) {
+						if (time!='hour') return formatEnergy(val);
 						return val+unit;
 					},
 					pointerOptions: {
@@ -358,7 +375,7 @@ function loadPowerGaugeAbo(phase,IEEE,attribute,time)
 						gaugeWidthScale: 0.6,
 						pointer: true,
 						textRenderer: function (val) {
-							return val+unit;
+							return formatEnergy(val);
 						},
 						pointerOptions: {
 							toplength: -15,
@@ -500,19 +517,21 @@ function refreshStatusProduction(IEEE,time)
 
 function refreshStatusEnergy(IEEE,attribute,time,type)
 {
-	//refreshGaugeAbo(IEEE,attribute,time);
-	loadPowerTrend(IEEE,attribute,time);
-	loadDatasTrend(IEEE,attribute,time);
-	loadLinkyDatas(IEEE);
-	loadEnergyChart(IEEE,time,type);
-	loadDistributionChart(time,"");
-	if (time=='hour')
-	{
-		loadPowerChart(IEEE,attribute);
-		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time,type); }, 15000);
-	}else{
-		setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time,type); }, 60000);
-	}
+	// Echelonnement des requetes (250 ms) pour ne pas saturer le tunnel : sans ca, ces 6 appels
+	// partaient simultanement et remplissaient les 6 slots du tunnel (rejets 503 + deconnexions).
+	var q=[
+		function(){loadPowerTrend(IEEE,attribute,time);},
+		function(){loadDatasTrend(IEEE,attribute,time);},
+		function(){loadLinkyDatas(IEEE);},
+		function(){loadEnergyChart(IEEE,time,type);},
+		function(){loadDistributionChart(time,"");}
+	];
+	if (time=='hour') q.push(function(){loadPowerChart(IEEE,attribute);});
+	var i=0;
+	(function next(){
+		if(i<q.length){ try{q[i]();}catch(e){} i++; setTimeout(next,250); }
+		else { setTimeout(function(){refreshStatusEnergy(IEEE,attribute,time,type);}, time=='hour'?15000:60000); }
+	})();
 }
 
 function refreshLabel(file,shortaddr,cluster,attribute,type,coefficient,unit)

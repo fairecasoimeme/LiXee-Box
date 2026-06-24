@@ -44,6 +44,7 @@ extern "C" {
 #include "powerHistory.h"
 #include "energyHistory.h"
 #include "presence.h"
+#include "virtualThermostat.h"
 
 #include "smart_wifi_manager.h"
 #include "mqtt.h"
@@ -331,6 +332,7 @@ void sendPacket();
 
 Task scan(60000, TASK_FOREVER, &scanCallback);
 Task delayReboot(1000, TASK_ONCE, &delayRebootCallBack);
+Task regulation(30000, TASK_FOREVER, &regulationTick);  // thermostat virtuel
 Scheduler runner;
 
 void initCircularBuffer()
@@ -2025,6 +2027,8 @@ void setupZigbeeAndTasks() {
   runner.init();
   runner.addTask(scan);
   scan.enableDelayed(60000);
+  runner.addTask(regulation);
+  regulation.enableDelayed(30000);  // 1ère régulation après 30 s (laisse le temps aux capteurs de remonter)
   esp_task_wdt_reset();
 
 
@@ -2191,9 +2195,12 @@ void setup(void)
   if (!loadConfigGeneral()) {
       DEBUG_PRINTLN(F("Erreur Loadconfig LittleFS"));
   } else {
-    configOK=true;    
+    configOK=true;
     DEBUG_PRINTLN(F("Conf ok LittleFS"));
   }
+
+  // Thermostats virtuels (Phase 0)
+  loadThermostats();
 
   if (ConfigSettings.enableHWFlow)
   {

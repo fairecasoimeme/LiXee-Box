@@ -142,7 +142,7 @@
           "mqtt_state_class": ""
         }
       ],
-      "bind": "0001,0201",
+      "bind": "1;513",
       "report": [
         {
           "cluster": "0201",
@@ -204,7 +204,7 @@
           "name": "local_temperature",
           "cluster": "0201",
           "attribut": 0,
-          "type": "numeric",
+          "type": "float",
           "unit": "°C",
           "coefficient": 0.01,
           "jauge": "Gauge",
@@ -307,14 +307,14 @@
           "mqtt_icon": "water-percent"
         }
       ],
-      "bind": "0201,0202,0405",
+      "bind": "513;514;1029",
       "report": [
         {
           "cluster": "0201",
           "attribut": 0,
           "type": 41,
           "min": 60,
-          "max": 600,
+          "max": 61,
           "change": 10
         },
         {

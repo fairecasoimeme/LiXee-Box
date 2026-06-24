@@ -55,7 +55,7 @@
           "typewritable": 48
         }
       ],
-      "bind": "513,514",
+      "bind": "513;514",
       "report": [
         {
           "cluster": "0201",

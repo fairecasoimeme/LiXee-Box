@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <algorithm>
 #include "rom/ets_sys.h"
 #include "soc/rtc_cntl_reg.h"
 #include "soc/sens_reg.h"
@@ -34,6 +35,7 @@
 #include "basic.h"
 #include "thermostat.h"
 #include "presence.h"
+#include "virtualThermostat.h"
 
 #include "rules.h"
 #include "microtar.h"
@@ -180,6 +182,10 @@ String getSessionCookie(AsyncWebServerRequest *request) {
 // CSRF protection: validate Origin/Referer on POST requests
 bool checkCsrf(AsyncWebServerRequest *request) {
     if (request->method() != HTTP_POST) return true;
+
+    // Requêtes via le tunnel (reverse proxy) : injectées depuis 127.0.0.1.
+    // Elles restent protégées par checkAuth (session) exécuté juste après.
+    if (request->client()->remoteIP() == IPAddress(127, 0, 0, 1)) return true;
 
     // Check Origin header first, then Referer
     String origin;
@@ -347,6 +353,22 @@ String section[12] = { "0", "1", "256", "258" , "260", "262", "264" ,"266", "268
 
 UpdateStatus updateStatus;
 
+// Log de mise a jour : ecrit sur Serial (+ accumule dans updateStatus.log si active)
+static void updateLog(const char* fmt, ...) {
+    char buf[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    Serial.println(buf);
+    /* LOG UPDATE - desactive temporairement
+    if (updateStatus.log.length() < 8192) {  // limite 8KB
+        updateStatus.log += buf;
+        updateStatus.log += "\n";
+    }
+    */
+}
+
 HTTPClient clientWeb;
 
 AsyncWebServer serverWeb(80);
@@ -424,8 +446,12 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "</head>";
 
 
-const char HTTP_MENU[] PROGMEM = 
-   "<body>"
+// Le menu (nav + script spinner/swipe) est servi via la route /menu.js (mise en cache navigateur),
+// pour ne plus renvoyer ~29 Ko de menu dans le HTML de CHAQUE page. La page n'inclut qu'un <script src>.
+const char HTTP_MENU[] PROGMEM = "<body><script src='/menu.js?v=1'></script>";
+
+// Markup du menu, injecte par /menu.js via document.write (sync, avant le footer => dropdowns/badges OK).
+const char HTTP_MENU_NAV[] PROGMEM =
    "<nav class='navbar navbar-expand-md rounded'>"
    "<div class='container-fluid' style=''>"
    "<button class='navbar-toggler' type='button' data-bs-toggle='collapse' data-bs-target='#navbarNavDropdown' aria-controls='navbarNavDropdown' aria-expanded='false' aria-label='Toggle navigation'>"
@@ -443,7 +469,7 @@ const char HTTP_MENU[] PROGMEM =
    "      <path d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z'/>"
    "      <path d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0'/>"
    "    </svg> "
-   "    <span id='FormattedDate'>{{FormattedDate}}</span>"
+   "    <span id='FormattedDate'></span>"
    "  </div>"
    "</a>"
    "<div id='navbarNavDropdown' class='collapse navbar-collapse justify-content-center'>"
@@ -463,6 +489,13 @@ const char HTTP_MENU[] PROGMEM =
     "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
   "</svg>"
    " Energie"
+   "</a>"
+   "<a class='dropdown-item' href='thermostats'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-thermometer-half' viewBox='0 0 16 16'>"
+   "  <path d='M9.5 12.5a1.5 1.5 0 1 1-2-1.415V6.5a.5.5 0 0 1 1 0v4.585a1.5 1.5 0 0 1 1 1.415'/>"
+   "  <path d='M5.5 2.5a2.5 2.5 0 0 1 5 0v7.55a3.5 3.5 0 1 1-5 0zM8 1a1.5 1.5 0 0 0-1.5 1.5v7.987l-.167.15a2.5 2.5 0 1 0 3.333 0l-.166-.15V2.5A1.5 1.5 0 0 0 8 1'/>"
+   "</svg>"
+   " Thermostats"
    "</a>"
    /*"<a class='dropdown-item' href='dashboard'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px; width='16' height='16' fill='currentColor' class='bi bi-speedometer' viewBox='0 0 16 16'>"
@@ -551,6 +584,13 @@ const char HTTP_MENU[] PROGMEM =
     "<path d='M6.174 1.184a2 2 0 0 1 3.652 0A2 2 0 0 1 12.99 3.01a2 2 0 0 1 1.826 3.164 2 2 0 0 1 0 3.652 2 2 0 0 1-1.826 3.164 2 2 0 0 1-3.164 1.826 2 2 0 0 1-3.652 0A2 2 0 0 1 3.01 12.99a2 2 0 0 1-1.826-3.164 2 2 0 0 1 0-3.652A2 2 0 0 1 3.01 3.01a2 2 0 0 1 3.164-1.826M8 1a1 1 0 0 0-.998 1.03l.01.091q.017.116.054.296c.049.241.122.542.213.887.182.688.428 1.513.676 2.314L8 5.762l.045-.144c.248-.8.494-1.626.676-2.314.091-.345.164-.646.213-.887a5 5 0 0 0 .064-.386L9 2a1 1 0 0 0-1-1M2 9l.03-.002.091-.01a5 5 0 0 0 .296-.054c.241-.049.542-.122.887-.213a61 61 0 0 0 2.314-.676L5.762 8l-.144-.045a61 61 0 0 0-2.314-.676 17 17 0 0 0-.887-.213 5 5 0 0 0-.386-.064L2 7a1 1 0 1 0 0 2m7 5-.002-.03a5 5 0 0 0-.064-.386 16 16 0 0 0-.213-.888 61 61 0 0 0-.676-2.314L8 10.238l-.045.144c-.248.8-.494 1.626-.676 2.314-.091.345-.164.646-.213.887a5 5 0 0 0-.064.386L7 14a1 1 0 1 0 2 0m-5.696-2.134.025-.017a5 5 0 0 0 .303-.248c.184-.164.408-.377.661-.629A61 61 0 0 0 5.96 9.23l.103-.111-.147.033a61 61 0 0 0-2.343.572c-.344.093-.64.18-.874.258a5 5 0 0 0-.367.138l-.027.014a1 1 0 1 0 1 1.732zM4.5 14.062a1 1 0 0 0 1.366-.366l.014-.027q.014-.03.036-.084a5 5 0 0 0 .102-.283c.078-.233.165-.53.258-.874a61 61 0 0 0 .572-2.343l.033-.147-.11.102a61 61 0 0 0-1.743 1.667 17 17 0 0 0-.629.66 5 5 0 0 0-.248.304l-.017.025a1 1 0 0 0 .366 1.366m9.196-8.196a1 1 0 0 0-1-1.732l-.025.017a5 5 0 0 0-.303.248 17 17 0 0 0-.661.629A61 61 0 0 0 10.04 6.77l-.102.111.147-.033a61 61 0 0 0 2.342-.572c.345-.093.642-.18.875-.258a5 5 0 0 0 .367-.138zM11.5 1.938a1 1 0 0 0-1.366.366l-.014.027q-.014.03-.036.084a5 5 0 0 0-.102.283c-.078.233-.165.53-.258.875a61 61 0 0 0-.572 2.342l-.033.147.11-.102a61 61 0 0 0 1.743-1.667c.252-.253.465-.477.629-.66a5 5 0 0 0 .248-.304l.017-.025a1 1 0 0 0-.366-1.366M14 9a1 1 0 0 0 0-2l-.03.002a5 5 0 0 0-.386.064c-.242.049-.543.122-.888.213-.688.182-1.513.428-2.314.676L10.238 8l.144.045c.8.248 1.626.494 2.314.676.345.091.646.164.887.213a5 5 0 0 0 .386.064zM1.938 4.5a1 1 0 0 0 .393 1.38l.084.035q.108.045.283.103c.233.078.53.165.874.258a61 61 0 0 0 2.343.572l.147.033-.103-.111a61 61 0 0 0-1.666-1.742 17 17 0 0 0-.66-.629 5 5 0 0 0-.304-.248l-.025-.017a1 1 0 0 0-1.366.366m2.196-1.196.017.025a5 5 0 0 0 .248.303c.164.184.377.408.629.661A61 61 0 0 0 6.77 5.96l.111.102-.033-.147a61 61 0 0 0-.572-2.342c-.093-.345-.18-.642-.258-.875a5 5 0 0 0-.138-.367l-.014-.027a1 1 0 1 0-1.732 1m9.928 8.196a1 1 0 0 0-.366-1.366l-.027-.014a5 5 0 0 0-.367-.138c-.233-.078-.53-.165-.875-.258a61 61 0 0 0-2.342-.572l-.147-.033.102.111a61 61 0 0 0 1.667 1.742c.253.252.477.465.66.629a5 5 0 0 0 .304.248l.025.017a1 1 0 0 0 1.366-.366m-3.928 2.196a1 1 0 0 0 1.732-1l-.017-.025a5 5 0 0 0-.248-.303 17 17 0 0 0-.629-.661A61 61 0 0 0 9.23 10.04l-.111-.102.033.147a61 61 0 0 0 .572 2.342c.093.345.18.642.258.875a5 5 0 0 0 .138.367zM8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3'/>"
   "</svg>"
    " Energie"
+   "</a>"
+   "<a class='dropdown-item' href='configThermostats'>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-thermometer-half' viewBox='0 0 16 16'>"
+   "  <path d='M9.5 12.5a1.5 1.5 0 1 1-2-1.415V6.5a.5.5 0 0 1 1 0v4.585a1.5 1.5 0 0 1 1 1.415'/>"
+   "  <path d='M5.5 2.5a2.5 2.5 0 0 1 5 0v7.55a3.5 3.5 0 1 1-5 0zM8 1a1.5 1.5 0 0 0-1.5 1.5v7.987l-.167.15a2.5 2.5 0 1 0 3.333 0l-.166-.15V2.5A1.5 1.5 0 0 0 8 1'/>"
+   "</svg>"
+   " Thermostat"
    "</a>"
    "<a class='dropdown-item' href='/configNotifications'>"
    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-bell' viewBox='0 0 16 16'>"
@@ -653,6 +693,50 @@ const char HTTP_MENU[] PROGMEM =
    "<div id='alert' style='display:none;' class='alert alert-success' role='alert'>"
    "</div>";
 
+// Script du menu (spinner + navigation par glissement). Servi dans /menu.js, APRES le document.write
+// du nav (donc les liens du menu existent quand lnk() les resout).
+const char HTTP_MENU_JS[] PROGMEM =
+   "(function(){"
+   // URL des liens du menu (résolues, robustes au tunnel) ; repli sur l'URL relative si lien absent.
+   "function lnk(h){var a=document.querySelector(\"a[href='\"+h+\"']\");return a?a.href:h;}"
+   "var eU=lnk('statusEnergy'),tU=lnk('thermostats'),dU=lnk('statusDevices');"
+   // spinner (style + fonction)
+   "var stl=document.createElement('style');stl.innerHTML='@keyframes tspin{to{transform:rotate(360deg)}}body{overflow-x:hidden;}';document.head.appendChild(stl);"
+   "var sp=null;function showSp(){if(sp)return;document.body.style.transform='';sp=document.createElement('div');sp.style.cssText='position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:#fff;';"
+   "sp.innerHTML=\"<div style='width:48px;height:48px;border:5px solid #ccc;border-top-color:#2980b9;border-radius:50%;animation:tspin 0.8s linear infinite;'></div>\";document.body.appendChild(sp);}"
+   // spinner immédiat sur toute navigation par lien (menu inclus)
+   "document.addEventListener('click',function(e){var a=e.target.closest?e.target.closest('a'):null;if(!a)return;var h=a.getAttribute('href');if(!h||h.charAt(0)=='#'||h.indexOf('javascript')==0)return;if(a.target&&a.target!='_self')return;if(a.hasAttribute('download'))return;showSp();},true);"
+   // spinner sur soumission de formulaire (POST) — en phase bubble pour voir si le form a fait
+   // preventDefault (upload AJAX chunké : maj firmware, historique, restore... => pas de navigation),
+   // et on skippe aussi les uploads multipart classiques.
+   "document.addEventListener('submit',function(e){if(e.defaultPrevented)return;var f=e.target;if(f&&f.getAttribute&&(f.getAttribute('enctype')||'').indexOf('multipart')>=0)return;showSp();},false);"
+   // spinner à CHAQUE chargement de page, masqué une fois la page prête (filet de sécurité 8 s)
+   "function hideSp(){if(sp&&sp.parentNode){sp.parentNode.removeChild(sp);}sp=null;}"
+   "showSp();"
+   "if(document.readyState=='complete'){hideSp();}else{window.addEventListener('load',hideSp);}"
+   "setTimeout(hideSp,8000);"
+   // page courante par sous-chaine du chemin (Energie = page par defaut a la racine)
+   "var pp=location.pathname;"
+   "var cur=pp.indexOf('thermostats')>=0?'t':(pp.indexOf('statusDevices')>=0?'d':((pp.indexOf('statusEnergy')>=0||pp=='/'||pp=='')?'e':''));"
+   "if(!cur)return;"
+   "var L='',R='';if(cur=='e'){L=dU;R=tU;}else if(cur=='t'){L=eU;R='';}else{L='';R=eU;}"
+   "var sx=0,sy=0,drag=false,dec=false,hz=false,b=document.body;"
+   // laisse le défilement vertical au navigateur mais réserve l'horizontal au swipe (pages longues)
+   "b.style.touchAction='pan-y';"
+   "function bg(x,y){if(window.innerWidth>900)return;sx=x;sy=y;drag=true;dec=false;hz=false;b.style.transition='none';}"
+   "function mv(x,y){if(!drag)return true;var dx=x-sx,dy=y-sy;if(!dec){if(Math.abs(dx)>10||Math.abs(dy)>10){dec=true;hz=Math.abs(dx)>Math.abs(dy);}}"
+   "if(dec&&hz){var eff=dx;if((dx<0&&!L)||(dx>0&&!R))eff=dx*0.3;b.style.transform='translateX('+eff+'px)';return false;}return true;}"
+   "function en(x,y){if(!drag)return;drag=false;var dx=x-sx,dy=y-sy;b.style.transition='transform 0.25s ease';"
+   "if(hz&&Math.abs(dx)>70&&Math.abs(dx)>Math.abs(dy)*1.2){var d=dx<0?L:R;if(d){b.style.transition='none';b.style.transform='';showSp();setTimeout(function(){location.href=d;},60);return;}}"
+   "b.style.transform='translateX(0)';setTimeout(function(){if(!drag)b.style.transform='';},260);}"
+   "document.addEventListener('touchstart',function(e){if(e.touches.length!=1)return;bg(e.touches[0].clientX,e.touches[0].clientY);},{passive:true});"
+   "document.addEventListener('touchmove',function(e){if(mv(e.touches[0].clientX,e.touches[0].clientY)===false&&e.cancelable)e.preventDefault();},{passive:false});"
+   "document.addEventListener('touchend',function(e){var t=e.changedTouches[0];en(t.clientX,t.clientY);});"
+   "document.addEventListener('mousedown',function(e){bg(e.clientX,e.clientY);});"
+   "document.addEventListener('mousemove',function(e){mv(e.clientX,e.clientY);});"
+   "document.addEventListener('mouseup',function(e){en(e.clientX,e.clientY);});"
+   "})();";
+
 
 const char HTTP_TOOLS[] PROGMEM =
     "<style>"
@@ -732,6 +816,14 @@ const char HTTP_TOOLS[] PROGMEM =
     "<span class='label'>Debug</span>"
     "<span class='desc'>Console logs</span>"
     "</a>"
+
+    /* GESTIONNAIRE DE FICHIERS - desactive temporairement
+    "<a href='/filesManager' class='tool-card'>"
+    "<div class='icon cyan'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path d='M1 3.5A1.5 1.5 0 0 1 2.5 2h2.764c.958 0 1.76.56 2.311 1.184C7.985 3.648 8.48 4 9 4h4.5A1.5 1.5 0 0 1 15 5.5v7a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5zM2.5 3a.5.5 0 0 0-.5.5V6h12v-.5a.5.5 0 0 0-.5-.5H9c-.964 0-1.71-.629-2.174-1.154C6.374 3.334 5.82 3 5.264 3zM14 7H2v5.5a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5z'/></svg></div>"
+    "<span class='label'>Fichiers</span>"
+    "<span class='desc'>Espace disque</span>"
+    "</a>"
+    */
 
     "<a href='/backup' class='tool-card'>"
     "<div class='icon purple'><svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'><path fill-rule='evenodd' d='M7.646 5.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 6.707V10.5a.5.5 0 0 1-1 0V6.707L6.354 7.854a.5.5 0 1 1-.708-.708l2-2z'/><path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383zm.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/></svg></div>"
@@ -1860,6 +1952,18 @@ const char HTTP_UPDATE[] PROGMEM = R"(
                   0%
                 </div>
               </div>
+              <!-- GESTIONNAIRE DE FICHIERS + LOG - desactive temporairement
+              <div style="margin-top:10px">
+                <a href="/filesManager" class="btn btn-sm btn-outline-info">Gestionnaire de fichiers</a>
+              </div>
+              <div id="logSection" style="display:none;margin-top:15px;text-align:left">
+                <button class="btn btn-sm btn-outline-secondary mb-2" onclick="document.getElementById('updateLogPre').select();document.execCommand('copy');">
+                  Copier le log
+                </button>
+                <textarea id="updateLogPre" readonly rows="12"
+                  style="width:100%;font-family:monospace;font-size:11px;background:#1e1e1e;color:#d4d4d4;padding:8px;border-radius:4px;resize:vertical;white-space:pre;overflow-x:auto"></textarea>
+              </div>
+              -->
             </div>
           </div>
         </div>
@@ -1952,23 +2056,45 @@ const char HTTP_UPDATE[] PROGMEM = R"(
           success: function(data) {
             const stdl = document.getElementById('statusDL');
             const bardl = document.getElementById('barDL');
-            
+
             if (data.status && data.status !== '') {
               stdl.textContent = data.status;
             }
-            
+
             if (data.progress >= 0) {
               const pct = parseInt(data.progress);
               bardl.style.width = pct + '%';
               bardl.textContent = pct + '%';
+              /* LOG desactive temporairement
+              document.getElementById('logSection').style.display = 'block';
+              pollUpdateLog();
+              */
             }
-            
+
             if (data.reboot) {
+              /* pollUpdateLog(); */
               setTimeout(function() { location.reload(); }, 3000);
             }
           }
         });
       }
+
+      /* LOG desactive temporairement
+      function pollUpdateLog() {
+        $.ajax({
+          url: '/getUpdateLog',
+          type: 'GET',
+          dataType: 'text',
+          success: function(data) {
+            var el = document.getElementById('updateLogPre');
+            if (el && data) {
+              el.value = data;
+              el.scrollTop = el.scrollHeight;
+            }
+          }
+        });
+      }
+      */
       
       function pollUpdateStatusManuel() {
         $.ajax({
@@ -3711,7 +3837,7 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
   <div class='col-lg-5 col-md-6 col-12'>
     <div class='card p-4' id='energyTrend' style='height:100%;'>
       <h5 class='card-title' style=''>Répartition énergétique</h5>
-      <div class='row'>
+      <div class='row' style='font-size:12px;'>
         <div class='col-md-12 col-lg-6'>
           <div class='card-body position-relative p-1' style='min-height:240px;'>
             <div id='donut-chart' style='padding-top:40px;'></div>
@@ -3743,11 +3869,10 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
   <div class='col-lg-3 col-md-6 col-12'>
     <div class='card p-4' id='energyTrend' style='height:100%;'>
       <h5 class='card-title' style=''>Tendances</h5>
-      <div class='card-body position-relative p-1' style='height:270px;width:280px;margin-left:-10px;'>
+      <div class='card-body position-relative p-1' style='margin-left:-10px;padding-bottom:36px;'>
         <div id='power_trend'></div>
       </div>
       {{helpTrend}}
-      
     </div>
   </div>
   <div class='col-md-6' style='display:{{stylePowerChart}}'>
@@ -3760,6 +3885,9 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
       <a href='javascript:void(0)' onclick='showPopup("popupHelpApparentPower")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
         <span class='hi'>?</span>
       </a>
+      <a href='/exportPowerChart?IEEE={{zlinkyIeee}}' download class='position-absolute bottom-0 end-0 p-2 text-muted' title='Exporter en CSV'>
+        <svg xmlns='http://www.w3.org/2000/svg' style='width:22px;' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'></path><polyline points='7 10 12 15 17 10'></polyline><line x1='12' y1='15' x2='12' y2='3'></line></svg>
+      </a>
     </div>
   </div>
   <div class='col-md-6'>
@@ -3771,109 +3899,18 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
       <a href='javascript:void(0)' onclick='showPopup("popupHelpElectricity")' class='position-absolute bottom-0 begin-0 p-2 text-muted' title='Help'>
         <span class='hi'>?</span>
       </a>
+      <a href='/exportEnergyChart?IEEE={{zlinkyIeee}}&time={{time}}' download class='position-absolute bottom-0 end-0 p-2 text-muted' title='Exporter en CSV'>
+        <svg xmlns='http://www.w3.org/2000/svg' style='width:22px;' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4'></path><polyline points='7 10 12 15 17 10'></polyline><line x1='12' y1='15' x2='12' y2='3'></line></svg>
+      </a>
     </div>
   </div>
 
-  <!-- Popup avec système simple -->
-  <div id='popupHelpPowerJaugeHour' class='popup' onclick='hidePopup("popupHelpPowerJaugeHour", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpPowerJaugeHour")'>&times;</button>
-      <h2 class='popup-header'>Jauges de puissance</h2>
-      <p class='popup-text'>Les jauges de puissance affichent en temps r&eacute;el la puissance apparente soutir&eacute;e de chaque phase, ainsi que la puissance inject&eacute;e si votre Linky est en mode producteur.</p>
-      <p class='popup-text'>L'&eacute;chelle va de 0 &agrave; la puissance souscrite.</p>
-    </div>
-  </div>
-  <div id='popupHelpPowerJauge' class='popup' onclick='hidePopup("popupHelpPowerJauge", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpPowerJauge")'>&times;</button>
-      <h2 class='popup-header'>Electricit&eacute;</h2>
-      <p class='popup-text'>Les jauges affichent, selon la p&eacute;riode s&eacute;lectionn&eacute;e, la consommation ou la production totale de votre habitat.</p>
-      <p class='popup-text'>L'&eacute;chelle utilise les valeurs minimale et maximale d&eacute;j&agrave; rencontr&eacute;es, ce qui permet de comparer par rapport aux records historiques.</p>
-    </div>
-  </div>
-  <div id='popupHelpEnergyDispatch' class='popup' onclick='hidePopup("popupHelpEnergyDispatch", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpEnergyDispatch")'>&times;</button>
-      <h2 class='popup-header'>R&eacute;partition &eacute;nerg&eacute;tique</h2>
-      <p class='popup-text'>Le graphe en donut offre une vision de la r&eacute;partition des ressources &eacute;nerg&eacute;tiques selon la p&eacute;riode choisie.</p>
-      <div class='highlight'>
-        <strong>P&eacute;riodes glissantes :</strong><br>
-        <ul class='info-list' style='margin:5px 0;'>
-          <li><strong>Heure :</strong> 24 derni&egrave;res heures</li>
-          <li><strong>Jour :</strong> 30 derniers jours</li>
-          <li><strong>Mois :</strong> 12 derniers mois</li>
-          <li><strong>Ann&eacute;e :</strong> toutes les donn&eacute;es</li>
-        </ul>
-      </div>
-      <p class='popup-text'>&Eacute;lectricit&eacute;, production solaire, gaz et eau : la r&eacute;partition de chaque source est affich&eacute;e en kWh (ou m&sup3;) et en &euro;.</p>
-      <p class='popup-text'>La consommation totale donne une vue globale sur la p&eacute;riode.</p>
-    </div>
-  </div>
-  <div id='popupHelpEnergyTrendHour' class='popup' onclick='hidePopup("popupHelpEnergyTrendHour", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrendHour")'>&times;</button>
-      <h2 class='popup-header'>Tendances</h2>
-      <h5>Puissance apparente</h5>
-      <p class='popup-text'>Variations en temps r&eacute;el avec les puissances minimale et maximale soutir&eacute;es.</p>
-      <h5>Stats</h5>
-      <p class='popup-text'>Consommations de la veille, du mois en cours et de l'ann&eacute;e en cours.</p>
-    </div>
-  </div>
-  <div id='popupHelpEnergyTrend' class='popup' onclick='hidePopup("popupHelpEnergyTrend", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrend")'>&times;</button>
-      <h2 class='popup-header'>Tendances</h2>
-      <h5>Consommation</h5>
-      <p class='popup-text'>Variation de consommation par rapport &agrave; la p&eacute;riode pr&eacute;c&eacute;dente en kWh, avec le minimum et maximum sur la p&eacute;riode choisie.</p>
-      <p class='popup-text'>Si la tarification est configur&eacute;e, le co&ucirc;t en &euro; est &eacute;galement affich&eacute;.</p>
-    </div>
-  </div>
+  <!-- Popups d'aide externalis&eacute;s dans /web/help-energy.html (charg&eacute;s &agrave; la demande par showPopup) -->
   <div id='popupLinkyDatas' class='popup' onclick='hidePopup("popupLinkyDatas", event)'>
     <div class='popup-content'>
       <button class='close-btn' onclick='hidePopup("popupLinkyDatas")'>&times;</button>
       <h2 class='popup-header'>Donn&eacute;es Linky</h2>
       <div id='power_data'></div>
-    </div>
-  </div>
-  <div id='popupHelpApparentPower' class='popup' onclick='hidePopup("popupHelpApparentPower", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpApparentPower")'>&times;</button>
-      <h2 class='popup-header'>Graphe puissance apparente</h2>
-      <div class='highlight'><strong>Note :</strong> Les donn&eacute;es sont calcul&eacute;es sur des p&eacute;riodes glissantes.</div>
-      <p class='popup-text'>Puissances apparentes de toutes les phases, &agrave; la minute, sur les 24 derni&egrave;res heures.</p>
-      <p class='popup-text'><span style='color:red'> --- </span> Ligne rouge = puissance souscrite.</p>
-    </div>
-  </div>
-  <div id='popupHelpElectricity' class='popup' onclick='hidePopup("popupHelpElectricity", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpElectricity")'>&times;</button>
-      <h2 class='popup-header'>Graphe Usage d'&eacute;lectricit&eacute;</h2>
-      <div class='highlight'><strong>Note :</strong> Les donn&eacute;es sont calcul&eacute;es sur des p&eacute;riodes glissantes.</div>
-      <p class='popup-text'>Usage complet d'&eacute;lectricit&eacute; selon la p&eacute;riode :</p>
-      <ul class='info-list'>
-        <li>Consommation par tarif</li>
-        <li>Production d'&eacute;lectricit&eacute;</li>
-      </ul>
-      <p class='popup-text'><span style='color:red'> --- </span> Ligne rouge = budget mensuel fix&eacute; (en kWh).</p>
-    </div>
-  </div>
-  <div id='popupHelpEnergyLabel' class='popup' onclick='hidePopup("popupHelpEnergyLabel", event)'>
-    <div class='popup-content'>
-      <button class='close-btn' onclick='hidePopup("popupHelpEnergyLabel")'>&times;</button>
-      <h2 class='popup-header'>Etiquette &eacute;nerg&eacute;tique</h2>
-      <p class='popup-text'>Performance &eacute;nerg&eacute;tique (electricit&eacute;, production, gaz, eau) de votre habitat rapport&eacute;e &agrave; la surface habitable.</p>
-      <div class='highlight'><strong>Indicatif uniquement</strong> &mdash; ne remplace pas un DPE.</div>
-      <p class='popup-text'>Calcul :</p>
-      <ul class='info-list'>
-        <li><strong>Heure :</strong> total &times; 365 / surface</li>
-        <li><strong>Jour :</strong> total &times; 12 / surface</li>
-        <li><strong>Mois / Ann&eacute;e :</strong> total / surface</li>
-      </ul>
-      <p class='popup-text'>&Eacute;tiquettes (kWh/m&sup2;.an) :</p>
-      <ul class='info-list'>
-        <li><strong>A</strong> &lt; 50 | <strong>B</strong> 51-90 | <strong>C</strong> 91-150 | <strong>D</strong> 151-230</li>
-        <li><strong>E</strong> 231-330 | <strong>F</strong> 331-450 | <strong>G</strong> &gt; 451</li>
-      </ul>
     </div>
   </div>
 
@@ -3946,9 +3983,25 @@ const char HTTP_ENERGY_LINKY[] PROGMEM = R"rawstring(
     }
 
     // Fonctions popup ultra-simples
-    function showPopup(id) {
-        document.getElementById(id).classList.add('show');
+    function _showPopupEl(el) {
+        // Un transform residuel sur body (laisse par le swipe) casse position:fixed et place
+        // le popup hors ecran apres scroll sur mobile -> on le retire avant d'afficher.
+        document.body.style.transform = '';
+        el.classList.add('show');
         document.body.style.overflow = 'hidden';
+    }
+    function showPopup(id) {
+        var el = document.getElementById(id);
+        if (!el) {
+            // Popups d'aide externalis&eacute;s : chargement &agrave; la demande (1er clic), puis mis en cache navigateur
+            fetch('/web/help-energy.html').then(function(r){return r.text();}).then(function(t){
+                var d = document.createElement('div'); d.innerHTML = t; document.body.appendChild(d);
+                var e2 = document.getElementById(id);
+                if (e2) _showPopupEl(e2);
+            }).catch(function(){});
+            return;
+        }
+        _showPopupEl(el);
     }
 
     function hidePopup(id, event) {
@@ -7489,6 +7542,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   }
 
   result.replace("{{time}}",time);
+  result.replace("{{zlinkyIeee}}", String(ConfigGeneral.ZLinky));
 
   ConfigGeneral.LinkyMode = getZigbeeValue(String(ConfigGeneral.ZLinky)+".json","FF66","768").toInt();
 
@@ -7908,6 +7962,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
         // time (utilisé dans les liens distribution)
         linky.replace("{{time}}", time.c_str());
+        linky.replace("{{zlinkyIeee}}", String(ConfigGeneral.ZLinky));
 
         // stylePowerChart
         linky.replace("{{stylePowerChart}}", isHourMode ? "block" : "none");
@@ -12182,73 +12237,387 @@ void runUpdateFirmware(uint8_t *data, size_t len)
 
 bool checkUpdateFirmware()
 {
+  updateLog("====== UPDATE DIAG START ======");
+  updateLog("Heap libre: %u | PSRAM libre: %u",
+                ESP.getFreeHeap(), ESP.getFreePsram());
+  updateLog("Heap min depuis boot: %u",
+                esp_get_minimum_free_heap_size());
+  updateLog("WiFi RSSI: %d dBm", WiFi.RSSI());
+  updateLog("URL: %s", UPD_FILE);
+
   clientWeb.begin(UPD_FILE);
-  clientWeb.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); 
-  // Get file, just to check if each reachable
-  int resp = clientWeb.GET(); 
+  clientWeb.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  clientWeb.setTimeout(15000);  // 15s timeout sur le GET initial
+  int resp = clientWeb.GET();
+
+  updateLog("HTTP response: %d", resp);
 
   int64_t contentLength = clientWeb.getSize();
   if (contentLength <= 0) {
-    log_e("Taille inconnue ou invalide");
+    updateLog("ECHEC: taille invalide (contentLength=%lld, httpCode=%d)", contentLength, resp);
     clientWeb.end();
     return false;
   }
 
+  updateLog("Fichier: %lld octets", contentLength);
 
-  if(resp == HTTP_CODE_OK) 
-  {   
-    File f = LittleFS.open("/bk/update.tar.gz", "w");
-    if (!f) {
-      log_e("Impossible d'ouvrir /bk/update.tar.gz en écriture");
+  if(resp == HTTP_CODE_OK)
+  {
+    // Verifier l'espace LittleFS disponible
+    size_t totalBytes = LittleFS.totalBytes();
+    size_t usedBytes = LittleFS.usedBytes();
+    size_t freeBytes = totalBytes - usedBytes;
+    updateLog("LittleFS: %u / %u utilises (%u libres)",
+                  usedBytes, totalBytes, freeBytes);
+    if ((int64_t)freeBytes < contentLength) {
+      updateLog("ECHEC: espace insuffisant: %u libres < %lld necessaires", freeBytes, contentLength);
+      updateStatus.statusAuto = "Espace disque insuffisant";
       clientWeb.end();
       return false;
     }
 
-    const size_t BUF_SZ = 400 * 1024;  // 1Mo
+    File f = LittleFS.open("/bk/update.tar.gz", "w");
+    if (!f) {
+      updateLog("ECHEC: impossible d'ouvrir /bk/update.tar.gz");
+      clientWeb.end();
+      return false;
+    }
+
+    const size_t BUF_SZ = 400 * 1024;
     uint8_t *buff = (uint8_t*) heap_caps_malloc(BUF_SZ, MALLOC_CAP_SPIRAM);
     if (!buff) {
-      f.close(); 
+      updateLog("ECHEC: allocation PSRAM 400KB (PSRAM libre: %u)", ESP.getFreePsram());
+      f.close();
       clientWeb.end();
       return false;
     }
 
     WiFiClient * stream = clientWeb.getStreamPtr();
     int64_t bytesRead = 0;
+    unsigned long lastDataTime = millis();
+    unsigned long downloadStart = millis();
+    const unsigned long DOWNLOAD_TIMEOUT_MS = 30000;  // 30s sans donnees = abandon
+    int lastLoggedPct = -1;
+
+    updateLog("Debut telechargement | Heap: %u", ESP.getFreeHeap());
 
     while(bytesRead < contentLength) {
       esp_task_wdt_reset();
-      // Maintenir le tunnel actif pendant le téléchargement
       if (tunnel) tunnel->loop();
-      // get available data size
+
+      // Verifier que la connexion est toujours active
+      if (!stream->connected() && !stream->available()) {
+        updateLog("ECHEC: connexion perdue a %lld / %lld octets (%d%%)",
+                      bytesRead, contentLength,
+                      (int)((bytesRead * 100) / contentLength));
+        updateLog("Heap: %u | RSSI: %d | duree: %lu ms",
+                      ESP.getFreeHeap(), WiFi.RSSI(),
+                      millis() - downloadStart);
+        updateStatus.statusAuto = "Connexion perdue";
+        f.close();
+        heap_caps_free(buff);
+        clientWeb.end();
+        return false;
+      }
+
       size_t size = stream->available();
       if (!size) {
+        unsigned long waitTime = millis() - lastDataTime;
+        if (waitTime > DOWNLOAD_TIMEOUT_MS) {
+          updateLog("ECHEC: timeout a %lld / %lld octets (%d%%)",
+                        bytesRead, contentLength,
+                        (int)((bytesRead * 100) / contentLength));
+          updateLog("Pas de donnees depuis %lu ms | Heap: %u | RSSI: %d | connected: %d",
+                        waitTime, ESP.getFreeHeap(), WiFi.RSSI(), stream->connected());
+          updateStatus.statusAuto = "Timeout téléchargement";
+          f.close();
+          heap_caps_free(buff);
+          clientWeb.end();
+          return false;
+        }
         esp_task_wdt_reset();
         delay(1);
         continue;
       }
+
+      lastDataTime = millis();
       size_t toRead = min<size_t>( min<size_t>(size, BUF_SZ),
                                contentLength - bytesRead );
 
       int c = stream->readBytes(buff, toRead);
-      if (c > 0){
-        f.write(buff, c);
-        bytesRead += c;
-        // Progress event (optionnel)
-        int pct = (bytesRead * 100) / contentLength;
-        updateStatus.progressAuto = pct;
-      } 
+      if (c <= 0){
+        updateLog("ECHEC: readBytes=%d a %lld / %lld octets | Heap: %u | RSSI: %d",
+                      c, bytesRead, contentLength, ESP.getFreeHeap(), WiFi.RSSI());
+        updateStatus.statusAuto = "Erreur lecture";
+        f.close();
+        heap_caps_free(buff);
+        clientWeb.end();
+        return false;
+      }
+
+      size_t written = f.write(buff, c);
+      if (written != (size_t)c) {
+        updateLog("ECHEC: ecriture LittleFS %u / %d octets | libre: %u",
+                      written, c, LittleFS.totalBytes() - LittleFS.usedBytes());
+        updateStatus.statusAuto = "Erreur ecriture disque";
+        f.close();
+        heap_caps_free(buff);
+        clientWeb.end();
+        return false;
+      }
+
+      bytesRead += c;
+      int pct = (bytesRead * 100) / contentLength;
+      updateStatus.progressAuto = pct;
+
+      // Log progression tous les 10%
+      if (pct / 10 > lastLoggedPct / 10) {
+        lastLoggedPct = pct;
+        updateLog("%d%% (%lld / %lld) | Heap: %u | RSSI: %d | %lu ms",
+                      pct, bytesRead, contentLength,
+                      ESP.getFreeHeap(), WiFi.RSSI(),
+                      millis() - downloadStart);
+      }
     }
     heap_caps_free(buff);
     f.close();
 
+    updateLog("Telechargement OK: %lld octets en %lu ms",
+                  bytesRead, millis() - downloadStart);
+    updateLog("Heap apres DL: %u | PSRAM: %u",
+                  ESP.getFreeHeap(), ESP.getFreePsram());
+
   } else {
-    log_e("Cannot download firmware file. Only HTTP response 200: OK is supported. Double check firmware location #defined in UPD_FILE.");
+    updateLog("ECHEC: HTTP %d (attendu 200)", resp);
     return false;
   }
   clientWeb.end();
+  updateLog("====== TELECHARGEMENT REUSSI ======");
   return true;
 }
 
+
+// ============================================================================
+// GESTIONNAIRE DE FICHIERS LITTLEFS - desactive temporairement
+// ============================================================================
+
+/* GESTIONNAIRE DE FICHIERS - desactive temporairement
+static void listFilesRecursive(AsyncResponseStream *response, const char* dirPath,
+                                int &fileCount, size_t &totalSize) {
+    File root = LittleFS.open(dirPath);
+    if (!root || !root.isDirectory()) {
+        if (root) root.close();
+        return;
+    }
+    File file = root.openNextFile();
+    while (file) {
+        vTaskDelay(1);
+        if (file.isDirectory()) {
+            String subdir = String(dirPath);
+            if (subdir != "/") subdir += "/";
+            subdir += file.name();
+            file.close();
+            listFilesRecursive(response, subdir.c_str(), fileCount, totalSize);
+        } else {
+            size_t sz = file.size();
+            String fullPath = String(dirPath);
+            if (fullPath != "/") fullPath += "/";
+            fullPath += file.name();
+            file.close();
+
+            // Taille humaine
+            char sizeBuf[16];
+            if (sz >= 1048576) snprintf(sizeBuf, sizeof(sizeBuf), "%.1f MB", sz / 1048576.0);
+            else if (sz >= 1024) snprintf(sizeBuf, sizeof(sizeBuf), "%.1f KB", sz / 1024.0);
+            else snprintf(sizeBuf, sizeof(sizeBuf), "%u B", sz);
+
+            response->printf(
+                "<tr data-name=\"%s\" data-size=\"%u\">"
+                "<td style=\"word-break:break-all\">%s</td>"
+                "<td style=\"white-space:nowrap;text-align:right\">%s</td>"
+                "<td style=\"text-align:center\">"
+                "<button class=\"btn btn-sm btn-outline-danger\" onclick=\"del('%s')\">"
+                "<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='currentColor' viewBox='0 0 16 16'>"
+                "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>"
+                "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>"
+                "</svg>"
+                "</button>"
+                "</td>"
+                "</tr>",
+                fullPath.c_str(), sz, fullPath.c_str(), sizeBuf, fullPath.c_str());
+
+            totalSize += sz;
+            fileCount++;
+        }
+        file = root.openNextFile();
+    }
+    root.close();
+}
+
+void handleFilesManager(AsyncWebServerRequest *request) {
+    if (!checkHeapForPage(request)) return;
+
+    AsyncResponseStream *response = request->beginResponseStream("text/html");
+
+    size_t totalBytes = LittleFS.totalBytes();
+    size_t usedBytes = LittleFS.usedBytes();
+    size_t freeBytes = totalBytes - usedBytes;
+    int usedPct = (usedBytes * 100) / totalBytes;
+
+    char totalStr[16], usedStr[16], freeStr[16];
+    snprintf(totalStr, sizeof(totalStr), "%.1f MB", totalBytes / 1048576.0);
+    snprintf(usedStr, sizeof(usedStr), "%.1f MB", usedBytes / 1048576.0);
+    snprintf(freeStr, sizeof(freeStr), "%.1f MB", freeBytes / 1048576.0);
+
+    // HTML header
+    response->print(F("<html>"));
+    response->print(FPSTR(HTTP_HEADER));
+    response->print(FPSTR(HTTP_MENU));
+
+    // Page content
+    response->print(F("<div class='container-fluid' style='max-width:900px;margin-top:20px'>"
+        "<div class='d-flex justify-content-between align-items-center mb-3'>"
+        "<h4 style='margin:0'>Gestionnaire de fichiers</h4>"
+        "<a href='/update' class='btn btn-outline-secondary btn-sm'>Retour</a>"
+        "</div>"));
+
+    // Disk usage bar
+    response->printf(
+        "<div class='card p-3 mb-3'>"
+        "<div class='d-flex justify-content-between mb-1'>"
+        "<span><b>Espace disque</b></span>"
+        "<span>%s utilises / %s total (<b>%s libres</b>)</span>"
+        "</div>"
+        "<div class='progress' style='height:20px'>"
+        "<div id='diskBar' class='progress-bar %s' role='progressbar' style='width:%d%%'>%d%%</div>"
+        "</div>"
+        "</div>",
+        usedStr, totalStr, freeStr,
+        usedPct > 80 ? "bg-danger" : usedPct > 60 ? "bg-warning" : "bg-success",
+        usedPct, usedPct);
+
+    // Search + file count
+    response->print(F(
+        "<div class='d-flex justify-content-between align-items-center mb-2'>"
+        "<input id='search' class='form-control form-control-sm' style='max-width:300px' "
+        "type='text' placeholder='Filtrer...' oninput='filterFiles()'>"
+        "<span id='fileCount' class='text-muted'></span>"
+        "</div>"));
+
+    // Table header
+    response->print(F(
+        "<div style='max-height:60vh;overflow-y:auto'>"
+        "<table class='table table-sm table-hover' id='fileTable'>"
+        "<thead style='position:sticky;top:0;background:white'>"
+        "<tr>"
+        "<th style='cursor:pointer' onclick='sortTable(0)'>Fichier</th>"
+        "<th style='cursor:pointer;width:100px;text-align:right' onclick='sortTable(1)'>Taille</th>"
+        "<th style='width:50px'></th>"
+        "</tr>"
+        "</thead>"
+        "<tbody id='fileBody'>"));
+
+    // List all files recursively
+    int fileCount = 0;
+    size_t totalSize = 0;
+    listFilesRecursive(response, "/", fileCount, totalSize);
+
+    // Close table
+    response->print(F("</tbody></table></div>"));
+
+    // File count
+    response->printf("<script>document.getElementById('fileCount').textContent='%d fichiers';</script>", fileCount);
+
+    // JavaScript
+    response->print(F(
+        "<script>"
+        "function filterFiles(){"
+          "var s=document.getElementById('search').value.toLowerCase();"
+          "var rows=document.querySelectorAll('#fileBody tr');"
+          "var c=0;"
+          "rows.forEach(function(r){"
+            "var show=r.getAttribute('data-name').toLowerCase().indexOf(s)>-1;"
+            "r.style.display=show?'':'none';"
+            "if(show)c++;"
+          "});"
+          "document.getElementById('fileCount').textContent=c+' fichiers';"
+        "}"
+        "function del(path){"
+          "if(!confirm('Supprimer '+path+' ?'))return;"
+          "fetch('/deleteFile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},"
+          "body:'path='+encodeURIComponent(path)})"
+          ".then(r=>r.json()).then(d=>{"
+            "if(d.ok){"
+              "var row=document.querySelector('tr[data-name=\"'+path+'\"]');"
+              "if(row)row.remove();"
+              "document.getElementById('diskBar').style.width=d.usedPct+'%';"
+              "document.getElementById('diskBar').textContent=d.usedPct+'%';"
+              "document.getElementById('diskBar').className='progress-bar '+(d.usedPct>80?'bg-danger':d.usedPct>60?'bg-warning':'bg-success');"
+              "filterFiles();"
+            "}else{alert('Erreur: '+d.error);}"
+          "}).catch(e=>alert('Erreur: '+e));"
+        "}"
+        "function sortTable(col){"
+          "var body=document.getElementById('fileBody');"
+          "var rows=Array.from(body.querySelectorAll('tr'));"
+          "var asc=body.getAttribute('data-sort-asc')==col?0:1;"
+          "body.setAttribute('data-sort-asc',asc?col:-1);"
+          "rows.sort(function(a,b){"
+            "if(col==1){"
+              "var va=parseInt(a.getAttribute('data-size'));"
+              "var vb=parseInt(b.getAttribute('data-size'));"
+              "return asc?va-vb:vb-va;"
+            "}else{"
+              "var va=a.getAttribute('data-name');"
+              "var vb=b.getAttribute('data-name');"
+              "return asc?va.localeCompare(vb):vb.localeCompare(va);"
+            "}"
+          "});"
+          "rows.forEach(function(r){body.appendChild(r);});"
+        "}"
+        "sortTable(1);"  // Tri par taille decroissant par defaut
+        "</script>"));
+
+    response->print(footer());
+    response->print(F("</html>"));
+
+    request->send(response);
+}
+
+void handleDeleteFile(AsyncWebServerRequest *request) {
+    if (!request->hasArg("path")) {
+        request->send(400, "application/json", "{\"ok\":false,\"error\":\"missing path\"}");
+        return;
+    }
+    String path = request->arg("path");
+
+    // Protection path traversal
+    if (path.indexOf("..") >= 0) {
+        request->send(400, "application/json", "{\"ok\":false,\"error\":\"invalid path\"}");
+        return;
+    }
+
+    if (!LittleFS.exists(path)) {
+        request->send(404, "application/json", "{\"ok\":false,\"error\":\"file not found\"}");
+        return;
+    }
+
+    if (!LittleFS.remove(path)) {
+        request->send(500, "application/json", "{\"ok\":false,\"error\":\"delete failed\"}");
+        return;
+    }
+
+    size_t totalBytes = LittleFS.totalBytes();
+    size_t usedBytes = LittleFS.usedBytes();
+    int usedPct = (usedBytes * 100) / totalBytes;
+
+    char buf[128];
+    snprintf(buf, sizeof(buf), "{\"ok\":true,\"usedPct\":%d,\"free\":%u}", usedPct, totalBytes - usedBytes);
+    request->send(200, "application/json", buf);
+}
+*/  // FIN GESTIONNAIRE DE FICHIERS
+
+// ============================================================================
 
 void handleToolUpdate(AsyncWebServerRequest *request)
 {
@@ -15663,186 +16032,202 @@ void handleSaveWifi(AsyncWebServerRequest *request)
 void handleConfigDevices(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
-  String result;
 
-  result = F("<html>");
-  result += FPSTR(HTTP_HEADER);
-  
-  result += F("<style>");
-  result += F(".device-card-container { padding: 8px; }");
-  result += F(".config-card { background: #fff; border: none; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); transition: transform 0.2s, box-shadow 0.2s; overflow: hidden; }");
-  result += F(".config-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }");
-  result += F(".card-header-cfg { background: #fff; padding: 12px 16px; }");
-  result += F(".card-header-cfg a { color: #222; text-decoration: none; font-weight: 600; font-size: 14px; display: flex; align-items: center; }");
-  result += F(".card-header-cfg a:hover { color: #6c757d; opacity: 0.95; }");
-  result += F(".card-header-cfg svg { flex-shrink: 0; margin-right: 8px; width: 16px; height: 16px; }");
-  result += F(".config-card .card-body { border-top: none; }");
-  result += F(".config-card .card-body table td { padding: 6px 4px; border: none; }");
-  result += F(".config-card .btn-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e9ecef; }");
-  result += F(".config-card .btn { padding: 6px 10px; display: inline-flex; align-items: center; justify-content: center; }");
-  result += F(".config-card .btn svg { width: 16px; height: 16px; flex-shrink: 0; }");
-  result += F("@media (max-width: 576px) {");
-  result += F("  .config-card { border-radius: 10px; }");
-  result += F("  .card-header-cfg { padding: 10px 12px; }");
-  result += F("  .card-header-cfg a { font-size: 13px; }");
-  result += F("  .config-card .btn-actions { justify-content: center; }");
-  result += F("  .config-card .btn { padding: 5px 8px; }");
-  result += F("  .config-card .btn svg { width: 14px; height: 14px; }");
-  result += F("}");
-  result += F("</style>");
-  
-  result += FPSTR(HTTP_MENU);
-  result += FPSTR(HTTP_CONFIG_DEVICES_ZIGBEE);
-  result+=footer();
-  result = getMenuGeneralZigbee(result, "devices");
-  result.replace("{{FormattedDate}}", FormattedDate);
-  result += F("</html>");
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
 
-  String str = "";
-  String zdevices="";
-   int exist = 0;
+  // === 1. Header HTML + CSS ===
+  response->print(F("<html>"));
+  response->print(FPSTR(HTTP_HEADER));
 
-  for (size_t ident = 0; ident < devices.size(); ident++) 
+  response->print(F("<style>"
+    ".device-card-container{padding:8px}"
+    ".config-card{background:#fff;border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);transition:transform 0.2s,box-shadow 0.2s;overflow:hidden}"
+    ".config-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,0.12)}"
+    ".card-header-cfg{background:#fff;padding:12px 16px}"
+    ".card-header-cfg a{color:#222;text-decoration:none;font-weight:600;font-size:14px;display:flex;align-items:center}"
+    ".card-header-cfg a:hover{color:#6c757d;opacity:0.95}"
+    ".card-header-cfg svg{flex-shrink:0;margin-right:8px;width:16px;height:16px}"
+    ".config-card .card-body{border-top:none}"
+    ".config-card .card-body table td{padding:6px 4px;border:none}"
+    ".config-card .btn-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid #e9ecef}"
+    ".config-card .btn{padding:6px 10px;display:inline-flex;align-items:center;justify-content:center}"
+    ".config-card .btn svg{width:16px;height:16px;flex-shrink:0}"
+    "@media(max-width:576px){"
+    ".config-card{border-radius:10px}"
+    ".card-header-cfg{padding:10px 12px}"
+    ".card-header-cfg a{font-size:13px}"
+    ".config-card .btn-actions{justify-content:center}"
+    ".config-card .btn{padding:5px 8px}"
+    ".config-card .btn svg{width:14px;height:14px}"
+    "}"
+    "</style>"));
+
+  // === 2. Menu ===
+  streamSection(response, HTTP_MENU);
+
+  // === 3. Page template (inline au lieu de HTTP_CONFIG_DEVICES_ZIGBEE + getMenuGeneralZigbee) ===
+  response->print(F("<div class='row p-4 justify-content-md-center'>"
+    "<div class='col-sm-2'><div class='btn-group-horizontal'>"));
+
+  // Menu zigbee inline (bouton "Appareils" disabled, "Config" actif)
+  {
+    String menuZigbee = FPSTR(HTTP_CONFIG_MENU_ZIGBEE);
+    menuZigbee.replace("{{menu_config_devices}}", "disabled");
+    menuZigbee.replace("{{menu_config_zigbee}}", "");
+    response->print(menuZigbee);
+  }
+
+  response->print(F("</div></div><div class='col-sm-10'>"
+    "<h4>Config appareils Zigbee</h4>"
+    "<div class='d-flex justify-content-end'>"
+    "<a class='btn btn-primary mb-1' href='/assistDevice' style='width:120px;height:64px;'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
+    "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+    "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
+    "</svg><br> Ajouter</a></div><br>"
+    "<h5>Liste des appareils</h5>"
+    "<div class='row g-4' style='font-size:12px;'>"));
+
+  // Script OTAUpdateBar
+  response->print(F("<script>"
+    "function OTAUpdateBar(id){"
+    "$.ajax({url:'/OTAUpdateBar?id='+id,type:'GET',success:function(data){"
+    "if(data>=0){"
+    "$('#uploadOTA'+id).html('<div align=\"center\">En cours ...</div><progress value=\"'+data+'\" max=\"100\" style=\"width:100%\">'+data+'%</progress>');"
+    "$('#uploadOTA'+id).show();"
+    "}else{$('#uploadOTA'+id).hide();}"
+    "setTimeout(function(){OTAUpdateBar(id);},5000);"
+    "}});}</script>"));
+
+  // === 4. Boucle devices - streamees une par une ===
+  int exist = 0;
+  bool mqttHA = (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT);
+
+  for (size_t ident = 0; ident < devices.size(); ident++)
   {
     DeviceData* device = devices[ident];
-
     exist++;
-    zdevices += F("<div class='col-12 col-sm-6 col-md-4 col-lg-3 device-card-container'>");
-    zdevices += F("<div class='config-card'>");
-    zdevices += F("<div class='card-header-cfg'>");
-    zdevices += F("<a href='/configDevice?id=");
-    zdevices += device->getDeviceID();
-    zdevices += F("'>");
-    if (LittleFS.exists("/web/img/icon_" + device->getInfo().model +".png"))
-    {
-      zdevices += F("<img src='web/img/icon_");
-      zdevices += device->getInfo().model;
-      zdevices += F(".png'  height='64px'/>");
-    }else{
-      zdevices += F("<img src='web/img/icon_");
-      zdevices += device->getInfo().device_id;
-      zdevices += F(".png'  height='64px'/>");
-    }
-    if (device->getInfo().alias.length() > 0) {
-      zdevices += device->getInfo().alias;
+
+    response->print(F("<div class='col-12 col-sm-6 col-md-4 col-lg-3 device-card-container'>"
+      "<div class='config-card'><div class='card-header-cfg'><a href='/configDevice?id="));
+    response->print(device->getDeviceID());
+    response->print(F("'>"));
+
+    if (LittleFS.exists("/web/img/icon_" + device->getInfo().model + ".png")) {
+      response->print(F("<img src='web/img/icon_"));
+      response->print(device->getInfo().model);
+      response->print(F(".png' height='64px'/>"));
     } else {
-      zdevices += device->getDeviceID();
+      response->print(F("<img src='web/img/icon_"));
+      response->print(device->getInfo().device_id);
+      response->print(F(".png' height='64px'/>"));
     }
-    zdevices += F("</a></div>");
-    zdevices += F("<div class='card-body' style='padding:12px 16px;'>");
-    zdevices += F("<table style='width:100%;font-size:12px;'><tr>");
-    zdevices += F("<td style='color:#6c757d;font-weight:500;'>Manufacturer</td><td style='font-family:Courier New,monospace;text-align:right;'>");
-    zdevices += device->getInfo().manufacturer;
-    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Model</td><td style='font-family:Courier New,monospace;text-align:right;'>");
-    zdevices += device->getInfo().model;
-    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Short Addr</td><td style='font-family:Courier New,monospace;text-align:right;'>");
-    char SAddr[5];
-    int ShortAddr = device->getInfo().shortAddr.toInt();
-    snprintf(SAddr,5, "%04X", ShortAddr);
-    zdevices += SAddr;
-    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Device Id</td><td style='font-family:Courier New,monospace;text-align:right;'>");
-    char devId[5];
-    int DeviceId = device->getInfo().device_id.toInt();
-    snprintf(devId,5, "%04X", DeviceId);
-    zdevices += devId;
-    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Soft Version</td><td style='font-family:Courier New,monospace;text-align:right;'>");
-    zdevices += device->getInfo().software_version;
-    zdevices += F(" <a onClick=\"ZigbeeSendRequest(");
-    zdevices += device->getInfo().shortAddr;
-    zdevices += ",";
-    zdevices += device->getInfo().endpoint;
-    zdevices += ",";
-    zdevices += "0,16384)\">";
-    zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>");
-      zdevices += F("<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>");
-      zdevices += F("<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>");
-    zdevices += F("</svg></a>");
-    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Last seen</td><td style='font-family:Courier New,monospace;text-align:right;'>");
-    zdevices += device->getInfo().lastSeen;
-    zdevices += F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>LQI</td><td style='font-family:Courier New,monospace;text-align:right;'>");
-    zdevices += device->getInfo().LQI;
-    zdevices += F("</td></tr></table>");
-    
-    // Paramétrages
-    zdevices += "<div id='uploadOTA"+device->getDeviceID()+"' style='display:none;margin-top:10px;'><div align='center'>Updating ...</div>";
-    zdevices += "<progress value='"+String(device->otaPercentage)+"' max='100' style='width:100%'>"+String(device->otaPercentage)+"%</progress></div>";
-    zdevices += "<script>";
-    zdevices += "OTAUpdateBar('"+device->getDeviceID()+"');";
-    zdevices += "</script>";
-    
-    
-      // Boutons d'action
-      zdevices += F("<div class='btn-actions'>");
-      
-      // Bouton fiche détaillée de l'appareil
-      zdevices += F("<a href='/configDevice?id=");
-      zdevices += device->getDeviceID();
-      zdevices += F("' class='btn btn-info' title='Fiche appareil'>");
-      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
-      zdevices += F("<path d='M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2z'/>");
-      zdevices += F("<path d='M5 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 5 8m0-2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m0 5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m-1-5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M4 8a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m0 2.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0'/>");
-      zdevices += F("</svg></a>");
-      
-      if (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT )
-      {
-        zdevices += F("<button onclick=\"sendMqttDiscover('");
-        zdevices += device->getInfo().shortAddr;
-        zdevices += F("');\" class='btn btn-warning' title='MQTT Discover'>");
-        zdevices += F("<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='currentColor'>");
-        zdevices += F("<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z'/>");
-        zdevices += F("</svg></button>");
-      }
-      zdevices += F("<a href='/ota?id=");
-      zdevices += device->getDeviceID();
-      zdevices += F("' class='btn btn-warning' title='OTA Update'>");
-      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
-      zdevices += F("<path fill-rule='evenodd' d='M7.646 10.854a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 9.293V5.5a.5.5 0 0 0-1 0v3.793L6.354 8.146a.5.5 0 1 0-.708.708z'/>");
-      zdevices += F("<path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>");
-      zdevices += F("</svg></a>");
 
-      zdevices += F("<button onclick=\"ZigbeeSendRequest(");
-      zdevices += device->getInfo().shortAddr;
-      zdevices += ",";
-      zdevices += device->getInfo().endpoint;
-      zdevices += ",";
-      zdevices += "0,5";
-      zdevices += F(");\" class='btn btn-warning' title='Refresh'>");
-      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
-      zdevices += F("<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>");
-      zdevices += F("<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>");
-      zdevices += F("</svg></button>");
-    
-      zdevices += F("<button onclick=\"deleteDevice('");
-      zdevices += device->getDeviceID();
-      zdevices += F("');\" class='btn btn-danger' title='Supprimer'>");
-      zdevices += F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>");
-      zdevices += F("<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>");
-      zdevices += F("<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>");
-      zdevices += F("</svg></button>");
-    zdevices += F("</div>"); // fin btn-actions
-    zdevices += F("</div>"); // fin card-body
-    zdevices += F("</div></div>"); // fin card et col
-  }
-  // Script JavaScript pour deleteDevice
-  zdevices += F("<script>");
-  zdevices += F("function deleteDevice(devId){");
-  zdevices += F("if(confirm('Are you sure you want to delete this device ?')){");
-  zdevices += F("var xhr=getXhr();");
-  zdevices += F("xhr.onreadystatechange=function(){");
-  zdevices += F("if(xhr.readyState==4){");
-  zdevices += F("if(xhr.status==200){window.location.href='/configDevices';}");
-  zdevices += F("else{alert('Erreur lors de la suppression');}}};");
-  zdevices += F("xhr.open('GET','deleteDevice?devId='+encodeURIComponent(devId),true);");
-  zdevices += F("xhr.send();}}</script>");
+    response->print(device->getInfo().alias.length() > 0 ? device->getInfo().alias : device->getDeviceID());
+    response->print(F("</a></div><div class='card-body' style='padding:12px 16px;'>"
+      "<table style='width:100%;font-size:12px;'><tr>"
+      "<td style='color:#6c757d;font-weight:500;'>Manufacturer</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().manufacturer);
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Model</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().model);
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Short Addr</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->printf("%04X", (unsigned int)device->getInfo().shortAddr.toInt());
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Device Id</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->printf("%04X", (unsigned int)device->getInfo().device_id.toInt());
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Soft Version</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().software_version);
+    response->printf(" <a onClick=\"ZigbeeSendRequest(%s,%s,0,16384)\">",
+      device->getInfo().shortAddr.c_str(), device->getInfo().endpoint.c_str());
+    response->print(F("<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-arrow-clockwise' viewBox='0 0 16 16'>"
+      "<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>"
+      "<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>"
+      "</svg></a>"));
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Last seen</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().lastSeen);
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>LQI</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().LQI);
+    response->print(F("</td></tr></table>"));
 
-  if (exist>0)
-  {
-    result.replace("{{devicesList}}", zdevices);
-  }else{
-    result.replace("{{devicesList}}", "<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> ");
+    // OTA progress bar
+    response->printf("<div id='uploadOTA%s' style='display:none;margin-top:10px;'><div align='center'>Updating ...</div>"
+      "<progress value='%d' max='100' style='width:100%%'>%d%%</progress></div>"
+      "<script>OTAUpdateBar('%s');</script>",
+      device->getDeviceID().c_str(), device->otaPercentage, device->otaPercentage, device->getDeviceID().c_str());
+
+    // Boutons d'action
+    response->print(F("<div class='btn-actions'>"));
+
+    // Fiche appareil
+    response->print(F("<a href='/configDevice?id="));
+    response->print(device->getDeviceID());
+    response->print(F("' class='btn btn-info' title='Fiche appareil'>"
+      "<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+      "<path d='M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2z'/>"
+      "<path d='M5 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 5 8m0-2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m0 5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m-1-5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M4 8a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m0 2.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0'/>"
+      "</svg></a>"));
+
+    // MQTT Discover
+    if (mqttHA) {
+      response->printf("<button onclick=\"sendMqttDiscover('%s');\" class='btn btn-warning' title='MQTT Discover'>",
+        device->getInfo().shortAddr.c_str());
+      response->print(F("<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='currentColor'>"
+        "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z'/>"
+        "</svg></button>"));
+    }
+
+    // OTA
+    response->print(F("<a href='/ota?id="));
+    response->print(device->getDeviceID());
+    response->print(F("' class='btn btn-warning' title='OTA Update'>"
+      "<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+      "<path fill-rule='evenodd' d='M7.646 10.854a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 9.293V5.5a.5.5 0 0 0-1 0v3.793L6.354 8.146a.5.5 0 1 0-.708.708z'/>"
+      "<path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383m.653.757c-.757.653-1.153 1.44-1.153 2.056v.448l-.445.049C2.064 6.805 1 7.952 1 9.318 1 10.785 2.23 12 3.781 12h8.906C13.98 12 15 10.988 15 9.773c0-1.216-1.02-2.228-2.313-2.228h-.5v-.5C12.188 4.825 10.328 3 8 3a4.53 4.53 0 0 0-2.941 1.1z'/>"
+      "</svg></a>"));
+
+    // Refresh
+    response->printf("<button onclick=\"ZigbeeSendRequest(%s,%s,0,5);\" class='btn btn-warning' title='Refresh'>",
+      device->getInfo().shortAddr.c_str(), device->getInfo().endpoint.c_str());
+    response->print(F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+      "<path fill-rule='evenodd' d='M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z'/>"
+      "<path d='M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466'/>"
+      "</svg></button>"));
+
+    // Supprimer
+    response->printf("<button onclick=\"deleteDevice('%s');\" class='btn btn-danger' title='Supprimer'>",
+      device->getDeviceID().c_str());
+    response->print(F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+      "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>"
+      "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>"
+      "</svg></button>"));
+
+    response->print(F("</div></div></div></div>")); // btn-actions, card-body, config-card, col
+
+    vTaskDelay(1); // Eviter watchdog timeout
   }
 
-  request->send(200, F("text/html"), result);
+  // Pas de devices
+  if (exist == 0) {
+    response->print(F("<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div>"));
+  }
+
+  // Script deleteDevice
+  response->print(F("<script>"
+    "function deleteDevice(devId){"
+    "if(confirm('Are you sure you want to delete this device ?')){"
+    "var xhr=getXhr();"
+    "xhr.onreadystatechange=function(){"
+    "if(xhr.readyState==4){"
+    "if(xhr.status==200){window.location.href='/configDevices';}"
+    "else{alert('Erreur lors de la suppression');}}};"
+    "xhr.open('GET','deleteDevice?devId='+encodeURIComponent(devId),true);"
+    "xhr.send();}}</script>"));
+
+  // === 5. Fermer les divs du template + footer ===
+  response->print(F("</div></div>")); // row g-4, col-sm-10
+  response->print(footer());
+  response->print(F("</html>"));
+
+  request->send(response);
 }
 
 // ============================================================
@@ -16905,58 +17290,65 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
   }
 
   // ============================================
-  // 5. PRODUCTION
+  // 5. PRODUCTION (injection)
   // ============================================
-  if (strcmp(ConfigGeneral.Production, "") != 0 && 
-      strcmp(ConfigGeneral.Production, devZLinky->getDeviceID().c_str()) != 0) {
-    
-    DeviceData* devProd = nullptr;
-    for (auto* d : devices) {
-      if (d == nullptr) continue;
-      try {
-        if (d->getDeviceID() == ConfigGeneral.Production) {
-          devProd = d;
-          break;
-        }
-      } catch (...) {
-        continue;
+  if (strcmp(ConfigGeneral.Production, "") != 0) {
+    // Chercher l'attribut 1 (production) — d'abord dans le ZLinky, sinon dans le device production
+    long sumProd = 0;
+    PeriodData* pdProd = nullptr;
+
+    // Essayer dans le ZLinky (attribut 1 stocke ici quand meme device)
+    DeviceEnergyHistory& ehZL = devZLinky->energyHistory;
+    if      (time == "hour")  pdProd = &ehZL.hours;
+    else if (time == "day")   pdProd = &ehZL.days;
+    else if (time == "month") pdProd = &ehZL.months;
+    else if (time == "year")  pdProd = &ehZL.years;
+
+    if (pdProd) {
+      for (auto &kv : pdProd->graph) {
+        auto itv = kv.second.attributes.find(1);
+        if (itv != kv.second.attributes.end()) sumProd += itv->second;
       }
     }
 
-    if (devProd) {
-      DeviceEnergyHistory& ehProd = devProd->energyHistory;
-      PeriodData* pdProd = nullptr;
-      if      (time == "hour")  pdProd = &ehProd.hours;
-      else if (time == "day")   pdProd = &ehProd.days;
-      else if (time == "month") pdProd = &ehProd.months;
-      else if (time == "year")  pdProd = &ehProd.years;
-
-      long sumProd = 0;
-      if (pdProd) {
-        for (auto &kv : pdProd->graph) {
-          ValueMap &vm = kv.second;
-          auto itv = vm.attributes.find(1);
-          if (itv != vm.attributes.end()) {
-            sumProd += itv->second;
+    // Si rien dans le ZLinky, chercher dans le device production separe
+    if (sumProd == 0) {
+      for (auto* d : devices) {
+        if (d == nullptr) continue;
+        if (d->getDeviceID() == String(ConfigGeneral.Production) && d != devZLinky) {
+          DeviceEnergyHistory& ehProd = d->energyHistory;
+          pdProd = nullptr;
+          if      (time == "hour")  pdProd = &ehProd.hours;
+          else if (time == "day")   pdProd = &ehProd.days;
+          else if (time == "month") pdProd = &ehProd.months;
+          else if (time == "year")  pdProd = &ehProd.years;
+          if (pdProd) {
+            for (auto &kv : pdProd->graph) {
+              auto itv = kv.second.attributes.find(1);
+              if (itv != kv.second.attributes.end()) sumProd += itv->second;
+            }
           }
+          break;
         }
       }
+    }
 
-      if (sumProd != 0) {
-        if (!first) json += ",";
-        first = false;
+    if (sumProd != 0) {
+      // sumProd est negatif (injection) => -sumProd est positif pour l'affichage
+      long absProd = (sumProd < 0) ? -sumProd : sumProd;
+      if (!first) json += ",";
+      first = false;
 
-        json += "{\"label\":\"Production\",\"value\":";
-        if (type == "euro") {
-          json += String(-sumProd * getTarif(0, "production") / 1000);
-          json += ",\"unit\":\"€\"";
-        } else {
-          json += String(-sumProd);
-          json += ",\"unit\":\"Wh\"";
-        }
-        json += ",\"color\":\"#27ae60\"";
-        json += "}";
+      json += "{\"label\":\"Injection\",\"value\":";
+      if (type == "euro") {
+        json += String(absProd * getTarif(0, "production") / 1000);
+        json += ",\"unit\":\"€\"";
+      } else {
+        json += String(absProd);
+        json += ",\"unit\":\"Wh\"";
       }
+      json += ",\"color\":\"#27ae60\"";
+      json += "}";
     }
   }
 
@@ -17362,21 +17754,13 @@ void writeEnergyDataWithSubMeters(String& out,
             // La valeur est déjà négative (handleAttribute1 ajoute le signe -)
             out += ",\"1\":";
             out += String(itvProd->second);
-          } else {
-            Serial.printf("[EnergyChart] Prod key=%s: attr1 %s (attrs:%d)\n",
-                          keyStr.c_str(),
-                          itvProd == vmProd.attributes.end() ? "NOT_FOUND" : "ZERO",
-                          vmProd.attributes.size());
           }
-        } else {
-          Serial.printf("[EnergyChart] Prod key=%s: NOT in graph (graph size:%d)\n",
-                        keyStr.c_str(), pdProd->graph.size());
         }
       }
-    } else {
-      Serial.printf("[EnergyChart] Production device '%s' NOT FOUND in devices\n",
-                    ConfigGeneral.Production);
     }
+    // NB : si l'appareil de production configuré est absent des devices, on ignore
+    // silencieusement (pas de Serial.printf par tranche, qui spammait/bloquait la série
+    // pendant la construction du graphe).
   }
 }
 
@@ -17391,32 +17775,10 @@ void writeEnergyDataWithSubMeters(AsyncResponseStream* response,
   response->print(tmp);
 }
 
-void handleLoadEnergyChart(AsyncWebServerRequest* request) {
-  String IEEE = request->arg(static_cast<size_t>(0));
-  String time = request->arg(static_cast<size_t>(1));
-
-  DeviceData* dev = nullptr;
-  for (auto* d : devices) {
-    if (d->getDeviceID() == IEEE) { dev = d; break; }
-  }
-  if (!dev) {
-    request->send(404, "application/json", "[]");
-    return;
-  }
-
-  DeviceEnergyHistory& eh = dev->energyHistory;
-  PeriodData* pd = nullptr;
-  if      (time == "hour")  pd = &eh.hours;
-  else if (time == "day")   pd = &eh.days;
-  else if (time == "month") pd = &eh.months;
-  else if (time == "year")  pd = &eh.years;
-  else {
-    request->send(400, "application/json", "[]");
-    return;
-  }
-
-  esp_task_wdt_reset();
-
+// Construit le JSON du graphe Usage d'électricité pour une période donnée.
+// Extrait de handleLoadEnergyChart afin d'être réutilisé par l'export CSV
+// (garantit que l'export reflète exactement ce que montre le graphe).
+String buildEnergyChartJson(PeriodData* pd, const String& time) {
   // Construction dans un String — garantit Content-Length dans la réponse HTTP,
   // ce qui évite le chunked encoding et assure la compatibilité avec le tunnel.
   String result;
@@ -17504,10 +17866,292 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
   }
 
   result += "]";
+  return result;
+}
 
+void handleLoadEnergyChart(AsyncWebServerRequest* request) {
+  String IEEE = request->arg(static_cast<size_t>(0));
+  String time = request->arg(static_cast<size_t>(1));
+
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d->getDeviceID() == IEEE) { dev = d; break; }
+  }
+  if (!dev) {
+    request->send(404, "application/json", "[]");
+    return;
+  }
+
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+  if      (time == "hour")  pd = &eh.hours;
+  else if (time == "day")   pd = &eh.days;
+  else if (time == "month") pd = &eh.months;
+  else if (time == "year")  pd = &eh.years;
+  else {
+    request->send(400, "application/json", "[]");
+    return;
+  }
+
+  esp_task_wdt_reset();
+  String result = buildEnergyChartJson(pd, time);
   esp_task_wdt_reset();
 
   request->send(200, "application/json", result);
+}
+
+// ============================================================
+// EXPORT CSV (format Excel FR : séparateur ';', BOM UTF-8)
+// ============================================================
+
+// Échappe un champ CSV : entoure de guillemets si nécessaire.
+static String csvEscape(const String& f) {
+  if (f.indexOf(';') < 0 && f.indexOf('"') < 0 &&
+      f.indexOf('\n') < 0 && f.indexOf('\r') < 0) {
+    return f;
+  }
+  String r = f;
+  r.replace("\"", "\"\"");
+  return "\"" + r + "\"";
+}
+
+// Formate un nombre décimal au format français (virgule décimale) pour Excel FR.
+static String csvNum(double v, int dec) {
+  String s = String(v, dec);
+  s.replace(".", ",");
+  return s;
+}
+
+// Export CSV du graphe "Puissance apparente" (historique du jour, pas HH:MM)
+void handleExportPowerChart(AsyncWebServerRequest* request) {
+  String IEEE = request->arg(static_cast<size_t>(0));
+
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d->getDeviceID() == IEEE) { dev = d; break; }
+  }
+  if (!dev) { request->send(404, "text/plain", "Device introuvable"); return; }
+
+  bool isTriphase = (ConfigGeneral.LinkyMode == 2) ||
+                    (ConfigGeneral.LinkyMode == 3) ||
+                    (ConfigGeneral.LinkyMode == 7);
+
+  // Colonnes ordonnées : id d'attribut -> intitulé lisible
+  std::vector<std::pair<int, String>> cols;
+  if (isTriphase) {
+    cols.push_back({1295, "Puissance Ph1 (VA)"});
+    cols.push_back({2319, "Puissance Ph2 (VA)"});
+    cols.push_back({2575, "Puissance Ph3 (VA)"});
+    cols.push_back({1,    "Injection Ph1 (VA)"});
+    cols.push_back({2,    "Injection Ph2 (VA)"});
+    cols.push_back({3,    "Injection Ph3 (VA)"});
+  } else {
+    cols.push_back({1295, "Puissance (VA)"});
+    cols.push_back({1,    "Injection (VA)"});
+  }
+
+  // Limite de puissance souscrite (goal) — même calcul que createPowerGraph
+  long goal = 0;
+  if ((ConfigGeneral.LinkyMode == 0) || (ConfigGeneral.LinkyMode == 2)) {
+    goal = strtol(dev->getValue("0B01", "13").c_str(), 0, 16) * 200;
+  } else {
+    goal = strtol(dev->getValue("0B01", "14").c_str(), 0, 16) * 1000;
+  }
+
+  // Trier les relevés par horodatage (HH:MM, déjà zéro-paddé => ordre lexicographique = chronologique)
+  PowerHistory& ph = dev->powerHistory;
+  std::vector<const DataRecord*> sorted;
+  sorted.reserve(ph.datas.size());
+  for (auto& rec : ph.datas) sorted.push_back(&rec);
+  std::sort(sorted.begin(), sorted.end(),
+            [](const DataRecord* a, const DataRecord* b) { return a->timeStamp < b->timeStamp; });
+
+  String csv;
+  csv.reserve(96 + sorted.size() * 80);
+  csv = "\xEF\xBB\xBF";  // BOM UTF-8
+  csv += "Heure";
+  for (auto& c : cols) { csv += ";"; csv += csvEscape(c.second); }
+  // Colonnes calculées (données du tooltip)
+  csv += ";Consommation totale (VA);Injection totale (VA);Puissance nette (VA)";
+  if (goal > 0) csv += ";Utilisation limite (%);Marge limite (VA)";
+  csv += "\r\n";
+
+  for (auto* rec : sorted) {
+    csv += csvEscape(String(rec->timeStamp.c_str()));
+    for (auto& c : cols) {
+      csv += ";";
+      auto it = rec->values.find(c.first);
+      if (it != rec->values.end()) csv += String(it->second);
+    }
+
+    // Agrégats du tooltip : consommation = part positive des puissances ;
+    // injection = valeur absolue de la part négative des attributs d'injection.
+    long conso = 0, inj = 0;
+    for (auto& c : cols) {
+      auto it = rec->values.find(c.first);
+      if (it == rec->values.end()) continue;
+      long v = it->second;
+      if (c.first == 1295 || c.first == 2319 || c.first == 2575) {
+        if (v > 0) conso += v;
+      } else if (c.first == 1 || c.first == 2 || c.first == 3) {
+        if (v < 0) inj += -v;
+      }
+    }
+    csv += ";"; csv += String(conso);
+    csv += ";"; csv += String(inj);
+    csv += ";"; csv += String(conso - inj);
+    if (goal > 0) {
+      csv += ";"; csv += csvNum((double)conso / goal * 100.0, 1);
+      csv += ";"; csv += String(goal - conso);
+    }
+    csv += "\r\n";
+  }
+
+  String fname = "puissance_apparente_" + String(Year) + "-" + String(Month) + "-" + String(Day) + ".csv";
+  AsyncWebServerResponse* response = request->beginResponse(200, "text/csv; charset=utf-8", csv);
+  response->addHeader("Content-Disposition", "attachment; filename=\"" + fname + "\"");
+  request->send(response);
+}
+
+// Export CSV du graphe "Usage d'électricité" (réutilise buildEnergyChartJson)
+void handleExportEnergyChart(AsyncWebServerRequest* request) {
+  String IEEE = request->arg(static_cast<size_t>(0));
+  String time = request->arg(static_cast<size_t>(1));
+
+  DeviceData* dev = nullptr;
+  for (auto* d : devices) {
+    if (d->getDeviceID() == IEEE) { dev = d; break; }
+  }
+  if (!dev) { request->send(404, "text/plain", "Device introuvable"); return; }
+
+  DeviceEnergyHistory& eh = dev->energyHistory;
+  PeriodData* pd = nullptr;
+  if      (time == "hour")  pd = &eh.hours;
+  else if (time == "day")   pd = &eh.days;
+  else if (time == "month") pd = &eh.months;
+  else if (time == "year")  pd = &eh.years;
+  else { request->send(400, "text/plain", "Periode invalide"); return; }
+
+  esp_task_wdt_reset();
+  String json = buildEnergyChartJson(pd, time);
+
+  SpiRamJsonDocument doc(MAXHEAP);
+  DeserializationError err = deserializeJson(doc, json);
+  if (err) { request->send(500, "text/plain", "Erreur interne"); return; }
+  JsonArray arr = doc.as<JsonArray>();
+
+  // Colonnes candidates : sections tarifaires (hors "0" et "1"), sous-compteurs, production
+  std::vector<std::pair<String, String>> cols;  // clé JSON -> intitulé lisible
+  int arrayLength = sizeof(section) / sizeof(section[0]);
+  for (int i = 0; i < arrayLength; i++) {
+    if (section[i] == "0" || section[i] == "1") continue;
+    int sId = section[i].toInt();
+    String nm = GetNameStatus(97, "0702", sId, "ZLinky_TIC");
+    if (nm == "") nm = section[i];
+    cols.push_back({section[i], nm + " (Wh)"});
+  }
+  for (int sm = 0; sm < ConfigGeneral.subMeterCount; sm++) {
+    if (!ConfigGeneral.subMeters[sm].enabled) continue;
+    String nm = String(ConfigGeneral.subMeters[sm].alias);
+    if (nm == "") nm = "Sous-compteur " + String(sm);
+    cols.push_back({"sub_" + String(sm), nm + " (Wh)"});
+  }
+  if (strcmp(ConfigGeneral.Production, "") != 0) {
+    cols.push_back({"1", "Production (Wh)"});
+  }
+
+  // Ne garder que les colonnes effectivement renseignées
+  std::vector<bool> used(cols.size(), false);
+  for (JsonObject row : arr) {
+    for (size_t c = 0; c < cols.size(); c++) {
+      if (row.containsKey(cols[c].first.c_str())) {
+        long v = row[cols[c].first.c_str()] | 0L;
+        if (v != 0) used[c] = true;
+      }
+    }
+  }
+
+  // Tarifs pour reproduire le calcul de coût du tooltip
+  bool hasProd = (strcmp(ConfigGeneral.Production, "") != 0);
+  double cspe = atof(ConfigGeneral.tarifCSPE);
+  double cta  = atof(ConfigGeneral.tarifCTA);
+  double abo  = atof(ConfigGeneral.tarifAbo);
+  double prixSection256 = getTarif(256, "energy");  // tarif des sous-compteurs (comme le tooltip)
+  double prixProd = getTarif(1, "production");
+  double aboFactor;  // proratisation de l'abonnement/CTA selon la période
+  if      (time == "hour")  aboFactor = 1.0 / (30.0 * 24.0);
+  else if (time == "day")   aboFactor = 1.0 / 30.0;
+  else if (time == "month") aboFactor = 1.0;
+  else                      aboFactor = 12.0;  // year
+
+  String csv;
+  csv.reserve(4096);
+  csv = "\xEF\xBB\xBF";  // BOM UTF-8
+  csv += "Periode";
+  for (size_t c = 0; c < cols.size(); c++) {
+    if (used[c]) { csv += ";"; csv += csvEscape(cols[c].second); }
+  }
+  // Colonnes calculées (données du tooltip)
+  csv += ";Consommation totale (Wh);Conso - Energie (EUR);Conso - Abonnement (EUR);Conso - Taxes (EUR);Conso - Cout total (EUR)";
+  if (hasProd) csv += ";Production totale (Wh);Production - Revenu (EUR);Net (Wh);Facture nette (EUR)";
+  csv += "\r\n";
+
+  for (JsonObject row : arr) {
+    String y = row["y"] | "";
+    csv += csvEscape(y);
+    for (size_t c = 0; c < cols.size(); c++) {
+      if (!used[c]) continue;
+      csv += ";";
+      if (row.containsKey(cols[c].first.c_str())) {
+        long v = row[cols[c].first.c_str()] | 0L;
+        csv += String(v);
+      }
+    }
+
+    // Agrégats du tooltip : coût de consommation décomposé + production + net
+    long totalConso = 0, totalProd = 0;
+    double consoEnergy = 0, consoTax = 0, prodEnergy = 0;
+    for (size_t c = 0; c < cols.size(); c++) {
+      if (!row.containsKey(cols[c].first.c_str())) continue;
+      long v = row[cols[c].first.c_str()] | 0L;
+      const String& key = cols[c].first;
+      if (key.startsWith("sub_")) {
+        if (v > 0) { totalConso += v; consoEnergy += v / 1000.0 * prixSection256; }
+      } else if (key == "1") {
+        long a = (v < 0) ? -v : v;
+        totalProd += a;
+        prodEnergy += a / 1000.0 * prixProd;
+      } else {
+        if (v > 0) {
+          int attrId = key.toInt();
+          totalConso += v;
+          consoEnergy += v / 1000.0 * getTarif(attrId, "energy");
+          consoTax += v / 1000.0 * cspe;
+        }
+      }
+    }
+    double subscription = 0;
+    if (totalConso > 0) { subscription = abo * aboFactor; consoTax += cta * aboFactor; }
+    double consoCost = consoEnergy + subscription + consoTax;
+
+    csv += ";"; csv += String(totalConso);
+    csv += ";"; csv += csvNum(consoEnergy, 2);
+    csv += ";"; csv += csvNum(subscription, 2);
+    csv += ";"; csv += csvNum(consoTax, 2);
+    csv += ";"; csv += csvNum(consoCost, 2);
+    if (hasProd) {
+      csv += ";"; csv += String(totalProd);
+      csv += ";"; csv += csvNum(prodEnergy, 2);
+      csv += ";"; csv += String(totalConso - totalProd);
+      csv += ";"; csv += csvNum(consoCost - prodEnergy, 2);
+    }
+    csv += "\r\n";
+  }
+
+  String fname = "usage_electricite_" + time + "_" + String(Year) + "-" + String(Month) + "-" + String(Day) + ".csv";
+  AsyncWebServerResponse* response = request->beginResponse(200, "text/csv; charset=utf-8", csv);
+  response->addHeader("Content-Disposition", "attachment; filename=\"" + fname + "\"");
+  request->send(response);
 }
 
 void handleLoadLabelEnergy(AsyncWebServerRequest *request)
@@ -18585,21 +19229,45 @@ void APIgetTemplates(AsyncWebServerRequest *request)
 }
 
 void launchUpdateTask() {
-  // Désactive le watchdog si besoin
   esp_task_wdt_reset();
+  // updateStatus.log = "";  // Reset du log a chaque tentative (desactive temporairement)
+
+  updateLog("========================================");
+  updateLog("    DEMARRAGE MISE A JOUR AUTO");
+  updateLog("========================================");
+  updateLog("Heap: %u | Min heap: %u | PSRAM: %u",
+                ESP.getFreeHeap(), esp_get_minimum_free_heap_size(),
+                ESP.getFreePsram());
+  updateLog("WiFi: RSSI=%d dBm | IP=%s",
+                WiFi.RSSI(), WiFi.localIP().toString().c_str());
+  updateLog("LittleFS: %u / %u octets utilises",
+                LittleFS.usedBytes(), LittleFS.totalBytes());
+
   updateStatus.statusAuto = "Téléchargement ...";
   updateStatus.progressAuto = 0;
+
+  unsigned long startTime = millis();
+
   if (checkUpdateFirmware())
   {
+    updateLog("Phase installation... Heap: %u", ESP.getFreeHeap());
     updateStatus.statusAuto = "Installation ...";
     esp_task_wdt_reset();
     untarApplyAndRestore("/bk/update.tar.gz");
+
+    updateLog("Installation terminee en %lu ms | Heap: %u",
+                  millis() - startTime, ESP.getFreeHeap());
+
     executeReboot=true;
     updateStatus.statusAuto = "Mise à jour terminée ...";
     updateStatus.progressAuto = 100;
     updateStatus.rebootRequested = true;
+    updateLog("====== SUCCES - REDEMARRAGE ======");
   }else{
+    updateLog("ECHEC apres %lu ms | Heap: %u | RSSI: %d",
+                  millis() - startTime, ESP.getFreeHeap(), WiFi.RSSI());
     updateStatus.statusAuto = "Problème de téléchargement ...";
+    updateLog("====== ECHEC ======");
   }
 }
 
@@ -18615,17 +19283,725 @@ void handleGetUpdateStatusManuel(AsyncWebServerRequest *request) {
 }
 
 void handleGetUpdateStatusAuto(AsyncWebServerRequest *request) {
-  
+
   String response = "{";
   response += "\"status\":\"" + updateStatus.statusAuto + "\",";
   response += "\"progress\":" + String(updateStatus.progressAuto) + ",";
   response += "\"reboot\":" + String(updateStatus.rebootRequested ? "true" : "false");
   response += "}";
-  
+
   request->send(200, "application/json", response);
 }
 
+/* LOG UPDATE - desactive temporairement
+void handleGetUpdateLog(AsyncWebServerRequest *request) {
+  request->send(200, "text/plain", updateStatus.log.length() > 0 ? updateStatus.log : "(aucun log)");
+}
+*/
 
+
+
+// ===================== Thermostat virtuel — UI & endpoints =====================
+
+// Filtre un device selon le type recherché.
+// kind: 0=capteur température (0402), 1=actionneur on/off (0006/powerSocket),
+//       2=capteur de présence (0406 ou modèle motion/presence), 3=capteur d'ouverture (IAS 0500 ou modèle contact/door)
+static bool thermoDeviceMatch(DeviceData* d, int kind) {
+  switch (kind) {
+    case 0:
+      // Capteur de température : cluster 0x0402 (sonde) ou 0x0201/0 (température locale HVAC/clim)
+      if (d->hasCluster(1026)) return true;
+      if (d->getValue("0402", "0").length() > 0 || d->getValue("0402", "0000").length() > 0) return true;
+      if (d->getValue("0201", "0").length() > 0 || d->getValue("0201", "0000").length() > 0) return true;
+      return false;
+    case 1: {
+      // Prise on/off, ou tout appareil pilotable par action (clim HVAC 0x0201, fil pilote, etc.)
+      if (d->hasCluster(6) || d->getInfo().powerSocket.toInt() == 1) return true;
+      if (d->hasCluster(513)) return true;  // 0x0201 HVAC thermostat
+      TemplateData* tpl = d->getTemplate();
+      return tpl && tpl->ActionSize() > 0;
+    }
+    case 2: {
+      if (d->hasCluster(1030)) return true;  // 0406 occupancy
+      String m = d->getInfo().model; m.toLowerCase();
+      return m.indexOf("motion") >= 0 || m.indexOf("presence") >= 0 ||
+             m.indexOf("occupancy") >= 0 || m.indexOf("fp1") >= 0 || m.indexOf("sml") >= 0;
+    }
+    case 3: {
+      if (d->hasCluster(1280)) return true;  // 0500 IAS Zone
+      String m = d->getInfo().model; m.toLowerCase();
+      return m.indexOf("contact") >= 0 || m.indexOf("door") >= 0 ||
+             m.indexOf("magnet") >= 0 || m.indexOf("ouverture") >= 0;
+    }
+  }
+  return false;
+}
+
+// Construit les <option> d'un <select> de devices, filtrés par type (cf. thermoDeviceMatch).
+static String thermoDeviceOptions(int kind, const String& current) {
+  String opt = "<option value=''>-- Aucun --</option>";
+  for (size_t i = 0; i < devices.size(); i++) {
+    DeviceData* d = devices[i];
+    if (!thermoDeviceMatch(d, kind)) continue;
+    String id = d->getDeviceID();
+    String label = d->getInfo().alias.length() ? d->getInfo().alias : id;
+    opt += "<option value='" + id + "'";
+    if (id == current) opt += " selected";
+    opt += ">" + label + " (" + id + ")</option>";
+  }
+  return opt;
+}
+
+// Cases à cocher des capteurs d'ouverture, pré-cochées selon la zone.
+static String thermoOpenCheckboxes(const VirtualThermostat& t) {
+  String html;
+  for (size_t i = 0; i < devices.size(); i++) {
+    DeviceData* d = devices[i];
+    if (!thermoDeviceMatch(d, 3)) continue;
+    String id = d->getDeviceID();
+    bool checked = false;
+    for (int k = 0; k < t.openSensorCount; k++) {
+      if (id == t.openSensors[k]) { checked = true; break; }
+    }
+    String label = d->getInfo().alias.length() ? d->getInfo().alias : id;
+    html += "<div class='form-check'><input class='form-check-input' type='checkbox' name='open_" + id +
+            "' id='o_" + id + "' " + (checked ? "checked" : "") + ">"
+            "<label class='form-check-label' for='o_" + id + "'>" + label + " (" + id + ")</label></div>";
+  }
+  if (html.length() == 0) html = "<p style='color:#888;font-size:12px;'>Aucun capteur d'ouverture d&eacute;tect&eacute;.</p>";
+  return html;
+}
+
+// Cases à cocher des prises/relais supplémentaires (kind=1), pré-cochées selon la zone.
+static String thermoActuatorCheckboxes(const VirtualThermostat& t) {
+  String html;
+  for (size_t i = 0; i < devices.size(); i++) {
+    DeviceData* d = devices[i];
+    if (!thermoDeviceMatch(d, 1)) continue;
+    String id = d->getDeviceID();
+    bool checked = false;
+    for (int k = 0; k < t.actuatorsExtraCount; k++) {
+      if (id == t.actuatorsExtra[k]) { checked = true; break; }
+    }
+    String label = d->getInfo().alias.length() ? d->getInfo().alias : id;
+    html += "<div class='form-check'><input class='form-check-input' type='checkbox' name='xact_" + id +
+            "' id='x_" + id + "' " + (checked ? "checked" : "") + ">"
+            "<label class='form-check-label' for='x_" + id + "'>" + label + " (" + id + ")</label></div>";
+  }
+  if (html.length() == 0) html = "<p style='color:#888;font-size:12px;'>Aucune prise suppl&eacute;mentaire disponible.</p>";
+  return html;
+}
+
+String tariffLabelForAttr(int attrId);      // défini dans lixee.cpp
+const int* getTariffAvailablePeriods();     // défini dans lixee.cpp
+
+// Cases à cocher des périodes tarifaires du ZLinky (selon le contrat détecté), pré-cochées.
+static String thermoTariffCheckboxes(const VirtualThermostat& t) {
+  DeviceData* lk = nullptr;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() == String(ConfigGeneral.ZLinky)) { lk = devices[i]; break; }
+  }
+  if (!lk) return "<p style='color:#888;font-size:12px;'>Configurez d'abord un compteur ZLinky (Config &rarr; Energie).</p>";
+  String sel = String(",") + t.tariffPeriods + ",";
+  String html;
+  const int* ids = getTariffAvailablePeriods();
+  for (int k = 0; ids[k] >= 0; k++) {
+    int id = ids[k];
+    String name = tariffLabelForAttr(id);
+    bool checked = sel.indexOf("," + String(id) + ",") >= 0;
+    html += "<div class='form-check'><input class='form-check-input' type='checkbox' name='tp_" + String(id) +
+            "' id='tp" + String(id) + "' " + (checked ? "checked" : "") + ">"
+            "<label class='form-check-label' for='tp" + String(id) + "'>" + name + "</label></div>";
+  }
+  if (html.length() == 0) html = "<p style='color:#888;font-size:12px;'>P&eacute;riodes tarifaires non encore d&eacute;tect&eacute;es.</p>";
+  return html;
+}
+
+// <option> des actions disponibles de l'appareil actionneur (depuis son template).
+static String thermoActionOptions(const char* ieee, const String& current) {
+  String opt = "<option value=''>Marche/Arr&ecirc;t simple (on/off)</option>";
+  if (ieee && ieee[0]) {
+    for (size_t i = 0; i < devices.size(); i++) {
+      if (devices[i]->getDeviceID() == String(ieee)) {
+        TemplateData* tpl = devices[i]->getTemplate();
+        if (tpl) {
+          for (int k = 0; k < tpl->ActionSize(); k++) {
+            String nm = tpl->actions[k].name;
+            if (nm.length() == 0) continue;
+            opt += "<option value='" + nm + "'";
+            if (nm == current) opt += " selected";
+            opt += ">" + nm + "</option>";
+          }
+        }
+        break;
+      }
+    }
+  }
+  return opt;
+}
+
+void handleLoadThermostats(AsyncWebServerRequest *request) {
+  request->send(200, F("application/json"), thermostatsToJson());
+}
+
+// Renvoie en JSON les noms d'actions du template d'un appareil (pour peupler les listes Action marche/arrêt).
+void handleDeviceActions(AsyncWebServerRequest *request) {
+  String ieee = request->arg("IEEE");
+  String j = "[";
+  bool first = true;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() == ieee) {
+      TemplateData* tpl = devices[i]->getTemplate();
+      if (tpl) {
+        for (int k = 0; k < tpl->ActionSize(); k++) {
+          String nm = tpl->actions[k].name;
+          if (nm.length() == 0) continue;
+          nm.replace("\\", "\\\\");
+          nm.replace("\"", "\\\"");
+          if (!first) j += ",";
+          first = false;
+          j += "\"" + nm + "\"";
+        }
+      }
+      break;
+    }
+  }
+  j += "]";
+  request->send(200, F("application/json"), j);
+}
+
+void handleSetThermostatSetpoint(AsyncWebServerRequest *request) {
+  if (!request->hasParam("id") || !request->hasParam("value")) {
+    request->send(400, F("application/json"), F("{\"ok\":false}"));
+    return;
+  }
+  int id = request->getParam("id")->value().toInt();
+  float v = request->getParam("value")->value().toFloat();
+  bool ok = setThermostatSetpoint(id, v);
+  request->send(ok ? 200 : 400, F("application/json"), ok ? F("{\"ok\":true}") : F("{\"ok\":false}"));
+}
+
+void handleSetThermostatForce(AsyncWebServerRequest *request) {
+  if (!request->hasParam("id") || !request->hasParam("mode")) {
+    request->send(400, F("application/json"), F("{\"ok\":false}"));
+    return;
+  }
+  int id = request->getParam("id")->value().toInt();
+  int mode = request->getParam("mode")->value().toInt();
+  bool ok = setThermostatForce(id, mode);
+  request->send(ok ? 200 : 400, F("application/json"), ok ? F("{\"ok\":true}") : F("{\"ok\":false}"));
+}
+
+void handleSetThermostatMode(AsyncWebServerRequest *request) {
+  if (!request->hasParam("id") || !request->hasParam("heat")) {
+    request->send(400, F("application/json"), F("{\"ok\":false}"));
+    return;
+  }
+  int id = request->getParam("id")->value().toInt();
+  bool heat = request->getParam("heat")->value().toInt() != 0;
+  bool ok = setThermostatMode(id, heat);
+  request->send(ok ? 200 : 400, F("application/json"), ok ? F("{\"ok\":true}") : F("{\"ok\":false}"));
+}
+
+void handleSetThermostatFrost(AsyncWebServerRequest *request) {
+  if (!request->hasParam("id") || !request->hasParam("on")) {
+    request->send(400, F("application/json"), F("{\"ok\":false}"));
+    return;
+  }
+  int id = request->getParam("id")->value().toInt();
+  bool on = request->getParam("on")->value().toInt() != 0;
+  bool ok = setThermostatFrost(id, on);
+  request->send(ok ? 200 : 400, F("application/json"), ok ? F("{\"ok\":true}") : F("{\"ok\":false}"));
+}
+
+void handleThermostats(AsyncWebServerRequest *request) {
+  if (!checkHeapForPage(request)) return;
+  PSRAMString result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += F("<div class='container'>"
+              "<div style='margin:1rem 0;'><h3>Thermostats</h3></div>"
+              "<div class='row' id='thermoCards'></div>"
+              "<div id='thermoEmpty' style='display:none;color:#888;'>Aucune zone configur&eacute;e. Rendez-vous dans <b>Config &rarr; Thermostat</b> pour en cr&eacute;er une.</div>"
+              "</div>");
+  result += F("<script>"
+    "function tFetch(u){return fetch(u,{headers:{'X-Requested-With':'XMLHttpRequest'}});}"
+    "var tZones=[];"
+    "function p2c(cx,cy,r,d){var a=(d-90)*Math.PI/180;return [cx+r*Math.cos(a),cy+r*Math.sin(a)];}"
+    "function arc(cx,cy,r,a0,a1){var s=p2c(cx,cy,r,a0),e=p2c(cx,cy,r,a1);var f=(a1-a0)<=180?'0':'1';"
+      "return 'M'+s[0].toFixed(1)+' '+s[1].toFixed(1)+' A'+r+' '+r+' 0 '+f+' 1 '+e[0].toFixed(1)+' '+e[1].toFixed(1);}"
+    "function tLoad(){tFetch('/loadThermostats').then(function(r){return r.json();}).then(tRender).catch(function(){});}"
+    "function tRender(z){tZones=z;var c=document.getElementById('thermoCards');"
+      "document.getElementById('thermoEmpty').style.display=z.length?'none':'block';"
+      "var h='';for(var i=0;i<z.length;i++){var t=z[i];"
+        "var active=t.actualOn;var tv=(t.temp===null||t.temp===undefined)?null:t.temp;"
+        "var mc=t.heating?(active?'#e74c3c':'#f1948a'):(active?'#2980b9':'#aed6f1');"
+        "var mic=active?(t.heating?'#e67e22':'#2980b9'):'#adb5bd';"
+        "var icon=t.heating?(\"<svg width='18' height='18' viewBox='0 0 16 16' fill='\"+mic+\"'><path d='M8 16c3.314 0 6-2 6-5.5 0-1.5-.5-4-2.5-6 .25 1.5-1.25 2-1.25 2C11 4 9 .5 6 0c.357 2 .5 4-2 6-1.25 1-2 2.729-2 4.5C2 14 4.686 16 8 16m0-1c-1.657 0-3-1-3-2.75 0-.75.25-2 1.25-3C6.125 10 7 10.5 7 10.5c-.375-1.25.5-3.25 2-3.5-.179 1-.25 2 1 3 .625.5 1 1.364 1 2.25C12 14 10.657 15 8 15'/></svg>\"):(\"<svg width='18' height='18' viewBox='0 0 16 16' fill='\"+mic+\"'><path d='M8 16a.5.5 0 0 1-.5-.5v-1.293l-.646.647a.5.5 0 0 1-.707-.708L7.5 12.793V8.866l-3.4 1.963-.496 1.85a.5.5 0 1 1-.966-.26l.237-.882-1.12.646a.5.5 0 0 1-.5-.866l1.12-.646-.884-.237a.5.5 0 1 1 .26-.966l1.848.495L6.5 8 3.102 6.037l-1.849.495a.5.5 0 0 1-.259-.966l.883-.237-1.12-.646a.5.5 0 1 1 .5-.866l1.12.646-.237-.883a.5.5 0 0 1 .966-.259l.495 1.849L7.5 7.134V3.207L6.147 1.854a.5.5 0 1 1 .707-.708l.646.647V.5a.5.5 0 0 1 1 0v1.293l.647-.647a.5.5 0 1 1 .707.708L8.5 3.207v3.927l3.4-1.963.495-1.849a.5.5 0 1 1 .966.259l-.236.883 1.12-.646a.5.5 0 0 1 .5.866l-1.12.646.883.237a.5.5 0 1 1-.26.966l-1.848-.495L8.866 8l3.398 1.963 1.849-.495a.5.5 0 0 1 .259.966l-.883.237 1.12.646a.5.5 0 0 1-.5.866l-1.12-.646.236.883a.5.5 0 1 1-.966.259l-.495-1.849L8.5 8.866v3.927l1.354 1.353a.5.5 0 0 1-.708.708L8.5 14.207V15.5a.5.5 0 0 1-.5.5z'/></svg>\");"
+        "var stat;if(!t.sensorValid){stat='<span style=\"color:#e74c3c;\">Capteur HS</span>';}"
+        "else if(t.forceMode==1){stat='<span style=\"color:#8e44ad;\">Marche forc&eacute;e</span>';}"
+        "else if(t.forceMode==2){stat='<span style=\"color:#8e44ad;\">Arr&ecirc;t forc&eacute;</span>';}"
+        "else if(t.windowOpen){stat='<span style=\"color:#e67e22;\">Fen&ecirc;tre ouverte</span>';}"
+        "else if(t.hasPresence&&!t.occupied){stat='<span style=\"color:#999;\">Absence</span>';}"
+        "else if(!t.schedActive){stat='<span style=\"color:#9b59b6;\">'+(t.operMode==2?('Tarif '+(t.tariffNow||'')):'Hors plage')+'</span>';}"
+        "else if(t.output&&!t.actualOn){stat='<span style=\"color:#f39c12;\">D&eacute;marrage&hellip;</span>';}"
+        "else if(!t.output&&t.actualOn){stat='<span style=\"color:#f39c12;\">Arr&ecirc;t&hellip;</span>';}"
+        "else{var act=t.heating?'Chauffe':'Rafra&icirc;chit';stat=t.actualOn?act+' ('+t.duty+'%)':'R&eacute;gule';}"
+        "var bs=\"display:inline-flex;align-items:center;gap:4px;background:#f5f6f8;border-radius:14px;padding:3px 8px;font-size:11px;color:#495057;white-space:nowrap;\";"
+        "var ig='#6c757d';"
+        "var icP=\"<svg width='13' height='13' viewBox='0 0 16 16' fill='\"+ig+\"'><path d='M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z'/></svg>\";"
+        "var icD=\"<svg width='13' height='13' viewBox='0 0 16 16' fill='\"+ig+\"'><path d='M3 2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v13h1.5a.5.5 0 0 1 0 1h-13a.5.5 0 0 1 0-1H3zm1 13h8V2H4z'/><path d='M9 9a1 1 0 1 0 2 0 1 1 0 0 0-2 0'/></svg>\";"
+        "var b='';"
+        "if(t.hasPresence){var pv=t.occupied?'Pr&eacute;sent':'Absent';b+=\"<span style='\"+bs+\"'>\"+icP+\"<span>\"+pv+\"</span></span>\";}"
+        "if(t.openCount>0){var ov=t.windowOpen?'Ouvert':'Ferm&eacute;';b+=\"<span style='\"+bs+\"'>\"+icD+\"<span>\"+ov+\"</span></span>\";}"
+        "var mn=5,mx=35;function ang(v){return 225+(Math.max(mn,Math.min(mx,v))-mn)/(mx-mn)*270;}"
+        "var cur=(tv===null)?null:p2c(105,105,86,ang(tv));"
+        "var lo=p2c(105,105,104,225),hi=p2c(105,105,104,495);"
+        "var prog=\"<path d='\"+arc(105,105,86,225,ang(t.setpoint))+\"' fill='none' stroke='\"+mc+\"' stroke-width='14' stroke-linecap='round'/>\";"
+        "var sa=ang(t.setpoint);var dz='';"
+        /* Animation seulement si l'actionneur rapproche la temperature de la consigne :
+           chauffe utile si temp<consigne, froid utile si temp>consigne. Sinon (ex. marche forcee
+           a contre-sens) : pas de segment anime (couleur + icone restent allumees). */
+        "if(active&&tv!==null&&Math.abs(tv-t.setpoint)>0.2&&(t.heating?(tv<t.setpoint):(tv>t.setpoint))){var ca=ang(tv);var a0=Math.min(sa,ca),a1=Math.max(sa,ca);"
+          "var off=(ca<sa)?'32;0':'0;32';"  /* flux toujours du point temperature actuelle vers le point consigne (sens valide empiriquement) */
+          "var g0=t.heating?'#ff6b35':'#1e88e5',g1=t.heating?'#ffd166':'#80d8ff';"
+          "dz=\"<defs><linearGradient id='dg\"+t.id+\"' gradientUnits='userSpaceOnUse' x1='10' y1='10' x2='200' y2='200'><stop offset='0' stop-color='\"+g0+\"'/><stop offset='1' stop-color='\"+g1+\"'/></linearGradient></defs>\"+"
+             "\"<path d='\"+arc(105,105,86,a0,a1)+\"' fill='none' stroke='url(#dg\"+t.id+\")' stroke-width='14' stroke-linecap='round' stroke-dasharray='5 11'>\"+"
+             "\"<animate attributeName='stroke-dashoffset' values='\"+off+\"' dur='1.4s' repeatCount='indefinite'/>\"+"
+             "\"<animate attributeName='opacity' values='0.55;1;0.55' dur='1.8s' repeatCount='indefinite'/></path>\";}"
+        "var dot=(cur===null)?'':(\"<circle cx='\"+cur[0].toFixed(1)+\"' cy='\"+cur[1].toFixed(1)+\"' r='7' fill='#fff' stroke='#495057' stroke-width='3'/>\");"
+        "h+=\"<div class='col-lg-4 col-md-6 col-12'><div class='card' style='padding:18px;margin-bottom:1rem;position:relative;'>\";"
+        "h+=\"<div style='display:flex;align-items:center;justify-content:space-between;'><h5 style='margin:0;font-size:17px;'>\"+t.name+\"</h5>\";"
+        "h+=\"<a href='/editThermostat?id=\"+t.id+\"' title='Configurer' style='line-height:0;color:#9aa0a6;'><svg width='18' height='18' viewBox='0 0 16 16' fill='currentColor'><path d='M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0'/><path d='M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z'/></svg></a></div>\";"
+        "h+=\"<div style='position:relative;text-align:center;'><svg viewBox='0 0 210 210' style='width:100%;max-width:240px;'>\";"
+        "h+=\"<path d='\"+arc(105,105,86,225,495)+\"' fill='none' stroke='#e9ecef' stroke-width='14' stroke-linecap='round'/>\"+prog+dz;"
+        "h+=dot;"
+        "h+=\"<text x='\"+lo[0].toFixed(0)+\"' y='\"+(lo[1]+4).toFixed(0)+\"' text-anchor='middle' font-size='13' fill='#adb5bd'>\"+mn+\"&#176;</text>\";"
+        "h+=\"<text x='\"+hi[0].toFixed(0)+\"' y='\"+(hi[1]+4).toFixed(0)+\"' text-anchor='middle' font-size='13' fill='#adb5bd'>\"+mx+\"&#176;</text></svg>\";"
+        "h+=\"<div style='position:absolute;top:50%;left:0;right:0;transform:translateY(-50%);text-align:center;'>\";"
+        "h+=\"<div style='font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.5px;'>Consigne</div>\";"
+        "h+=\"<div style='font-size:40px;font-weight:700;line-height:1.05;'>\"+t.setpoint.toFixed(1)+\"<span style='font-size:18px;font-weight:400;'>&deg;C</span></div>\";"
+        "h+=\"<div style='margin-top:8px;line-height:0;'>\"+icon+\"</div>\";"
+        "h+=\"<div style='margin-top:4px;font-size:12px;color:#888;'>\"+stat+\"</div>\";"
+        "h+=\"</div></div>\";"
+        "h+=\"<div style='text-align:center;font-size:13px;color:#6c757d;margin-top:2px;'>Actuelle : <b style='color:#343a40;'>\"+(tv===null?'&mdash;':(tv.toFixed(1)+' &deg;C'))+\"</b></div>\";"
+        "h+=\"<div style='display:flex;justify-content:center;align-items:center;gap:24px;margin-top:8px;'>\";"
+        "h+=\"<button class='btn btn-outline-secondary' style='font-size:24px;width:48px;height:48px;line-height:1;padding:0;border-radius:50%;' onclick='tSet(\"+t.id+\",-0.5)'>&minus;</button>\";"
+        "h+=\"<button class='btn btn-outline-secondary' style='font-size:24px;width:48px;height:48px;line-height:1;padding:0;border-radius:50%;' onclick='tSet(\"+t.id+\",0.5)'>+</button></div>\";"
+        "if(t.reversible){var hm=t.heating?1:0;"
+        "function mb(x,l){var on=(hm==x);return \"<button onclick='tMode(\"+t.id+\",\"+x+\")' style='flex:1;border:1px solid #dee2e6;background:\"+(on?(x?'#e67e22':'#2980b9'):'#fff')+\";color:\"+(on?'#fff':'#6c757d')+\";font-size:12px;padding:5px 0;cursor:pointer;'>\"+l+\"</button>\";}"
+        "h+=\"<div style='display:flex;border-radius:8px;overflow:hidden;margin-top:12px;'>\"+mb(1,'Chaud')+mb(0,'Froid')+\"</div>\";}"
+        "var fm=t.forceMode||0;"
+        "function fb(m,l){var on=(fm==m);return \"<button onclick='tForce(\"+t.id+\",\"+m+\")' style='flex:1;border:1px solid #dee2e6;background:\"+(on?'#6c757d':'#fff')+\";color:\"+(on?'#fff':'#6c757d')+\";font-size:12px;padding:5px 0;cursor:pointer;'>\"+l+\"</button>\";}"
+        "var fr=fb(0,'Auto')+fb(1,'Marche')+fb(2,'Arr&ecirc;t');"
+        "if(t.heating){var gon=(t.frostMode==1);"
+        "fr+=\"<button onclick='tFrost(\"+t.id+\",\"+(gon?0:1)+\")' title='Bascule la consigne sur le hors-gel' style='flex:1;border:1px solid #dee2e6;background:\"+(gon?'#5dade2':'#fff')+\";color:\"+(gon?'#fff':'#6c757d')+\";font-size:12px;padding:5px 0;cursor:pointer;'>Hors-gel</button>\";}"
+        "h+=\"<div style='display:flex;border-radius:8px;overflow:hidden;margin-top:8px;'>\"+fr+\"</div>\";"
+        "h+=\"<div style='display:flex;flex-wrap:nowrap;justify-content:center;align-items:center;gap:6px;margin-top:10px;overflow-x:auto;'>\"+b+\"</div>\";"
+        "h+=\"</div></div>\";"
+      "}c.innerHTML=h;}"
+    "function tSet(id,d){var s=18;for(var i=0;i<tZones.length;i++){if(tZones[i].id===id){s=tZones[i].setpoint;break;}}"
+      "var v=Math.round((s+d)*2)/2;if(v<0)v=0;if(v>40)v=40;"
+      "tFetch('/setThermostatSetpoint?id='+id+'&value='+v).then(function(){tLoad();});}"
+    "function tForce(id,m){tFetch('/setThermostatForce?id='+id+'&mode='+m).then(function(){tLoad();});}"
+    "function tMode(id,h){tFetch('/setThermostatMode?id='+id+'&heat='+h).then(function(){tLoad();});}"
+    "function tFrost(id,on){tFetch('/setThermostatFrost?id='+id+'&on='+on).then(function(){tLoad();});}"
+    "tLoad();setInterval(tLoad,5000);"
+    "</script>");
+  result += footer();
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  response->print(result.c_str());
+  request->send(response);
+}
+
+// Libellé lisible d'un device (alias sinon IEEE) pour les fiches.
+static String thermoDeviceLabel(const char* ieee) {
+  if (ieee == nullptr || ieee[0] == '\0') return "(non d&eacute;fini)";
+  String id(ieee);
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() == id) {
+      String a = devices[i]->getInfo().alias;
+      return a.length() ? a : id;
+    }
+  }
+  return id;  // device introuvable : afficher l'IEEE
+}
+
+// Échappe une chaîne pour un contexte JS entre apostrophes.
+static String jsEscapeSingle(const String& s) {
+  String r = s;
+  r.replace("\\", "\\\\");
+  r.replace("'", "\\'");
+  return r;
+}
+
+// Redirection côté client (navigation normale) vers une URL relative.
+// Évite la redirection HTTP 303 que le relais/app du tunnel ne suit pas correctement.
+void sendThermoRedirect(AsyncWebServerRequest *request, const char *rel) {
+  String h = F("<html><head><meta charset='utf-8'>"
+               "<style>@keyframes ts{to{transform:rotate(360deg)}}</style></head>"
+               "<body style='display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>"
+               "<div style='width:48px;height:48px;border:5px solid #ccc;border-top-color:#2980b9;border-radius:50%;animation:ts 0.8s linear infinite;'></div>"
+               "<script>location.replace('");
+  h += rel;
+  h += F("');</script></body></html>");
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  response->print(h);
+  request->send(response);
+}
+
+// Liste des zones sous forme de fiches (style Zigbee), avec boutons Modifier / Supprimer.
+void handleConfigThermostats(AsyncWebServerRequest *request) {
+  if (!checkHeapForPage(request)) return;
+  PSRAMString result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += F("<style>"
+    ".config-card{background:#fff;border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);transition:transform .2s,box-shadow .2s;height:100%}"
+    ".config-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,0.12)}"
+    ".config-card table td{padding:6px 4px;border:none}"
+    ".config-card .btn-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid #e9ecef}"
+    ".config-card .btn{padding:6px 10px;display:inline-flex;align-items:center;justify-content:center}"
+    ".config-card .btn svg{width:16px;height:16px;flex-shrink:0}"
+    "</style>");
+  result += F("<div class='container'>"
+              "<div style='display:flex;justify-content:space-between;align-items:center;margin:1rem 0;'>"
+              "<h3>Configuration des thermostats</h3>");
+  if (vThermostatCount < MAX_VTHERMOSTATS) {
+    result += F("<a class='btn btn-primary' href='/editThermostat?id=new'>"
+                "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16' style='vertical-align:-2px;'>"
+                "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+                "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
+                "</svg> Ajouter une zone</a>");
+  }
+  result += F("</div><div class='row g-4'>");
+
+  for (int i = 0; i < vThermostatCount; i++) {
+    VirtualThermostat& t = vThermostats[i];
+    result += F("<div class='col-12 col-sm-6 col-md-4'><div class='config-card p-3'>");
+    result += F("<div style='display:flex;align-items:center;gap:10px;margin-bottom:8px;'>"
+                "<img src='web/img/icon_thermostat.png' height='48px' style='flex-shrink:0;'>");
+    result += "<h5 style='margin:0;flex:1;'>" + String(t.name) + "</h5>";
+    // Switch d'activation (remplace le bouton Activer/Désactiver)
+    result += String("<div class='form-check form-switch' style='margin:0;padding-left:2.6em;'>"
+                     "<input class='form-check-input' type='checkbox' role='switch' title='Activer / d&eacute;sactiver' "
+                     "style='width:2.5em;height:1.3em;cursor:pointer;' onchange=\"location.href='/toggleThermostat?id=") + String(i) + "'\" " + (t.enabled ? "checked" : "") + "></div>";
+    result += F("</div>");
+    result += F("<table style='width:100%;font-size:13px;'>");
+    // Mode
+    result += String("<tr><td style='color:#6c757d;'>Mode</td><td style='text-align:right;'>") + (t.heating ? "Chauffage" : "Rafra&icirc;chissement") + "</td></tr>";
+    // Consignes
+    result += "<tr><td style='color:#6c757d;'>Consigne</td><td style='text-align:right;'>" + String(t.setpoint, 1) + " &deg;C</td></tr>";
+    result += "<tr><td style='color:#6c757d;'>Hors-gel</td><td style='text-align:right;'>" + String(t.frostTemp, 1) + " &deg;C</td></tr>";
+    // Capteurs
+    result += "<tr><td style='color:#6c757d;'>Capteur</td><td style='text-align:right;'>" + thermoDeviceLabel(t.sensorIEEE) + "</td></tr>";
+    result += "<tr><td style='color:#6c757d;'>Prise</td><td style='text-align:right;'>" + thermoDeviceLabel(t.actuatorIEEE) +
+              (t.actuatorsExtraCount > 0 ? " <span style='color:#888;'>+" + String(t.actuatorsExtraCount) + "</span>" : String("")) + "</td></tr>";
+    result += String("<tr><td style='color:#6c757d;'>Pr&eacute;sence</td><td style='text-align:right;'>") + (strlen(t.presenceIEEE) ? thermoDeviceLabel(t.presenceIEEE) : String("&mdash;")) + "</td></tr>";
+    result += "<tr><td style='color:#6c757d;'>Ouvertures</td><td style='text-align:right;'>" + String(t.openSensorCount) + "</td></tr>";
+    result += "</table>";
+    result += F("<div class='btn-actions'>");
+    result += "<a class='btn btn-info' href='/editThermostat?id=" + String(i) + "' title='Modifier'>"
+              "<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+              "<path d='M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293zm-9.761 5.175-.106.106-1.528 3.821 3.821-1.528.106-.106A.5.5 0 0 1 5 12.5V12h-.5a.5.5 0 0 1-.5-.5V11h-.5a.5.5 0 0 1-.468-.325'/>"
+              "</svg></a>";
+    result += "<button class='btn btn-danger' onclick=\"delThermo(" + String(i) + ",'" + jsEscapeSingle(String(t.name)) + "')\" title='Supprimer'>"
+              "<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+              "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>"
+              "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>"
+              "</svg></button>";
+    result += F("</div></div></div>");
+  }
+  result += F("</div>");
+  if (vThermostatCount == 0) {
+    result += F("<div align='center' style='color:#888;margin-top:2rem;'>Aucune zone configur&eacute;e. Cliquez sur &laquo; Ajouter une zone &raquo;.</div>");
+  }
+  result += F("</div>"
+              "<script>function delThermo(id,name){if(confirm('Supprimer la zone \"'+name+'\" ?')){window.location.href='/deleteThermostat?id='+id;}}</script>");
+  result += footer();
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  response->print(result.c_str());
+  request->send(response);
+}
+
+// Icônes SVG plates monochromes (grises) pour les libellés du formulaire thermostat.
+#define TIC(p) "<span style='display:inline-flex;align-items:center;vertical-align:-3px;margin-right:6px;'><svg width='15' height='15' viewBox='0 0 16 16' fill='#6c757d'>" p "</svg></span>"
+#define IC_HOME   TIC("<path d='M8.707 1.5a1 1 0 0 0-1.414 0L.646 8.146a.5.5 0 0 0 .708.708L2 8.207V13.5A1.5 1.5 0 0 0 3.5 15h9a1.5 1.5 0 0 0 1.5-1.5V8.207l.646.647a.5.5 0 0 0 .708-.708L13 5.793V2.5a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1.293zM13 7.207V13.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5V7.207l5-5z'/>")
+#define IC_THERMO TIC("<path d='M9.5 12.5a1.5 1.5 0 1 1-2-1.415V6.5a.5.5 0 0 1 1 0v4.585a1.5 1.5 0 0 1 1 1.415'/><path d='M5.5 2.5a2.5 2.5 0 0 1 5 0v7.55a3.5 3.5 0 1 1-5 0zM8 1a1.5 1.5 0 0 0-1.5 1.5v7.987l-.167.15a2.5 2.5 0 1 0 3.333 0l-.166-.15V2.5A1.5 1.5 0 0 0 8 1'/>")
+#define IC_SNOW   TIC("<path d='M8 16a.5.5 0 0 1-.5-.5v-1.293l-.646.647a.5.5 0 0 1-.707-.708L7.5 12.793V8.866l-3.4 1.963-.496 1.85a.5.5 0 1 1-.966-.26l.237-.882-1.12.646a.5.5 0 0 1-.5-.866l1.12-.646-.884-.237a.5.5 0 1 1 .26-.966l1.848.495L6.5 8 3.102 6.037l-1.849.495a.5.5 0 0 1-.259-.966l.883-.237-1.12-.646a.5.5 0 1 1 .5-.866l1.12.646-.237-.883a.5.5 0 0 1 .966-.259l.495 1.849L7.5 7.134V3.207L6.147 1.854a.5.5 0 1 1 .707-.708l.646.647V.5a.5.5 0 0 1 1 0v1.293l.647-.647a.5.5 0 1 1 .707.708L8.5 3.207v3.927l3.4-1.963.495-1.849a.5.5 0 1 1 .966.259l-.236.883 1.12-.646a.5.5 0 0 1 .5.866l-1.12.646.883.237a.5.5 0 1 1-.26.966l-1.848-.495L8.866 8l3.398 1.963 1.849-.495a.5.5 0 0 1 .259.966l-.883.237 1.12.646a.5.5 0 0 1-.5.866l-1.12-.646.236.883a.5.5 0 1 1-.966.259l-.495-1.849L8.5 8.866v3.927l1.354 1.353a.5.5 0 0 1-.708.708L8.5 14.207V15.5a.5.5 0 0 1-.5.5z'/>")
+#define IC_CLOCK  TIC("<path d='M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z'/><path d='M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0'/>")
+#define IC_PLUG   TIC("<path d='M7.5 1v7h1V1z'/><path d='M3 8.812a5 5 0 0 1 2.578-4.375l-.485-.874A6 6 0 1 0 11 3.616l-.501.865A5 5 0 1 1 3 8.812'/>")
+#define IC_PLAY   TIC("<path d='m11.596 8.697-6.363 3.692c-.54.313-1.233-.066-1.233-.697V4.308c0-.63.692-1.01 1.233-.696l6.363 3.692a.802.802 0 0 1 0 1.393'/>")
+#define IC_STOP   TIC("<path d='M3.5 5A1.5 1.5 0 0 1 5 3.5h6A1.5 1.5 0 0 1 12.5 5v6a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 11z'/>")
+#define IC_PERSON TIC("<path d='M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6m2-3a2 2 0 1 1-4 0 2 2 0 0 1 4 0m4 8c0 1-1 1-1 1H3s-1 0-1-1 1-4 6-4 6 3 6 4m-1-.004c-.001-.246-.154-.986-.832-1.664C11.516 10.68 10.289 10 8 10s-3.516.68-4.168 1.332c-.678.678-.83 1.418-.832 1.664z'/>")
+#define IC_DOOR   TIC("<path d='M3 2a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v13h1.5a.5.5 0 0 1 0 1h-13a.5.5 0 0 1 0-1H3zm1 13h8V2H4z'/><path d='M9 9a1 1 0 1 0 2 0 1 1 0 0 0-2 0'/>")
+#define IC_GEAR   TIC("<path d='M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492M5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0'/><path d='M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52zm-2.633.283c.246-.835 1.428-.835 1.674 0l.094.319a1.873 1.873 0 0 0 2.693 1.115l.291-.16c.764-.415 1.6.42 1.184 1.185l-.159.292a1.873 1.873 0 0 0 1.116 2.692l.318.094c.835.246.835 1.428 0 1.674l-.319.094a1.873 1.873 0 0 0-1.115 2.693l.16.291c.415.764-.42 1.6-1.185 1.184l-.291-.159a1.873 1.873 0 0 0-2.693 1.116l-.094.318c-.246.835-1.428.835-1.674 0l-.094-.319a1.873 1.873 0 0 0-2.692-1.115l-.292.16c-.764.415-1.6-.42-1.184-1.185l.159-.291A1.873 1.873 0 0 0 1.945 8.93l-.319-.094c-.835-.246-.835-1.428 0-1.674l.319-.094A1.873 1.873 0 0 0 3.06 4.377l-.16-.292c-.415-.764.42-1.6 1.185-1.184l.292.159a1.873 1.873 0 0 0 2.692-1.115z'/>")
+
+// Formulaire d'édition d'une zone (id=N) ou de création (id=new).
+void handleEditThermostat(AsyncWebServerRequest *request) {
+  if (!checkHeapForPage(request)) return;
+
+  int id = -1;  // -1 = nouvelle zone
+  if (request->hasParam("id")) {
+    String s = request->getParam("id")->value();
+    if (s != "new") id = s.toInt();
+  }
+  VirtualThermostat def;
+  initThermostatDefaults(def);
+  bool existing = (id >= 0 && id < vThermostatCount);
+  VirtualThermostat& t = existing ? vThermostats[id] : def;
+
+  PSRAMString result;
+  result += F("<html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += F("<div class='container' style='max-width:680px;margin-bottom:2rem;'>");
+  result += existing ? ("<h3 class='mt-3'>Modifier : " + String(t.name) + "</h3>") : String("<h3 class='mt-3'>Nouvelle zone</h3>");
+  result += F("<form method='POST' action='/saveThermostat'>");
+  result += "<input type='hidden' name='id' value='" + (existing ? String(id) : String("new")) + "'>";
+
+  // --- Bloc 1 : identité + activation (switch) ---
+  result += F("<div class='card p-4 mb-3'>");
+  result += "<label class='form-label fw-bold'>" IC_HOME "Nom de la zone</label>";
+  result += "<input class='form-control' name='name' placeholder='Ex : Salon' value='" + String(t.name) + "'>";
+  result += String("<div class='form-check form-switch mt-3' style='font-size:18px;'>"
+                   "<input class='form-check-input' type='checkbox' role='switch' name='enabled' id='ckEn' style='width:3em;height:1.5em;cursor:pointer;' ") + (t.enabled ? "checked" : "") +
+            ">"
+            "<label class='form-check-label' for='ckEn' style='padding-left:10px;'>Zone activée</label></div>";
+  result += F("</div>");
+
+  // --- Bloc 2 : régulation (priorité) ---
+  result += F("<div class='card p-4 mb-3'>"
+              "<h5 class='mb-3'>Régulation</h5>"
+              "<label class='form-label'>Mode</label>"
+              "<select class='form-select mb-3' name='heating' id='modeSel'>");
+  result += String("<option value='1'") + (t.heating ? " selected" : "") + ">Chauffage</option>";
+  result += String("<option value='0'") + (!t.heating ? " selected" : "") + ">Rafra&icirc;chissement</option></select>";
+  result += "<label class='form-label'>" IC_THERMO "Consigne (°C)</label>";
+  result += "<input class='form-control' type='number' step='0.5' name='setpoint' value='" + String(t.setpoint, 1) + "'>";
+  result += F("<div class='form-text mb-3'>Température cible à maintenir dans la zone.</div>");
+  // Hors-gel : uniquement en mode chauffage
+  result += F("<div id='frostRow'><label class='form-label'>" IC_SNOW "Hors-gel (°C)</label>");
+  result += "<input class='form-control' type='number' step='0.5' name='frost' value='" + String(t.frostTemp, 1) + "'>";
+  result += F("<div class='form-text'>Sécurité : en mode chauffage, la zone chauffe toujours sous ce seuil, même si elle est éteinte, une fenêtre ouverte ou en cas d'absence.</div></div>"
+              "<script>(function(){var m=document.getElementById('modeSel'),f=document.getElementById('frostRow');"
+              "function u(){f.style.display=m.value=='1'?'':'none';}m.addEventListener('change',u);u();})();</script>");
+  // Fonctionnement : toujours / plages horaires / tarif Linky
+  result += F("<label class='form-label'>" IC_CLOCK "Fonctionnement</label><select class='form-select mb-2' name='operMode' id='operSel'>");
+  result += String("<option value='0'") + (t.operMode == 0 ? " selected" : "") + ">Toujours</option>";
+  result += String("<option value='1'") + (t.operMode == 1 ? " selected" : "") + ">Plages horaires</option>";
+  result += String("<option value='2'") + (t.operMode == 2 ? " selected" : "") + ">Selon tarif Linky</option></select>";
+  result += F("<div id='schedRow'><label class='form-label'>Plages horaires</label>");
+  result += "<input class='form-control' name='schedule' placeholder='06:00-09:00,17:00-23:00' value='" + String(t.schedule) + "'>";
+  result += F("<div class='form-text'>Format <b>HH:MM-HH:MM</b>, séparées par des virgules. La zone régule uniquement pendant ces plages (le hors-gel reste actif).</div></div>");
+  result += F("<div id='tarifRow' style='display:none;'><label class='form-label'>Périodes tarifaires actives</label>"
+              "<div style='border:1px solid #dee2e6;border-radius:8px;padding:10px;'>");
+  result += thermoTariffCheckboxes(t);
+  result += F("</div><div class='form-text'>La zone régule pendant les périodes <b>cochées</b> (le hors-gel reste actif). "
+              "Les périodes proposées dépendent de votre abonnement Linky (Base, HC/HP, Tempo Bleu/Blanc/Rouge).</div></div>");
+  result += F("<script>(function(){var o=document.getElementById('operSel'),s=document.getElementById('schedRow'),n=document.getElementById('tarifRow');"
+              "function u(){s.style.display=o.value=='1'?'':'none';n.style.display=o.value=='2'?'':'none';}o.addEventListener('change',u);u();})();</script>"
+              "</div>");
+
+  // --- Bloc 3 : capteurs ---
+  result += F("<div class='card p-4 mb-3'><h5 class='mb-3'>Capteurs</h5>");
+  result += "<label class='form-label'>" IC_THERMO "Capteur de température</label><select class='form-select' name='sensor'>";
+  result += thermoDeviceOptions(0, String(t.sensorIEEE));
+  result += F("</select><div class='form-text mb-3'>Mesure la température de la zone (indispensable pour réguler).</div>");
+  result += "<label class='form-label'>" IC_PLUG "Appareil piloté principal</label><select class='form-select' id='actSel' name='actuator'>";
+  result += thermoDeviceOptions(1, String(t.actuatorIEEE));
+  result += F("</select><div class='form-text mb-3'>Prise, relais, climatiseur ou radiateur fil pilote qui chauffe / refroidit la zone. C'est lui qui définit les actions ci-dessous.</div>");
+  // Prises supplémentaires : reçoivent exactement la même commande que le principal
+  result += F("<label class='form-label'>" IC_PLUG "Prises supplémentaires <span class='text-muted'>(optionnel)</span></label>"
+              "<div style='border:1px solid #dee2e6;border-radius:8px;padding:10px;margin-bottom:4px;'>");
+  result += thermoActuatorCheckboxes(t);
+  result += F("</div><div class='form-text mb-3'>Prises/relais pilotés <b>en parallèle</b> du principal (même marche/arrêt). Utile pour chauffer une zone avec plusieurs appareils.</div>");
+  // Actions de l'appareil (clim HEAT/COOL/OFF, fil pilote CONFORT/ECO/OFF...) — sinon marche/arrêt simple
+  result += F("<label class='form-label'>" IC_THERMO "Action Chaud</label><select class='form-select' id='aHeat' name='actionHeat'>");
+  result += thermoActionOptions(t.actuatorIEEE, String(t.actionHeat));
+  result += F("</select><div class='form-text mb-2'>Action quand la zone doit <b>chauffer</b> (ex : <b>HEAT</b>, <b>CONFORT</b>). Laissez sur « Marche/Arrêt simple » pour une prise on/off.</div>");
+  result += F("<label class='form-label'>" IC_SNOW "Action Froid <span class='text-muted'>(clim réversible)</span></label><select class='form-select' id='aCool' name='actionCool'>");
+  result += thermoActionOptions(t.actuatorIEEE, String(t.actionCool));
+  result += F("</select><div class='form-text mb-2'>Action quand la zone doit <b>refroidir</b> (ex : <b>COOL</b>). Renseignez <b>Chaud ET Froid</b> pour une clim réversible (le mode sera choisissable sur la vignette).</div>");
+  result += F("<label class='form-label'>" IC_STOP "Action Arrêt</label><select class='form-select' id='aOff' name='actionOff'>");
+  result += thermoActionOptions(t.actuatorIEEE, String(t.actionOff));
+  result += F("</select><div class='form-text mb-3'>Action au repos (ex : <b>OFF</b>, <b>ARRET</b>, <b>ECO</b>).</div>");
+  // Met à jour dynamiquement les listes d'actions selon l'appareil sélectionné
+  result += F("<script>(function(){var sel=document.getElementById('actSel');"
+              "function fill(s,a,cur){var h=\"<option value=''>Marche/Arr&ecirc;t simple (on/off)</option>\";"
+              "for(var i=0;i<a.length;i++){var n=a[i];var e=n.replace(/&/g,'&amp;').replace(/</g,'&lt;');"
+              "h+=\"<option value='\"+e.replace(/'/g,'&#39;')+\"'\"+(n==cur?' selected':'')+\">\"+e+\"</option>\";}s.innerHTML=h;}"
+              "sel.addEventListener('change',function(){var ie=sel.value;"
+              "var H=document.getElementById('aHeat'),C=document.getElementById('aCool'),O=document.getElementById('aOff');"
+              "var hc=H.value,cc=C.value,oc=O.value;"
+              "if(!ie){fill(H,[],'');fill(C,[],'');fill(O,[],'');return;}"
+              "fetch('deviceActions?IEEE='+encodeURIComponent(ie),{headers:{'X-Requested-With':'XMLHttpRequest'}}).then(function(r){return r.json();})"
+              ".then(function(a){fill(H,a,hc);fill(C,a,cc);fill(O,a,oc);}).catch(function(){});});"
+              "})();</script>");
+  result += F("<label class='form-label'>" IC_PERSON "Capteur de présence <span class='text-muted'>(optionnel)</span></label><select class='form-select' name='presence'>");
+  result += thermoDeviceOptions(2, String(t.presenceIEEE));
+  result += F("</select><div class='form-text mb-3'>Si configuré : la chauffe est suspendue en cas d'absence (aucun mouvement depuis 30 min).</div>");
+  result += F("<label class='form-label'>" IC_DOOR "Capteurs d'ouverture <span class='text-muted'>(optionnel, plusieurs possibles)</span></label>"
+              "<div style='border:1px solid #dee2e6;border-radius:8px;padding:10px;'>");
+  result += thermoOpenCheckboxes(t);
+  result += F("</div><div class='form-text'>Si une porte / fenêtre est ouverte, la chauffe est suspendue.</div>"
+              "</div>");
+
+  // --- Bloc 4 : paramètres avancés (repliable + pédagogie) ---
+  result += F("<details class='card p-4 mb-3'>"
+              "<summary style='cursor:pointer;font-weight:600;font-size:17px;'>" IC_GEAR "Paramètres avancés de régulation (TPI)</summary>"
+              "<p class='form-text mt-2'>La régulation <b>TPI</b> (Time Proportional &amp; Integral) module le <i>temps</i> de chauffe sur un cycle pour stabiliser la température sans à-coups. Les valeurs par défaut conviennent à la plupart des installations — ne les modifiez que si la régulation oscille ou réagit mal.</p>");
+  result += "<label class='form-label mt-2'>Durée du cycle (secondes)</label>";
+  result += "<input class='form-control' type='number' name='cycle' value='" + String(t.tpiCycleSec) + "'>";
+  result += F("<div class='form-text mb-3'>Sur chaque cycle, le chauffage est actif une fraction du temps proportionnelle au besoin. <b>Plus court</b> = plus réactif mais plus de commutations ; <b>plus long</b> = plus doux. Recommandé : <b>900 s (15 min)</b> pour un convecteur électrique.</div>");
+  result += "<label class='form-label'>Kp — gain proportionnel</label>";
+  result += "<input class='form-control' type='number' step='0.1' name='kp' value='" + String(t.tpiKp, 2) + "'>";
+  result += F("<div class='form-text mb-3'>Force de réaction à l'écart avec la consigne. <b>Plus élevé</b> = chauffe plus fort quand on est loin du but, mais risque d'<b>oscillations</b> autour de la consigne. Défaut : <b>0,8</b>.</div>");
+  result += "<label class='form-label'>Ki — gain intégral</label>";
+  result += "<input class='form-control' type='number' step='0.05' name='ki' value='" + String(t.tpiKi, 2) + "'>";
+  result += F("<div class='form-text mb-3'>Corrige l'erreur qui <b>persiste dans le temps</b> (évite de stagner juste sous la consigne). Trop élevé = <b>dépassements</b> de la consigne. Défaut : <b>0,1</b>.</div>");
+  result += "<label class='form-label'>Temps ON minimal (secondes)</label>";
+  result += "<input class='form-control' type='number' name='minon' value='" + String(t.minOnSec) + "'>";
+  result += F("<div class='form-text mb-3'>Durée minimale d'allumage : <b>protège l'appareil</b> et évite les cycles marche/arrêt trop rapprochés. Défaut : <b>180 s (3 min)</b>.</div>");
+  result += "<label class='form-label'>Temps OFF minimal (secondes)</label>";
+  result += "<input class='form-control' type='number' name='minoff' value='" + String(t.minOffSec) + "'>";
+  result += F("<div class='form-text mb-3'>Durée minimale d'extinction avant de pouvoir rallumer. Défaut : <b>180 s (3 min)</b>.</div>");
+  result += "<label class='form-label'>Délai avant capteur « HS » (minutes)</label>";
+  result += "<input class='form-control' type='number' name='sensortimeout' value='" + String(t.sensorTimeoutSec / 60) + "'>";
+  result += F("<div class='form-text'>Si le capteur de température n'a envoyé <b>aucune mesure</b> depuis ce délai, il est considéré « HS » et la zone est coupée par sécurité. Augmentez-le si votre capteur ne remonte une valeur que de temps en temps (sur variation). Défaut : <b>60 min</b>.</div>"
+              "</details>");
+
+  // --- Boutons ---
+  result += F("<div style='display:flex;gap:8px;'>"
+              "<input type='submit' class='btn btn-primary' style='flex:1;' value='Enregistrer'>"
+              "<a class='btn btn-secondary' style='flex:1;' href='/configThermostats'>Annuler</a>"
+              "</div></form></div>");
+  result += footer();
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  response->print(result.c_str());
+  request->send(response);
+}
+
+// Enregistre une zone (création si id=new, sinon mise à jour de la zone id).
+void handleSaveThermostat(AsyncWebServerRequest *request) {
+  int id = -1;
+  String sid = request->arg("id");
+  if (sid != "new" && sid.length() > 0) id = sid.toInt();
+
+  int target;
+  if (id >= 0 && id < vThermostatCount) {
+    target = id;  // mise à jour
+  } else {
+    if (vThermostatCount >= MAX_VTHERMOSTATS) {  // plus de place
+      sendThermoRedirect(request, "configThermostats");
+      return;
+    }
+    target = vThermostatCount;  // ajout
+    initThermostatDefaults(vThermostats[target]);
+  }
+
+  VirtualThermostat& t = vThermostats[target];
+  String name = request->arg("name"); name.trim();
+  String sensor = request->arg("sensor"); sensor.trim();
+  String act = request->arg("actuator"); act.trim();
+  String presence = request->arg("presence"); presence.trim();
+  strlcpy(t.name, name.length() ? name.c_str() : "Zone", sizeof(t.name));
+  strlcpy(t.sensorIEEE, sensor.c_str(), sizeof(t.sensorIEEE));
+  strlcpy(t.actuatorIEEE, act.c_str(), sizeof(t.actuatorIEEE));
+  // Prises supplémentaires : cases cochées "xact_<IEEE>" (on exclut le principal pour éviter un double envoi)
+  t.actuatorsExtraCount = 0;
+  {
+    int np = request->params();
+    for (int k = 0; k < np; k++) {
+      const AsyncWebParameter* pr = request->getParam(k);
+      if (pr->name().startsWith("xact_") && t.actuatorsExtraCount < MAX_EXTRA_ACTUATORS) {
+        String ieee = pr->name().substring(5);
+        if (ieee.length() == 0 || ieee == act) continue;  // ignore vide ou identique au principal
+        strlcpy(t.actuatorsExtra[t.actuatorsExtraCount], ieee.c_str(), 20);
+        t.actuatorsExtraCount++;
+      }
+    }
+  }
+  strlcpy(t.actionHeat, request->arg("actionHeat").c_str(), sizeof(t.actionHeat));
+  strlcpy(t.actionCool, request->arg("actionCool").c_str(), sizeof(t.actionCool));
+  strlcpy(t.actionOff, request->arg("actionOff").c_str(), sizeof(t.actionOff));
+  strlcpy(t.presenceIEEE, presence.c_str(), sizeof(t.presenceIEEE));
+  // Capteurs d'ouverture : cases cochées "open_<IEEE>"
+  t.openSensorCount = 0;
+  int nparams = request->params();
+  for (int k = 0; k < nparams; k++) {
+    const AsyncWebParameter* pr = request->getParam(k);
+    if (pr->name().startsWith("open_") && t.openSensorCount < MAX_OPEN_SENSORS) {
+      String ieee = pr->name().substring(5);
+      strlcpy(t.openSensors[t.openSensorCount], ieee.c_str(), 20);
+      if (strlen(t.openSensors[t.openSensorCount]) > 0) t.openSensorCount++;
+    }
+  }
+  t.enabled = request->hasArg("enabled");
+  t.heating = request->arg("heating").toInt() != 0;
+  if (request->hasArg("setpoint")) t.setpoint = request->arg("setpoint").toFloat();
+  if (request->hasArg("frost"))    t.frostTemp = request->arg("frost").toFloat();
+  if (request->hasArg("cycle"))    { int c = request->arg("cycle").toInt(); if (c >= 60) t.tpiCycleSec = c; }
+  if (request->hasArg("kp"))       t.tpiKp = request->arg("kp").toFloat();
+  if (request->hasArg("ki"))       t.tpiKi = request->arg("ki").toFloat();
+  if (request->hasArg("minon"))    t.minOnSec = request->arg("minon").toInt();
+  if (request->hasArg("minoff"))   t.minOffSec = request->arg("minoff").toInt();
+  if (request->hasArg("sensortimeout")) { int m = request->arg("sensortimeout").toInt(); if (m >= 1) t.sensorTimeoutSec = m * 60; }
+  t.operMode = request->arg("operMode").toInt();
+  strlcpy(t.schedule, request->arg("schedule").c_str(), sizeof(t.schedule));
+  // Périodes tarifaires cochées "tp_<id>"
+  {
+    String tp = "";
+    int np2 = request->params();
+    for (int k = 0; k < np2; k++) {
+      const AsyncWebParameter* pr = request->getParam(k);
+      if (pr->name().startsWith("tp_")) {
+        if (tp.length()) tp += ",";
+        tp += pr->name().substring(3);
+      }
+    }
+    strlcpy(t.tariffPeriods, tp.c_str(), sizeof(t.tariffPeriods));
+  }
+
+  if (target == vThermostatCount) vThermostatCount++;  // valider l'ajout
+  saveThermostats();
+
+  sendThermoRedirect(request, "configThermostats");
+}
+
+// Active / désactive une zone (la désactivation coupe l'actionneur).
+void handleToggleThermostat(AsyncWebServerRequest *request) {
+  if (request->hasParam("id")) {
+    int id = request->getParam("id")->value().toInt();
+    if (id >= 0 && id < vThermostatCount) {
+      setThermostatEnabled(id, !vThermostats[id].enabled);
+    }
+  }
+  sendThermoRedirect(request, "configThermostats");
+}
+
+// Supprime la zone id (décale les suivantes) et persiste.
+void handleDeleteThermostat(AsyncWebServerRequest *request) {
+  if (request->hasParam("id")) {
+    int id = request->getParam("id")->value().toInt();
+    if (id >= 0 && id < vThermostatCount) {
+      for (int i = id; i < vThermostatCount - 1; i++) {
+        vThermostats[i] = vThermostats[i + 1];
+      }
+      vThermostatCount--;
+      saveThermostats();
+    }
+  }
+  sendThermoRedirect(request, "configThermostats");
+}
 
 void initWebServer()
 {
@@ -18704,6 +20080,69 @@ void initWebServer()
     if (!checkAuth(request)) return;
     handleStatusEnergy(request);
   });
+
+  // ==================== Thermostat virtuel ====================
+  serverWeb.on("/thermostats", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleThermostats(request);
+  });
+  serverWeb.on("/loadThermostats", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleLoadThermostats(request);
+  });
+  serverWeb.on("/deviceActions", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleDeviceActions(request);
+  });
+  serverWeb.on("/setThermostatSetpoint", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleSetThermostatSetpoint(request);
+  });
+  serverWeb.on("/setThermostatForce", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleSetThermostatForce(request);
+  });
+  serverWeb.on("/setThermostatMode", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleSetThermostatMode(request);
+  });
+  serverWeb.on("/setThermostatFrost", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleSetThermostatFrost(request);
+  });
+  serverWeb.on("/configThermostats", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleConfigThermostats(request);
+  });
+  serverWeb.on("/editThermostat", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleEditThermostat(request);
+  });
+  serverWeb.on("/saveThermostat", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleSaveThermostat(request);
+  });
+  serverWeb.on("/toggleThermostat", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleToggleThermostat(request);
+  });
+  serverWeb.on("/deleteThermostat", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleDeleteThermostat(request);
+  });
+
   /*serverWeb.on("/statusEnergyTV", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
@@ -19056,10 +20495,22 @@ void initWebServer()
     updatePending = true;
   });
   serverWeb.on("/update", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handleToolUpdate(request); 
+    handleToolUpdate(request);
   });
+  /* GESTIONNAIRE DE FICHIERS - desactive temporairement
+  serverWeb.on("/filesManager", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleFilesManager(request);
+  });
+  serverWeb.on("/deleteFile", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleDeleteFile(request);
+  });
+  */
   serverWeb.on("/backup", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (!checkAuth(request)) return;
@@ -19833,9 +21284,20 @@ void initWebServer()
     handleLoadPowerChart(request); 
   });
   serverWeb.on("/loadEnergyChart", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handleLoadEnergyChart(request); 
+    handleLoadEnergyChart(request);
+  });
+
+  serverWeb.on("/exportPowerChart", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleExportPowerChart(request);
+  });
+  serverWeb.on("/exportEnergyChart", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleExportEnergyChart(request);
   });
 
   serverWeb.on("/loadDistributionChart", HTTP_GET, [](AsyncWebServerRequest *request)
@@ -20030,6 +21492,13 @@ void initWebServer()
     handleGetUpdateStatusAuto(request);
   });
 
+  /* LOG UPDATE - desactive temporairement
+  serverWeb.on("/getUpdateLog", HTTP_GET, [](AsyncWebServerRequest *request) {
+    if (!checkAuth(request)) return;
+    handleGetUpdateLog(request);
+  });
+  */
+
   serverWeb.on("/resetUpdateStatus", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
     updateStatus.statusManuel = "";
@@ -20064,6 +21533,18 @@ void initWebServer()
   });
   serverWeb.serveStatic("/web", LittleFS, "/web")
     .setCacheControl("max-age=604800, immutable");
+  // Menu commun servi une seule fois (mis en cache navigateur) au lieu d'etre re-envoye dans
+  // le HTML de chaque page. document.write injecte le nav de maniere synchrone (avant le footer).
+  serverWeb.on("/menu.js", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    AsyncResponseStream *response = request->beginResponseStream("application/javascript");
+    response->addHeader("Cache-Control", "max-age=604800, immutable");
+    response->print(F("document.write(`"));
+    response->print(FPSTR(HTTP_MENU_NAV));
+    response->print(F("`);"));
+    response->print(FPSTR(HTTP_MENU_JS));
+    request->send(response);
+  });
   // === CORS : preflight OPTIONS handler (#24) ===
   serverWeb.onNotFound([](AsyncWebServerRequest *request) {
     if (request->method() == HTTP_OPTIONS) {

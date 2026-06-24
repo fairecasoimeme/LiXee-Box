@@ -1,0 +1,118 @@
+<div id='popupHelpPowerJaugeHour' class='popup' onclick='hidePopup("popupHelpPowerJaugeHour", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpPowerJaugeHour")'>&times;</button>
+    <h2 class='popup-header'>Jauges de puissance</h2>
+    <p class='popup-text'>Les jauges de puissance affichent en temps r&eacute;el la puissance apparente soutir&eacute;e de chaque phase, ainsi que la puissance inject&eacute;e si votre Linky est en mode producteur.</p>
+    <p class='popup-text'>L'&eacute;chelle va de 0 &agrave; la puissance souscrite.</p>
+  </div>
+</div>
+<div id='popupHelpPowerJauge' class='popup' onclick='hidePopup("popupHelpPowerJauge", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpPowerJauge")'>&times;</button>
+    <h2 class='popup-header'>Electricit&eacute;</h2>
+    <p class='popup-text'>Les jauges affichent, selon la p&eacute;riode s&eacute;lectionn&eacute;e, la consommation ou la production totale de votre habitat.</p>
+    <p class='popup-text'>L'&eacute;chelle utilise les valeurs minimale et maximale d&eacute;j&agrave; rencontr&eacute;es, ce qui permet de comparer par rapport aux records historiques.</p>
+  </div>
+</div>
+<div id='popupHelpEnergyDispatch' class='popup' onclick='hidePopup("popupHelpEnergyDispatch", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpEnergyDispatch")'>&times;</button>
+    <h2 class='popup-header'>R&eacute;partition &eacute;nerg&eacute;tique</h2>
+    <p class='popup-text'>Le graphe en donut offre une vision de la r&eacute;partition des ressources &eacute;nerg&eacute;tiques selon la p&eacute;riode choisie.</p>
+    <div class='highlight'>
+      <strong>P&eacute;riodes glissantes :</strong><br>
+      <ul class='info-list' style='margin:5px 0;'>
+        <li><strong>Heure :</strong> 24 derni&egrave;res heures</li>
+        <li><strong>Jour :</strong> 30 derniers jours</li>
+        <li><strong>Mois :</strong> 12 derniers mois</li>
+        <li><strong>Ann&eacute;e :</strong> toutes les donn&eacute;es</li>
+      </ul>
+    </div>
+    <p class='popup-text'>&Eacute;lectricit&eacute;, production solaire, gaz et eau : la r&eacute;partition de chaque source est affich&eacute;e en kWh (ou m&sup3;) et en &euro;.</p>
+    <p class='popup-text'>La consommation totale donne une vue globale sur la p&eacute;riode.</p>
+  </div>
+</div>
+<div id='popupHelpEnergyTrendHour' class='popup' onclick='hidePopup("popupHelpEnergyTrendHour", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrendHour")'>&times;</button>
+    <h2 class='popup-header'>Tendances</h2>
+    <h5>Derni&egrave;re mise &agrave; jour</h5>
+    <p class='popup-text'>Date et heure de la derni&egrave;re mesure d'&eacute;nergie re&ccedil;ue.</p>
+    <h5>Puissance apparente</h5>
+    <p class='popup-text'>Variations en temps r&eacute;el avec les puissances minimale et maximale soutir&eacute;es.</p>
+    <p class='popup-text'><strong>&Eacute;quivalent journalier :</strong> estimation de la consommation sur 24h si la puissance actuelle restait constante (kWh/jour et &euro;/jour).</p>
+    <h5>Stats</h5>
+    <p class='popup-text'>Consommation &eacute;nerg&eacute;tique de la veille, du mois en cours et de l'ann&eacute;e en cours exprim&eacute;e en kWh.</p>
+    <p class='popup-text'>Si la tarification est configur&eacute;e, le co&ucirc;t en &euro; est &eacute;galement affich&eacute; avec sa d&eacute;composition :</p>
+    <ul class='popup-text'>
+      <li><strong>&Eacute;nergie :</strong> prix du kWh par index tarifaire</li>
+      <li><strong>Taxes :</strong> accise sur l'&eacute;lectricit&eacute; (CSPE) + CTA proratis&eacute;e</li>
+      <li><strong>Abo :</strong> abonnement proratis&eacute; sur la p&eacute;riode</li>
+    </ul>
+    <p class='popup-text'><strong>Prix moyen :</strong> co&ucirc;t total / kWh consomm&eacute;s (&euro;/kWh TTC). Pour le mois, le co&ucirc;t moyen journalier est aussi indiqu&eacute;.</p>
+    <p class='popup-text'><strong>Projection :</strong> estimation de la consommation et du co&ucirc;t en fin de mois (affich&eacute;e &agrave; partir du 2&egrave;me jour du mois).</p>
+    <p class='popup-text'><strong>Budget :</strong> si un seuil de budget mensuel est configur&eacute; (Notifications), une barre de progression indique le pourcentage consomm&eacute; (vert &lt;75%, orange &lt;100%, rouge &gt;100%).</p>
+    <p class='popup-text'><strong>Injection :</strong> si un appareil de production est configur&eacute;, l'&eacute;nergie inject&eacute;e sur la p&eacute;riode est affich&eacute;e.</p>
+  </div>
+</div>
+<div id='popupHelpEnergyTrend' class='popup' onclick='hidePopup("popupHelpEnergyTrend", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpEnergyTrend")'>&times;</button>
+    <h2 class='popup-header'>Tendances</h2>
+    <h5>Derni&egrave;re mise &agrave; jour</h5>
+    <p class='popup-text'>Date et heure de la derni&egrave;re mesure d'&eacute;nergie re&ccedil;ue.</p>
+    <h5>Consommation</h5>
+    <p class='popup-text'>Variation de consommation par rapport &agrave; la p&eacute;riode pr&eacute;c&eacute;dente en kWh et en pourcentage, avec le minimum et maximum sur la p&eacute;riode choisie.</p>
+    <p class='popup-text'>Si la tarification est configur&eacute;e, le co&ucirc;t en &euro; est affich&eacute; avec sa d&eacute;composition :</p>
+    <ul class='popup-text'>
+      <li><strong>&Eacute;nergie :</strong> prix du kWh par index tarifaire</li>
+      <li><strong>Taxes :</strong> accise sur l'&eacute;lectricit&eacute; (CSPE) + CTA proratis&eacute;e</li>
+      <li><strong>Abo :</strong> abonnement proratis&eacute; sur la p&eacute;riode</li>
+    </ul>
+    <p class='popup-text'><strong>Prix moyen :</strong> co&ucirc;t total / kWh consomm&eacute;s (&euro;/kWh TTC). En mode jour, le co&ucirc;t moyen journalier est aussi indiqu&eacute;.</p>
+    <p class='popup-text'><strong>Projection :</strong> estimation de la consommation et du co&ucirc;t en fin de mois, en mode jour uniquement (&agrave; partir du 2&egrave;me jour du mois).</p>
+    <p class='popup-text'><strong>Budget :</strong> si un seuil de budget mensuel est configur&eacute; (Notifications), une barre de progression indique le pourcentage consomm&eacute; (vert &lt;75%, orange &lt;100%, rouge &gt;100%).</p>
+    <p class='popup-text'><strong>Injection :</strong> si un appareil de production est configur&eacute;, l'&eacute;nergie inject&eacute;e sur la p&eacute;riode est affich&eacute;e.</p>
+  </div>
+</div>
+<div id='popupHelpApparentPower' class='popup' onclick='hidePopup("popupHelpApparentPower", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpApparentPower")'>&times;</button>
+    <h2 class='popup-header'>Graphe puissance apparente</h2>
+    <div class='highlight'><strong>Note :</strong> Les donn&eacute;es sont calcul&eacute;es sur des p&eacute;riodes glissantes.</div>
+    <p class='popup-text'>Puissances apparentes de toutes les phases, &agrave; la minute, sur les 24 derni&egrave;res heures.</p>
+    <p class='popup-text'><span style='color:red'> --- </span> Ligne rouge = puissance souscrite.</p>
+  </div>
+</div>
+<div id='popupHelpElectricity' class='popup' onclick='hidePopup("popupHelpElectricity", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpElectricity")'>&times;</button>
+    <h2 class='popup-header'>Graphe Usage d'&eacute;lectricit&eacute;</h2>
+    <div class='highlight'><strong>Note :</strong> Les donn&eacute;es sont calcul&eacute;es sur des p&eacute;riodes glissantes.</div>
+    <p class='popup-text'>Usage complet d'&eacute;lectricit&eacute; selon la p&eacute;riode :</p>
+    <ul class='info-list'>
+      <li>Consommation par tarif</li>
+      <li>Production d'&eacute;lectricit&eacute;</li>
+    </ul>
+    <p class='popup-text'><span style='color:red'> --- </span> Ligne rouge = budget mensuel fix&eacute; (en kWh).</p>
+  </div>
+</div>
+<div id='popupHelpEnergyLabel' class='popup' onclick='hidePopup("popupHelpEnergyLabel", event)'>
+  <div class='popup-content'>
+    <button class='close-btn' onclick='hidePopup("popupHelpEnergyLabel")'>&times;</button>
+    <h2 class='popup-header'>Etiquette &eacute;nerg&eacute;tique</h2>
+    <p class='popup-text'>Performance &eacute;nerg&eacute;tique (electricit&eacute;, production, gaz, eau) de votre habitat rapport&eacute;e &agrave; la surface habitable.</p>
+    <div class='highlight'><strong>Indicatif uniquement</strong> &mdash; ne remplace pas un DPE.</div>
+    <p class='popup-text'>Calcul :</p>
+    <ul class='info-list'>
+      <li><strong>Heure :</strong> total &times; 365 / surface</li>
+      <li><strong>Jour :</strong> total &times; 12 / surface</li>
+      <li><strong>Mois / Ann&eacute;e :</strong> total / surface</li>
+    </ul>
+    <p class='popup-text'>&Eacute;tiquettes (kWh/m&sup2;.an) :</p>
+    <ul class='info-list'>
+      <li><strong>A</strong> &lt; 50 | <strong>B</strong> 51-90 | <strong>C</strong> 91-150 | <strong>D</strong> 151-230</li>
+      <li><strong>E</strong> 231-330 | <strong>F</strong> 331-450 | <strong>G</strong> &gt; 451</li>
+    </ul>
+  </div>
+</div>

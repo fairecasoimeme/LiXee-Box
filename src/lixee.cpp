@@ -406,6 +406,65 @@ static String lastPublishedTarif;
 static String lastPublishedCouleurJour;
 static String lastPublishedCouleurDemain;
 
+// Famille de contrat tarifaire déduite du PTEC courant (historique ou standard) :
+// 0=Base, 1=Heures Creuses/Pleines, 2=EJP, 3=Tempo. Défaut HC/HP si indéterminé.
+int getTariffFamily() {
+  DeviceData* lk = findDevice(String(ConfigGeneral.ZLinky));
+  if (!lk) return 1;
+  String p = lk->getValue("FF66", "16");
+  p.trim();
+  p.toUpperCase();
+  if (p.length() == 0) return 1;
+  if (p.indexOf("JB") >= 0 || p.indexOf("JW") >= 0 || p.indexOf("JR") >= 0 ||
+      p.indexOf("BBR") >= 0 || p.indexOf("BLEU") >= 0 || p.indexOf("BLANC") >= 0 ||
+      p.indexOf("ROUGE") >= 0 || p.indexOf("TEMPO") >= 0) return 3;  // Tempo
+  if (p.startsWith("EJP") || p == "HN.." || p == "PM.." ||
+      p.indexOf("POINTE") >= 0 || p.indexOf("NORMALE") >= 0) return 2;  // EJP
+  if (p.startsWith("TH") || p.startsWith("BASE") || p.startsWith("TOUTE")) return 0;  // Base
+  return 1;  // HC/HP par défaut
+}
+
+// IDs des périodes disponibles selon la famille de contrat (terminé par -1).
+const int* getTariffAvailablePeriods() {
+  static const int base[]  = {256, -1};
+  static const int hchp[]  = {256, 258, -1};
+  static const int tempo[] = {256, 258, 260, 262, 264, 266, -1};
+  switch (getTariffFamily()) {
+    case 0: return base;
+    case 3: return tempo;
+    default: return hchp;  // HC/HP et EJP : 2 périodes
+  }
+}
+
+// Libellé d'une période tarifaire (ID d'attribut index 256/258/...), selon le contrat réel.
+// Mêmes libellés que publishLinkyTariffInfo.
+String tariffLabelForAttr(int attrId) {
+  switch (getTariffFamily()) {
+    case 3:  // Tempo
+      switch (attrId) {
+        case 256: return "HC Bleu";
+        case 258: return "HP Bleu";
+        case 260: return "HC Blanc";
+        case 262: return "HP Blanc";
+        case 264: return "HC Rouge";
+        case 266: return "HP Rouge";
+      }
+      break;
+    case 2:  // EJP
+      if (attrId == 256) return "Heures Normales";
+      if (attrId == 258) return "Pointe Mobile";
+      break;
+    case 0:  // Base
+      if (attrId == 256) return "Base";
+      break;
+    default:  // HC/HP
+      if (attrId == 256) return "Heures Creuses";
+      if (attrId == 258) return "Heures Pleines";
+      break;
+  }
+  return "P" + String(attrId);
+}
+
 void publishLinkyTariffInfo(const String& deviceId) {
     // Vérifier que c'est le Linky configuré
     if (strcmp(ConfigGeneral.ZLinky, deviceId.c_str()) != 0) return;

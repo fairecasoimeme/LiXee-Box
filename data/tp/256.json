@@ -1,0 +1,112 @@
+{
+  "SIN-4-1-20": [
+    {
+      "status": [
+        {
+          "name": "On/Off",
+          "cluster": "0006",
+          "attribut": 0,
+          "mqtt_device_class": null,
+          "mqtt_icon": "power-plug",
+          "mqtt_state_class": null,
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "StartUpOnOff",
+          "cluster": "0006",
+          "attribut": 16387,
+          "visible": 1,
+          "writable": true,
+          "typewritable": 48
+        }
+      ],
+      "bind": "6",
+      "report": [
+        {
+          "cluster": "0006",
+          "attribut": 0,
+          "type": 16,
+          "min": 10,
+          "max": 60,
+          "timeout": 0,
+          "change": 1
+        }
+      ],
+      "action": [
+        {
+          "name": "ON",
+          "command": 146,
+          "endpoint": 1,
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "OFF",
+          "command": 146,
+          "endpoint": 1,
+          "value": 0,
+          "visible": 1
+        },
+        {
+          "name": "TOGGLE",
+          "command": 146,
+          "endpoint": 1,
+          "value": 2,
+          "visible": 1
+        }
+      ]
+    }
+  ],
+  "default": [
+    {
+      "status": [
+        {
+          "name": "On/Off",
+          "cluster": "0006",
+          "attribut": 0,
+          "mqtt_device_class": null,
+          "mqtt_icon": "power-plug",
+          "mqtt_state_class": null,
+          "visible": 1,
+          "poll": 1
+        }
+      ],
+      "bind": "6",
+      "report": [
+        {
+          "cluster": "0006",
+          "attribut": 0,
+          "type": 16,
+          "min": 10,
+          "max": 60,
+          "timeout": 0,
+          "change": 1
+        }
+      ],
+      "action": [
+        {
+          "name": "ON",
+          "command": 146,
+          "endpoint": 1,
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "OFF",
+          "command": 146,
+          "endpoint": 1,
+          "value": 0,
+          "visible": 1
+        },
+        {
+          "name": "TOGGLE",
+          "command": 146,
+          "endpoint": 1,
+          "value": 2,
+          "visible": 1
+        }
+      ]
+    }
+  ]
+}

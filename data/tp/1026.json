@@ -1,0 +1,88 @@
+{
+  "_TYZB01_o63ssaah": [
+    {
+      "status": [
+        {
+          "name": "water_leak",
+          "cluster": "0500",
+          "attribut": 2,
+          "type": "numeric",
+          "mqtt_device_class": "moisture",
+          "mqtt_icon": "water-alert",
+          "mqtt_state_class": "measurement",
+          "visible": 1
+        },
+        {
+          "name": "battery",
+          "cluster": "0001",
+          "attribut": 33,
+          "type": "numeric",
+          "coefficient": 0.5,
+          "unit": "%",
+          "mqtt_device_class": "battery",
+          "mqtt_icon": "battery",
+          "mqtt_state_class": "measurement",
+          "visible": 1,
+          "jauge": "battery",
+          "min": 0,
+          "max": 100
+        }
+      ],
+      "bind": "1280;1",
+      "report": [
+        {
+          "cluster": "0001",
+          "attribut": 33,
+          "type": 32,
+          "min": 3600,
+          "max": 43200,
+          "change": 1
+        }
+      ],
+      "action": []
+    }
+  ],
+  "default": [
+    {
+      "status": [
+        {
+          "name": "water_leak",
+          "cluster": "0500",
+          "attribut": 2,
+          "type": "numeric",
+          "mqtt_device_class": "moisture",
+          "mqtt_icon": "water-alert",
+          "mqtt_state_class": "measurement",
+          "visible": 1
+        },
+        {
+          "name": "battery",
+          "cluster": "0001",
+          "attribut": 33,
+          "type": "numeric",
+          "coefficient": 0.5,
+          "unit": "%",
+          "mqtt_device_class": "battery",
+          "mqtt_icon": "battery",
+          "mqtt_state_class": "measurement",
+          "visible": 1,
+          "jauge": "battery",
+          "min": 0,
+          "max": 100
+        }
+      ],
+      "bind": "1280;1",
+      "report": [
+        {
+          "cluster": "0001",
+          "attribut": 33,
+          "type": 32,
+          "min": 3600,
+          "max": 43200,
+          "change": 1
+        }
+      ],
+      "action": []
+    }
+  ]
+}

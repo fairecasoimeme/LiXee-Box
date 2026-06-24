@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.21
+
+### Thermostat virtuel (nouvelle fonctionnalité majeure)
+- Régulation multi-zone découplant le **capteur de température** de l'**actionneur** piloté : la box joue le rôle de régulateur
+- Actionneurs supportés : **prise/relais on/off** (cluster 0006), **climatiseur / thermostat HVAC** (cluster 0201, modes HEAT/COOL/OFF), **radiateur fil pilote** — pilotage par les actions du template
+- **Plusieurs prises** par zone (commandées en parallèle)
+- **Clim réversible** : actions Chaud / Froid / Arrêt distinctes, choix du mode Chaud/Froid directement sur la vignette
+- Régulation **TPI** (PWM lent) pour les charges tout-ou-rien ; **hystérésis** pour les appareils pilotés par action (évite les commandes répétées / bips)
+- Capteur de **présence** + capteurs d'**ouverture** (porte/fenêtre) par zone, avec inhibition de la régulation
+- **Hors-gel** (sécurité + mode bascule), **forçage** marche/arrêt/auto, protection anti-court-cycle
+- Modes de fonctionnement : **toujours / plages horaires / tarif Linky** (multi-périodes Base, HC-HP, EJP, Tempo)
+- Vignettes en **cadran circulaire** (jauge SVG) avec animation directionnelle de l'écart consigne↔température ; état réel reflété via le System Mode HVAC
+- Pages dédiées : configuration (Config → Thermostat) et visuel temps réel (Mesures → Thermostat), navigation par glissement
+
+### Corrections Zigbee (bind / reporting)
+- **Bind** : les clusters du champ `bind` des templates sont lus en **décimal** ; le parseur accepte désormais `;`, `,` et l'espace comme séparateurs (un mélange hexa/virgule empêchait le bind du cluster HVAC 0x0201 → aucun report)
+- **Configure Reporting** : le *reportable change* des attributs **int16 (0x29)** est désormais envoyé sur **2 octets** (température, consignes) — auparavant tronqué à 1 octet → report **rejeté** par l'appareil
+- Lecture de la **température locale HVAC** (cluster 0201 attribut 0) en plus du cluster 0402
+
+### Performances & stabilité (accès distant via tunnel)
+- Correction de **reboots watchdog** par épuisement du heap interne : limitation **adaptative** de la concurrence du tunnel selon le heap + plancher de sécurité
+- Envoi des grosses réponses WebSocket en **fragments** (avec traitement des pings entre fragments) → fin des déconnexions du tunnel sur les pages volumineuses
+- **Menu commun externalisé** (`/menu.js`, mis en cache navigateur) au lieu d'être réinjecté dans chaque page (~29 Ko/page économisés)
+- Pop-ups d'aide de la page Énergie **externalisés** et chargés à la demande
+- Requêtes AJAX de la page Énergie **échelonnées** (évite la saturation du tunnel)
+
+### Interface
+- Spinner de chargement **limité à la navigation** entre pages (plus sur les uploads de mise à jour ni les exports CSV)
+- Correction du **positionnement des pop-ups sur mobile** (toujours visibles quel que soit le défilement)
+- **Export CSV** des graphes « Puissance apparente » et « Usage d'électricité » (format Excel FR, données du tooltip incluses)
+
+### Correctifs
+- Correction d'un **crash (Guru Meditation)** à l'authentification lorsqu'un appareil de production était configuré mais absent des appareils
+
+### Nouveaux appareils / templates
+- Support du climatiseur **IRB-4-1-00** (cluster 0201 : HEAT/COOL/OFF/AUTO/FAN_ONLY/DRY)
+- Modules Tuya : **irrigation** et **présence**
+
 ## v2.20
 
 ### Moteur de règles — refonte complète

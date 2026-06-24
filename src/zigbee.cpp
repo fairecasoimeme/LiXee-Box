@@ -34,6 +34,7 @@ extern DeviceList devices;
 
 extern struct ZigbeeConfig ZConfig;
 extern struct ConfigGeneralStruct ConfigGeneral;
+extern struct ConfigNotification ConfigNotif;
 
 extern RulesManager rulesManager;
 
@@ -298,7 +299,7 @@ void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type,
     if (type==0x25)
     {
       trame.len=28;
-    }else if (type==0x21)
+    }else if (type==0x21 || type==0x29)   // uint16 ET int16 => reportable change sur 2 octets
     {
       trame.len=24;
     }else{
@@ -335,12 +336,12 @@ void SendConfigReport(uint8_t shortAddr[2], int cluster, int attribut, int type,
       datas[25]= 0x00;
       datas[26]= 0x00;
       datas[27]= rchange;
-    }else if (type==0x21)
+    }else if (type==0x21 || type==0x29)   // uint16 / int16 : reportable change sur 2 octets
     {
       datas[22]= 0x00;
       datas[23]= rchange;
     }else{
-      
+
       datas[22]= rchange ;
     }
     
@@ -845,15 +846,22 @@ float getTarifPower(String IEEE, int power)
 String getValuekWh(long energy)
 {
   String result;
-  if ((energy > 1000) || (energy < -1000))
+  long absEnergy = abs(energy);
+  String sign = (energy < 0) ? "-" : "";
+  if (absEnergy >= 1000000)
   {
-    float wh = energy;
-    float kwh = wh / 1000.0;
-    result = String(kwh,2)+" kWh";
-  }else{
-    result = String(energy)+" Wh";
+    float mwh = absEnergy / 1000000.0;
+    result = sign + String(mwh, 2) + " MWh";
   }
-
+  else if (absEnergy >= 1000)
+  {
+    float kwh = absEnergy / 1000.0;
+    result = sign + String(kwh, 2) + " kWh";
+  }
+  else
+  {
+    result = String(energy) + " Wh";
+  }
   return result;
 }
 
@@ -1478,13 +1486,13 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
 
       if (tmp > 0)
       {
-        result= String(tmp)+";"+getValuekWh(maxVal);
+        result= String(tmp)+";"+String(maxVal);
         return result;
       }else if (tmp < 0)
       {
-        result= String(tmp)+";"+getValuekWh(minVal);
+        result= String(tmp)+";"+String(minVal);
         return result;
-      }     
+      }
 
     }else if (Time=="month")
     {
@@ -1509,15 +1517,15 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
           tmp=sum;
         }
 
-      }  
-         
+      }
+
       if (tmp > 0)
       {
-        result= String(tmp)+";"+getValuekWh(maxVal);
+        result= String(tmp)+";"+String(maxVal);
         return result;
       }else if (tmp < 0)
       {
-        result= String(tmp)+";"+getValuekWh(minVal);
+        result= String(tmp)+";"+String(minVal);
         return result;
       }
     }else if (Time=="year")
@@ -1542,15 +1550,15 @@ String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
           tmp=sum;
         }
 
-      }  
-         
+      }
+
       if (tmp > 0)
       {
-        result= String(tmp)+";"+getValuekWh(maxVal);
+        result= String(tmp)+";"+String(maxVal);
         return result;
       }else if (tmp < 0)
       {
-        result= String(tmp)+";"+getValuekWh(minVal);
+        result= String(tmp)+";"+String(minVal);
         return result;
       }
     }
@@ -1622,21 +1630,23 @@ String getTotalEnergy(String IEEE, String Time)
       if (d->getDeviceID() == ConfigGeneral.Production) { devProd = d; break; }
     }
 
-    DeviceEnergyHistory& ehProd = devProd->energyHistory;
-    PeriodData* pdProd = nullptr;
-    if      (Time=="hour")  pdProd=&ehProd.hours;
-    else if (Time=="day")   pdProd=&ehProd.days;
-    else if (Time=="month") pdProd=&ehProd.months;
-    else if (Time=="year")  pdProd=&ehProd.years;
-    else                      return "";
+    // Garde-fou : le device de production peut ne pas être présent (sinon déréférencement nul => crash)
+    if (devProd != nullptr) {
+      DeviceEnergyHistory& ehProd = devProd->energyHistory;
+      PeriodData* pdProd = nullptr;
+      if      (Time=="hour")  pdProd=&ehProd.hours;
+      else if (Time=="day")   pdProd=&ehProd.days;
+      else if (Time=="month") pdProd=&ehProd.months;
+      else if (Time=="year")  pdProd=&ehProd.years;
+      else                      return "";
 
-    
-    for (auto &kv : pdProd->graph) {
-      ValueMap &vm = kv.second;   
-      int attrId = 1;
-      auto itv = vm.attributes.find(attrId);
-      if (itv != vm.attributes.end()) {       
-        sumProd += itv->second;
+      for (auto &kv : pdProd->graph) {
+        ValueMap &vm = kv.second;
+        int attrId = 1;
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end()) {
+          sumProd += itv->second;
+        }
       }
     }
 
@@ -1662,7 +1672,8 @@ String getTotalEnergy(String IEEE, String Time)
         continue;
       }
     }
-    try {
+    // Garde-fou : un déréférencement nul provoque un LoadProhibited non rattrapable par try/catch
+    if (devGaz != nullptr) try {
       DeviceEnergyHistory& ehGaz = devGaz->energyHistory;
       PeriodData* pdGaz = nullptr;
       if      (Time=="hour")  pdGaz=&ehGaz.hours;
@@ -2157,393 +2168,422 @@ PSRAMString getDatasPower(String IEEE,String Attribute, String Time)
   return result;
 }
 
+// ============== Helpers pour getTrendPower ==============
+
+// SVG icones reutilisees
+static const char SVG_BOLT_16[] PROGMEM = "<svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
+
+static const char SVG_COIN_16[] PROGMEM = "<svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/></g></svg>";
+
+static const char SVG_COIN_64[] PROGMEM = "<svg width='64px' height='64px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'/><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/><g id='SVGRepo_iconCarrier'><path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/><path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/></g></svg>";
+
+static const char SVG_CAL_YESTERDAY[] PROGMEM = "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>  <text x='8' y='10' font-size='10' fill='currentColor' text-anchor='middle' dominant-baseline='middle'>-1</text></svg>";
+
+static const char SVG_CAL_MONTH[] PROGMEM = "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'></path><path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'></path></svg>";
+
+static const char SVG_CAL_YEAR[] PROGMEM = "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'><path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text></svg>";
+
+// Structure pour decomposer le cout
+struct CostBreakdown {
+  float energie;  // kWh * tarif par index
+  float taxes;    // kWh * CSPE + CTA proratisee
+  float abo;      // abonnement proratise
+  float total() const { return energie + taxes + abo; }
+};
+
+// Calcule le cout decompose pour un ValueMap donne
+static CostBreakdown calcCost(const ValueMap &valMap, float aboFactor, float ctaFactor) {
+  CostBreakdown c = {0, 0, 0};
+  float cspe = atof(ConfigGeneral.tarifCSPE);
+  for (const auto &attrPair : valMap.attributes) {
+    int attrId = attrPair.first;
+    long attrVal = attrPair.second;
+    if (attrId >= 0) {
+      float kWh = attrVal / 1000.0;
+      c.energie += kWh * getTarif(attrId, "energy");
+      c.taxes += kWh * cspe;
+    }
+  }
+  c.abo = atof(ConfigGeneral.tarifAbo) * aboFactor;
+  c.taxes += atof(ConfigGeneral.tarifCTA) * ctaFactor;
+  return c;
+}
+
+// Genere le HTML de decomposition du cout (compact)
+static void appendCostDetail(PSRAMString &r, const CostBreakdown &c) {
+  char buf[128];
+  snprintf(buf, sizeof(buf), "<div style='font-size:10px;color:#888;'>E:%.2f | T:%.2f | A:%.2f&euro;</div>", c.energie, c.taxes, c.abo);
+  r += buf;
+}
+
+// Genere le HTML du prix moyen et cout/jour (compact)
+static void appendAvgPrice(PSRAMString &r, float totalEuros, long totalWh, int nbJours) {
+  if (totalWh <= 0) return;
+  char buf[128];
+  float prixMoyen = totalEuros / (totalWh / 1000.0);
+  if (nbJours > 1) {
+    float coutJour = totalEuros / nbJours;
+    snprintf(buf, sizeof(buf), "<div style='font-size:10px;color:#888;'>%.3f&euro;/kWh | %.2f&euro;/j</div>", prixMoyen, coutJour);
+  } else {
+    snprintf(buf, sizeof(buf), "<div style='font-size:10px;color:#888;'>%.3f&euro;/kWh</div>", prixMoyen);
+  }
+  r += buf;
+}
+
+// Genere le HTML de la projection fin de mois (compact)
+static void appendProjection(PSRAMString &r, long sumWh, float totalEuros, int nbJours) {
+  if (nbJours < 2) return;
+  long projWh = (long)((float)sumWh / nbJours * 30.0);
+  float projEuros = totalEuros / nbJours * 30.0;
+  char buf[128];
+  snprintf(buf, sizeof(buf), "<div style='font-size:10px;color:#666;'>Proj: ~%s / ~%.2f&euro;</div>", getValuekWh(projWh).c_str(), projEuros);
+  r += buf;
+}
+
+// Genere le HTML de la barre de budget (compact)
+static void appendBudgetBar(PSRAMString &r, float totalEuros, float budgetPeriode) {
+  if (budgetPeriode <= 0) return;
+  float pct = (totalEuros / budgetPeriode) * 100.0;
+  const char* color = (pct < 75) ? "#27ae60" : (pct < 100) ? "#f39c12" : "#e74c3c";
+  int widthPct = (int)min(pct, 100.0f);
+  char buf[256];
+  snprintf(buf, sizeof(buf),
+    "<div style='margin-top:3px;'>"
+    "<div style='background:#eee;border-radius:3px;height:8px;width:100%%;'>"
+    "<div style='background:%s;border-radius:3px;height:100%%;width:%d%%;'></div>"
+    "</div>"
+    "<span style='font-size:10px;'>%.2f / %.0f&euro; (%.0f%%)</span>"
+    "</div>",
+    color, widthPct, totalEuros, budgetPeriode, pct);
+  r += buf;
+}
+
+// Retourne l'injection pour une cle donnee dans une PeriodData
+// key = "09" (jour), "06" (mois), "2026" (annee), ou "" pour tout sommer
+static long getInjectionForKey(const PeriodData &pd, const char* key, int keyLen) {
+  long sum = 0;
+  for (const auto &kv : pd.graph) {
+    if (key[0] == '\0' || memcmp(key, kv.first.c_str(), keyLen) == 0) {
+      auto it = kv.second.attributes.find(1);
+      if (it != kv.second.attributes.end() && it->second < 0) sum += it->second;
+    }
+  }
+  return -sum; // positif
+}
+
+// Ajoute une ligne d'injection dans un details si injection > 0
+static void appendInjection(PSRAMString &r, long inj) {
+  if (inj <= 0) return;
+  float euroInj = (inj / 1000.0) * atof(ConfigGeneral.tarifIdxProd);
+  char buf[96];
+  snprintf(buf, sizeof(buf), "<div style='font-size:10px;color:#27ae60;'>&#9889; Inj: %s (%.2f&euro;)</div>", getValuekWh(inj).c_str(), euroInj);
+  r += buf;
+}
+
+// ============== Fin helpers ==============
+
 PSRAMString getTrendPower(String IEEE,String Attribute, String Time)
 {
   String trendIcon="";
   String trendColor="";
   PSRAMString result(150000);
+
+  // ---- Recherche du device et de l'historique ----
+  DeviceEnergyHistory hist;
+  String powerTrend, powerMin, powerMax, powerLast;
+  for (size_t i = 0; i < devices.size(); i++) {
+    DeviceData* device = devices[i];
+    if (device->getDeviceID() == IEEE) {
+      if (Time == "hour") {
+        AttributeStats &st = device->powerHistory.stats[Attribute.toInt()];
+        powerTrend = st.trend;
+        powerMin = st.min;
+        powerMax = st.max;
+        powerLast = st.last;
+      }
+      hist = device->energyHistory;
+      break;
+    }
+  }
+
+  // ---- Prop 6 : Timestamp derniere mesure ----
+  if (hist.lastUpdate.length() > 0) {
+    result += "<div style='text-align:right;font-size:10px;color:#999;margin-bottom:4px;'>";
+    result += "Maj: " + hist.lastUpdate;
+    result += "</div>";
+  }
+
+  // ---- Production configuree ? ----
+  bool hasProduction = (strcmp(ConfigGeneral.Production, "") != 0);
+  // Historique pour l'injection (peut etre le meme que hist ou un device separe)
+  DeviceEnergyHistory histProd;
+  if (hasProduction) {
+    // D'abord utiliser hist (ZLinky) car attribut 1 y est souvent
+    histProd = hist;
+    // Verifier si donnees attribut 1 presentes, sinon chercher device separe
+    long check = getInjectionForKey(histProd.days, "", 0);
+    if (check == 0) {
+      for (size_t i = 0; i < devices.size(); i++) {
+        DeviceData* device = devices[i];
+        if (device->getDeviceID() == String(ConfigGeneral.Production)) {
+          histProd = device->energyHistory;
+          break;
+        }
+      }
+    }
+  }
+
+  // ---- Budget mensuel ----
+  float budgetMensuel = (float)ConfigNotif.OverBudgetThreshold;
+
   if (Time=="hour")
   {
-    String min,max,trend,last;
-    DeviceEnergyHistory hist;
-    
-    for (size_t i = 0; i < devices.size(); i++) 
-    {
-      DeviceData* device = devices[i];
-      if (device->getDeviceID() == IEEE)
-      {
-        AttributeStats &st = device->powerHistory.stats[Attribute.toInt()];
-        trend = st.trend;
-        min = st.min;
-        max = st.max;
-        last = st.last;
-        hist = device->energyHistory;
-        break;
-      }
-    }
-    float tarifEuros=0;
-    for (const auto &graphEntry : hist.hours.graph) {
-      const PsString &Key = graphEntry.first;
-      const ValueMap &valMap   = graphEntry.second;
-      if (memcmp(Hour, Key.c_str(), 2) == 0)
-      {
-        for (const auto &attrPair : valMap.attributes) {
-          int attrId   = attrPair.first;
-          long attrVal = attrPair.second;
-          if (attrId>0)
-          {
-            tarifEuros+=attrVal * getTarif(attrId,"energy")/1000;
-            tarifEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
-          }  
-        }
-        break;
-      }
-    }
-    
-
+    // ---- Puissance apparente + Prop 7 (equiv journalier) ----
     String op="";
-    if (trend !="")
+    if (powerTrend !="")
     {
-      if (trend.toInt()>0)
-      {
-        trendColor="orange";
-        op="+";
-      }else if (trend.toInt()<0){
-        trendColor="green";
-        op="";
-      }else{
-        trendColor="grey";
-        op="";
-      }
-      result +="<h5>Puiss. App.</h5><div style='text-align:center;'>";
-        result +="<div style='float:left;display:inline-block;width:64px;'>";
-        result += "<svg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>";
-          result += "<rect width='100' height='100' rx='20' ry='20' fill='"+trendColor+"'/>";
-          result += "<path d='M55 10 L30 55 H48 L40 90 L70 45 H52 Z' fill='#FFFFFF'/>";
-        result += "</svg>";
-        result +="</div>";
-        result+="<div style='display:inline-box;height:100px;padding-top:15px;'><span style='font-size:24px;'>";
-          result +=op+trend+ " VA ";
-        result+="</span>";
-        result+="<br><span style='font-size:12px;'><strong>Min:</strong> ";
-          result+=min;
-          result+=" VA <br> <strong>Max :</strong> ";
-          result+=max;
-          result+=" VA <br>";
-        result+="</span></div>";   
-      result += "</div>";
+      if (powerTrend.toInt()>0) { trendColor="orange"; op="+"; }
+      else if (powerTrend.toInt()<0) { trendColor="green"; op=""; }
+      else { trendColor="grey"; op=""; }
 
-      result += "<h5>Stats</h5>";
-      result += "<div class='row'>";
-        result += "<div class='col-12'>";
-          result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-event' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'/>  <text x='8' y='10' font-size='10' fill='currentColor' text-anchor='middle' dominant-baseline='middle'>-1</text></svg>";
-         //result += "</div>";
-        // result += "<div class='col-10'>"; 
-          result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-      for (const auto &graphEntry : hist.days.graph) 
-      {
-        const PsString &Key = graphEntry.first;
-        const ValueMap &valMap   = graphEntry.second;
-        if (memcmp(Yesterday,Key.c_str(),2)==0)
-        {
-          long int sum=0;
-          float tmpEuros=0;
-
-          for (const auto &attrPair : valMap.attributes) {
-            int attrId   = attrPair.first;
-            long attrVal = attrPair.second;
-            if (attrVal > 0 ) sum +=attrVal;
-
-            if (attrId>0)
-            {          
-              tmpEuros+=sum * getTarif(attrId,"energy")/1000;
-              tmpEuros+=(sum/1000) * atof(ConfigGeneral.tarifCSPE);
+      result += "<div style='text-align:center;'>";
+        result += "<div style='float:left;display:inline-block;width:36px;'>";
+          result += "<svg width='36' height='36' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>";
+            result += "<rect width='100' height='100' rx='20' ry='20' fill='"+trendColor+"'/>";
+            result += "<path d='M55 10 L30 55 H48 L40 90 L70 45 H52 Z' fill='#FFFFFF'/>";
+          result += "</svg>";
+        result += "</div>";
+        result += "<div style='display:inline-block;padding-top:2px;'>";
+          result += "<span style='font-size:20px;font-weight:bold;'>" + op + powerTrend + " VA</span>";
+          result += "<br><span style='font-size:12px;color:#888;'>Min: " + powerMin + " | Max: " + powerMax + " VA</span>";
+          // Prop 7 : equivalent journalier
+          long lastVA = powerLast.toInt();
+          if (lastVA > 0) {
+            float equivKwhJour = lastVA * 24.0 / 1000.0;
+            float prixEstime = atof(ConfigGeneral.tarifIdx1) + atof(ConfigGeneral.tarifCSPE);
+            if (prixEstime > 0) {
+              float equivEurosJour = equivKwhJour * prixEstime + atof(ConfigGeneral.tarifAbo) / 30.0 + atof(ConfigGeneral.tarifCTA) / 30.0;
+              char buf[96];
+              snprintf(buf, sizeof(buf), "<br><span style='font-size:12px;color:#666;'>&#8776; %.1f kWh/j (~%.2f &euro;/j)</span>", equivKwhJour, equivEurosJour);
+              result += buf;
+            } else {
+              char buf[96];
+              snprintf(buf, sizeof(buf), "<br><span style='font-size:12px;color:#666;'>&#8776; %.1f kWh/j</span>", equivKwhJour);
+              result += buf;
             }
-
           }
-          result += getValuekWh(sum);
-          result += " "; 
-          result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
-            result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
-            result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
-            result+="<g id='SVGRepo_iconCarrier'>";
-            result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
-            result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
-            result+="</g>";
-          result+="</svg>  ";
-          result += String(tmpEuros);
-          result += " €";
-          break;
-        }
-      }
         result += "</div>";
       result += "</div>";
-      result += "<div class='row'>";
-      result += "<div class='col-12'>";
-      result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3' viewBox='0 0 16 16'><path d='M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z'></path><path d='M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2'></path></svg> ";
-      result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-      for (const auto &graphEntry : hist.months.graph) 
-      {
+
+      // ============ STATS (format table compact) ============
+      result += "<table style='width:100%;font-size:12px;border-collapse:collapse;margin-top:4px;'>";
+      result += "<tr style='border-bottom:1px solid #eee;'><th></th><th>kWh</th><th>&euro;</th></tr>";
+
+      // ---- Hier ----
+      for (const auto &graphEntry : hist.days.graph) {
         const PsString &Key = graphEntry.first;
-        const ValueMap &valMap   = graphEntry.second;
-        if (memcmp(Month,Key.c_str(),2)==0)
-        {
-          long int sum=0;
-          float tmpEuros=0;
-
+        const ValueMap &valMap = graphEntry.second;
+        if (memcmp(Yesterday, Key.c_str(), 2) == 0) {
+          long int sum = 0;
           for (const auto &attrPair : valMap.attributes) {
-            int attrId   = attrPair.first;
-            long attrVal = attrPair.second;
-            if (attrVal > 0 ) sum +=attrVal;
-
-            if (attrId>0)
-            {          
-              tmpEuros+=sum * getTarif(attrId,"energy")/1000;
-              tmpEuros+=(sum/1000) * atof(ConfigGeneral.tarifCSPE);
-            }
-
+            if (attrPair.second > 0) sum += attrPair.second;
           }
-          result += getValuekWh(sum);
-          result += " "; 
-          result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
-            result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
-            result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
-            result+="<g id='SVGRepo_iconCarrier'>";
-            result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
-            result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
-            result+="</g>";
-          result+="</svg>  ";
-          result += String(tmpEuros);
-          result += " €";
+          CostBreakdown c = calcCost(valMap, 1.0/30.0, 1.0/30.0);
+          result += "<tr style='border-bottom:1px solid #f5f5f5;'><td style='padding:3px 0;'>J-1</td>";
+          result += "<td style='padding:3px 4px;'>" + getValuekWh(sum) + "</td>";
+          result += "<td style='padding:3px 4px;'>" + String(c.total()) + "</td></tr>";
+          // Details repliable
+          result += "<tr><td colspan='3' style='padding:0;'><details name='td' style='font-size:10px;color:#888;'><summary style='cursor:pointer;'>D&eacute;tail</summary>";
+          appendCostDetail(result, c);
+          appendAvgPrice(result, c.total(), sum, 0);
+          if (budgetMensuel > 0) appendBudgetBar(result, c.total(), budgetMensuel / 30.0);
+          if (hasProduction) appendInjection(result, getInjectionForKey(histProd.days, Yesterday, 2));
+          result += "</details></td></tr>";
           break;
         }
       }
-      
-      result += "</div>";
-      result += "</div>";
-      result += "<div class='row'>";
-      result += "<div class='col-12'>";
-      result += "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px' width='16' height='16' fill='currentColor' class='bi bi-calendar3-fill' viewBox='0 0 16 16'><path d='M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z'/>  <text x='8' y='11' font-size='6' text-anchor='middle' fill='white' font-family='Arial, sans-serif'>12</text></svg> ";
-      result += " <svg fill='#000000' style='width:16px;' width='24px' height='24px' viewBox='-3.2 -3.2 38.40 38.40' version='1.1' xmlns='http://www.w3.org/2000/svg' stroke='#000000'><g id='SVGRepo_bgCarrier' stroke-width='0'></g><g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round' stroke='#CCCCCC' stroke-width='0.384'></g><g id='SVGRepo_iconCarrier'> <path d='M18.605 2.022v0zM18.605 2.022l-2.256 11.856 8.174 0.027-11.127 16.072 2.257-13.043-8.174-0.029zM18.606 0.023c-0.054 0-0.108 0.002-0.161 0.006-0.353 0.028-0.587 0.147-0.864 0.333-0.154 0.102-0.295 0.228-0.419 0.373-0.037 0.043-0.071 0.088-0.103 0.134l-11.207 14.832c-0.442 0.607-0.508 1.407-0.168 2.076s1.026 1.093 1.779 1.099l5.773 0.042-1.815 10.694c-0.172 0.919 0.318 1.835 1.18 2.204 0.257 0.11 0.527 0.163 0.793 0.163 0.629 0 1.145-0.294 1.533-0.825l11.22-16.072c0.442-0.607 0.507-1.408 0.168-2.076-0.34-0.669-1.026-1.093-1.779-1.098l-5.773-0.010 1.796-9.402c0.038-0.151 0.057-0.308 0.057-0.47 0-1.082-0.861-1.964-1.939-1.999-0.024-0.001-0.047-0.001-0.071-0.001v0z'></path> </g></svg> ";
-      
-      for (const auto &graphEntry : hist.years.graph) 
-      {
+
+      // ---- Mois en cours ----
+      for (const auto &graphEntry : hist.months.graph) {
         const PsString &Key = graphEntry.first;
-        const ValueMap &valMap   = graphEntry.second;
-        if (memcmp(Year,Key.c_str(),4)==0)
-        {
-          long int sum=0;
-          float tmpEuros=0;
-
+        const ValueMap &valMap = graphEntry.second;
+        if (memcmp(Month, Key.c_str(), 2) == 0) {
+          long int sum = 0;
           for (const auto &attrPair : valMap.attributes) {
-            int attrId   = attrPair.first;
-            long attrVal = attrPair.second;
-            if (attrVal > 0 ) sum +=attrVal;
-
-            if (attrId>0)
-            {          
-              tmpEuros+=sum * getTarif(attrId,"energy")/1000;
-              tmpEuros+=(sum/1000) * atof(ConfigGeneral.tarifCSPE);
-            }
-
+            if (attrPair.second > 0) sum += attrPair.second;
           }
-          result += getValuekWh(sum);
-          result += " "; 
-          result+=" <svg style='width:16px;' width='24px' height='24px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
-            result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
-            result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
-            result+="<g id='SVGRepo_iconCarrier'>";
-            result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
-            result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
-            result+="</g>";
-          result+="</svg>  ";
-          result += String(tmpEuros);
-          result += " €";
+          CostBreakdown c = calcCost(valMap, 1.0, 1.0);
+          int joursDansMois = atoi(Day);
+          result += "<tr style='border-bottom:1px solid #f5f5f5;'><td style='padding:3px 0;'>Mois</td>";
+          result += "<td style='padding:3px 4px;'>" + getValuekWh(sum) + "</td>";
+          result += "<td style='padding:3px 4px;'>" + String(c.total()) + "</td></tr>";
+          result += "<tr><td colspan='3' style='padding:0;'><details name='td' style='font-size:10px;color:#888;'><summary style='cursor:pointer;'>D&eacute;tail</summary>";
+          appendCostDetail(result, c);
+          appendAvgPrice(result, c.total(), sum, joursDansMois);
+          appendProjection(result, sum, c.total(), joursDansMois);
+          if (budgetMensuel > 0) appendBudgetBar(result, c.total(), budgetMensuel);
+          if (hasProduction) appendInjection(result, getInjectionForKey(histProd.months, Month, 2));
+          result += "</details></td></tr>";
           break;
         }
       }
-        result += "</div>";
-      result += "</div>";
+
+      // ---- Annee en cours ----
+      for (const auto &graphEntry : hist.years.graph) {
+        const PsString &Key = graphEntry.first;
+        const ValueMap &valMap = graphEntry.second;
+        if (memcmp(Year, Key.c_str(), 4) == 0) {
+          long int sum = 0;
+          for (const auto &attrPair : valMap.attributes) {
+            if (attrPair.second > 0) sum += attrPair.second;
+          }
+          CostBreakdown c = calcCost(valMap, 12.0, 12.0);
+          int joursAnnee = (atoi(Month) - 1) * 30 + atoi(Day);
+          result += "<tr style='border-bottom:1px solid #f5f5f5;'><td style='padding:3px 0;'>Ann&eacute;e</td>";
+          result += "<td style='padding:3px 4px;'>" + getValuekWh(sum) + "</td>";
+          result += "<td style='padding:3px 4px;'>" + String(c.total()) + "</td></tr>";
+          result += "<tr><td colspan='3' style='padding:0;'><details name='td' style='font-size:10px;color:#888;'><summary style='cursor:pointer;'>D&eacute;tail</summary>";
+          appendCostDetail(result, c);
+          appendAvgPrice(result, c.total(), sum, joursAnnee);
+          if (hasProduction) appendInjection(result, getInjectionForKey(histProd.years, Year, 4));
+          result += "</details></td></tr>";
+          break;
+        }
+      }
+
+      result += "</table>";
     }
   }else
   {
-    DeviceEnergyHistory hist;
-    for (size_t i = 0; i < devices.size(); i++) 
-    {
-      DeviceData* device = devices[i];
-      if (device->getDeviceID() == IEEE)
-      {
-        hist = device->energyHistory;
-        break;
-      }
-    }
-
+    // ============ MODE DAY / MONTH / YEAR ============
     int energyTemp=0;
     long int tmp=0;
     long int lastTime=0;
     float tarifEuro=0;
     long int maxVal =0;
     long int minVal =0;
+    CostBreakdown currentCost = {0, 0, 0};
 
     if (Time=="day")
     {
       for (const auto &graphEntry : hist.days.graph) {
         const PsString &Key = graphEntry.first;
-        const ValueMap &valMap   = graphEntry.second;
-
+        const ValueMap &valMap = graphEntry.second;
         long int sum=0;
-        float tmpEuros=0;
-
         for (const auto &attrPair : valMap.attributes) {
-          int attrId   = attrPair.first;
-          long attrVal = attrPair.second;
-          if (attrVal > 0 ) sum +=attrVal;
-
-          if (attrId>0)
-          {          
-            tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
-            tmpEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
-          }
+          if (attrPair.second > 0) sum += attrPair.second;
         }
-        
-
-        maxVal = max(sum,maxVal);
-        minVal = min(sum,minVal);
-        if (minVal ==0){minVal=maxVal;}  
-
-        if (memcmp(Day,Key.c_str(),2)==0)
-        {
-          tmp=sum;
-          tarifEuro=tmpEuros;
-        }
-        if (memcmp(Yesterday,Key.c_str(),2)==0)
-        {
-          lastTime=sum;
-        }
+        CostBreakdown c = calcCost(valMap, 1.0/30.0, 1.0/30.0);
+        maxVal = max(sum, maxVal);
+        minVal = min(sum, minVal);
+        if (minVal == 0) minVal = maxVal;
+        if (memcmp(Day, Key.c_str(), 2) == 0) { tmp = sum; tarifEuro = c.total(); currentCost = c; }
+        if (memcmp(Yesterday, Key.c_str(), 2) == 0) { lastTime = sum; }
       }
     }else if (Time=="month")
     {
       for (const auto &graphEntry : hist.months.graph) {
         const PsString &Key = graphEntry.first;
-        const ValueMap &valMap   = graphEntry.second;
-
+        const ValueMap &valMap = graphEntry.second;
         long int sum=0;
-        float tmpEuros=0;
-
         for (const auto &attrPair : valMap.attributes) {
-          int attrId   = attrPair.first;
-          long attrVal = attrPair.second;
-          if (attrVal > 0 ) sum +=attrVal;
-          if (attrId>0)
-          {
-            tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
-            tmpEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
-          }
+          if (attrPair.second > 0) sum += attrPair.second;
         }
-
-        maxVal = max(sum,maxVal);
-        minVal = min(sum,minVal);
-        if (minVal ==0){minVal=maxVal;}  
-        
-        //tmpEuros+= String(ConfigGeneral.tarifAbo).toFloat();
-        if (memcmp(Month,Key.c_str(),2)==0)
-        {
-          tmp=sum;
-          tarifEuro=tmpEuros;
-        }
-        if (memcmp(String(atoi(Month)-1).c_str(),Key.c_str(),4)==0)
-        {
-          lastTime=sum;
-        }
-      }  
-
+        CostBreakdown c = calcCost(valMap, 1.0, 1.0);
+        maxVal = max(sum, maxVal);
+        minVal = min(sum, minVal);
+        if (minVal == 0) minVal = maxVal;
+        if (memcmp(Month, Key.c_str(), 2) == 0) { tmp = sum; tarifEuro = c.total(); currentCost = c; }
+        if (memcmp(String(atoi(Month)-1).c_str(), Key.c_str(), 4) == 0) { lastTime = sum; }
+      }
     }else if (Time=="year")
     {
       for (const auto &graphEntry : hist.years.graph) {
         const PsString &Key = graphEntry.first;
-        const ValueMap &valMap   = graphEntry.second;
-
+        const ValueMap &valMap = graphEntry.second;
         long int sum=0;
-        float tmpEuros=0;
-
         for (const auto &attrPair : valMap.attributes) {
-          int attrId   = attrPair.first;
-          long attrVal = attrPair.second;
-          if (attrVal > 0 ) sum +=attrVal;
-          if (attrId>0)
-          {
-            tmpEuros+=attrVal * getTarif(attrId,"energy")/1000;
-            tmpEuros+=(attrVal/1000) * atof(ConfigGeneral.tarifCSPE);
-          }
+          if (attrPair.second > 0) sum += attrPair.second;
         }
-        maxVal = max(sum,maxVal);
-        minVal = min(sum,minVal);
-        if (minVal ==0){minVal=maxVal;}  
-        
-
-        if (memcmp(Year,Key.c_str(),4)==0)
-        {
-          tmp=sum;
-          tarifEuro=tmpEuros;
-        }
-        if (memcmp(String(atoi(Year)-1).c_str(),Key.c_str(),4)==0)
-        {
-          lastTime=sum;
-        }
-      }  
-    }   
-
-    if (tmp>0)
-    {
-      energyTemp = tmp;
+        CostBreakdown c = calcCost(valMap, 12.0, 12.0);
+        maxVal = max(sum, maxVal);
+        minVal = min(sum, minVal);
+        if (minVal == 0) minVal = maxVal;
+        if (memcmp(Year, Key.c_str(), 4) == 0) { tmp = sum; tarifEuro = c.total(); currentCost = c; }
+        if (memcmp(String(atoi(Year)-1).c_str(), Key.c_str(), 4) == 0) { lastTime = sum; }
+      }
     }
+
+    if (tmp > 0) energyTemp = tmp;
 
     long int trend=0;
     String op="";
-    if ( energyTemp > lastTime)
-    {
-      trendColor="orange";
-      op="+";
-      trend=energyTemp - lastTime;
-    }else if ( energyTemp < lastTime)
-    {
-      trendColor="green";
-      op="-";
-      trend=lastTime - energyTemp;
-    }else{
-      trendColor="grey";
-      op="";
-      trend=0;
+    // Prop 8 : pourcentage de variation
+    float pctVariation = 0;
+    if (energyTemp > lastTime) {
+      trendColor="orange"; op="+"; trend = energyTemp - lastTime;
+    } else if (energyTemp < lastTime) {
+      trendColor="green"; op="-"; trend = lastTime - energyTemp;
+    } else {
+      trendColor="grey"; op=""; trend=0;
     }
-    result +="<h5>Consommation</h5><div style='text-align:center;'>";
-    result +="<div style='float:left;display:inline-block;width:64px;'>";
-    result += "<svg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>";
-      result += "<rect width='100' height='100' rx='20' ry='20' fill='"+trendColor+"'/>";
-      result += "<path d='M55 10 L30 55 H48 L40 90 L70 45 H52 Z' fill='#FFFFFF'/>";
-    result += "</svg>";
-    result +="</div>";
-    result+="<div style='display:inline-box;height:100px;padding-top:15px;'><span style='font-size:24px;'>";
-      result +=op+getValuekWh(trend);
-    result+="</span>";
-    result+="<br><span style='font-size:12px;'><strong>Min:</strong> ";
-      result+=getValuekWh(minVal);
-      result+="<br> <strong>Max :</strong> ";
-      result+=getValuekWh(maxVal);
-    result+="</span></div>";   
-    result+="<br><div style='display:inline-block;width:64px;float:left;'>";
+    if (lastTime > 0) {
+      pctVariation = ((float)(energyTemp - lastTime) / (float)lastTime) * 100.0;
+    }
 
-      result+=" <svg width='64px' height='64px' viewBox='0 0 1024 1024' class='icon' version='1.1' xmlns='http://www.w3.org/2000/svg' fill='#000000'>";
-        result+="<g id='SVGRepo_bgCarrier' stroke-width='0'/>";
-        result+="<g id='SVGRepo_tracerCarrier' stroke-linecap='round' stroke-linejoin='round'/>";
-        result+="<g id='SVGRepo_iconCarrier'>";
-        result+="<path d='M951.87 253.86c0-82.18-110.05-144.14-256-144.14s-256 61.96-256 144.14c0 0.73 0.16 1.42 0.18 2.14h-0.18v109.71h73.14v-9.06c45.77 25.81 109.81 41.33 182.86 41.33 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98h-73.12v73.14h73.12c67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0 28.27-72.93 71-182.86 71l-25.89 0.12c-15.91 0.14-31.32 0.29-46.34-0.11l-1.79 73.11c8.04 0.2 16.18 0.27 24.48 0.27 7.93 0 16-0.05 24.2-0.12l25.34-0.12c67.44 0 127.02-13.35 171.81-35.69 6.97 7.23 11.04 14.41 11.04 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c67.44 0 127.01-13.35 171.81-35.69 6.98 7.22 11.05 14.4 11.05 20.62 0 28.27-72.93 71-182.86 71h-73.12v73.14h73.12c145.95 0 256-61.96 256-144.14 0-0.68-0.09-1.45-0.11-2.14h0.11V256h-0.18c0.03-0.72 0.2-1.42 0.2-2.14z m-438.86 0c0-28.27 72.93-71 182.86-71s182.86 42.73 182.86 71c0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98z' fill='currentColor'/>";
-        result+="<path d='M330.15 365.71c-145.95 0-256 61.96-256 144.14 0 0.73 0.16 1.42 0.18 2.14h-0.18v256c0 82.18 110.05 144.14 256 144.14s256-61.96 256-144.14V512h-0.18c0.02-0.72 0.18-1.42 0.18-2.14 0-82.18-110.05-144.15-256-144.15zM147.29 638.93c0-6.32 4.13-13.45 11.08-20.62 44.79 22.33 104.36 35.67 171.78 35.67 67.39 0 126.93-13.33 171.71-35.64 6.94 7.18 11.15 14.32 11.15 20.58 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.72-182.86-70.97z m182.86-200.07c109.93 0 182.86 42.73 182.86 71 0 28.25-72.93 70.98-182.86 70.98s-182.86-42.73-182.86-70.98c0-28.27 72.93-71 182.86-71z m0 400.14c-109.93 0-182.86-42.73-182.86-71 0-6.29 4.17-13.43 11.11-20.6 44.79 22.32 104.34 35.66 171.75 35.66 67.4 0 126.96-13.33 171.74-35.65 6.95 7.17 11.11 14.31 11.11 20.6 0.01 28.26-72.92 70.99-182.85 70.99z' fill='currentColor'/>";
-        result+="</g>";
-        result+="</svg>";   
-    result+="</div>";
-    result+="<div style='display:inline-block;line-height:72px;'><span style='font-size:24px;'>";
-      result +=String(tarifEuro) +" €";
-    result+="</span></div>";
+    // ---- Trend compact avec icone reduite ----
+    result += "<div style='text-align:center;'>";
+      result += "<div style='float:left;display:inline-block;width:36px;'>";
+        result += "<svg width='36' height='36' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'>";
+          result += "<rect width='100' height='100' rx='20' ry='20' fill='"+trendColor+"'/>";
+          result += "<path d='M55 10 L30 55 H48 L40 90 L70 45 H52 Z' fill='#FFFFFF'/>";
+        result += "</svg>";
+      result += "</div>";
+      result += "<div style='display:inline-block;padding-top:2px;'>";
+        result += "<span style='font-size:18px;font-weight:bold;'>" + op + getValuekWh(trend) + "</span>";
+        // Prop 8 : pourcentage
+        if (lastTime > 0) {
+          char pctBuf[96];
+          snprintf(pctBuf, sizeof(pctBuf), " <span style='font-size:12px;color:%s;'>(%s%.1f%%)</span>", trendColor.c_str(), (pctVariation >= 0 ? "+" : ""), pctVariation);
+          result += pctBuf;
+        }
+        result += "<br><span style='font-size:12px;color:#888;'>Min: " + getValuekWh(minVal) + " | Max: " + getValuekWh(maxVal) + "</span>";
+      result += "</div>";
+    result += "</div>";
+
+    // ---- Cout principal ----
+    result += "<div style='font-size:20px;font-weight:bold;margin:4px 0;'>" + String(tarifEuro) + " &euro;</div>";
+
+    // ---- Details repliables ----
+    result += "<details name='td' style='font-size:10px;color:#888;margin-bottom:4px;'><summary style='cursor:pointer;font-size:11px;'>D&eacute;tail co&ucirc;t</summary>";
+    appendCostDetail(result, currentCost);
+    int nbJours = 0;
+    if (Time == "day") nbJours = 0;
+    else if (Time == "month") nbJours = atoi(Day);
+    else if (Time == "year") nbJours = (atoi(Month) - 1) * 30 + atoi(Day);
+    appendAvgPrice(result, tarifEuro, tmp, nbJours);
+    if (Time == "month") {
+      appendProjection(result, tmp, tarifEuro, atoi(Day));
+    }
+    // Prop 4 : Injection pour la periode courante
+    if (hasProduction) {
+      long inj = 0;
+      if (Time == "day") inj = getInjectionForKey(histProd.days, Day, 2);
+      else if (Time == "month") inj = getInjectionForKey(histProd.months, Month, 2);
+      else if (Time == "year") inj = getInjectionForKey(histProd.years, Year, 4);
+      appendInjection(result, inj);
+    }
+    result += "</details>";
+
+    // Prop 5 : budget
+    if (budgetMensuel > 0) {
+      float budgetPeriode = 0;
+      if (Time == "day") budgetPeriode = budgetMensuel / 30.0;
+      else if (Time == "month") budgetPeriode = budgetMensuel;
+      else if (Time == "year") budgetPeriode = budgetMensuel * 12.0;
+      appendBudgetBar(result, tarifEuro, budgetPeriode);
+    }
+
     result += "</div>";
   }
   return result;
@@ -2695,14 +2735,7 @@ String getLastValuePower(String IEEE,String Attribute, String Time)
     }
 
 
-    if ((sum > 1000) || (sum < -1000))
-    {
-      float wh = sum;
-      float kwh = wh / 1000.0;
-      result = String(kwh,2);
-    }else{
-      result = String(sum);
-    }
+    result = String(sum);
 
   }
   return result;
@@ -3190,12 +3223,14 @@ void getBind(uint64_t mac, int device_id, String model)
         if ((tmp != NULL) && (tmp[0] != '\0')) 
         {
           char * pch;
-          pch = strtok ((char*)tmp,";");
+          // Séparateurs acceptés : ';' (convention), ',' et espace (tolérance aux erreurs de saisie).
+          // Les clusters sont en DÉCIMAL (ex: 513 = 0x0201), pas en hexa.
+          pch = strtok ((char*)tmp,"; ,");
           while (pch != NULL)
           {
             SendBind(mac,atoi(pch));
             vTaskDelay(pdMS_TO_TICKS(10));
-            pch = strtok (NULL, " ;");
+            pch = strtok (NULL, "; ,");
           }
         }
       }

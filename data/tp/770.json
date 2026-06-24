@@ -191,9 +191,9 @@
         {
           "cluster": "0402",
           "attribut": 0,
-          "type": 41,
+          "type": 33,
           "min": 30,
-          "max": 3600,
+          "max": 300,
           "change": 20
         },
         {
@@ -201,7 +201,7 @@
           "attribut": 0,
           "type": 33,
           "min": 30,
-          "max": 3600,
+          "max": 300,
           "change": 100
         },
         {

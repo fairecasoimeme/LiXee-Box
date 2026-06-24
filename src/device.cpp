@@ -341,22 +341,36 @@ bool DeviceData::loadTemplate() {
         log_w("Device ID vide, impossible de charger le template");
         return false;
     }
-    
+
     // Nom du fichier template: device_id.json
     String filename = _info.device_id + ".json";
-    
-    // Model pour sélection dans le JSON multi-modèles
+
+    // Essayer d'abord avec le manufacturer (résout les conflits TS0601
+    // où plusieurs types d'appareils partagent le même model/device_id)
+    if (!_info.manufacturer.isEmpty()) {
+        _template = templateCache.getExact(filename, _info.manufacturer);
+        if (_template) {
+            log_d("Template chargé pour device %s (manufacturer: %s): %d states, %d actions",
+                  _info.device_id.c_str(),
+                  _info.manufacturer.c_str(),
+                  _template->StateSize(),
+                  _template->ActionSize());
+            return true;
+        }
+    }
+
+    // Fallback sur le model
     String model = _info.model;
     if (model.isEmpty()) {
         model = "default";
     }
-    
+
     // Obtenir depuis le cache global
     _template = templateCache.get(filename, model);
-    
+
     if (_template) {
         log_d("Template chargé pour device %s (model: %s): %d states, %d actions",
-              _info.device_id.c_str(), 
+              _info.device_id.c_str(),
               model.c_str(),
               _template->StateSize(),
               _template->ActionSize());

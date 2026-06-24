@@ -260,6 +260,44 @@ public:
         return parsedData;
     }
     
+    // Obtenir TemplateData* avec matching exact (pas de fallback default/premier modèle)
+    // Utilisé pour résoudre les conflits TS0601 via manufacturer
+    TemplateData* getExact(const String& name, const String& modelName) {
+        if (modelName.isEmpty()) return nullptr;
+
+        PsString psName(name.c_str(), PsramAllocator<char>());
+        auto it = templates.find(psName);
+
+        if (it == templates.end()) return nullptr;
+
+        // Charger le JSON si pas encore fait
+        if (!it->second->loaded) {
+            if (!loadTemplate(it->first, it->second)) {
+                return nullptr;
+            }
+        }
+
+        // Vérifier si ce modèle est déjà parsé
+        auto parsedIt = it->second->parsedDataByModel.find(modelName);
+        if (parsedIt != it->second->parsedDataByModel.end()) {
+            return parsedIt->second;
+        }
+
+        // Parser avec exactOnly=true (pas de fallback)
+        void* mem = ps_malloc(sizeof(TemplateData));
+        if (!mem) mem = malloc(sizeof(TemplateData));
+        TemplateData* parsedData = new (mem) TemplateData();
+        if (!parsedData->parseFromJson(it->second->jsonData, modelName, true)) {
+            delete parsedData;
+            return nullptr;  // Clé non trouvée dans le JSON
+        }
+
+        // Mettre en cache
+        it->second->parsedDataByModel[modelName] = parsedData;
+
+        return parsedData;
+    }
+
     // Version optimisée pour device - DEPRECATED, utiliser get() avec modelName
     TemplateData* getForModel(const char* modelId) {
         if (!modelId) return nullptr;

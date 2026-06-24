@@ -15,7 +15,9 @@
 #include "basic.h"
 #include "Infrared.h"
 #include "thermostat.h"
-#include "energymeter.h" 
+#include "energymeter.h"
+#include "tuyapresence.h"
+#include "tuyairrigation.h"
 
 #include "device.h"
 #include "ElectricalMeasurement.h"
@@ -1122,28 +1124,35 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       break;
       case 0x8401:
       {
-        log_d("Zone status change notification : ");
-        
-        int i;
+        // IAS Zone Status Change Notification
+        // Payload: [0]=SQN [1]=Endpoint [2-3]=ClusterID [4]=AddrMode [5-6]=ShortAddr [7-8]=ZoneStatus
+        uint8_t Cluster[2];
+        Cluster[0] = (uint8_t)protocol.payload[2];
+        Cluster[1] = (uint8_t)protocol.payload[3];
 
-        for (i=0;i<2;i++)
-        {
-          uint8_t Cluster[4];
-          Cluster[i]=(uint8_t)protocol.payload[i+1];
-          char tmp[4];
-          snprintf(tmp,3,"%02X",protocol.payload[i+1]);
+        uint8_t ShortAddr[2];
+        ShortAddr[0] = (uint8_t)protocol.payload[5];
+        ShortAddr[1] = (uint8_t)protocol.payload[6];
 
+        uint16_t zoneStatus = ((uint8_t)protocol.payload[7] << 8) | (uint8_t)protocol.payload[8];
+
+        int SA = (ShortAddr[0] * 256) + ShortAddr[1];
+        String inifile = GetMacAdrr(SA);
+
+        log_d("IAS Zone Status Change: addr=%04X cluster=%02X%02X zoneStatus=0x%04X",
+              SA, Cluster[0], Cluster[1], zoneStatus);
+
+        if (inifile != "") {
+          SetInfoLastseen(inifile, FormattedDate);
+
+          // Forward zone status as cluster 0x0500, attribute 0x0002 (ZoneStatus)
+          uint8_t Attribute[2] = { 0x00, 0x02 };
+          char zoneData[2];
+          zoneData[0] = (char)((zoneStatus >> 8) & 0xFF);
+          zoneData[1] = (char)(zoneStatus & 0xFF);
+
+          readZigbeeDatas(inifile, Cluster, Attribute, 0x19, 2, zoneData);
         }
-        
-        for (i=0;i<2;i++)
-        {
-          uint8_t ShortAddr[4];
-          ShortAddr[i]=(uint8_t)protocol.payload[i+4];
-          char tmp[4];
-          snprintf(tmp,3,"%02X",protocol.payload[i+4]);
-
-        }
-
       }
       break;
       case 0x8002:
@@ -1240,10 +1249,22 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
                         log_d("Tuya device found: %s, manufacturer: %s", 
                               deviceId.c_str(), manufacturer.c_str());
                         
+                        // Vérifier si c'est un capteur de présence Tuya
+                        if (isTuyaPresenceSensor(manufacturer)) {
+                            log_i(">>> EF00 -> Presence Sensor (%s)", manufacturer.c_str());
+                            tuyaPresenceSensorManage(inifile, 0, 0, dataLen,
+                                                    (char*)&protocol.payload[dataOffset]);
+                        }
+                        // Vérifier si c'est une vanne d'irrigation Tuya
+                        else if (isTuyaIrrigation(manufacturer)) {
+                            log_i(">>> EF00 -> Irrigation (%s)", manufacturer.c_str());
+                            tuyaIrrigationManage(inifile, 0, 0, dataLen,
+                                                 (char*)&protocol.payload[dataOffset]);
+                        }
                         // Vérifier si c'est un compteur d'énergie Tuya
-                        if (isTuyaEnergyMeter(manufacturer)) {
+                        else if (isTuyaEnergyMeter(manufacturer)) {
                             log_i(">>> EF00 -> Energy Meter (%s)", manufacturer.c_str());
-                            tuyaEnergyMeterManage(inifile, 0, 0, dataLen, 
+                            tuyaEnergyMeterManage(inifile, 0, 0, dataLen,
                                                  (char*)&protocol.payload[dataOffset]);
                         }
                         // Vérifier si c'est un thermostat Tuya

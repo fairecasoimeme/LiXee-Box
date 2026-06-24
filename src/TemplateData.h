@@ -64,27 +64,31 @@ public:
     
     // Parser depuis JSON - Format réel: multi-modèles avec "status" et "action"
     // Le modelName permet de sélectionner le bon modèle dans un JSON multi-modèles
-    bool parseFromJson(const char* jsonStr, const String& modelName = "") {
+    bool parseFromJson(const char* jsonStr, const String& modelName = "", bool exactOnly = false) {
         if (!jsonStr) return false;
-        
+
         SpiRamJsonDocument doc(100000);  // Plus grand pour templates complexes
         DeserializationError err = deserializeJson(doc, jsonStr);
-        
+
         if (err) {
             Serial.printf("TemplateData parse error: %s\n", err.c_str());
             return false;
         }
-        
+
         states.clear();
         actions.clear();
-        
+
         JsonObject root = doc.as<JsonObject>();
         JsonArray modelArray;
-        
+
         // 1. Chercher le modèle spécifique
         if (!modelName.isEmpty() && root.containsKey(modelName)) {
             modelArray = root[modelName].as<JsonArray>();
             Serial.printf("Modèle '%s' trouvé\n", modelName.c_str());
+        }
+        // Si exactOnly, ne pas faire de fallback (utilisé pour matching manufacturer)
+        else if (exactOnly) {
+            return false;
         }
         // 2. Fallback sur "default"
         else if (root.containsKey("default")) {

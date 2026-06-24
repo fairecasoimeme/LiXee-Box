@@ -89,9 +89,19 @@ DeviceData* findEnergyMeterDevice(const String& deviceId) {
     if (!energyMeterCacheInitialized) {
         initializeEnergyMeterCache();
     }
-    
+
     auto it = energyMeterCache.find(deviceId.c_str());
-    return (it != energyMeterCache.end()) ? it->second : nullptr;
+    if (it != energyMeterCache.end()) return it->second;
+
+    // Cache miss — chercher dans la liste complète (device ajouté après init du cache)
+    for (size_t i = 0; i < devices.size(); i++) {
+        DeviceData* device = devices[i];
+        if (device->getDeviceID() == deviceId) {
+            energyMeterCache[device->getDeviceID().c_str()] = device;
+            return device;
+        }
+    }
+    return nullptr;
 }
 
 // Recherche dans une table de manufacturers
@@ -533,7 +543,56 @@ static void handleEnergyMeterDatapoint(const String& inifile, uint8_t dpId, uint
         case 15:  // Total Reverse Energy (bidirectionnel)
             handleTotalReverseEnergy(inifile, value, type);
             break;
-            
+
+        // === DPs DDS238-2 / Hiking (compteurs DIN monophasés) ===
+        case 16:  // Switch state (on/off)
+        {
+            char hexBuf[4];
+            snprintf(hexBuf, sizeof(hexBuf), "%02X", (uint8_t)value);
+            String deviceId = inifile.substring(0, 16);
+            EnergyMeterProcessedData data = {deviceId, "EF00", "16", String(hexBuf), "numeric", true};
+            publishEnergyMeterData(data);
+            updateEnergyMeterValue(deviceId, "EF00", 16, String(hexBuf));
+            log_i("Switch State (DP16): %s", value ? "ON" : "OFF");
+        }
+        break;
+
+        case 18:  // Current (DDS238: value / 1000 = A)
+        {
+            char hexBuf[10];
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+            String deviceId = inifile.substring(0, 16);
+            EnergyMeterProcessedData data = {deviceId, "EF00", "101", String(hexBuf), "numeric", true};
+            publishEnergyMeterData(data);
+            updateEnergyMeterValue(deviceId, "EF00", 101, String(hexBuf));
+            log_i("Current L1 (DP18 -> attr 101): %lu raw (%.3f A)", value, value / 1000.0f);
+        }
+        break;
+
+        case 19:  // Power (DDS238: direct W)
+        {
+            char hexBuf[10];
+            snprintf(hexBuf, sizeof(hexBuf), "%08lX", value);
+            String deviceId = inifile.substring(0, 16);
+            EnergyMeterProcessedData data = {deviceId, "EF00", "102", String(hexBuf), "numeric", true};
+            publishEnergyMeterData(data);
+            updateEnergyMeterValue(deviceId, "EF00", 102, String(hexBuf));
+            log_i("Power L1 (DP19 -> attr 102): %lu W", value);
+        }
+        break;
+
+        case 20:  // Voltage (DDS238: value / 10 = V)
+        {
+            char hexBuf[10];
+            snprintf(hexBuf, sizeof(hexBuf), "%04X", (uint16_t)value);
+            String deviceId = inifile.substring(0, 16);
+            EnergyMeterProcessedData data = {deviceId, "EF00", "100", String(hexBuf), "numeric", true};
+            publishEnergyMeterData(data);
+            updateEnergyMeterValue(deviceId, "EF00", 100, String(hexBuf));
+            log_i("Voltage L1 (DP20 -> attr 100): %lu raw (%.1f V)", value, value / 10.0f);
+        }
+        break;
+
         // === DP 32 = Energy total (variante alternative) ===
         case 32:  // 0x20
             handleEnergyDP32(inifile, value);

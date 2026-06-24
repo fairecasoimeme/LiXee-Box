@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.20"
+#define VERSION "v2.21"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -41,6 +41,63 @@ struct SubMeterConfig {
     char color[10];         // Couleur hex pour le donut (ex: "#e74c3c")
     bool enabled;           // Activé/désactivé
 };
+
+// ===== Thermostat virtuel (Phase 0) =====
+// Une zone = un capteur de température + un actionneur on/off, régulés en TPI.
+#define MAX_VTHERMOSTATS 8
+#define MAX_OPEN_SENSORS 4      // capteurs d'ouverture par zone
+#define MAX_EXTRA_ACTUATORS 4   // prises/relais supplémentaires par zone (en plus du principal)
+
+struct VirtualThermostat {
+    // --- configuration (persistée dans /config/thermostats.json) ---
+    char  name[32];          // Nom affiché (ex: "Salon")
+    char  sensorIEEE[20];    // Capteur de température (cluster 0402)
+    char  actuatorIEEE[20];  // Prise / relais / appareil piloté (principal : porte les actions ci-dessous)
+    char  actuatorsExtra[MAX_EXTRA_ACTUATORS][20];  // Prises supplémentaires (même commande que le principal)
+    int   actuatorsExtraCount;
+    char  actionHeat[40];    // Action "chauffer" (vide => on/off cluster 0006)
+    char  actionCool[40];    // Action "refroidir" (clim réversible ; vide si non géré)
+    char  actionOff[40];     // Action "arrêt" (vide => on/off cluster 0006)
+    char  presenceIEEE[20];  // Capteur de présence (optionnel, cluster 0406)
+    char  openSensors[MAX_OPEN_SENSORS][20];  // Capteurs d'ouverture (optionnels, IAS 0500)
+    int   openSensorCount;
+    bool  enabled;           // Zone active
+    bool  heating;           // true = chauffage, false = rafraîchissement
+    float setpoint;          // Consigne °C (réglage manuel en P0)
+    float frostTemp;         // Sécurité hors-gel °C
+    bool  frostMode;         // Mode hors-gel actif (consigne basculée sur frostTemp)
+    float setpointSaved;     // Consigne mémorisée avant passage en hors-gel
+    int   tpiCycleSec;       // Durée du cycle TPI (s)
+    float tpiKp;             // Gain proportionnel
+    float tpiKi;             // Gain intégral
+    int   minOnSec;          // Anti-court-cycle : durée ON minimale
+    int   minOffSec;         // Anti-court-cycle : durée OFF minimale
+    int   sensorTimeoutSec;  // Délai sans nouvelle mesure avant capteur "HS"
+    int   operMode;          // Fonctionnement : 0=toujours, 1=plages horaires, 2=tarif Linky
+    char  schedule[64];      // Plages horaires "HH:MM-HH:MM,HH:MM-HH:MM" (operMode=1)
+    char  tariffPeriods[48]; // Périodes tarifaires actives, IDs séparés par virgule (operMode=2), ex "256,260,264"
+    int   priority;          // Priorité (futur délestage)
+    int   nominalPowerW;     // Puissance nominale W (futur coût/délestage, 0 = inconnu)
+
+    // --- état runtime (NON persisté) ---
+    float         currentTemp;   // Dernière température lue (°C)
+    bool          sensorValid;   // Capteur joignable et valeur fraîche
+    bool          occupied;      // Présence détectée (true si pas de capteur présence)
+    bool          windowOpen;    // Au moins un capteur d'ouverture ouvert
+    bool          schedActive;   // Dans la plage horaire / tarif favorable (true = autorisé)
+    int           forceMode;     // Forçage manuel runtime : 0=auto, 1=marche forcée, 2=arrêt forcé
+    float         duty;          // Sortie TPI calculée (0..1)
+    bool          output;        // État commandé/visé de l'actionneur
+    bool          actualOn;      // État réel lu sur la prise (0006/0)
+    float         integral;      // Terme intégral TPI
+    unsigned long cycleStartMs;  // Début du cycle TPI courant
+    unsigned long lastSwitchMs;  // Dernier basculement de l'actionneur
+    unsigned long lastSensorMs;  // Dernière lecture capteur valide
+    unsigned long lastAssertMs;  // Dernière ré-assertion de sécurité
+};
+
+extern VirtualThermostat vThermostats[MAX_VTHERMOSTATS];
+extern int vThermostatCount;
 
 // ma structure configCRC error
 struct ConfigSettingsStruct {
@@ -341,6 +398,7 @@ struct UpdateStatus {
       int progressAuto = -1;  // -1 = pas de MAJ, 0-100 = progression
       int progressManuel = -1;
       bool rebootRequested = false;
+      // String log = "";         // Log de diagnostic mise a jour (desactive temporairement)
     };
 
 // Définir un type de document JSON qui utilise la PSRAM
