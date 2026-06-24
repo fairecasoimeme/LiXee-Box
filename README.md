@@ -68,7 +68,13 @@ L'appareil peut être configuré via un site web local
 - Seuils configurables avec actions automatiques
 - Gestion de la production et distribution d'énergie
 - Gestion tarifaire pour l'énergie, la production, le gaz et l'eau
-- Gestion avancée chauffage / froid (en cours)
+
+### 🌡️ Thermostat virtuel
+- Régulation multi-zone : capteur de température et actionneur **dissociés** (la box joue le thermostat)
+- Pilotage de prises on/off, **climatiseurs réversibles** (HEAT/COOL/OFF) et radiateurs **fil pilote** — plusieurs prises par zone
+- Régulation **TPI** (modulation par le temps) ou **hystérésis** selon l'actionneur
+- Maîtrise de l'énergie : **présence**, **ouverture** de fenêtre, **plages horaires**, **tarif Linky**
+- Hors-gel, forçage manuel, cadran temps réel — guide détaillé : [THERMOSTATS.md](THERMOSTATS.md)
 
 ### 🔒 Sécurité
 - Authentification par sessions (token 32 caractères, durée 24h, max 4 sessions simultanées)
