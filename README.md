@@ -363,6 +363,25 @@ Une section **Configuration avancée** repliable permet également une connexion
 
 ---
 
+## 🌡️ Thermostat virtuel (à partir de la v2.21)
+
+Le **thermostat virtuel** transforme la LiXee-Box en régulateur de température. Il **découple la mesure de l'action** : un capteur de température Zigbee quelconque sert de sonde, et la box pilote un **actionneur** distinct (prise/relais, climatiseur réversible, radiateur fil pilote…) pour maintenir une **consigne**, tout en maîtrisant l'énergie.
+
+- **Multi-zone** (jusqu'à 8 zones indépendantes)
+- **Actionneurs** : prise on/off, clim HVAC (HEAT/COOL/OFF), fil pilote — et **plusieurs prises** par zone
+- **Clim réversible** : choix Chaud / Froid directement sur la vignette
+- Régulation **TPI** (modulation par le temps) pour le tout-ou-rien, **hystérésis** pour les appareils pilotés par action
+- **Maîtrise de l'énergie** : capteur de présence, capteurs d'ouverture (porte/fenêtre), plages horaires, ou **tarif Linky** (Base / HC-HP / EJP / Tempo)
+- **Hors-gel**, forçage manuel marche/arrêt, anti-court-cycle, sécurité capteur HS
+- Vignettes **cadran circulaire** temps réel (consigne, écart visualisé, état de l'actionneur)
+
+Configuration dans **Config → Thermostat**, visuel temps réel dans **Mesures → Thermostat**.
+
+![Cadran thermostat — climatisation](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_climatisation.jpg)
+![Cadran thermostat — chauffage](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_chauffage.jpg)
+
+> **Documentation complète** : voir [THERMOSTATS.md](THERMOSTATS.md) pour le guide détaillé (modes de régulation, capteurs, actionneurs, algorithmes TPI/hystérésis, paramètres avancés, cadran, priorités, cas d'usage, dépannage).
+
 ## Les règles (automatismes)
 
 > **Documentation complète** : voir [RULES.md](RULES.md) pour le guide détaillé de toutes les fonctionnalités (9 types de conditions, 3 types d'actions, exemples, variables de notification, etc.)
@@ -591,25 +610,6 @@ Les notifications permettent d'être informé ou alerté des évènements de vot
 #### Exemple d'évènements
 ![Evènements](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Notifications.png)
 
-## 🌡️ Thermostat virtuel (à partir de la v2.21)
-
-Le **thermostat virtuel** transforme la LiXee-Box en régulateur de température. Il **découple la mesure de l'action** : un capteur de température Zigbee quelconque sert de sonde, et la box pilote un **actionneur** distinct (prise/relais, climatiseur réversible, radiateur fil pilote…) pour maintenir une **consigne**, tout en maîtrisant l'énergie.
-
-- **Multi-zone** (jusqu'à 8 zones indépendantes)
-- **Actionneurs** : prise on/off, clim HVAC (HEAT/COOL/OFF), fil pilote — et **plusieurs prises** par zone
-- **Clim réversible** : choix Chaud / Froid directement sur la vignette
-- Régulation **TPI** (modulation par le temps) pour le tout-ou-rien, **hystérésis** pour les appareils pilotés par action
-- **Maîtrise de l'énergie** : capteur de présence, capteurs d'ouverture (porte/fenêtre), plages horaires, ou **tarif Linky** (Base / HC-HP / EJP / Tempo)
-- **Hors-gel**, forçage manuel marche/arrêt, anti-court-cycle, sécurité capteur HS
-- Vignettes **cadran circulaire** temps réel (consigne, écart visualisé, état de l'actionneur)
-
-Configuration dans **Config → Thermostat**, visuel temps réel dans **Mesures → Thermostat**.
-
-![Cadran thermostat — climatisation](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_climatisation.jpg)
-![Cadran thermostat — chauffage](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_chauffage.jpg)
-
-> **Documentation complète** : voir [THERMOSTATS.md](THERMOSTATS.md) pour le guide détaillé (modes de régulation, capteurs, actionneurs, algorithmes TPI/hystérésis, paramètres avancés, cadran, priorités, cas d'usage, dépannage).
-
 ## 📦 Appareils Compatibles (à partir de la v2.12)
 
 La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâce à sa prise en charge des clusters standards. Les appareils marqués **📋 Template** disposent d'un template dédié intégré au firmware pour une compatibilité optimale. Les autres fonctionnent via les clusters Zigbee standards.
@@ -707,7 +707,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
-| **Saswell/Tuya** | AC201A | Contrôle climatiseur : chaud, froid, ventilo, déshumidification. Consignes prédéfinies (18-26 °C) | 📋 | ✅ |
+| **Saswell/Tuya** | AC201A | Contrôle climatiseur : chaud, froid, ventilo, déshumidification. Consignes prédéfinies (18-26 °C) | 📋 |  |
 | **NodOn** | IRB-4-1-00 | Blaster IR pour climatiseur : chaud, froid, ventilo, auto, déshumidification. Consignes, vitesse ventilateur, position volet | 📋 | ✅ |
 
 ---
