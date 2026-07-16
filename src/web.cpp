@@ -199,14 +199,21 @@ bool checkCsrf(AsyncWebServerRequest *request) {
         return false;
     }
 
-    // Allow local IPs, mDNS hostnames, and tunnel proxy (127.0.0.1)
-    String localIP = WiFi.localIP().toString();
-    if (origin.indexOf(localIP) >= 0) return true;
-    if (origin.indexOf("127.0.0.1") >= 0) return true;
-    if (origin.indexOf("lixeebox-") >= 0) return true;  // mDNS
-    if (origin.indexOf(".lixee-box.fr") >= 0) return true;  // tunnel
+    // Vérification "same-origin" : l'hôte de l'Origin/Referer doit correspondre à l'hôte
+    // ciblé par la requête (header Host). PAS de liste blanche de domaines : ça fonctionne
+    // quel que soit le mode d'accès (IP locale, mDNS, tunnel, DynDNS+NAT, reverse proxy,
+    // VPN, domaine perso...), alors qu'une attaque CSRF provient forcément d'une origine
+    // DIFFÉRENTE de l'hôte ciblé — donc elle reste bloquée.
+    // "http://mabox.dyndns.net:8080/rules" -> "mabox.dyndns.net:8080"
+    String originHost = origin;
+    int schemeEnd = originHost.indexOf("://");
+    if (schemeEnd >= 0) originHost = originHost.substring(schemeEnd + 3);
+    int pathStart = originHost.indexOf('/');
+    if (pathStart >= 0) originHost = originHost.substring(0, pathStart);
 
-    log_e("[CSRF] Rejected POST from origin: %s", origin.c_str());
+    if (originHost.equalsIgnoreCase(request->host())) return true;
+
+    log_e("[CSRF] Rejected POST: origin '%s' != host '%s'", originHost.c_str(), request->host().c_str());
     return false;
 }
 
@@ -17958,13 +17965,30 @@ void handleExportPowerChart(AsyncWebServerRequest* request) {
     goal = strtol(dev->getValue("0B01", "14").c_str(), 0, 16) * 1000;
   }
 
-  // Trier les relevés par horodatage (HH:MM, déjà zéro-paddé => ordre lexicographique = chronologique)
+  // Trier les relevés par horodatage (HH:MM, déjà zéro-paddé => ordre lexicographique)
   PowerHistory& ph = dev->powerHistory;
   std::vector<const DataRecord*> sorted;
   sorted.reserve(ph.datas.size());
   for (auto& rec : ph.datas) sorted.push_back(&rec);
   std::sort(sorted.begin(), sorted.end(),
             [](const DataRecord* a, const DataRecord* b) { return a->timeStamp < b->timeStamp; });
+
+  // Rotation IDENTIQUE à toJson() (powerHistory.cpp) : le relevé de l'heure courante doit
+  // finir en DERNIER. L'historique est un buffer glissant sur 24 h indexé par HH:MM : les
+  // relevés postérieurs à l'heure courante datent d'HIER. Sans cette rotation, le CSV sort
+  // 00:00->23:59 en mélangeant hier et aujourd'hui, et ne correspond pas au graphe.
+  String nowHM = String(Hour) + ":" + Minute;
+  std::vector<const DataRecord*> pivoted;
+  pivoted.reserve(sorted.size());
+  if (!sorted.empty()) {
+    size_t idx = 0;
+    while (idx < sorted.size() && String(sorted[idx]->timeStamp.c_str()) != nowHM) ++idx;
+    if (idx < sorted.size()) idx = (idx + 1) % sorted.size();   // démarrer juste après 'now'
+    for (size_t k = 0; k < sorted.size(); ++k)
+      pivoted.push_back(sorted[(idx + k) % sorted.size()]);
+  } else {
+    pivoted = sorted;
+  }
 
   String csv;
   csv.reserve(96 + sorted.size() * 80);
@@ -17976,7 +18000,7 @@ void handleExportPowerChart(AsyncWebServerRequest* request) {
   if (goal > 0) csv += ";Utilisation limite (%);Marge limite (VA)";
   csv += "\r\n";
 
-  for (auto* rec : sorted) {
+  for (auto* rec : pivoted) {
     csv += csvEscape(String(rec->timeStamp.c_str()));
     for (auto& c : cols) {
       csv += ";";
