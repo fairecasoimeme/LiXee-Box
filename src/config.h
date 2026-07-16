@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.21"
+#define VERSION "v2.22a"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -24,6 +24,10 @@
 #define TXD2 18//18//16 
 
 #define MAXHEAP 1000000//ESP.getMaxAllocHeap() //(ESP.getFreeHeap() / 2) //96000
+// Détection des modules présents (le Zigbee et le LoRa peuvent coexister).
+// zigbeeDetected passe à true dès que la ZiGate répond au Get Version (trame 0x8010).
+extern bool zigbeeDetected;
+
 extern char FormattedDate[];
 extern char Hour[];
 extern char Day[];

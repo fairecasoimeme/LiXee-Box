@@ -1,0 +1,3 @@
+# Artefacts de build du projet de test SX1281 : ~68 Mo (dont une copie complete de
+# RadioLib, tiree par PlatformIO). Seules les sources sont versionnees.
+sx1281_spi_test/.pio/

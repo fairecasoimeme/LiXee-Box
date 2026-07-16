@@ -28,6 +28,8 @@ extern "C" {
 #include <LittleFS.h>
 #include "SPIFFS_ini.h"
 #include "config.h"
+#include "loraModule.h"
+#include "loraReceiver.h"
 #include "web.h"
 #include "log.h"
 #include "flash.h"
@@ -70,6 +72,8 @@ bool oldProdZero = false;
 
 bool wifiServicesStarted = false;
 bool zigbeeInitialized = false;
+// Modules détectés au démarrage (peuvent coexister) : le menu web s'y adapte.
+bool zigbeeDetected = false;   // posé par la réponse Get Version (0x8010) de la ZiGate
 
 // Tunnel reverse proxy
 LiXeeBoxTunnel* tunnel = nullptr;
@@ -2114,10 +2118,14 @@ void setup(void)
   Serial1.setTimeout(1);  
   //Serial1.begin(BAUD_RATE, SERIAL_8N1, RXD2, TXD2);
   // Timeout plus court pour réactivité
-  if (!Serial1.setPins(RXD2, TXD2, 5, 4)) {
+  // CTS/RTS volontairement non assignées ici : GPIO 5/4 sont celles du SPI du module
+  // LoRa (MOSI=5, SCK=4). L'UART ne les reprend que si le contrôle de flux matériel est
+  // explicitement activé en configuration — les deux usages sont exclusifs (voir plus
+  // bas le bloc ConfigSettings.enableHWFlow). Ça permet au Zigbee et au LoRa de coexister.
+  if (!Serial1.setPins(RXD2, TXD2, -1, -1)) {
     log_e("Failed setting UART pins!");
   }
-  Serial1.begin(BAUD_RATE, SERIAL_8N1); 
+  Serial1.begin(BAUD_RATE, SERIAL_8N1);
   delay(100);
   
   
@@ -2202,9 +2210,15 @@ void setup(void)
   // Thermostats virtuels (Phase 0)
   loadThermostats();
 
+  // Contrôle de flux matériel (CTS/RTS = GPIO 5/4) OU module LoRa (MOSI=5, SCK=4) :
+  // ces deux usages se partagent les mêmes broches, ils sont donc exclusifs.
   if (ConfigSettings.enableHWFlow)
   {
     log_e("Hardware Serial Flow control ON");
+    // Le contrôle de flux a besoin de CTS/RTS : l'UART reprend GPIO 5/4.
+    if (!Serial1.setPins(RXD2, TXD2, 5, 4)) {
+        log_e("Failed setting UART CTS/RTS pins!");
+    }
     if (!Serial1.setHwFlowCtrlMode(UART_HW_FLOWCTRL_CTS_RTS, 64)) {
         log_e("Failed enabling hardware flow control!");
     }
@@ -2212,8 +2226,12 @@ void setup(void)
     if (Serial1.availableForWrite() < 10) {
         log_e("UART buffer nearly full - flow control should activate");
     }
+    Serial.println(F("[LoRa] detection ignoree : le controle de flux materiel occupe GPIO 4/5"));
   }else{
     log_e("No Hardware Serial Flow control");
+    // GPIO 4/5 libres : on peut chercher un module LoRa (SX1281) en SPI.
+    // (Le Zigbee, lui, est détecté à l'arrivée de la réponse Get Version 0x8010.)
+    detectLoRa();
   }
 
 
@@ -2251,6 +2269,10 @@ void setup(void)
   templateCache.printStats();
 
   loadAllDevices("/db");
+
+  // Récepteur ZLinky LoRa : après loadAllDevices() car il ré-enregistre les émetteurs
+  // déjà appairés comme appareils (ensureLoraDevice). Ne fait rien si aucun module LoRa.
+  loraReceiverBegin();
 
   log_w("datasTreatment - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld",xPortGetCoreID(),ESP.getHeapSize(),ESP.getFreeHeap(),ESP.getFreePsram(),uxTaskGetStackHighWaterMark(NULL));
 
@@ -2492,6 +2514,10 @@ void loop(void)
 {
   unsigned long loopStart = millis();
   esp_task_wdt_reset();
+
+  // Récepteur LoRa : non bloquant (traite le drapeau posé par l'ISR DIO1).
+  // Appelé à chaque tour pour rester réactif ; ne fait rien sans module LoRa.
+  loraReceiverLoop();
 
   // Gestion du compteur de boot
   resetManager.tick();

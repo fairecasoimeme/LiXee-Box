@@ -1528,8 +1528,16 @@ function getAlert()
 					setTimeout(function(){ location.reload();}, 30000);
 				}if (datas[0]==3)
 				{
-					document.getElementById('deviceFound').innerHTML='<svg id="icon" fill="#0f70b7" style="width:48px;" width="32" height="32" viewBox="0 0 24 24" role="img" xmlns="http://www.w3.org/2000/svg"><path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path></svg> '+datas[1];
-					document.getElementById('nextBtn').style.display='block';
+					// Appareil trouve (appairage Zigbee ou LoRa). L'alerte peut tomber avant que
+					// l'assistant n'affiche la zone, et getAlert() sert aussi des pages qui n'ont ni
+					// zone ni bouton : on memorise sur window et on ne touche que ce qui existe.
+					var found='<svg id="icon" fill="#0f70b7" style="width:48px;" width="32" height="32" viewBox="0 0 24 24" role="img" xmlns="http://www.w3.org/2000/svg"><path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path></svg> '+datas[1];
+					window.deviceFound=true;
+					window.deviceFoundInfo=found;
+					var zone=document.getElementById('deviceFound');
+					if (zone){zone.innerHTML=found;}
+					var nBtn=document.getElementById('nextBtn');
+					if (nBtn){nBtn.style.display='block';}
 				}
 			}else{
 				if (pause>0){pause--;}
@@ -1545,22 +1553,9 @@ function getAlert()
 	xhr.send();
 }
 
-function setAlias(IEEE,alias)
-{
-	var xhr = getXhr();
-	xhr.onreadystatechange = function(){
-		if(xhr.readyState == 4 ){
-			leselect = xhr.responseText;
-			if (leselect =="OK")
-			{
-				window.location.href = '/configDevices';
-			}
-		}
-	}
-	xhr.open('GET','setAlias?ieee='+escape(IEEE)+'&alias='+escape(alias),true);
-	xhr.setRequestHeader('Content-Type','application/html');
-	xhr.send();
-}
+// setAlias() vivait ici mais n'avait qu'un seul appelant, l'assistant d'appairage, qui la
+// definit desormais lui-meme (saveAlias) : cette page est servie par le firmware et sa
+// navigation ne doit pas dependre de ce fichier, uploade separement.
 
 function getRuleStatus(name)
 {

@@ -26,6 +26,8 @@
 #include <Update.h>
 
 #include "config.h"
+#include "loraModule.h"
+#include "loraReceiver.h"
 #include "mbedtls/base64.h"
 #include "esp_crt_bundle.h"
 #include "flash.h"
@@ -455,7 +457,41 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
 
 // Le menu (nav + script spinner/swipe) est servi via la route /menu.js (mise en cache navigateur),
 // pour ne plus renvoyer ~29 Ko de menu dans le HTML de CHAQUE page. La page n'inclut qu'un <script src>.
-const char HTTP_MENU[] PROGMEM = "<body><script src='/menu.js?v=1'></script>";
+// /modules.js (quelques octets, NON caché) publie les modules détectés ; /menu.js (29 Ko,
+// caché 1 semaine) contient le menu statique et se filtre à partir de ces drapeaux.
+// Les <script src> sans defer s'exécutent dans l'ordre : les drapeaux existent donc
+// avant que menu.js ne tourne.
+// Cache-buster = VERSION + heure de COMPILATION (littéraux concaténés à la compilation).
+// Le menu étant compilé dans le firmware, chaque build produit une URL différente : les
+// modifications du menu sont donc toujours reprises, tout en gardant le cache long (1 semaine)
+// à l'intérieur d'un même firmware. VERSION seule ne suffit pas : elle ne change pas entre
+// deux builds de développement, et menu.js restait figé en cache (entrées jamais visibles).
+const char HTTP_MENU[] PROGMEM = "<body><script src='/modules.js'></script><script src='/menu.js?v=" VERSION "-" __TIME__ "'></script>";
+
+// Symbole du logo LoRa officiel, monochrome : le fill currentColor le fait suivre la
+// couleur du texte, comme les autres icones du menu (blanc sur un bouton bleu, sombre
+// sur fond clair). Trace optimise (-78%) puis fusionne en 4 chemins.
+// Macro et non const char[] : ces blocs PROGMEM sont assembles par concatenation de
+// litteraux a la compilation, ce qui n'est possible qu'entre litteraux.
+// Le viewBox et les traces du logo, separes de l'element <svg> : ils servent tels quels
+// dans un <symbol>, ce qui permet de declarer le dessin une seule fois par page et de le
+// referencer par <use> autant de fois que voulu (fiches appareils) sans le repeter.
+#define SVG_LORA_VIEWBOX "1 44 302 517"
+#define SVG_LORA_PATHS \
+  "<path d='M223.5 237.4a84 84 0 0 1 24.7 61c.1 24.9-4 47.5-21.9 66.3L224 367l-2 2.1c-16.4 15.6-40.8 23.2-63 23.9l-3.1.1c-26.2.5-51.4-5.3-71.9-22.1l-3-2.4A81 81 0 0 1 56 319c-.9-16.6-1.7-34.2 4-50l1.3-3.7a84 84 0 0 1 46.2-45.9c36.4-14.8 87-9.7 116 18m-102.8 26.2a65 65 0 0 0-11.2 49.5c2.2 14 7.5 24.3 18.4 33.5 9.6 6.7 22 7.6 33.2 6A39 39 0 0 0 187 336a82 82 0 0 0 5.4-56 47 47 0 0 0-20.8-25.3 44 44 0 0 0-50.9 8.9'/>" \
+  "<path d='M22 483q5.5 2.1 10.6 5.2c22.4 13 47 21.4 72.2 26.6l2.9.6q22.5 4.2 45.4 4h2.4q20.4 0 40.5-3.4l2.8-.5A243 243 0 0 0 279 485q11.1 10.6 19 24c-30.3 21.2-67.7 32.4-104 38l-2.2.3c-65 10-130.8-6-186.8-39.3 0-3.6.8-4.5 3-7.3l1.8-2.6 2-2.6 2-2.6c5.2-7 5.2-7 8.2-9.9M197 58l3 .5A282 282 0 0 1 284 88l2 1c11.8 6.4 11.8 6.4 13 10-1.1 2-1.1 2-2.9 4.3l-3.9 5.2-2 2.6-5.2 6.9c-.7 1-.7 1-1.5 1.8-1.5 1.2-1.5 1.2-3.5 1q-2.9-1.2-5.6-2.8l-2-1.2-2.3-1.3A248 248 0 0 0 176 86l-3.3-.4c-47.8-4.7-96 5.7-138.2 28.5l-2.8 1.5-2.5 1.3q-3 1.4-6.2 2.1l-6.8-8.7-2-2.5-1.8-2.5-1.8-2.2L9 101l-1.8-2L6 97c1.2-3.6 2-3.8 5.2-5.6l2.6-1.5 3-1.5 3-1.6A282 282 0 0 1 197 58'/>" \
+  "<path d='M52 443q4.5 1.7 8.8 4A195 195 0 0 0 206 464q19.3-5.4 36.7-15l2.3-1.2 2-1.1c2.5-.9 3.6-.7 6 .3 1.6 1.7 1.6 1.7 3 3.8l1.6 2.3 1.6 2.5 1.7 2.4 4.1 6c-3 3.4-6.5 5.6-10.5 7.8l-2 1a221 221 0 0 1-168.4 12A230 230 0 0 1 40 464c0-4.2.3-4.9 2.6-8.1l1.7-2.3 1.7-2.4 1.7-2.4zm200.7-308.7 3 1.6 2.9 1.5 2.5 1.3c1.9 1.3 1.9 1.3 2.9 4.3q-2.2 3.6-4.7 7l-1.4 1.8-5.7 7.6-1.2 1.6a56 56 0 0 1-12.2-5.3 180 180 0 0 0-89-22h-2.2c-29.9.1-58.8 6.6-85.4 20.6q-5.3 3-11.2 4.7l-6.6-8.8-1.9-2.5-1.8-2.5-1.6-2.2-1.1-2c1.7-5 6.5-6.3 11-8.6l3.1-1.6a217 217 0 0 1 58.2-19.3c48.1-10 99.3.7 142.4 22.8M81 404l1.5.7c37.4 18.1 75.8 25.7 116.3 12.2q12.3-4.5 24.2-9.9l6.4 8.8c3.6 5 3.6 5 3.6 7.2a163 163 0 0 1-80.8 20.4A154 154 0 0 1 71 421c.6-4.3 3.1-7.4 5.6-10.7z'/>" \
+  "<path d='M233 184a60 60 0 0 1-6.1 9.8l-2.2 3c-.9 1-.9 1-1.7 2.2q-6.4-2-12.4-5.1a138 138 0 0 0-124.1 1.5c-3.5 1.6-3.5 1.6-5.5 1a25 25 0 0 1-6.2-6.8l-2.2-3C71 184 71 184 71 181c50.8-25.7 112.8-29.3 162 3'/>"
+
+// Icone complete, prete a poser dans du HTML (menus).
+// La taille est en style inline, et pas seulement en attributs : style.css impose un
+// « svg{width:100%} » global, qui bat les attributs width/height. Sans ce style, l'icone
+// occupe toute la largeur du menu. C'est pour la meme raison que les autres icones du menu
+// portent toutes un style='width:16px;'.
+#define SVG_LORA_ICON \
+  "<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' style='width:10px;height:16px;' width='10' height='16' viewBox='" SVG_LORA_VIEWBOX "'>" \
+  SVG_LORA_PATHS \
+  "</svg>"
 
 // Markup du menu, injecte par /menu.js via document.write (sync, avant le footer => dropdowns/badges OK).
 const char HTTP_MENU_NAV[] PROGMEM =
@@ -511,7 +547,8 @@ const char HTTP_MENU_NAV[] PROGMEM =
    "</svg>"
    " Dashboard"
    "</a>"*/
-   "<a class='dropdown-item' href='statusDevices'>"
+   // Liste TOUS les appareils (Zigbee et/ou LoRa) : visible dès qu'un module est présent.
+   "<a class='dropdown-item' data-mod='zigbee,lora' href='statusDevices'>"
    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-app-indicator' viewBox='0 0 16 16'>"
    "  <path d='M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z'/>"
    "  <path d='M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0'/>"
@@ -539,11 +576,17 @@ const char HTTP_MENU_NAV[] PROGMEM =
    "</svg>"
    " WiFi"
    "</a>"
-   "<a class='dropdown-item' href='configDevices'>"
+   "<a class='dropdown-item' data-mod='zigbee' href='configDevices'>"
    "<svg fill='currentColor' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' role='img' xmlns='http://www.w3.org/2000/svg'>"
    "  <path d='M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z'/>"
    "</svg>"
    " Zigbee"
+   "</a>"
+   "<a class='dropdown-item' data-mod='lora' href='configLora'>"
+   // Logo LoRa officiel (fichier, pas inline : ~10 Ko de tracés, servis une fois et mis en
+   // cache, alors que le menu est rendu sur chaque page). Symbole portrait (ratio 0.58).
+   SVG_LORA_ICON
+   " LoRa"
    "</a>"
    "</div>"
    "</li>"
@@ -2450,6 +2493,16 @@ const char HTTP_CONFIG_MENU_ZIGBEE[] PROGMEM =
       "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
     "</svg><br>"
     " Config"
+    "</a>&nbsp"
+    ;
+
+// Pendant LoRa de HTTP_CONFIG_MENU_ZIGBEE. Une seule entree pour l'instant (le LoRa n'a pas
+// de page de config radio), mais on garde la meme colonne pour que les deux pages
+// s'alignent visuellement.
+const char HTTP_CONFIG_MENU_LORA[] PROGMEM =
+    "<a href='/configLora' style='width:100px;height:64px;' class='btn btn-primary mb-1 {{menu_config_lora}}' >"
+    SVG_LORA_ICON "<br>"
+    " Appareils"
     "</a>&nbsp"
     ;
 
@@ -5014,8 +5067,8 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
           icon: '<path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path>',
         },
         {
-          title: "Mode jumelage de la LiXee-Box",
-          desc: "Vérifiez que la LiXee-Box clignote",
+          title: "{{pairTitle}}",
+          desc: "{{pairDesc}}",
           icon: '<path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"></path>',
         },
         {
@@ -5032,6 +5085,12 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
 
       let current = 0;
       let timeout =0;
+      // Armes par getAlert() a la reception de l'alerte "appareil trouve" (code 3).
+      // En var (et non let) : getAlert() vit dans functions.js et les positionne sur window.
+      // Sans cette declaration, waitDevice() levait une ReferenceError des son 1er appel et
+      // la detection automatique ne fonctionnait pas.
+      var deviceFound = false;
+      var deviceFoundInfo = '';
       const progress   = document.getElementById('progressBar');
       const iconEl     = document.getElementById('icon');
       const titleEl    = document.getElementById('stepTitle');
@@ -5040,38 +5099,55 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
       const prevBtn    = document.getElementById('prevBtn');
       const nextBtn    = document.getElementById('nextBtn');
 
+      // Enregistre le nom puis revient a la liste de la bonne radio. Volontairement local a
+      // l'assistant (et non dans functions.js) : cette page est servie par le firmware, sa
+      // navigation ne doit pas dependre d'un functions.min.js.gz uploade separement, qui
+      // peut etre plus ancien que le firmware.
+      function saveAlias(IEEE,alias)
+      {
+        const xhr = getXhr();
+        xhr.onreadystatechange = function(){
+          if (xhr.readyState == 4) { window.location.href = "{{backUrl}}"; }
+        };
+        xhr.open('GET','setAlias?ieee='+encodeURIComponent(IEEE)+'&alias='+encodeURIComponent(alias),true);
+        xhr.setRequestHeader('Content-Type','application/html');
+        xhr.send();
+      }
+
+      // Affiche l'appareil trouve. L'alerte peut arriver avant qu'on soit a l'etape 2 (la
+      // zone n'existe alors pas encore) : getAlert() memorise le libelle, on le pose ici.
+      function showFoundDevice()
+      {
+        const zone = document.getElementById('deviceFound');
+        if (zone && deviceFoundInfo) { zone.innerHTML = deviceFoundInfo; }
+        nextBtn.style.display='block';
+      }
+
       function waitDevice()
       {
-        if (current >= 1 )
+        if (current < 1) return;
+
+        if (deviceFound)
         {
-          if (deviceFound)
-          {
-            deviceFound = false;  
-            if (current != 2)
-            {
-              current = 2;
-              timeout = 0;
-              render();
-              return;
-            }      
-          }else{
-            
-            if (timeout>=30)
-            {
-              //not found
-              timeout = 0;
-              current = 2;
-              render();
-              dynamic.innerHTML = `<div id="deviceFound" class="d-flex flex-column align-items-center gap-2">
-                  <span>Not found !</span>
-                </div>`;
-                return; 
-            }else{
-              timeout++;
-              setTimeout(function(){waitDevice();}, 1000);
-            }
-          }
+          deviceFound = false;
+          if (current != 2) { current = 2; timeout = 0; render(); }
+          showFoundDevice();
+          return;
         }
+
+        if (timeout>=30)
+        {
+          //not found
+          timeout = 0;
+          current = 2;
+          render();
+          dynamic.innerHTML = `<div id="deviceFound" class="d-flex flex-column align-items-center gap-2">
+              <span>Not found !</span>
+            </div>`;
+          return;
+        }
+        timeout++;
+        setTimeout(function(){waitDevice();}, 1000);
       }
 
       function render(){
@@ -5091,7 +5167,7 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
           dynamic.innerHTML = `<div class="d-flex flex-column align-items-center gap-2">
            <img src="web/img/ziwifi32.gif" width="120px">
           </div>`;
-          cmd("PermitJoinAssist");
+          cmd("{{pairCmd}}");
           getAlert();
           setTimeout(function(){waitDevice();}, 1000);
           nextBtn.style.display='block';
@@ -5133,7 +5209,7 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
           render(); 
         } else {
           var alias = document.getElementById('alias').value;
-          setAlias(IEEE,alias);
+          saveAlias(IEEE,alias);
         }
       });
       render();
@@ -8515,7 +8591,25 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       ".actions-bar{padding:10px 14px}"
       ".btn-action{padding:6px 12px;font-size:12px}"
     "}"
+    // Pastille de radio, poussee a droite de l'en-tete (l'en-tete est un flex).
+    // Les tailles sont en !important : la regle .card-header-custom svg ci-dessus impose
+    // 18x18 et une marge a toutes les icones de l'en-tete, y compris celle-ci.
+    ".radio-tag{margin-left:auto;display:inline-flex;align-items:center;gap:5px;flex-shrink:0;"
+      "font-size:11px;font-weight:600;color:#6c757d;background:#f1f3f5;border-radius:10px;padding:3px 8px}"
+    ".radio-tag svg{margin:0!important;flex-shrink:0}"
+    // Le symbole LoRa est portrait (ratio 0.58), celui du Zigbee carre : tailles distinctes
+    // pour qu'ils pesent optiquement pareil.
+    ".radio-tag .ic-lora{width:8px!important;height:14px!important}"
+    ".radio-tag .ic-zb{width:13px!important;height:13px!important}"
   "</style>"));
+
+  // Sprite : les traces sont declares UNE fois par page puis reference par <use> sur chaque
+  // fiche. Les inliner par fiche couterait ~2 Ko x N appareils dans la reponse.
+  response->print(F("<svg xmlns='http://www.w3.org/2000/svg' style='display:none'>"
+    "<symbol id='ic-lora' viewBox='" SVG_LORA_VIEWBOX "' fill='currentColor'>" SVG_LORA_PATHS "</symbol>"
+    "<symbol id='ic-zb' viewBox='0 0 24 24' fill='currentColor'>"
+    "<path d='M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z'/>"
+    "</symbol></svg>"));
 
   streamSection(response, HTTP_MENU);
 
@@ -8554,6 +8648,17 @@ void handleStatusDevices(AsyncWebServerRequest *request)
       response->print(device->getInfo().alias);
     } else {
       response->print(device->getDeviceID());
+    }
+
+    // Radio d'origine : cette page liste les appareils des deux modules, et rien d'autre ne
+    // les distingue (un ZLinky LoRa est un appareil normal, mêmes clusters qu'en Zigbee).
+    // Un émetteur LoRa appairé porte la MAC de l'appareil.
+    if (loraFindEmitterByMac(device->getDeviceID()) >= 0) {
+      response->print(F("<span class='radio-tag' title='Recu par radio LoRa 2.4 GHz'>"
+        "<svg class='ic-lora'><use href='#ic-lora'/></svg>LoRa</span>"));
+    } else {
+      response->print(F("<span class='radio-tag' title='Recu par Zigbee'>"
+        "<svg class='ic-zb'><use href='#ic-zb'/></svg>Zigbee</span>"));
     }
     response->print(F("</a></div>"));
 
@@ -16513,15 +16618,25 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   // Initialiser l'affichage du titre
   result += F("<script>showTitleDisplay();</script>");
   
+  // Radio d'origine de l'appareil : un émetteur LoRa appairé porte la MAC de l'appareil.
+  // Un appareil LoRa n'est pas interrogeable (le récepteur ne fait que pousser ce que
+  // l'émetteur envoie), et ses clusters/attributs ne sont qu'un artifice pour réutiliser le
+  // pipeline Zigbee : plusieurs blocs de cette page n'ont donc pas de sens pour lui.
+  int  loraSlot = loraFindEmitterByMac(device->getDeviceID());
+  bool isLora   = (loraSlot >= 0);
+
   // Section Informations générales
   result += F("<div class='section-title'>Informations générales</div>");
   result += F("<table class='info-table'>");
-  result += F("<tr><td>Adresse courte</td><td>");
-  char sAddr[5];
-  snprintf(sAddr, 5, "%04X", device->getInfo().shortAddr.toInt());
-  result += sAddr;
-  result += F("</td></tr>");
-  
+  // Adresse courte : notion Zigbee, forcée à 0 pour un appareil LoRa -> masquée.
+  if (!isLora) {
+    result += F("<tr><td>Adresse courte</td><td>");
+    char sAddr[5];
+    snprintf(sAddr, 5, "%04X", device->getInfo().shortAddr.toInt());
+    result += sAddr;
+    result += F("</td></tr>");
+  }
+
   result += F("<tr><td>Fabricant</td><td>");
   result += device->getInfo().manufacturer;
   result += F("</td></tr>");
@@ -16536,10 +16651,14 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += devId;
   result += F("</td></tr>");
   
-  result += F("<tr><td>Endpoint</td><td>");
-  result += device->getInfo().endpoint;
-  result += F("</td></tr>");
-  
+  // Endpoint : notion Zigbee, fixée à 1 à la création d'un appareil LoRa -> masquée.
+  if (!isLora) {
+    result += F("<tr><td>Endpoint</td><td>");
+    result += device->getInfo().endpoint;
+    result += F("</td></tr>");
+  }
+
+  // Version logicielle : conservée en LoRa, l'émetteur la remontera plus tard.
   result += F("<tr><td>Version logicielle</td><td>");
   result += device->getInfo().software_version;
   result += F("</td></tr>");
@@ -16548,10 +16667,23 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += device->getInfo().lastSeen;
   result += F("</td></tr>");
   
-  result += F("<tr><td>LQI</td><td>");
-  result += device->getInfo().LQI;
-  result += F("</td></tr>");
-  
+  if (isLora) {
+    // Le LQI est une métrique Zigbee : elle vaut 0 et ne veut rien dire ici. La qualité du
+    // lien radio se lit sur le RSSI et le SNR de la dernière trame reçue.
+    const LoraEmitter &em = loraEmitters[loraSlot];
+    result += F("<tr><td>RSSI</td><td>");
+    result += String(em.lastRssi, 0);
+    result += F(" dBm</td></tr>");
+
+    result += F("<tr><td>SNR</td><td>");
+    result += String(em.lastSnr, 0);
+    result += F(" dB</td></tr>");
+  } else {
+    result += F("<tr><td>LQI</td><td>");
+    result += device->getInfo().LQI;
+    result += F("</td></tr>");
+  }
+
   result += F("<tr><td>Statut</td><td>");
   result += device->getInfo().Status;
   result += F("</td></tr>");
@@ -16565,13 +16697,19 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   bool isZLinky = (device->getInfo().model == "ZLinky_TIC");
   int linkyMode = device->getInfo().linkyMode.toInt();
   
+  // Cluster/Attribut/Mfr/Actions sont masqués en LoRa : les afficher promettrait des
+  // interactions qui n'existent pas (cf. isLora plus haut).
   if (t != nullptr && t->StateSize() > 0) {
     result += F("<div class='section-title'>Attributs (");
     result += String(t->StateSize());
     result += F(" états)</div>");
-    
+
     result += F("<table class='attr-table'>");
-    result += F("<thead><tr><th>Nom</th><th>Cluster</th><th>Attribut</th><th>Mfr</th><th>Valeur</th><th>Unité</th><th>Actions</th></tr></thead>");
+    if (isLora) {
+      result += F("<thead><tr><th>Nom</th><th>Valeur</th><th>Unité</th></tr></thead>");
+    } else {
+      result += F("<thead><tr><th>Nom</th><th>Cluster</th><th>Attribut</th><th>Mfr</th><th>Valeur</th><th>Unité</th><th>Actions</th></tr></thead>");
+    }
     result += F("<tbody>");
     
     for (int i = 0; i < t->StateSize(); i++) {
@@ -16609,36 +16747,39 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       result += t->states[i].name;
       result += F("</td>");
       
-      // Cluster
-      result += F("<td data-label='Cluster'><span class='cluster-badge'>");
-      char clusterHex[5];
-      snprintf(clusterHex, 5, "%04X", t->states[i].cluster);
-      result += clusterHex;
-      result += F("</span></td>");
-      
-      // Attribut
-      result += F("<td data-label='Attribut'><span class='attr-badge'>");
-      char attrHex[5];
-      snprintf(attrHex, 5, "%04X", t->states[i].attribute);
-      result += attrHex;
-      result += F("</span></td>");
-      
-      // Manufacturer Code
-      result += F("<td data-label='Mfr'>");
-      if (t->states[i].manufacturerCode != 0) {
-        result += F("<span class='mfr-badge'>");
-        char mfrHex[7];
-        snprintf(mfrHex, 7, "%04X", t->states[i].manufacturerCode);
-        result += mfrHex;
-        result += F("</span>");
-      } else {
-        result += F("-");
+      if (!isLora) {
+        // Cluster
+        result += F("<td data-label='Cluster'><span class='cluster-badge'>");
+        char clusterHex[5];
+        snprintf(clusterHex, 5, "%04X", t->states[i].cluster);
+        result += clusterHex;
+        result += F("</span></td>");
+
+        // Attribut
+        result += F("<td data-label='Attribut'><span class='attr-badge'>");
+        char attrHex[5];
+        snprintf(attrHex, 5, "%04X", t->states[i].attribute);
+        result += attrHex;
+        result += F("</span></td>");
+
+        // Manufacturer Code
+        result += F("<td data-label='Mfr'>");
+        if (t->states[i].manufacturerCode != 0) {
+          result += F("<span class='mfr-badge'>");
+          char mfrHex[7];
+          snprintf(mfrHex, 7, "%04X", t->states[i].manufacturerCode);
+          result += mfrHex;
+          result += F("</span>");
+        } else {
+          result += F("-");
+        }
+        result += F("</td>");
       }
-      result += F("</td>");
-      
-      // Valeur (avec input si writable)
+
+      // Valeur (avec input si writable). En LoRa jamais d'input : rien n'est inscriptible
+      // et, la colonne Actions étant masquée, le champ n'aurait aucun bouton d'envoi.
       result += F("<td data-label='Valeur' class='value-cell'>");
-      if (t->states[i].writable) {
+      if (t->states[i].writable && !isLora) {
         result += F("<input type='text' class='writable-input' id='");
         result += attrId;
         result += F("' value='");
@@ -16660,9 +16801,11 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       result += t->states[i].unit;
       result += F("</td>");
       
-      // Actions
+      // Actions (Zigbee uniquement : lire/écrire supposent une requête vers l'appareil)
+      if (isLora) { result += F("</tr>"); continue; }
+
       result += F("<td data-label='' class='actions-cell'>");
-      
+
       // Bouton lecture avec manufacturer code
       result += F("<button class='btn-read' onclick=\"readAttribute(this, ");
       result += String(shortAddr);
@@ -16708,8 +16851,8 @@ void handleConfigDevice(AsyncWebServerRequest *request)
     result += F("<p style='color:#6c757d;'>Aucun template disponible pour cet appareil.</p>");
   }
   
-  // Section Actions du template
-  if (t != nullptr && t->ActionSize() > 0) {
+  // Section Actions du template (masquée en LoRa : ces boutons envoient des commandes Zigbee)
+  if (t != nullptr && t->ActionSize() > 0 && !isLora) {
     result += F("<div class='section-title'>Actions (");
     result += String(t->ActionSize());
     result += F(")</div>");
@@ -16755,6 +16898,11 @@ void handleAssistDevice(AsyncWebServerRequest *request)
 
   Serial.printf("[AssistDevice] Heap: %u, client: %s\n", ESP.getFreeHeap(), request->client()->remoteIP().toString().c_str());
 
+  // Même assistant pour les deux radios : seule l'étape "mise en jumelage" diffère (la
+  // commande envoyée à la passerelle et son libellé). La suite est identique car
+  // l'appairage LoRa publie la même alerte "appareil trouvé" (code 3) que le Zigbee.
+  bool lora = (request->arg("type") == "lora");
+
   // Construction String pour garantir Content-Length (compatibilité tunnel)
   String result;
   result.reserve(8192);
@@ -16764,6 +16912,17 @@ void handleAssistDevice(AsyncWebServerRequest *request)
   result += FPSTR(HTTP_ASSIST_DEVICE);
   result += footerAssist();
   result.replace("{{FormattedDate}}", FormattedDate);
+  if (lora) {
+    result.replace("{{pairCmd}}",   F("LoraPairAssist"));
+    result.replace("{{pairTitle}}", F("Fenêtre d'appairage LoRa ouverte"));
+    result.replace("{{pairDesc}}",  F("La LiXee-Box écoute sur le canal d'appairage pendant 30 s. Mettez maintenant l'appareil LoRa en mode appairage."));
+    result.replace("{{backUrl}}",   F("/configLora"));
+  } else {
+    result.replace("{{pairCmd}}",   F("PermitJoinAssist"));
+    result.replace("{{pairTitle}}", F("Mode jumelage de la LiXee-Box"));
+    result.replace("{{pairDesc}}",  F("Vérifiez que la LiXee-Box clignote"));
+    result.replace("{{backUrl}}",   F("/configDevices"));
+  }
   result += F("</html>");
 
   Serial.printf("[AssistDevice] Sending %u bytes text/html\n", result.length());
@@ -18404,9 +18563,18 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
   String IEEE, ShortAddr, datas, result;
   int i = 0;
   ShortAddr = request->arg(i);
-  int shortAddrInt = ShortAddr.toInt();  // Garder pour SendAction
-  IEEE = GetMacAdrr(shortAddrInt);
-  IEEE = IEEE.substring(0, 16);
+  // Les appareils LoRa n'ont pas d'adresse courte Zigbee : leur fiche passe directement la
+  // MAC (16 caractères hex) et l'adresse courte se relit depuis la base. Sinon, résolution
+  // classique depuis l'adresse courte.
+  int shortAddrInt;
+  if (ShortAddr.length() == 16) {
+    IEEE = ShortAddr;
+    shortAddrInt = GetShortAddr(IEEE + ".json");
+  } else {
+    shortAddrInt = ShortAddr.toInt();
+    IEEE = GetMacAdrr(shortAddrInt);
+    IEEE = IEEE.substring(0, 16);
+  }
   String model;
   model = GetModel(IEEE + ".json");
 
@@ -20002,6 +20170,242 @@ void handleSaveThermostat(AsyncWebServerRequest *request) {
 }
 
 // Active / désactive une zone (la désactivation coupe l'actionneur).
+/* ===================== Module LoRa (ZLinky 2.4 GHz) ===================== */
+
+// État du récepteur en JSON (rafraîchissement live de la page).
+void handleLoadLora(AsyncWebServerRequest *request) {
+  String j = "{\"detected\":";
+  j += loraDetected ? "true" : "false";
+  j += ",\"fw\":\"" + String(loraFwVersion, HEX) + "\"";
+  j += ",\"channel\":" + String(LORA_OP_CHANNEL);
+  j += ",\"pairing\":" + String(loraPairingMode ? "true" : "false");
+  if (loraPairingMode) {
+    long left = (long)LORA_PAIR_WINDOW_MS - (long)(millis() - loraPairingStartMs);
+    j += ",\"pairLeft\":" + String(left > 0 ? left / 1000 : 0);
+  }
+  j += ",\"emitters\":[";
+  bool first = true;
+  for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
+    if (!loraEmitters[i].valid) continue;
+    if (!first) j += ",";
+    first = false;
+    LoraEmitter& e = loraEmitters[i];
+    char mac[17];
+    for (int k = 0; k < 8; k++) snprintf(&mac[k * 2], 3, "%02X", e.mac[k]);
+    uint32_t tot = e.rxCount + e.missed;
+    j += "{\"slot\":" + String(i);
+    j += ",\"mac\":\"" + String(mac) + "\"";
+    j += ",\"rx\":" + String(e.rxCount);
+    j += ",\"missed\":" + String(e.missed);
+    j += ",\"pdr\":" + String(tot ? (int)(100.0 * e.rxCount / tot) : 0);
+    j += ",\"rssi\":" + String(e.lastRssi, 0);
+    j += ",\"snr\":" + String(e.lastSnr, 1);
+    j += ",\"age\":" + String(e.rxCount ? (millis() - e.lastSeenMs) / 1000 : -1);
+    j += "}";
+  }
+  j += "]}";
+  request->send(200, F("application/json"), j);
+}
+
+void handleLoraPair(AsyncWebServerRequest *request) {
+  loraStartPairing();
+  request->send(200, "text/plain", "pairing");
+}
+
+void handleLoraRemove(AsyncWebServerRequest *request) {
+  if (request->hasParam("slot")) loraRemoveEmitter(request->getParam("slot")->value().toInt());
+  request->send(200, "text/plain", "ok");
+}
+
+void handleConfigLora(AsyncWebServerRequest *request) {
+  if (!checkHeapForPage(request)) return;
+
+  AsyncResponseStream *response = request->beginResponseStream("text/html");
+
+  // === 1. Header HTML + CSS (identique a handleConfigDevices) ===
+  response->print(F("<html>"));
+  response->print(FPSTR(HTTP_HEADER));
+
+  response->print(F("<style>"
+    ".device-card-container{padding:8px}"
+    ".config-card{background:#fff;border:none;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.08);transition:transform 0.2s,box-shadow 0.2s;overflow:hidden}"
+    ".config-card:hover{transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,0.12)}"
+    ".card-header-cfg{background:#fff;padding:12px 16px}"
+    ".card-header-cfg a{color:#222;text-decoration:none;font-weight:600;font-size:14px;display:flex;align-items:center}"
+    ".card-header-cfg a:hover{color:#6c757d;opacity:0.95}"
+    ".card-header-cfg svg{flex-shrink:0;margin-right:8px;width:16px;height:16px}"
+    ".config-card .card-body{border-top:none}"
+    ".config-card .card-body table td{padding:6px 4px;border:none}"
+    ".config-card .btn-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid #e9ecef}"
+    ".config-card .btn{padding:6px 10px;display:inline-flex;align-items:center;justify-content:center}"
+    ".config-card .btn svg{width:16px;height:16px;flex-shrink:0}"
+    ".lora-sep td{padding-top:10px!important;border-top:1px solid #e9ecef!important;color:#0f70b7!important;font-weight:600!important}"
+    "@media(max-width:576px){"
+    ".config-card{border-radius:10px}"
+    ".card-header-cfg{padding:10px 12px}"
+    ".card-header-cfg a{font-size:13px}"
+    ".config-card .btn-actions{justify-content:center}"
+    ".config-card .btn{padding:5px 8px}"
+    ".config-card .btn svg{width:14px;height:14px}"
+    "}"
+    "</style>"));
+
+  // === 2. Menu ===
+  streamSection(response, HTTP_MENU);
+
+  // === 3. Entete de page : meme gabarit que la page Zigbee ===
+  response->print(F("<div class='row p-4 justify-content-md-center'>"
+    "<div class='col-sm-2'><div class='btn-group-horizontal'>"));
+  {
+    String menuLora = FPSTR(HTTP_CONFIG_MENU_LORA);
+    menuLora.replace("{{menu_config_lora}}", "disabled");
+    response->print(menuLora);
+  }
+  response->print(F("</div></div><div class='col-sm-10'>"
+    "<h4>Config appareils LoRa</h4>"
+    "<div class='d-flex justify-content-end'>"
+    "<a class='btn btn-primary mb-1' href='/assistDevice?type=lora' style='width:120px;height:64px;'>"
+    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-plus-circle' viewBox='0 0 16 16'>"
+    "<path d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16'/>"
+    "<path d='M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4'/>"
+    "</svg><br> Ajouter</a></div><br>"));
+
+  // Sans radio detectee la page n'a rien a montrer : on le dit plutot que d'afficher une
+  // liste vide qui ferait croire a une absence d'appareils.
+  if (!loraDetected) {
+    response->print(F("<div align='center' style='height:100px;font-size:20px;font-weight:bold;color:#c0392b;'>"
+      "Aucun module LoRa d&eacute;tect&eacute;</div>"));
+    response->print(F("</div></div>"));
+    response->print(footer());
+    response->print(F("</html>"));
+    request->send(response);
+    return;
+  }
+  response->print(F("<h5>Liste des appareils</h5>"
+    "<div class='row g-4' style='font-size:12px;'>"));
+
+  // === 4. Boucle devices : uniquement ceux qui arrivent par LoRa ===
+  int exist = 0;
+  bool mqttHA = (ConfigSettings.enableMqtt && ConfigGeneral.HAMQTT);
+
+  for (size_t ident = 0; ident < devices.size(); ident++)
+  {
+    DeviceData* device = devices[ident];
+    int slot = loraFindEmitterByMac(device->getDeviceID());
+    if (slot < 0) continue;               // appareil Zigbee : il a deja sa page
+    LoraEmitter &em = loraEmitters[slot];
+    exist++;
+
+    response->print(F("<div class='col-12 col-sm-6 col-md-4 col-lg-3 device-card-container'>"
+      "<div class='config-card'><div class='card-header-cfg'><a href='/configDevice?id="));
+    response->print(device->getDeviceID());
+    response->print(F("'>"));
+
+    if (LittleFS.exists("/web/img/icon_" + device->getInfo().model + ".png")) {
+      response->print(F("<img src='web/img/icon_"));
+      response->print(device->getInfo().model);
+      response->print(F(".png' height='64px'/>"));
+    } else {
+      response->print(F("<img src='web/img/icon_"));
+      response->print(device->getInfo().device_id);
+      response->print(F(".png' height='64px'/>"));
+    }
+
+    response->print(device->getInfo().alias.length() > 0 ? device->getInfo().alias : device->getDeviceID());
+    response->print(F("</a></div><div class='card-body' style='padding:12px 16px;'>"
+      "<table style='width:100%;font-size:12px;'><tr>"
+      "<td style='color:#6c757d;font-weight:500;'>Manufacturer</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().manufacturer);
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Model</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().model);
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Device Id</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->printf("%04X", (unsigned int)device->getInfo().device_id.toInt());
+    response->print(F("</td></tr><tr><td style='color:#6c757d;font-weight:500;'>Last seen</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().lastSeen);
+    response->print(F("</td></tr>"));
+
+    // --- Donnees propres au lien LoRa (remplacent Short Addr / LQI / Soft version, qui
+    //     n'ont pas d'equivalent radio) ---
+    uint32_t total = em.rxCount + em.missed;
+    int pdr = total ? (int)((em.rxCount * 100) / total) : 0;
+    long age = em.lastSeenMs ? (long)((millis() - em.lastSeenMs) / 1000) : -1;
+    String ageTxt = (age < 0) ? String("jamais") : (age < 90 ? String(age) + " s" : String(age / 60) + " min");
+
+    response->print(F("<tr class='lora-sep'><td colspan='2'>Lien LoRa</td></tr>"));
+    response->printf("<tr><td style='color:#6c757d;font-weight:500;'>RSSI</td><td style='font-family:Courier New,monospace;text-align:right;'>%.0f dBm</td></tr>", em.lastRssi);
+    response->printf("<tr><td style='color:#6c757d;font-weight:500;'>SNR</td><td style='font-family:Courier New,monospace;text-align:right;'>%.0f dB</td></tr>", em.lastSnr);
+    response->printf("<tr><td style='color:#6c757d;font-weight:500;'>PDR</td><td style='font-family:Courier New,monospace;text-align:right;'>%d %%</td></tr>", pdr);
+    response->printf("<tr><td style='color:#6c757d;font-weight:500;'>Trames</td><td style='font-family:Courier New,monospace;text-align:right;'>%u re&ccedil;ues / %u perdues</td></tr>",
+                     (unsigned)em.rxCount, (unsigned)em.missed);
+    if (em.modeKnown) {
+      response->printf("<tr><td style='color:#6c757d;font-weight:500;'>Mode Linky</td><td style='font-family:Courier New,monospace;text-align:right;'>%s %s</td></tr>",
+                       (em.linkyMode & 0x01) ? "Standard" : "Historique",
+                       (em.linkyMode & 0x02) ? "tri" : "mono");
+    }
+    response->printf("<tr><td style='color:#6c757d;font-weight:500;'>Derni&egrave;re trame</td><td style='font-family:Courier New,monospace;text-align:right;color:%s;'>%s</td></tr>",
+                     (age < 0 || age > 300) ? "#c0392b" : "#27ae60", ageTxt.c_str());
+    response->print(F("</table>"));
+
+    // Boutons : ni OTA ni Refresh, qui supposent une requete Zigbee vers l'appareil.
+    response->print(F("<div class='btn-actions'>"));
+
+    response->print(F("<a href='/configDevice?id="));
+    response->print(device->getDeviceID());
+    response->print(F("' class='btn btn-info' title='Fiche appareil'>"
+      "<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+      "<path d='M14.5 3a.5.5 0 0 1 .5.5v9a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5zm-13-1A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h13a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 14.5 2z'/>"
+      "<path d='M5 8a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7A.5.5 0 0 1 5 8m0-2.5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m0 5a.5.5 0 0 1 .5-.5h7a.5.5 0 0 1 0 1h-7a.5.5 0 0 1-.5-.5m-1-5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0M4 8a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0m0 2.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0'/>"
+      "</svg></a>"));
+
+    // MQTT Discover : on passe la MAC, l'appareil LoRa n'ayant pas d'adresse courte.
+    if (mqttHA) {
+      response->printf("<button onclick=\"sendMqttDiscover('%s');\" class='btn btn-warning' title='MQTT Discover'>",
+        device->getDeviceID().c_str());
+      response->print(F("<svg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg' fill='currentColor'>"
+        "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z'/>"
+        "</svg></button>"));
+    }
+
+    response->printf("<button onclick=\"deleteLoraDevice('%s',%d);\" class='btn btn-danger' title='Supprimer'>",
+      device->getDeviceID().c_str(), slot);
+    response->print(F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+      "<path d='M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z'/>"
+      "<path d='M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z'/>"
+      "</svg></button>"));
+
+    response->print(F("</div></div></div></div>"));
+
+    vTaskDelay(1); // Eviter watchdog timeout
+  }
+
+  if (exist == 0) {
+    response->print(F("<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div>"));
+  }
+
+  // Suppression : desappairer l'emetteur AVANT de supprimer l'appareil, sinon la prochaine
+  // trame recreerait la fiche aussitot.
+  response->print(F("<script>"
+    "function deleteLoraDevice(devId,slot){"
+    "if(confirm('Supprimer cet appareil LoRa et son appairage ?')){"
+    "var xhr=getXhr();"
+    "xhr.onreadystatechange=function(){"
+    "if(xhr.readyState==4){"
+    "if(xhr.status==200){"
+    "var x2=getXhr();"
+    "x2.onreadystatechange=function(){if(x2.readyState==4){window.location.href='/configLora';}};"
+    "x2.open('GET','deleteDevice?devId='+encodeURIComponent(devId),true);x2.send();"
+    "}else{alert('Erreur lors du desappairage');}}};"
+    "xhr.open('GET','loraRemove?slot='+slot,true);"
+    "xhr.send();}}</script>"));
+
+  // === 5. Fermeture + footer ===
+  response->print(F("</div></div>"));
+  response->print(footer());
+  response->print(F("</html>"));
+
+  request->send(response);
+}
+
 void handleToggleThermostat(AsyncWebServerRequest *request) {
   if (request->hasParam("id")) {
     int id = request->getParam("id")->value().toInt();
@@ -20155,6 +20559,27 @@ void initWebServer()
   {
     if (!checkAuth(request)) return;
     handleSaveThermostat(request);
+  });
+  // === Module LoRa ===
+  serverWeb.on("/configLora", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleConfigLora(request);
+  });
+  serverWeb.on("/loadLora", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleLoadLora(request);
+  });
+  serverWeb.on("/loraPair", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleLoraPair(request);
+  });
+  serverWeb.on("/loraRemove", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleLoraRemove(request);
   });
   serverWeb.on("/toggleThermostat", HTTP_GET, [](AsyncWebServerRequest *request)
   {
@@ -21139,9 +21564,18 @@ void initWebServer()
   });
 
   serverWeb.on("/cmdPermitJoinAssist", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handlePermitJoinAssist(request); 
+    handlePermitJoinAssist(request);
+  });
+
+  // Pendant LoRa de /cmdPermitJoinAssist : ouvre la fenêtre d'appairage radio. Appelé par
+  // l'assistant via cmd("LoraPairAssist") quand il est lancé avec ?type=lora.
+  serverWeb.on("/cmdLoraPairAssist", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    loraStartPairing();
+    request->send(200, F("text/html"), "");
   });
   serverWeb.on("/cmdRawMode", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -21559,6 +21993,15 @@ void initWebServer()
     .setCacheControl("max-age=604800, immutable");
   // Menu commun servi une seule fois (mis en cache navigateur) au lieu d'etre re-envoye dans
   // le HTML de chaque page. document.write injecte le nav de maniere synchrone (avant le footer).
+  // Modules matériels détectés au boot. Volontairement NON caché (quelques octets) : ainsi
+  // le menu suit le matériel réellement présent, même si /menu.js est en cache long.
+  serverWeb.on("/modules.js", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    AsyncResponseStream *response = request->beginResponseStream("application/javascript");
+    response->addHeader("Cache-Control", "no-store");
+    response->printf("var HAS_ZIGBEE=%d,HAS_LORA=%d;", zigbeeDetected ? 1 : 0, loraDetected ? 1 : 0);
+    request->send(response);
+  });
   serverWeb.on("/menu.js", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     AsyncResponseStream *response = request->beginResponseStream("application/javascript");
@@ -21567,6 +22010,17 @@ void initWebServer()
     response->print(FPSTR(HTTP_MENU_NAV));
     response->print(F("`);"));
     response->print(FPSTR(HTTP_MENU_JS));
+    // Masque les entrées dont le module n'est pas présent (data-mod='zigbee'|'lora').
+    // Les entrées sans data-mod restent toujours visibles.
+    // data-mod accepte une LISTE ('zigbee,lora') : l'entrée reste visible si AU MOINS un
+    // des modules cités est présent (ex. Mesures->Appareils liste les appareils des deux).
+    response->print(F(
+      "(function(){var f={zigbee:(typeof HAS_ZIGBEE!=='undefined'&&HAS_ZIGBEE),"
+      "lora:(typeof HAS_LORA!=='undefined'&&HAS_LORA)};"
+      "var l=document.querySelectorAll('[data-mod]');"
+      "for(var i=0;i<l.length;i++){var m=l[i].getAttribute('data-mod').split(','),ok=false;"
+      "for(var j=0;j<m.length;j++){if(f[m[j]])ok=true;}"
+      "if(!ok)l[i].remove();}})();"));
     request->send(response);
   });
   // === CORS : preflight OPTIONS handler (#24) ===

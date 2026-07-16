@@ -968,6 +968,9 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       ZConfig.sdk = protocol.payload[1];
       snprintf(ZConfig.application, sizeof(ZConfig.application), "%02x%02x",protocol.payload[2],protocol.payload[3]);
       log_d("Version - SDK: %d%d - APP: %s",int(ZConfig.type),int(ZConfig.sdk),ZConfig.application);
+      // La ZiGate a répondu au Get Version : le module Zigbee est bien présent.
+      // (Le Get Version 0x0010 est émis au boot ; sans module, aucune 0x8010 n'arrive.)
+      zigbeeDetected = true;
      //SAVE CONFIG JSON
       break;
     case 0x8009:
