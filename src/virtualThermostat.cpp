@@ -309,6 +309,7 @@ void loadThermostats() {
     t.setpoint = o["setpoint"] | 19.0;
     t.frostTemp = o["frostTemp"] | 7.0;
     t.frostMode = o["frostMode"] | false;
+    t.forceMode = o["forceMode"] | 0;   // le forçage manuel doit survivre à un redémarrage
     t.setpointSaved = o["setpointSaved"] | t.setpoint;
     t.tpiCycleSec = o["tpiCycleSec"] | 900;
     t.tpiKp = o["tpiKp"] | 0.8;
@@ -355,6 +356,7 @@ bool saveThermostats() {
     o["setpoint"] = t.setpoint;
     o["frostTemp"] = t.frostTemp;
     o["frostMode"] = t.frostMode;
+    o["forceMode"] = t.forceMode;
     o["setpointSaved"] = t.setpointSaved;
     o["tpiCycleSec"] = t.tpiCycleSec;
     o["tpiKp"] = t.tpiKp;
@@ -614,7 +616,11 @@ bool setThermostatForce(int id, int mode) {
   // Application immédiate de l'état forcé (le hors-gel restera prioritaire au prochain tick)
   if (mode == 1) { sendActuator(t, true);  t.output = true;  t.lastSwitchMs = millis(); }
   else if (mode == 2) { sendActuator(t, false); t.output = false; t.lastSwitchMs = millis(); }
-  return true;  // état runtime, non persisté
+  // Persisté (comme frostMode) : un forçage est un choix explicite de l'utilisateur, il doit
+  // survivre à un redémarrage (watchdog, micro-coupure, OTA). Sinon la zone repassait
+  // silencieusement en "Auto" au reboot alors que tout le reste était restauré.
+  // Sécurité préservée : le hors-gel reste prioritaire sur le forçage à chaque tick.
+  return saveThermostats();
 }
 
 bool setThermostatEnabled(int id, bool enabled) {
