@@ -1376,6 +1376,56 @@ StatusRegisterBreakout parseStatusRegister(const String& hexVal) {
   return s;
 }
 
+// Valeur NUMERIQUE d'un champ de bits de STGE (issue #31), pour les regles : on masque et on
+// decale, on ne compare PAS des libelles (fragile aux accents, et l'utilisateur raisonne en
+// valeur de champ : organe_coupure==1 => Surpuissance). Les positions suivent la table
+// Enedis et DOIVENT rester synchronisees avec parseStatusRegister() ci-dessus et avec la
+// table STGE_FIELDS de rules.js. Renvoie -1 si le champ est inconnu.
+long getStatusRegisterFieldValue(const String& hexVal, const String& field) {
+  unsigned long v = strtoul(hexVal.c_str(), nullptr, 16);
+  struct { const char* name; uint8_t shift; uint32_t mask; } F[] = {
+    {"contact_sec",           0, 0x1}, {"organe_coupure",       1, 0x7},
+    {"cache_borne_dist",      4, 0x1}, {"surtension_phase",     6, 0x1},
+    {"depassement_ref_pow",   7, 0x1}, {"producteur",           8, 0x1},
+    {"sens_energie_active",   9, 0x1}, {"tarif_four",          10, 0xF},
+    {"tarif_dist",           14, 0x3}, {"horloge",             16, 0x1},
+    {"type_tic",             17, 0x1}, {"comm_euridis",        19, 0x3},
+    {"etat_cpl",             21, 0x3}, {"sync_cpl",            23, 0x1},
+    {"tempo_jour",           24, 0x3}, {"tempo_demain",        26, 0x3},
+    {"preavis_pointe_mobile",28, 0x3}, {"pointe_mobile",       30, 0x3},
+  };
+  for (auto& f : F)
+    if (field == f.name) return (long)((v >> f.shift) & f.mask);
+  return -1;
+}
+
+// Renvoie un champ nomme du registre STGE deja decode, sous forme de chaine (issue #31).
+// Sert aux regles a comparer un seul etat plutot que la chaine hex entiere. Les noms doivent
+// correspondre a ceux proposes par l'UI (rules.js) et aux membres de StatusRegisterBreakout.
+// Chaine vide si le nom est inconnu.
+String getStatusRegisterField(const String& hexVal, const String& field) {
+  StatusRegisterBreakout s = parseStatusRegister(hexVal);
+  if (field == "contact_sec")          return s.contact_sec;
+  if (field == "organe_coupure")       return s.organe_coupure;
+  if (field == "cache_borne_dist")     return s.cache_borne_dist;
+  if (field == "surtension_phase")     return String(s.surtension_phase);
+  if (field == "depassement_ref_pow")  return String(s.depassement_ref_pow);
+  if (field == "producteur")           return s.producteur;
+  if (field == "sens_energie_active")  return s.sens_energie_active;
+  if (field == "tarif_four")           return s.tarif_four;
+  if (field == "tarif_dist")           return s.tarif_dist;
+  if (field == "horloge")              return s.horloge;
+  if (field == "type_tic")             return s.type_tic;
+  if (field == "comm_euridis")         return s.comm_euridis;
+  if (field == "etat_cpl")             return s.etat_cpl;
+  if (field == "sync_cpl")             return s.sync_cpl;
+  if (field == "tempo_jour")           return s.tempo_jour;
+  if (field == "tempo_demain")         return s.tempo_demain;
+  if (field == "preavis_pointe_mobile")return s.preavis_pointe_mobile;
+  if (field == "pointe_mobile")        return s.pointe_mobile;
+  return "";
+}
+
 String getPowerGaugeAbo(String IEEE, String Attribute, String Time)
 {
   String result="error";

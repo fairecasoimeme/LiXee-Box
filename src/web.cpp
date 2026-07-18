@@ -411,13 +411,29 @@ const char HTTP_SHELLY_EMULE[] PROGMEM =
 const char HTTP_HEADER[] PROGMEM =
     "<head>"
     "<link rel='icon' type='image/x-icon' href='web/favicon.ico'>"
-    "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
-    "<script type='text/javascript' src='web/js/masonry.pkgd.min.js'></script>"
+    /* Le ?v= sur chaque asset statique n'est pas cosmetique.
+     *
+     * 1. Correction : ces fichiers sont servis en "max-age=604800, immutable". Sans version
+     *    dans l'URL, un navigateur garde une lib PERIMEE une semaine apres une mise a jour
+     *    qui la change -- immutable lui interdit meme de revalider.
+     *
+     * 2. Prerequis pour LiXee-Assist : l'app peut embarquer ces libs et les servir
+     *    localement (shouldInterceptRequest), ce qui evite de les faire transiter par le
+     *    tunnel (~210 Ko au premier chargement, encodes en base64 par dessus). La version
+     *    dans l'URL lui permet de ne substituer que ce dont elle a la copie EXACTE et de
+     *    laisser passer le reste vers la box -- sinon elle servirait une lib obsolete sans
+     *    pouvoir le detecter.
+     *
+     * La query ne gene pas serveStatic : ESPAsyncWebServer met le '?' de cote avant de
+     * router (_url exclut la query).
+     */
+    "<script type='text/javascript' src='web/js/jquery-min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/masonry.pkgd.min.js?v=" VERSION "'></script>"
     //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
-    "<script type='text/javascript' src='web/js/functions.min.js'></script>"
+    "<script type='text/javascript' src='web/js/functions.min.js?v=" VERSION "'></script>"
     "<script>$(document).ajaxError(function(e,x){if(x.status===401)window.location.href='/login';});</script>"
-    "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
-    "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
+    "<link href='web/css/bootstrap.min.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
+    "<link href='web/css/style.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width, initial-scale=1'>"
     "<style>"
@@ -436,20 +452,25 @@ const char HTTP_HEADER[] PROGMEM =
 const char HTTP_HEADERGRAPH[] PROGMEM =
     "<head>"
     "<link rel='icon' type='image/x-icon' href='web/favicon.ico'>"
-    "<script type='text/javascript' src='web/js/raphael-min.js'></script>"
-    "<script type='text/javascript' src='web/js/morris.min.js'></script>"
-    "<script type='text/javascript' src='web/js/chart.umd.min.js'></script>"
-    "<script type='text/javascript' src='web/js/annotation.min.js'></script>"
-    "<script type='text/javascript' src='web/js/chart-zoom.min.js'></script>"
-    "<script type='text/javascript' src='web/js/justgage.min.js'></script>"
-    "<script type='text/javascript' src='web/js/functions.min.js'></script>"
-    "<script type='text/javascript' src='web/js/jquery-min.js'></script>"
-    "<script type='text/javascript' src='web/js/presence.min.js'></script>"
+    // raphael est requis par justgage (jauges) ET par morris -- ne pas retirer.
+    "<script type='text/javascript' src='web/js/raphael-min.js?v=" VERSION "'></script>"
+    // morris est REQUIS : createDistributionGraph() genere un Morris.Donut, et elle est
+    // appelee par handleStatusEnergy() (le donut de repartition de la page Energie).
+    // Piege : les deux AUTRES appels a Morris (createPowerGraph, createEnergyGraph v1) sont
+    // bien dans des fonctions commentees -- de quoi conclure a tort que la lib est morte.
+    "<script type='text/javascript' src='web/js/morris.min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/chart.umd.min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/annotation.min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/chart-zoom.min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/justgage.min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/functions.min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/jquery-min.js?v=" VERSION "'></script>"
+    "<script type='text/javascript' src='web/js/presence.min.js?v=" VERSION "'></script>"
     "<script src='https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js'></script>"
     "<script>$(document).ajaxError(function(e,x){if(x.status===401)window.location.href='/login';});</script>"
-    "<link href='web/css/bootstrap.min.css' rel='stylesheet' type='text/css' />"
-    "<link href='web/css/style.css' rel='stylesheet' type='text/css' />"
-    "<link href='web/css/energy.css' rel='stylesheet' type='text/css' />"
+    "<link href='web/css/bootstrap.min.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
+    "<link href='web/css/style.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
+    "<link href='web/css/energy.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width, initial-scale=1.0, user-scalable=yes'>"
     "</head>";
@@ -7941,7 +7962,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
   javascript += F("</script>");
 
   result.replace("{{javascript}}", javascript);
-
+",
   request->send(200, "text/html", result.c_str());
 }
 #endif // !USE_ENERGY_V2
@@ -9328,6 +9349,7 @@ void APIEditRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size
         if (cond.containsKey("IEEE2")) c["IEEE2"] = cond["IEEE2"];
         if (cond.containsKey("cluster2")) c["cluster2"] = cond["cluster2"];
         if (cond.containsKey("attribute2")) c["attribute2"] = cond["attribute2"];
+        if (cond.containsKey("subfield")) c["subfield"] = cond["subfield"];  // issue #31
       }
 
       // Remplacer les actions
@@ -9700,6 +9722,7 @@ void APIAddRule(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_
     if (cond.containsKey("IEEE2")) c["IEEE2"] = cond["IEEE2"];
     if (cond.containsKey("cluster2")) c["cluster2"] = cond["cluster2"];
     if (cond.containsKey("attribute2")) c["attribute2"] = cond["attribute2"];
+    if (cond.containsKey("subfield")) c["subfield"] = cond["subfield"];  // issue #31
   }
 
   // Actions
@@ -16218,6 +16241,10 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   for (size_t ident = 0; ident < devices.size(); ident++)
   {
     DeviceData* device = devices[ident];
+    // Page de config Zigbee : ne lister QUE les appareils Zigbee. Un objet LoRa est un
+    // appareil normal (memes clusters), donc present dans `devices`, mais il a sa propre
+    // page /configLora -- symetrique du filtre applique la-bas.
+    if (loraFindEmitterByMac(device->getDeviceID()) >= 0) continue;
     exist++;
 
     response->print(F("<div class='col-12 col-sm-6 col-md-4 col-lg-3 device-card-container'>"
@@ -17537,7 +17564,23 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
     if (device->getDeviceID() == IEEE)
     {
       String now = String(Hour)+":"+Minute;
+#if POWER_CHART_STREAM
+      // Serialisation directe dans la reponse : evite la String intermediaire ET la copie
+      // que fait request->send(). Le buffer est pre-dimensionne via measureJson() car
+      // AsyncResponseStream reallouerait sinon a chaque caractere (PrintWriter d'ArduinoJson
+      // n'est pas bufferise, et AsyncResponseStream::write fait resizeAdd() si le buffer est
+      // plein) -- ce qui serait bien pire que la String qu'on cherche a supprimer.
+      SpiRamJsonDocument *doc = buildPowerChartDoc(device->powerHistory, now);
+      if (!doc) { request->send(200, F("application/json"), F("{}")); break; }
+      size_t jsonSize = measureJson(*doc);
+      AsyncResponseStream *response =
+          request->beginResponseStream(F("application/json"), jsonSize + 64);
+      serializeJson(*doc, *response);
+      delete doc;
+      request->send(response);
+#else
       request->send(200, F("application/json"), toJson(device->powerHistory,now));
+#endif
       break;
     }
   }

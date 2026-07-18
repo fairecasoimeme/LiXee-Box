@@ -111,7 +111,45 @@ static inline uint16_t tsToMinutes(const String &ts)
          +       ((ts[3] - '0') * 10 + (ts[4] - '0'));   // minutes
 }
 
-String toJson(const PowerHistory& history, const String& nowHM = "")
+/* Cles JSON en const char*, et pourquoi ca change tout.
+ *
+ * ArduinoJson v6 choisit sa politique de stockage selon le TYPE de la chaine :
+ *   const char*                  -> StringAdapter<const char*> -> StaticStringAdapter
+ *                                -> StringStoragePolicy::Link  : stocke le pointeur, 0 copie
+ *   String / std::string / char* -> ...                        -> Policy::Copy
+ *                                -> pool->saveString() -> findString() qui rescanne TOUT le
+ *                                   pool a chaque insertion => quadratique.
+ *
+ * Avec 1218 enregistrements x ~5 attributs, l'ancien code faisait ~7300 insertions "Copy",
+ * chacune rescannant un pool grossissant : ~25 M de comparaisons, soit les 230 ms mesures.
+ *
+ * Contrepartie du lien : la chaine doit survivre au document (jusqu'a la serialisation).
+ * D'ou ce cache persistant -- un buffer local serait invalide. std::map est a noeuds : les
+ * pointeurs c_str() restent valides quand on insere.
+ */
+static const char *KEY_Y = "y";   // meme "y" litteral serait copie (StringAdapter<char[N]>)
+
+static const char *attrKey(int id)
+{
+    static std::map<int, std::string> cache;
+    auto it = cache.find(id);
+    if (it == cache.end())
+    {
+        char b[12];
+        snprintf(b, sizeof(b), "%d", id);
+        it = cache.emplace(id, b).first;
+    }
+    return it->second.c_str();
+}
+
+/* Construit le document JSON de l'historique. L'appelant devient proprietaire et doit le
+ * delete. Retourne nullptr en cas d'echec.
+ *
+ * Extrait de toJson() pour que la reponse puisse etre serialisee soit dans une String, soit
+ * directement dans le flux de reponse HTTP : le streaming impose de connaitre la taille
+ * (measureJson) AVANT de creer la reponse, donc de disposer du document.
+ */
+SpiRamJsonDocument* buildPowerChartDoc(const PowerHistory& history, const String& nowHM)
 {
     /*----------- 1. Estimation de la taille nécessaire ------------------*/
     // Estimation approximative basée sur le nombre d'enregistrements
@@ -198,18 +236,18 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
                 doc = nullptr;
             }
             estimatedSize *= 2;
-            if (attempt == 2) return "{}"; // Échec définitif
+            if (attempt == 2) return nullptr; // Échec définitif
         }
     }
 
-    if (!doc) return "{}";
+    if (!doc) return nullptr;
 
     JsonObject root = doc->to<JsonObject>();
     if (root.isNull())
     {
         DEBUG_PRINTLN("Échec création objet racine JSON");
         delete doc;
-        return "{}";
+        return nullptr;
     }
 
     /*----------- 5. Construction du tableau "datas" avec vérifications ---*/
@@ -218,7 +256,7 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
     {
         DEBUG_PRINTLN("Échec création array datas");
         delete doc;
-        return "{}";
+        return nullptr;
     }
 
     size_t addedRecords = 0;
@@ -248,17 +286,16 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
             break;
         }
 
-        row["y"] = rec.timeStamp;
+        // Cle et valeur passees en const char* : ArduinoJson les LIE (stocke le pointeur)
+        // au lieu de les copier dans son pool. Cf. attrKey() pour le detail -- c'est ce qui
+        // fait passer cette boucle de ~230 ms a quelques ms.
+        row[KEY_Y] = rec.timeStamp.c_str();
 
-        // Ajout des valeurs dynamiques avec vérification
         for (const auto& kv : rec.values)
         {
-            // ArduinoJSON v6 - conversion de la clé en String si nécessaire
-            String key = String(kv.first);
-            if (!row.containsKey(key))
-            {
-                row[key] = kv.second;
-            }
+            // Pas de containsKey() : les cles d'une std::map sont uniques par construction,
+            // le test etait un scan lineaire pour rien.
+            row[attrKey(kv.first)] = kv.second;
         }
         
         addedRecords++;
@@ -292,8 +329,7 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
                 break;
             }
 
-            String statKey = String(kv.first);
-            JsonObject attr = statsObj.createNestedObject(statKey);
+            JsonObject attr = statsObj.createNestedObject(attrKey(kv.first));
             if (!attr.isNull())
             {
                 attr["min"]   = kv.second.min;
@@ -311,6 +347,18 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
         DEBUG_PRINTLN("Attention: Document JSON a débordé pendant la construction");
         // On peut continuer, ArduinoJSON v6 gère les débordements proprement
     }
+
+    return doc;
+}
+
+/* Serialisation dans une String : chemin historique. La String vit dans le heap INTERNE, et
+ * request->send() la recopie -> ~2x la taille du JSON dans la ressource rare. Voir la
+ * variante streamee dans handleLoadPowerChart (POWER_CHART_STREAM).
+ */
+String toJson(const PowerHistory& history, const String& nowHM = "")
+{
+    SpiRamJsonDocument* doc = buildPowerChartDoc(history, nowHM);
+    if (!doc) return "{}";
 
     /*----------- 8. Sérialisation avec gestion d'erreur -----------------*/
     String out;
@@ -347,6 +395,8 @@ String toJson(const PowerHistory& history, const String& nowHM = "")
         return "{}";
     }
 
+    // La sortie est une String Arduino : elle vit dans le heap INTERNE, pas en PSRAM.
+    // request->send() la recopiera encore une fois -> ~2x la taille du JSON en heap rare.
     delete doc; // Libération mémoire
     esp_task_wdt_reset();
     return out;

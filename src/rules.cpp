@@ -302,6 +302,7 @@ bool RulesManager::loadFromFile(const char* path) {
             }
             cond.value2    = PsString(c["value2"]    | "", PsramAllocator<char>());
             cond.logic     = PsString(c["logic"]     | "", PsramAllocator<char>());
+            cond.subfield  = PsString(c["subfield"]  | "", PsramAllocator<char>());  // issue #31 (absent = attribut brut)
 
             // device_compare : 2e device
             cond.IEEE2     = PsString(c["IEEE2"]     | "", PsramAllocator<char>());
@@ -361,13 +362,23 @@ bool RulesManager::loadFromFile(const char* path) {
     return true;
 }
 
-String RulesManager::getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE) const {
+String RulesManager::getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE,
+                                             const char* subfield) const {
     if (strcmp(type, "device") == 0) {
         char tmpKey[5];
         snprintf(tmpKey, sizeof(tmpKey), "%04X", cluster);
         String path = String(IEEE) + ".json";
         String tmp = getZigbeeValue(path, tmpKey, String(attribute));
         if (tmp != nullptr && tmp.length()) {
+            // Sous-champ demande (issue #31) : la valeur stockee est la chaine hex brute de
+            // l'attribut composite ; on n'en renvoie que la VALEUR NUMERIQUE du champ (masque
+            // + decalage), en decimal. Comparer un nombre plutot qu'un libelle evite toute
+            // fragilite d'accents et correspond a ce que propose l'UI (value = numero du
+            // champ). Aujourd'hui seul STGE (FF66/535) est concerne.
+            if (subfield && subfield[0] != '\0') {
+                long fv = getStatusRegisterFieldValue(tmp, String(subfield));
+                return (fv < 0) ? String("") : String(fv);
+            }
             return tmp;
         }
     }
@@ -468,10 +479,27 @@ bool RulesManager::evaluateCondition(const Condition& cond) const {
     }
 
     // ===== CONDITION DEVICE STANDARD =====
-    String curStr = getCurrentValueAsString(cond.type.c_str(), cond.cluster, cond.attribute, cond.IEEE.c_str());
+    String curStr = getCurrentValueAsString(cond.type.c_str(), cond.cluster, cond.attribute,
+                                            cond.IEEE.c_str(), cond.subfield.c_str());
     if (curStr == "") return false;
 
     String condValueStr = String(cond.value.c_str());
+
+    // Sous-champ STGE (issue #31) : les deux cotes sont la valeur NUMERIQUE du champ de bits,
+    // en decimal. Comparaison decimale pure, sans coefficient ni interpretation hexadecimale
+    // (celle-ci ferait diverger tarif_four >= 10). Chemin isole du reste.
+    if (cond.subfield.length() > 0) {
+        long cur = curStr.toInt();
+        long ref = condValueStr.toInt();
+        const PsString& o = cond.op;
+        if (o == "==") return cur == ref;
+        if (o == "!=") return cur != ref;
+        if (o == "<")  return cur <  ref;
+        if (o == "<=") return cur <= ref;
+        if (o == ">")  return cur >  ref;
+        if (o == ">=") return cur >= ref;
+        return false;
+    }
 
     float coefficient = 1.0;
     if (strcmp(cond.type.c_str(), "device") == 0) {
@@ -544,23 +572,30 @@ String RulesManager::buildConditionsText(const Rule& rule) const {
         if (valueHex.length() == 0) continue;
 
         String valueStr;
-        float coefficient = device->GetAttributeCoefficient(cond.cluster, cond.attribute);
 
-        bool isNumericVal = true;
-        for (size_t k = 0; k < valueHex.length(); k++) {
-            char c = valueHex[k];
-            if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
-                isNumericVal = false; break;
-            }
-        }
-
-        if (isNumericVal && valueHex.length() > 0) {
-            long valueDec = strtol(valueHex.c_str(), nullptr, 16);
-            double valueWithCoeff = valueDec * coefficient;
-            if (coefficient == 1.0) valueStr = String((int)valueWithCoeff);
-            else valueStr = String(valueWithCoeff, 2);
+        // Sous-champ (issue #31) : afficher l'etat decode ("Ouvert"...), pas la chaine hex ni
+        // un coefficient qui n'a pas de sens ici.
+        if (cond.subfield.length() > 0) {
+            valueStr = getStatusRegisterField(valueHex, String(cond.subfield.c_str()));
         } else {
-            valueStr = valueHex;
+            float coefficient = device->GetAttributeCoefficient(cond.cluster, cond.attribute);
+
+            bool isNumericVal = true;
+            for (size_t k = 0; k < valueHex.length(); k++) {
+                char c = valueHex[k];
+                if (!((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f'))) {
+                    isNumericVal = false; break;
+                }
+            }
+
+            if (isNumericVal && valueHex.length() > 0) {
+                long valueDec = strtol(valueHex.c_str(), nullptr, 16);
+                double valueWithCoeff = valueDec * coefficient;
+                if (coefficient == 1.0) valueStr = String((int)valueWithCoeff);
+                else valueStr = String(valueWithCoeff, 2);
+            } else {
+                valueStr = valueHex;
+            }
         }
 
         String deviceName = device->getInfo().alias;

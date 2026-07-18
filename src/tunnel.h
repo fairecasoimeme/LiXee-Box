@@ -37,6 +37,7 @@
 #include "PsramAllocator.h"
 #include <utility>
 #include <vector>
+#include <deque>
 #include <WebSocketsClient.h>
 
 static const int MAX_CONCURRENT = 6;
@@ -174,7 +175,27 @@ public:
         // Sous pression, on sérialise les fetchs locaux pour éviter l'épuisement -> reboot watchdog
         // (cas : page d'accueil lourde + rafale de grosses libs JS chargées en parallèle).
         uint32_t freeHeap = ESP.getFreeHeap();
-        int maxActive = (freeHeap > 120000) ? MAX_CONCURRENT : (freeHeap > 80000 ? 2 : 1);
+
+        // Niveau visé par le heap courant.
+        int target = (freeHeap > 120000) ? MAX_CONCURRENT : (freeHeap > 80000 ? 2 : 1);
+
+        // Hystérésis. Sans elle, un heap qui oscille autour d'un seuil fait BATTRE la
+        // concurrence -- mesuré via le tunnel : 2->1 (69908), 1->2 (80556), 2->1 (71268),
+        // 1->2 (81920)... en quelques millisecondes. Or chaque passage à 1 sérialise tout le
+        // trafic, et le heap remonte justement parce qu'on a sérialisé : le seuil se
+        // réarme lui-même, en boucle.
+        //
+        // On descend immédiatement (c'est la sécurité anti-reboot) mais on ne remonte qu'une
+        // fois franchement au-dessus du seuil, pour que la remontée soit un vrai retour au
+        // calme et non le rebond mécanique de la baisse précédente.
+        static int maxActive = MAX_CONCURRENT;
+        const uint32_t HYST = 15000;
+        if (target < maxActive) {
+            maxActive = target;
+        } else if (target > maxActive) {
+            uint32_t upFloor = (maxActive <= 1) ? 80000 + HYST : 120000 + HYST;
+            if (freeHeap > upFloor) maxActive = target;
+        }
 
         // Compte les slots déjà connectés (en cours de transfert depuis le serveur local)
         int activeXfer = 0;
@@ -206,6 +227,9 @@ public:
             processSlot(s);
         }
 
+        // Des slots ont pu se liberer ci-dessus : servir les requetes en attente.
+        drainPending();
+
         // Send application-level heartbeat every 15 seconds (aligned with WS heartbeat)
         if (millis() - _lastHeartbeat > 15000) {
             _lastHeartbeat = millis();
@@ -222,7 +246,8 @@ public:
             for (int i = 0; i < MAX_CONCURRENT; i++) {
                 if (_slots[i].state != TunnelSlot::IDLE) active++;
             }
-            Serial.printf("[Tunnel] Heartbeat - heap: %u, psram: %u, active_slots: %d\n",
+            Serial.printf("[Tunnel] Heartbeat - en attente: %u | heap: %u, psram: %u, active_slots: %d\n",
+                          (unsigned)_pending.size(),
                           ESP.getFreeHeap(), ESP.getFreePsram(), active);
         }
     }
@@ -274,6 +299,78 @@ private:
     String _subdomain;
     TunnelSlot _slots[MAX_CONCURRENT];
 
+    /* File d'attente des requetes quand les MAX_CONCURRENT slots sont tous pris.
+     *
+     * Auparavant ce cas renvoyait un 503 "Server busy", en supposant que le navigateur
+     * reessaierait l'asset. C'est faux : un 503 sur un <script src> n'est jamais reessaye,
+     * le fichier est perdu et le JS de la page casse (observe : presence.min.js rejete ->
+     * initPresence() introuvable). Et ce n'est pas un cas limite : la page Energie tire une
+     * vingtaine de requetes sur 6 slots, la saturation est la norme.
+     *
+     * On fait donc attendre. La file sert aussi de contre-pression quand la memoire est
+     * basse : mieux vaut differer que jeter.
+     */
+    struct PendingRequest {
+        String reqId, method, path, headersJson, bodyB64;
+        uint32_t queuedAt;
+    };
+    static const size_t MAX_PENDING = 16;   // borne : ces String vivent dans le heap interne
+
+    /* Borne de TEMPS, aussi indispensable que la borne de taille.
+     *
+     * Le relais n'attend pas indefiniment : passe son propre delai, il repond a notre place
+     * (avec une erreur en application/json, que le navigateur bloque ensuite pour cause de
+     * MIME incorrect sur un .js -- symptome deroutant, sans rapport apparent avec le tunnel).
+     * Faire patienter au-dela de sa patience ne sert donc a rien : autant repondre nous-memes
+     * un 503 franc, plus tot et plus clair. Volontairement bien sous le delai du relais.
+     */
+    static const uint32_t PENDING_TIMEOUT_MS = 8000;
+
+    std::deque<PendingRequest> _pending;
+
+    /* Place une requete dans un slot libre. false = a garder en attente : soit tous les slots
+     * sont pris, soit la memoire est trop basse pour ouvrir une connexion locale de plus
+     * (chaque slot coute ~27 Ko de heap interne en buffers LWIP).
+     */
+    bool startRequest(const PendingRequest& r) {
+        if (ESP.getFreePsram() < 200000) return false;
+        if (ESP.getFreeHeap() < 55000)   return false;   // plancher anti-reboot watchdog
+
+        for (int i = 0; i < MAX_CONCURRENT; i++) {
+            if (_slots[i].state != TunnelSlot::IDLE) continue;
+            TunnelSlot& slot = _slots[i];
+            slot.reqId       = r.reqId;
+            slot.method      = r.method;
+            slot.path        = r.path;
+            slot.headersJson = r.headersJson;
+            slot.bodyB64     = r.bodyB64;
+            slot.state       = TunnelSlot::CONNECT_SEND;
+            slot.stateStartTime = millis();
+            Serial.printf("[Tunnel] [%d] Queued: %s %s (reqId: %s)\n",
+                          i, r.method.c_str(), r.path.c_str(), r.reqId.c_str());
+            return true;
+        }
+        return false;
+    }
+
+    // Ecoule la file des qu'un slot se libere et que la memoire le permet, et abandonne les
+    // requetes qui ont trop attendu (cf. PENDING_TIMEOUT_MS).
+    void drainPending() {
+        while (!_pending.empty() && startRequest(_pending.front())) {
+            _pending.pop_front();
+        }
+
+        uint32_t now = millis();
+        while (!_pending.empty() && (now - _pending.front().queuedAt) > PENDING_TIMEOUT_MS) {
+            // La file est FIFO : si la plus ancienne n'a pas expire, aucune autre non plus.
+            PendingRequest &r = _pending.front();
+            Serial.printf("[Tunnel] abandon apres %lu ms d'attente: %s %s\n",
+                          (unsigned long)(now - r.queuedAt), r.method.c_str(), r.path.c_str());
+            sendErrorResponse(r.reqId.c_str(), 503, "Server busy");
+            _pending.pop_front();
+        }
+    }
+
     void parseTunnelUrl(const char* url) {
         String u(url);
         if (u.startsWith("wss://")) u = u.substring(6);
@@ -305,6 +402,10 @@ private:
                 for (int i = 0; i < MAX_CONCURRENT; i++) {
                     _slots[i].reset();
                 }
+                // Les requetes en attente appartenaient a la session perdue : le relais ne
+                // saurait plus a quoi rattacher leurs reponses, et les servir consommerait
+                // de la memoire pour rien.
+                _pending.clear();
                 break;
 
             case WStype_TEXT:
@@ -366,52 +467,29 @@ private:
             const char* path = doc["path"];
             if (!reqId || !method || !path) return;
 
-            // Find a free slot
-            int freeSlot = -1;
-            for (int i = 0; i < MAX_CONCURRENT; i++) {
-                if (_slots[i].state == TunnelSlot::IDLE) {
-                    freeSlot = i;
-                    break;
-                }
-            }
-
-            if (freeSlot < 0) {
-                Serial.printf("[Tunnel] WARN: All %d slots busy, rejecting %s %s\n",
-                              MAX_CONCURRENT, method, path);
-                sendErrorResponse(reqId, 503, "Server busy");
-                return;
-            }
-
-            // PSRAM guard
-            if (ESP.getFreePsram() < 200000) {
-                Serial.printf("[Tunnel] WARN: PSRAM low (%u), rejecting request\n", ESP.getFreePsram());
-                sendErrorResponse(reqId, 503, "Low memory");
-                return;
-            }
-            // Plancher heap INTERNE : refuser plutôt que risquer le reboot watchdog (<40 Ko).
-            // Le navigateur réessaiera l'asset ; mieux qu'un crash de toute la passerelle.
-            if (ESP.getFreeHeap() < 55000) {
-                Serial.printf("[Tunnel] WARN: heap low (%u), rejecting request\n", ESP.getFreeHeap());
-                sendErrorResponse(reqId, 503, "Low memory");
-                return;
-            }
-
-            TunnelSlot& slot = _slots[freeSlot];
-            slot.reqId = reqId;
-            slot.method = method;
-            slot.path = path;
-
-            slot.headersJson = "";
+            PendingRequest r;
+            r.reqId  = reqId;
+            r.method = method;
+            r.path   = path;
             if (doc.containsKey("headers")) {
-                serializeJson(doc["headers"], slot.headersJson);
+                serializeJson(doc["headers"], r.headersJson);
             }
-            slot.bodyB64 = doc["body"].isNull() ? "" : doc["body"].as<String>();
+            r.bodyB64 = doc["body"].isNull() ? "" : doc["body"].as<String>();
 
-            slot.state = TunnelSlot::CONNECT_SEND;
-            slot.stateStartTime = millis();
-
-            Serial.printf("[Tunnel] [%d] Queued: %s %s (reqId: %s)\n",
-                          freeSlot, method, path, reqId);
+            // Slots pris ou memoire basse -> on differe. Le 503 n'est plus qu'un dernier
+            // recours quand meme la file deborde : jeter une requete casse la page.
+            if (!startRequest(r)) {
+                if (_pending.size() >= MAX_PENDING) {
+                    Serial.printf("[Tunnel] WARN: file pleine (%u), rejet %s %s\n",
+                                  (unsigned)_pending.size(), method, path);
+                    sendErrorResponse(reqId, 503, "Server busy");
+                    return;
+                }
+                r.queuedAt = millis();
+                _pending.push_back(r);
+                Serial.printf("[Tunnel] En attente (%u en file): %s %s\n",
+                              (unsigned)_pending.size(), method, path);
+            }
         }
     }
 

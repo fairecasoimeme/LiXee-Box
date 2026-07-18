@@ -376,6 +376,8 @@ struct StatusRegisterBreakout {
 };
 
 StatusRegisterBreakout parseStatusRegister(const String& hexVal);
+String getStatusRegisterField(const String& hexVal, const String& field);       // issue #31 : libelle d'un champ STGE (affichage)
+long   getStatusRegisterFieldValue(const String& hexVal, const String& field);  // issue #31 : valeur numerique du champ (comparaison regles)
 
 //typedef CircularBuffer<char, 4096> LogConsoleType;
 

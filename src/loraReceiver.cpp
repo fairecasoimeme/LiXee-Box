@@ -76,6 +76,26 @@ static uint32_t lastRearmMs   = 0;
 
 static void IRAM_ATTR onLoraRx() { rxFlag = true; }
 
+/* LED d'appairage (LED_PIN = GPIO 3), la meme que celle du provisioning BLE.
+ * Aucun conflit : l'appairage LoRa se pilote depuis la page web, donc le WiFi est connecte
+ * et SmartWiFiManager laisse la LED eteinte (il ne la touche qu'en WIFI_STATE_BLE_PROVISIONING).
+ * On la fait clignoter pendant la fenetre, et on la restaure eteinte a la fermeture.
+ */
+static uint32_t ledLastToggle = 0;
+static bool     ledState      = false;
+
+static void pairingLedTick() {
+  if (millis() - ledLastToggle < 300) return;
+  ledLastToggle = millis();
+  ledState = !ledState;
+  digitalWrite(LED_PIN, ledState ? HIGH : LOW);
+}
+
+static void pairingLedOff() {
+  ledState = false;
+  digitalWrite(LED_PIN, LOW);
+}
+
 /* ===================== Helpers ===================== */
 static String macToHex(const uint8_t *mac) {
   char b[17];
@@ -540,11 +560,26 @@ static void ensureLoraDevice(const uint8_t *mac, const char *deviceId, const cha
 }
 
 /* ===================== Appairage ===================== */
+// Demande d'appairage posée par un handler web. La radio ne DOIT PAS être touchée depuis la
+// tâche async (les handlers y tournent), sinon on entre en conflit SPI avec loraReceiverLoop()
+// qui lit/écrit la radio dans loop() : c'est ce qui écrasait le canal d'appairage (3) par le
+// canal de données (4) et laissait la fenêtre "ouverte" mais sur le mauvais canal.
+static volatile bool loraPairingRequested = false;
+
+// Publique : appelée par les routes /loraPair et /cmdLoraPairAssist (tâche async).
+// Ne fait que signaler ; le vrai démarrage a lieu dans loraReceiverLoop() (contexte loop()).
 void loraStartPairing() {
+  loraPairingRequested = true;
+}
+
+// Interne : exécutée UNIQUEMENT depuis loop(), donc seule à piloter la radio.
+static void loraStartPairingNow() {
   if (!radioReady) { LLOG("[LoRa] appairage impossible : radio non prete\r\n"); return; }
   loraPairingMode    = true;
   loraPairingStartMs = millis();
   awaitingConfirm    = false;
+  pinMode(LED_PIN, OUTPUT);           // deja fait au boot, mais on ne depend pas de l'ordre d'init
+  ledLastToggle = 0; ledState = false;   // demarre le clignotement des le prochain loop
   setChannel(LORA_PAIR_CHANNEL);
   radio.setDio1Action(onLoraRx);
   radio.startReceive();
@@ -579,11 +614,6 @@ static void handlePairRequest(const uint8_t *buf, int len) {
   for (int i = 0; i < KEY_SIZE; i++) pendingKey[i] = (uint8_t)(esp_random() & 0xFF);
   LLOG("[LoRa] PAIR_REQUEST de %s (device_id=%s, model=%s)\r\n",
        macToHex(pendingMAC).c_str(), pendingDeviceId, pendingModel);
-  // Trame brute : permet de lever tout doute sur l'encodage côté émetteur
-  // (cf. PROTOCOLE_LORA.md §4.1 ; device_id = octets 11-12).
-  LLOG("[LoRa] PAIR_REQUEST brut (%d o) :", len);
-  for (int i = 0; i < len; i++) LLOG(" %02X", buf[i]);
-  LLOG("\r\n");
 
   uint8_t pkt[SZ_PAIR_RESPONSE];
   pkt[0] = 0x14;                       // v1 | PAIR_RESPONSE
@@ -736,11 +766,23 @@ static void rxWatchdog() {
 void loraReceiverLoop() {
   if (!radioReady) return;
 
+  // Demande d'appairage venue d'un handler web : on la traite ICI (dans loop()), avant tout
+  // le reste, pour être le seul contexte à piloter la radio. Sinon rxWatchdog() ci-dessous
+  // pourrait ré-armer le canal de données juste après que le web ait armé le canal d'appairage.
+  if (loraPairingRequested) {
+    loraPairingRequested = false;
+    loraStartPairingNow();
+  }
+
   rxWatchdog();
+
+  // LED d'appairage : clignote tant que la fenêtre est ouverte, éteinte sinon.
+  if (loraPairingMode) pairingLedTick(); else if (ledState) pairingLedOff();
 
   // Fin de la fenêtre d'appairage -> retour à l'écoute des données.
   if (loraPairingMode && (millis() - loraPairingStartMs > LORA_PAIR_WINDOW_MS)) {
     loraPairingMode = false; awaitingConfirm = false;
+    pairingLedOff();
     setChannel(LORA_OP_CHANNEL); radio.startReceive();
     LLOG("[LoRa] fenetre d'appairage fermee\r\n");
   }

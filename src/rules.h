@@ -32,6 +32,12 @@ struct Condition {
     PsString value2;    // Pour time_range: endTime
     PsString logic;     // AND / OR
 
+    // Sous-champ d'un attribut composite (issue #31). Vide = attribut brut. Ex : STGE
+    // (FF66/535) code ~16 etats sur ses bits ; comparer la chaine hex entiere casse des
+    // qu'un autre bit change. subfield="contact_sec" -> on decode STGE et on ne compare que
+    // ce champ ("Ouvert"/"Ferme"). Le decodage reutilise parseStatusRegister().
+    PsString subfield;
+
     // Pour device_compare : 2e device
     PsString IEEE2;
     int      cluster2;
@@ -117,7 +123,10 @@ public:
     }
 
 private:
-    String getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE) const;
+    // subfield (issue #31) : si non vide, decode un attribut composite (STGE) et renvoie
+    // seulement ce champ. Vide = valeur brute, comportement inchange.
+    String getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE,
+                                   const char* subfield = "") const;
     bool   evaluateCondition(const Condition& cond) const;
 
     // Conditions temporelles
