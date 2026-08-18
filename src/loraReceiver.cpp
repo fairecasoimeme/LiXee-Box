@@ -4,6 +4,7 @@
 #include "device.h"
 #include "rules.h"        // extern DeviceList devices
 #include "zigbee.h"
+#include "lixee.h"        // invalidateDeviceCache() : le cache findDevice doit suivre les ajouts
 #include "SPIFFS_ini.h"
 #include "aes128.h"
 #include <RadioLib.h>
@@ -41,14 +42,23 @@ static const float CH_FREQ[8] = {2410.0, 2420.0, 2430.0, 2440.0, 2450.0, 2460.0,
 #define T_EXTENDED      0x02
 #define T_PAIR_REQUEST  0x03
 #define T_PAIR_CONFIRM  0x05
+#define T_POLL_REQUEST  0x0B   // box -> device : lecture d'attribut (§8)
+#define T_POLL_RESPONSE 0x0C   // device -> box : reponse a la lecture
+
+// Statuts POLL_RESPONSE (§8)
+#define POLL_OK           0x00
+#define POLL_UNKNOWN_ATTR 0x01
+#define POLL_BAD_REQUEST  0x02
+
 #define MIC_SIZE        2
 #define MAC_SIZE        8
 #define KEY_SIZE        16
 
 #define SZ_PAIR_REQUEST  11
-#define SZ_PAIR_RESPONSE 20
+#define SZ_PAIR_RESPONSE 21   // §4.2 : +1 octet op_SF en [20] (etait 20 avant SF a l'appairage)
 #define SZ_PAIR_CONFIRM  15
 #define SZ_ESSENTIAL     17
+#define LORA_PAIR_SF     11   // rendez-vous d'appairage : canal 3 + SF11 fixes (§4)
 
 // Type par défaut si l'émetteur ne l'annonce pas (PAIR_REQUEST historique de 11 octets) :
 // c'était forcément un ZLinky. device_id nomme le template data/tp/81.json, model en est la clé.
@@ -69,10 +79,30 @@ static char     pendingDeviceId[8];   // type annoncé dans le PAIR_REQUEST éte
 static char     pendingModel[24];
 static bool     awaitingConfirm = false;
 static uint32_t confirmDeadline = 0;
-// Chien de garde de la réception : date de la dernière trame radio (quelle qu'elle soit) et
-// du dernier ré-armement. Cf. rxWatchdog().
+// Chien de garde de la réception : date de la dernière trame radio valide. Cf. rxWatchdog().
 static uint32_t lastRadioRxMs = 0;
-static uint32_t lastRearmMs   = 0;
+
+// Parametres radio OPERATIONNELS du recepteur (globaux, persistes dans /config/lora.json). Ce
+// sont les valeurs sur lesquelles le recepteur ecoute les donnees ET qu'il ASSIGNE aux
+// emetteurs a l'appairage (§4). Ils se changent via la page de config (loraSetOpParams), pas
+// par une commande radio. Doivent survivre au reboot, sinon le recepteur ecouterait le
+// canal/SF par defaut alors que les emetteurs sont ailleurs.
+static uint8_t g_opChannel = LORA_OP_CHANNEL;   // 0..7  (defaut LORA_OP_CHANNEL)
+static uint8_t g_sf        = 11;                 // 7..12 (defaut SF11)
+
+// Resultat du dernier appairage reussi, canal DEDIE a l'assistant (pas l'alerte partagee).
+// loraTakePairResult() le lit et l'efface -> livre une seule fois, a un seul lecteur.
+static char loraPairedMac[17]   = "";
+static char loraPairedModel[24] = "";
+static bool loraPairedPending   = false;
+
+bool loraTakePairResult(String &mac, String &model) {
+  if (!loraPairedPending) return false;
+  loraPairedPending = false;
+  mac   = loraPairedMac;
+  model = loraPairedModel;
+  return true;
+}
 
 static void IRAM_ATTR onLoraRx() { rxFlag = true; }
 
@@ -103,11 +133,29 @@ static String macToHex(const uint8_t *mac) {
   return String(b);
 }
 
+// Retune du canal. standby() AVANT toute reconfiguration (impose par le SX128x), puis
+// clearIrqStatus() : sinon une IRQ residuelle du canal precedent (ex : DIO1 encore assertee
+// apres une reception sur le canal op) empeche un re-armement franc en RX au canal suivant.
+// C'est ce qui rendait l'appairage capricieux (bascule op->rendez-vous et rendez-vous->op).
 static void setChannel(uint8_t ch) {
-  radio.standby();
+  radio.finishReceive();    // standby + clearIrqStatus (clearIrqStatus est protected)
   radio.setFrequency(CH_FREQ[ch]);
   curChannel = ch;
 }
+
+// SF reellement charge dans la radio (peut differer de g_sf pendant un changement ou un scan).
+static uint8_t radioSF = 11;
+
+// Change le spreading factor de la radio. Meme precaution que setChannel (standby + clear IRQ).
+static void setSF(uint8_t sf) {
+  radio.finishReceive();    // standby + clearIrqStatus
+  radio.setSpreadingFactor(sf);
+  radioSF = sf;
+}
+
+// Bornage des parametres radio (defense contre un fichier corrompu ou une commande hors bornes).
+static uint8_t o_clampChannel(int v) { return (v < 0 || v > 7) ? LORA_OP_CHANNEL : (uint8_t)v; }
+static uint8_t o_clampSF(int v)      { return (v < 7 || v > 12) ? 11 : (uint8_t)v; }
 
 // Construit le nonce CTR : MAC(8) + 0x00(7) + seq(1) — identique à l'émetteur.
 static void buildNonce(uint8_t *nonce, const uint8_t *mac, uint8_t seq) {
@@ -130,6 +178,21 @@ static bool decryptPacket(uint8_t *pkt, int totalLen, const uint8_t *key, const 
   uint8_t expected[16];
   aes128_cmac(pkt, (uint16_t)dataLen, key, expected);
   return (expected[0] == m0 && expected[1] == m1);
+}
+
+// Chiffre en place et appose le MIC (miroir de decryptPacket, ordre d'emission §3).
+// pkt[0..clearLen-1] = trame en clair (header + payload). Renvoie la longueur totale
+// (clearLen + 2). Le buffer doit avoir 2 octets libres apres clearLen pour le MIC.
+static int encryptPacket(uint8_t *pkt, int clearLen, const uint8_t *key, const uint8_t *mac) {
+  uint8_t mic[16];
+  aes128_cmac(pkt, (uint16_t)clearLen, key, mic);       // 1. MIC sur le clair complet
+  uint8_t nonce[16];
+  buildNonce(nonce, mac, pkt[1]);                       // nonce = MAC + seq (header en clair)
+  int payloadLen = clearLen - 2;
+  if (payloadLen > 0) aes128_ctr_crypt(&pkt[2], (uint16_t)payloadLen, key, nonce);  // 2. chiffre
+  pkt[clearLen]     = mic[0];                            // 3. appende MIC (2 octets)
+  pkt[clearLen + 1] = mic[1];
+  return clearLen + 2;
 }
 
 static uint16_t getU16(const uint8_t *b) { return ((uint16_t)b[0] << 8) | b[1]; }
@@ -429,6 +492,36 @@ static void mapExtended(const String &inifile, const uint8_t *b, int len, LoraEm
       }
       break;
     }
+    case 0x09: {                                      // METER_DATE (4+N octets, §7.10)
+      // Horodate interne du compteur (DATE, Standard). Historique : N=0 -> a ignorer.
+      // FF66/514 attend une chaine prefixee (handleAttribute514 lit datas[0]=longueur).
+      if (len < 4) return;
+      uint8_t n = b[3];
+      if (n == 0 || 4 + n > len) return;              // absent (Historique) ou tronque
+      char date[20];
+      if (n > sizeof(date) - 1) n = sizeof(date) - 1;
+      int nb = 0;
+      for (uint8_t i = 0; i < n && b[4 + i] >= 0x20; i++) date[nb++] = b[4 + i];
+      date[nb] = '\0';
+      if (nb > 0) pushZStr(inifile, 0xFF66, 514, date);
+      break;
+    }
+    case 0x0A: {                                      // TARIFF_OPTION (16 octets, §7.11)
+      // OPTARIF/DEMAIN (Historique) : champs 4 ASCII completes par 0x00 (absents en Standard).
+      // CCASN/CCASN-1 [12-15] : aucun attribut dans le template ZLinky -> ignores.
+      if (len < 16) return;
+      e.linkyMode = b[3]; e.modeKnown = true;         // auto-descriptif (porte son mode)
+      char s[5];
+      int on = 0;
+      for (int i = 0; i < 4 && b[4 + i] >= 0x20; i++) s[on++] = b[4 + i];
+      s[on] = '\0';
+      if (on > 0) pushZStr(inifile, 0xFF66, 0, s);    // OPTARIF
+      int dn = 0;
+      for (int i = 0; i < 4 && b[8 + i] >= 0x20; i++) s[dn++] = b[8 + i];
+      s[dn] = '\0';
+      if (dn > 0) pushZStr(inifile, 0xFF66, 1, s);    // DEMAIN (couleur Tempo du lendemain)
+      break;
+    }
     default:
       LLOG("[LoRa] sous-type EXT 0x%02X non mappe (len=%d)\r\n", b[2], len);
       break;
@@ -444,6 +537,10 @@ bool loadLoraConfig() {
   DeserializationError err = deserializeJson(doc, f);
   f.close();
   if (err) { LLOG("[LoRa] /config/lora.json illisible: %s\r\n", err.c_str()); return false; }
+
+  // Parametres radio globaux (defaut si absents : anciens fichiers d'avant le bidirectionnel).
+  g_opChannel = o_clampChannel(doc["opChannel"] | LORA_OP_CHANNEL);
+  g_sf        = o_clampSF(doc["sf"] | 11);
 
   int i = 0;
   for (JsonObject o : doc["emitters"].as<JsonArray>()) {
@@ -466,6 +563,8 @@ bool loadLoraConfig() {
 
 bool saveLoraConfig() {
   SpiRamJsonDocument doc(4096);
+  doc["opChannel"] = g_opChannel;   // parametres radio operationnels globaux (§4)
+  doc["sf"]        = g_sf;
   JsonArray arr = doc.createNestedArray("emitters");
   for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
     if (!loraEmitters[i].valid) continue;
@@ -503,6 +602,94 @@ bool loraRemoveEmitter(int slot) {
   return saveLoraConfig();
 }
 
+// Met une lecture d'attribut en file (appelee depuis un handler web, tache async). Ne touche
+// PAS la radio : sendPollRequest() s'en charge dans loop(), au prochain uplink (§8). Une
+// nouvelle requete remplace celle en attente pour cet emetteur (file d'une seule entree).
+bool loraQueuePoll(int slot, uint16_t cluster, uint16_t attr) {
+  if (slot < 0 || slot >= LORA_MAX_EMITTERS || !loraEmitters[slot].valid) return false;
+  LoraEmitter &e = loraEmitters[slot];
+  e.pollCluster = cluster;
+  e.pollAttr    = attr;
+  e.pollRetries = 0;
+  e.pollRespMs  = 0;         // efface la reponse precedente : on attend celle de cette requete
+  e.pollPending = true;
+  LLOG("[LoRa] POLL cluster=0x%04X attr=0x%04X en file pour slot %d (prochain uplink)\r\n",
+       cluster, attr, slot);
+  return true;
+}
+
+// Conversion int64 -> texte decimal (String(long) est 32 bits sur ESP32 : un index uint32 au
+// dela de 2^31 s'afficherait negatif ; snprintf %lld n'est pas garanti par la libc nano).
+static String i64ToStr(int64_t v) {
+  bool neg = v < 0;
+  uint64_t u = neg ? (uint64_t)(-(v + 1)) + 1 : (uint64_t)v;   // -MIN sans overflow
+  char buf[24];
+  int i = sizeof(buf);
+  buf[--i] = '\0';
+  do { buf[--i] = (char)('0' + (int)(u % 10)); u /= 10; } while (u > 0 && i > 0);
+  if (neg && i > 0) buf[--i] = '-';
+  return String(&buf[i]);
+}
+
+// Formatte la valeur brute d'une reponse POLL en texte lisible selon son type ZCL.
+static String formatPollValue(uint8_t ztype, const uint8_t *v, uint8_t n) {
+  if (ztype == 0x41 || ztype == 0x42) {           // octet / character string
+    String s;
+    for (uint8_t i = 0; i < n; i++) s += (v[i] >= 0x20 && v[i] < 0x7F) ? (char)v[i] : '.';
+    return s;
+  }
+  // Numeriques big-endian. int8/int16 signes ; le reste non signe.
+  int64_t val = 0;
+  for (uint8_t i = 0; i < n; i++) val = (val << 8) | v[i];
+  if ((ztype == 0x28 && n == 1 && (v[0] & 0x80)) ||   // int8 negatif
+      (ztype == 0x29 && n == 2 && (v[0] & 0x80))) {    // int16 negatif
+    val -= (int64_t)1 << (8 * n);
+  }
+  return i64ToStr(val);
+}
+
+String loraPollStatusJson(int slot) {
+  if (slot < 0 || slot >= LORA_MAX_EMITTERS || !loraEmitters[slot].valid)
+    return F("{\"state\":\"idle\"}");
+  const LoraEmitter &e = loraEmitters[slot];
+  if (e.pollPending) return F("{\"state\":\"pending\"}");
+  if (e.pollRespMs == 0) return F("{\"state\":\"idle\"}");
+  const char *state = (e.pollRespStatus == POLL_OK)           ? "ok"
+                    : (e.pollRespStatus == POLL_UNKNOWN_ATTR) ? "unknown"
+                                                              : "bad";
+  String j = "{\"state\":\"" + String(state) + "\"";
+  j += ",\"cluster\":" + String(e.pollCluster);
+  j += ",\"attr\":" + String(e.pollAttr);
+  if (e.pollRespStatus == POLL_OK) {
+    j += ",\"type\":" + String(e.pollRespType);
+    j += ",\"value\":\"" + formatPollValue(e.pollRespType, e.pollRespValue, e.pollRespLen) + "\"";
+  }
+  j += "}";
+  return j;
+}
+
+bool loraSetOpParams(uint8_t channel, uint8_t sf) {
+  if (channel > 7 || sf < 7 || sf > 12) return false;
+  g_opChannel = channel;
+  g_sf        = sf;
+  // Bascule immediate du recepteur sur les nouveaux parametres reseau. Les emetteurs deja
+  // appaires restent sur l'ancienne config jusqu'a un nouvel appairage (§4) : ils seront muets
+  // d'ici la. C'est le fonctionnement voulu (parametres reseau, pas par appareil).
+  if (radioReady && !loraPairingMode && !awaitingConfirm) {
+    setChannel(g_opChannel);
+    setSF(g_sf);
+    radio.startReceive();
+    lastRadioRxMs = millis();  // laisse le temps aux emetteurs re-appaires de revenir
+    LLOG("[LoRa] parametres reseau : canal %d, SF%d (re-appairer les emetteurs pour les suivre)\r\n",
+         g_opChannel, g_sf);
+  }
+  saveLoraConfig();
+  return true;
+}
+
+uint8_t loraGetChannel() { return g_opChannel; }
+uint8_t loraGetSF()      { return g_sf; }
+
 /* ===================== Création du device (appareil "normal") ===================== */
 // Rappel : device_id N'EST PAS la MAC. C'est l'identifiant de type (décimal) qui NOMME le
 // fichier template — DeviceData::loadTemplate() cherche "<device_id>.json" puis la clé [model].
@@ -527,6 +714,27 @@ static void warnIfNoTemplate(const char *deviceId, const char *model) {
   LLOG("[LoRa] template %s present (model attendu : %s)\r\n", path.c_str(), model);
 }
 
+// Attribue une short address 16 bits UNIQUE a un appareil LoRa. Les appareils LoRa n'ont pas de
+// short address Zigbee ; or les pages (Appareils, fiche) indexent le rafraichissement live par
+// short address (id DOM 'status_<addr>' et '<addr>_cluster_attr'). Avec la meme valeur (0) pour
+// tous les LoRa, getElementById ne mettait a jour que le premier. On derive une valeur des 2
+// derniers octets de la MAC, puis on resout les collisions (avec le Zigbee comme entre LoRa).
+static uint16_t computeLoraShortAddr(const uint8_t *mac, const String &excludeId) {
+  uint16_t addr = ((uint16_t)mac[6] << 8) | mac[7];
+  if (addr == 0) addr = ((uint16_t)mac[4] << 8) | mac[5];
+  if (addr == 0) addr = 1;
+  for (int guard = 0; guard < 65535; guard++) {
+    bool clash = false;
+    for (size_t i = 0; i < devices.size(); i++) {
+      if (devices[i]->getDeviceID() == excludeId) continue;   // ne pas se compter soi-meme
+      if ((uint16_t)devices[i]->getInfo().shortAddr.toInt() == addr) { clash = true; break; }
+    }
+    if (!clash) return addr;
+    if (++addr == 0) addr = 1;
+  }
+  return addr;
+}
+
 static void ensureLoraDevice(const uint8_t *mac, const char *deviceId, const char *model) {
   String id = macToHex(mac);
   warnIfNoTemplate(deviceId, model);
@@ -534,13 +742,23 @@ static void ensureLoraDevice(const uint8_t *mac, const char *deviceId, const cha
     if (devices[i]->getDeviceID() != id) continue;
     // Déjà présent : corriger un device_id/model obsolète (appareils créés par une version
     // antérieure, où device_id valait la MAC -> template introuvable).
+    bool changed = false;
     if (devices[i]->getInfo().device_id != deviceId || devices[i]->getInfo().model != model) {
       devices[i]->setInfoDeviceID(deviceId);
       devices[i]->setInfoModel(model);
       devices[i]->reloadTemplate();
-      devices[i]->saveToFile();
+      changed = true;
       LLOG("[LoRa] device %s corrige (device_id=%s, model=%s)\r\n", id.c_str(), deviceId, model);
     }
+    // Rattrape les appareils LoRa crees par une version anterieure avec short addr 0 (partagee).
+    String sa = devices[i]->getInfo().shortAddr;
+    if (sa.length() == 0 || sa.toInt() == 0) {
+      uint16_t na = computeLoraShortAddr(mac, id);
+      devices[i]->setInfoShortAddr(String(na));
+      changed = true;
+      LLOG("[LoRa] device %s : short addr attribuee = %u\r\n", id.c_str(), na);
+    }
+    if (changed) devices[i]->saveToFile();
     return;
   }
 
@@ -552,10 +770,11 @@ static void ensureLoraDevice(const uint8_t *mac, const char *deviceId, const cha
   dev->setInfoManufacturer("LiXee");
   dev->setInfoEndpoint("1");
   dev->setInfoStatus("00");
-  dev->setInfoShortAddr("0");
+  dev->setInfoShortAddr(String(computeLoraShortAddr(mac, id)));   // short addr 16 bits unique
   dev->setInfoLastseen(FormattedDate);
   dev->saveToFile();
   devices.push_back(dev);
+  invalidateDeviceCache();   // sinon findDevice() ne verrait pas ce nouvel appareil (mode FF66 KO)
   LLOG("[LoRa] device cree : %s (device_id=%s, model=%s)\r\n", id.c_str(), deviceId, model);
 }
 
@@ -580,11 +799,15 @@ static void loraStartPairingNow() {
   awaitingConfirm    = false;
   pinMode(LED_PIN, OUTPUT);           // deja fait au boot, mais on ne depend pas de l'ordre d'init
   ledLastToggle = 0; ledState = false;   // demarre le clignotement des le prochain loop
+  // Rendez-vous d'appairage FIXE : canal 3 + SF11 (§4), quelle que soit la config operationnelle.
+  // C'est ce qui permet a un ZLinky tournant sur un autre canal/SF de revenir se faire entendre.
   setChannel(LORA_PAIR_CHANNEL);
+  setSF(LORA_PAIR_SF);
+  rxFlag = false;                     // ignore une IRQ DIO1 residuelle du canal operationnel
   radio.setDio1Action(onLoraRx);
   radio.startReceive();
-  LLOG("[LoRa] appairage ouvert %d s sur canal %d (%.0f MHz)\r\n",
-       LORA_PAIR_WINDOW_MS / 1000, LORA_PAIR_CHANNEL, CH_FREQ[LORA_PAIR_CHANNEL]);
+  LLOG("[LoRa] appairage ouvert %d s sur canal %d (%.0f MHz), SF%d\r\n",
+       LORA_PAIR_WINDOW_MS / 1000, LORA_PAIR_CHANNEL, CH_FREQ[LORA_PAIR_CHANNEL], LORA_PAIR_SF);
 }
 
 static int findOrCreateSlot(const uint8_t *mac) {
@@ -620,7 +843,8 @@ static void handlePairRequest(const uint8_t *buf, int len) {
   pkt[1] = buf[1];                     // écho du seq
   memcpy(&pkt[2], pendingKey, KEY_SIZE);
   pkt[18] = 0x00;                      // status OK
-  pkt[19] = LORA_OP_CHANNEL;
+  pkt[19] = g_opChannel;   // op_channel assigne a l'emetteur (§4.2)
+  pkt[20] = g_sf;          // op_SF assigne a l'emetteur (§4.2)
 
   radio.clearDio1Action();
   int st = radio.transmit(pkt, SZ_PAIR_RESPONSE);
@@ -630,12 +854,17 @@ static void handlePairRequest(const uint8_t *buf, int len) {
     radio.startReceive();
     return;
   }
-  // Le PAIR_CONFIRM arrive sur le canal opérationnel.
-  setChannel(LORA_OP_CHANNEL);
+  // Le PAIR_CONFIRM arrive sur la config OPERATIONNELLE (canal + SF), pas sur le rendez-vous :
+  // l'emetteur bascule dessus des reception de PAIR_RESPONSE, on le suit. clearIrqStatus (dans
+  // setChannel/setSF) + reset de rxFlag pour ne pas rater le CONFIRM a cause d'un etat residuel.
+  setChannel(g_opChannel);
+  setSF(g_sf);
+  rxFlag = false;
+  radio.setDio1Action(onLoraRx);
   radio.startReceive();
   awaitingConfirm = true;
   confirmDeadline = millis() + 4000;
-  LLOG("[LoRa] PAIR_RESPONSE envoye -> attente CONFIRM sur canal %d\r\n", LORA_OP_CHANNEL);
+  LLOG("[LoRa] PAIR_RESPONSE envoye -> attente CONFIRM sur canal %d, SF%d\r\n", g_opChannel, g_sf);
 }
 
 static void handlePairConfirm(const uint8_t *buf, int len) {
@@ -655,10 +884,11 @@ static void handlePairConfirm(const uint8_t *buf, int len) {
   memcpy(loraEmitters[slot].key, pendingKey, KEY_SIZE);
   strlcpy(loraEmitters[slot].deviceId, pendingDeviceId, sizeof(loraEmitters[slot].deviceId));
   strlcpy(loraEmitters[slot].model,    pendingModel,    sizeof(loraEmitters[slot].model));
-  loraEmitters[slot].valid   = true;
-  loraEmitters[slot].seqInit = false;
-  loraEmitters[slot].rxCount = 0;
-  loraEmitters[slot].missed  = 0;
+  loraEmitters[slot].valid    = true;
+  loraEmitters[slot].seqInit  = false;
+  loraEmitters[slot].rxCount  = 0;
+  loraEmitters[slot].missed   = 0;
+  loraEmitters[slot].pollPending = false;
   saveLoraConfig();
   ensureLoraDevice(pendingMAC, pendingDeviceId, pendingModel);
 
@@ -666,17 +896,74 @@ static void handlePairConfirm(const uint8_t *buf, int len) {
   loraPairingMode = false;
   LLOG("[LoRa] *** APPAIRAGE REUSSI *** %s (slot %d)\r\n", macToHex(pendingMAC).c_str(), slot);
 
-  // Signaler l'appareil à l'assistant d'appairage exactement comme le fait le Zigbee
-  // (protocol.cpp, réponse 0x004D) : code 3 = « appareil trouvé », et le libellé porte la
-  // MAC dans un <span id='newDevice'> que l'assistant relit pour l'étape « Nommer ».
-  if (alertList) {
-    String msg = "<div align='center'><strong>" + String(pendingModel) +
-                 "</strong><br>(<span id='newDevice'>" + macToHex(pendingMAC) + "</span>)</div>";
-    alertList->push(Alert{msg, 3});
-  }
+  // Signaler l'appareil a l'assistant d'appairage. On N'utilise PAS l'alerte partagee
+  // (alertList / /getAlert) : elle est destructive et GLOBALE, donc n'importe quelle autre
+  // page ouverte qui sonde /getAlert consomme l'evenement avant l'assistant (observe :
+  // l'assistant recevait toujours une reponse vide). On expose un etat dedie a l'appairage
+  // LoRa, lu via /loraPairStatus par l'assistant, que rien d'autre ne consomme.
+  strlcpy(loraPairedMac,   macToHex(pendingMAC).c_str(), sizeof(loraPairedMac));
+  strlcpy(loraPairedModel, pendingModel,                 sizeof(loraPairedModel));
+  loraPairedPending = true;
 }
 
 /* ===================== Réception des données ===================== */
+// Longueur de preambule (en symboles) pour qu'un downlink dure assez longtemps a bas SF.
+// Le device ne detecte le preambule que vers T+40-60 ms apres son uplink (stabilisation de
+// sa fenetre RX) : a SF7 un preambule de 16 symboles (~5 ms) est deja fini a cet instant et
+// n'est jamais vu. On vise ~40 ms de preambule. Tsym = 2^sf / 406250 s ; N = 0.040 * 406250
+// / 2^sf = 16250 >> sf. Un preambule plus long reste compatible avec un recepteur regle sur 16.
+static uint16_t downlinkPreamble(uint8_t sf) {
+  uint32_t n = 16250UL >> sf;
+  return (n < 16) ? 16 : (uint16_t)n;
+}
+
+// Injecte la valeur d'une reponse POLL dans le pipeline habituel (readZigbeeDatas). La forme
+// des `datas` depend du type ZCL : une chaine doit etre prefixee de sa longueur (format
+// attendu par les handlers FF66) ; un numerique passe ses octets bruts big-endian tels quels.
+static void injectPollValue(const String &inifile, uint16_t cluster, uint16_t attr,
+                            uint8_t ztype, const uint8_t *val, uint8_t vlen) {
+  uint8_t c[2] = {(uint8_t)(cluster >> 8), (uint8_t)(cluster & 0xFF)};
+  uint8_t a[2] = {(uint8_t)(attr >> 8), (uint8_t)(attr & 0xFF)};
+  if (ztype == 0x41 || ztype == 0x42) {           // octet / character string
+    char d[34];
+    uint8_t n = (vlen > sizeof(d) - 1) ? sizeof(d) - 1 : vlen;
+    d[0] = (char)n;
+    memcpy(&d[1], val, n);
+    readZigbeeDatas(inifile, c, a, ztype, (int)n + 1, d);
+  } else {                                          // numerique big-endian
+    char d[8];
+    uint8_t n = (vlen > sizeof(d)) ? sizeof(d) : vlen;
+    memcpy(d, val, n);
+    readZigbeeDatas(inifile, c, a, ztype, (int)n, d);
+  }
+}
+
+// Emet une requete de lecture (POLL_REQUEST, §8) DANS la fenetre RX ouverte par l'uplink qu'on
+// vient de recevoir. A appeler le plus tot possible apres le RxDone (fenetre ~300 ms, TX attendu
+// vers T+20 ms), donc AVANT le mapping qui est lent. La radio revient en RX pour capter la
+// reponse. Une lecture est idempotente : ni compteur ni confirmation.
+static void sendPollRequest(LoraEmitter &e) {
+  uint8_t pkt[16];
+  pkt[0] = 0x10 | T_POLL_REQUEST;          // version 1 | type (0x1B)
+  pkt[1] = e.pollSeq++;                    // seq -> nonce cote emetteur
+  pkt[2] = (uint8_t)(e.pollCluster >> 8);
+  pkt[3] = (uint8_t)(e.pollCluster & 0xFF);
+  pkt[4] = (uint8_t)(e.pollAttr >> 8);
+  pkt[5] = (uint8_t)(e.pollAttr & 0xFF);
+  int total = encryptPacket(pkt, 6, e.key, e.mac);
+
+  uint16_t pre = downlinkPreamble(radioSF);
+  radio.clearDio1Action();
+  if (pre != 16) radio.setPreambleLength(pre);        // preambule long pour couvrir la fenetre
+  int st = radio.transmit(pkt, total);                 // bloquant (time-on-air)
+  if (pre != 16) radio.setPreambleLength(16);          // restaurer : notre RX attend un preambule 16
+  radio.setDio1Action(onLoraRx);
+  radio.startReceive();                      // re-ecoute : la reponse arrive comme une trame normale
+  e.pollRetries++;
+  LLOG("[LoRa] POLL_REQUEST cluster=0x%04X attr=0x%04X envoye (essai %d, tx=%d)\r\n",
+       e.pollCluster, e.pollAttr, e.pollRetries, st);
+}
+
 static void handleData(uint8_t *buf, int len, float rssi, float snr) {
   // On essaie chaque clé : le bon émetteur est celui dont le MIC valide.
   uint8_t backup[64];
@@ -696,6 +983,20 @@ static void handleData(uint8_t *buf, int len, float rssi, float snr) {
     }
     e.lastSeq = seq; e.seqInit = true;
     e.rxCount++; e.lastRssi = rssi; e.lastSnr = snr; e.lastSeenMs = millis();
+    lastRadioRxMs = millis();      // trame VALIDE de notre device (base du watchdog)
+
+    // Fenetre descendante (§8) : si une lecture d'attribut attend, l'emettre MAINTENANT, avant
+    // le mapping (readZigbeeDatas = MQTT + fichiers, plusieurs ms) qui ferait rater les ~20 ms.
+    // Best-effort borne : au-dela de 8 uplinks sans reponse, on abandonne (perte durable).
+    if (e.pollPending) {
+      if (e.pollRetries >= 8) {
+        e.pollPending = false;
+        LLOG("[LoRa] POLL cluster=0x%04X attr=0x%04X abandonne (pas de reponse apres %d essais)\r\n",
+             e.pollCluster, e.pollAttr, e.pollRetries);
+      } else {
+        sendPollRequest(e);
+      }
+    }
 
     String inifile = macToHex(e.mac) + ".json";
     int dataLen = len - MIC_SIZE;
@@ -706,6 +1007,44 @@ static void handleData(uint8_t *buf, int len, float rssi, float snr) {
   LLOG("[LoRa] trame chiffree non attribuee (MIC KO pour toutes les cles), len=%d\r\n", len);
 }
 
+// Reçoit le POLL_RESPONSE (type 0x0C, chiffré, §8). Valide le MIC via la clé de l'émetteur,
+// memorise le resultat pour l'UI et, si OK, injecte la valeur dans le pipeline habituel comme
+// une donnee recue normalement. Format clair : [cluster(2)][attr(2)][statut][type][len][valeur].
+static void handlePollResponse(uint8_t *buf, int len) {
+  uint8_t backup[64];
+  if (len > (int)sizeof(backup)) return;
+  memcpy(backup, buf, len);
+  for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
+    if (!loraEmitters[i].valid) continue;
+    memcpy(buf, backup, len);
+    if (!decryptPacket(buf, len, loraEmitters[i].key, loraEmitters[i].mac)) continue;
+    LoraEmitter &e = loraEmitters[i];
+    int dataLen = len - MIC_SIZE;
+    if (dataLen < 9) return;                  // en-tete = 9 octets (cluster,attr,statut,type,len)
+    uint16_t cluster = getU16(&buf[2]);
+    uint16_t attr    = getU16(&buf[4]);
+    uint8_t  status  = buf[6];
+    uint8_t  ztype   = buf[7];
+    uint8_t  vlen    = buf[8];
+    if (9 + (int)vlen > dataLen) vlen = (uint8_t)(dataLen - 9);   // borne sur la trame reelle
+
+    e.pollPending    = false;                 // reponse recue : fin du best-effort
+    e.pollRespMs     = millis();
+    e.pollRespStatus = status;
+    e.pollRespType   = ztype;
+    e.pollRespLen    = (vlen > sizeof(e.pollRespValue)) ? sizeof(e.pollRespValue) : vlen;
+    memcpy(e.pollRespValue, &buf[9], e.pollRespLen);
+    LLOG("[LoRa] POLL_RESPONSE cluster=0x%04X attr=0x%04X statut=0x%02X type=0x%02X len=%d\r\n",
+         cluster, attr, status, ztype, vlen);
+
+    if (status == POLL_OK) {
+      String inifile = macToHex(e.mac) + ".json";
+      injectPollValue(inifile, cluster, attr, ztype, &buf[9], vlen);
+    }
+    return;
+  }
+}
+
 /* ===================== API ===================== */
 bool loraReceiverBegin() {
   if (!loraDetected) return false;      // detectLoRa() n'a rien vu : pas de radio à init
@@ -713,14 +1052,15 @@ bool loraReceiverBegin() {
 
   // Le bus SPI (loraSpi) est déjà ouvert par detectLoRa() : ne pas le ré-initialiser.
   // Config identique à l'émetteur : BW 406.25, SF11, CR4/5, syncword 0x12, préambule 16
-  int st = radio.begin(CH_FREQ[LORA_OP_CHANNEL], 406.25, 11, 5, 0x12, 10, 16);
+  int st = radio.begin(CH_FREQ[g_opChannel], 406.25, g_sf, 5, 0x12, 10, 16);
   if (st != RADIOLIB_ERR_NONE) { LLOG("[LoRa] radio.begin()=%d\r\n", st); return false; }
   radio.setCRC(2);
   radio.explicitHeader();
   radio.invertIQ(false);
   radio.setDio1Action(onLoraRx);
   radio.startReceive();
-  curChannel = LORA_OP_CHANNEL;
+  curChannel = g_opChannel;
+  radioSF    = g_sf;         // aligner le SF suivi sur celui passe a radio.begin()
   radioReady = true;
   // Armer le chien de garde dès maintenant : sans ça, une radio qui n'entre jamais en RX au
   // boot ne serait jamais ré-armée (le watchdog attend une 1re trame pour se déclencher).
@@ -731,7 +1071,7 @@ bool loraReceiverBegin() {
     if (loraEmitters[i].valid)
       ensureLoraDevice(loraEmitters[i].mac, loraEmitters[i].deviceId, loraEmitters[i].model);
 
-  LLOG("[LoRa] recepteur pret (canal %d, %d emetteur(s))\r\n", LORA_OP_CHANNEL, loraCountEmitters());
+  LLOG("[LoRa] recepteur pret (canal %d, SF%d, %d emetteur(s))\r\n", g_opChannel, g_sf, loraCountEmitters());
   return true;
 }
 
@@ -747,20 +1087,27 @@ bool loraReceiverBegin() {
  * effet de bord si tout va bien, alors qu'un stall dure indéfiniment. On le loggue pour
  * savoir lequel des deux on a.
  */
+static uint32_t lastWatchdogRearmMs = 0;
+
 static void rxWatchdog() {
   if (loraPairingMode || awaitingConfirm) return;   // séquences qui pilotent déjà la radio
   if (loraCountEmitters() == 0) return;             // rien à écouter
   if (lastRadioRxMs == 0) return;                   // aucune trame depuis le boot
 
   uint32_t now = millis();
-  if (now - lastRadioRxMs < 60000) return;          // 12x la période d'émission
-  if (now - lastRearmMs < 60000) return;            // ne pas ré-armer en boucle
+  if (now - lastRadioRxMs < 60000) return;          // reception nominale
 
-  lastRearmMs = now;
-  LLOG("[LoRa] aucune trame depuis %lu s -> re-armement de la reception (canal %d)\r\n",
-       (unsigned long)((now - lastRadioRxMs) / 1000), LORA_OP_CHANNEL);
-  setChannel(LORA_OP_CHANNEL);
+  // Silence prolonge : la radio est probablement sortie du mode RX (cf. bring-up : startReceive()
+  // n'entre pas toujours reellement en RX). On la re-arme sur la config operationnelle (le SF et
+  // le canal sont autoritaires depuis l'appairage/config, on ne balaie PAS : un balayage
+  // adopterait le SF d'un emetteur pas encore re-appaire et annulerait un changement voulu).
+  if (now - lastWatchdogRearmMs < 15000) return;    // ne pas re-armer en rafale
+  lastWatchdogRearmMs = now;
+  setChannel(g_opChannel);
+  setSF(g_sf);
   radio.startReceive();
+  LLOG("[LoRa] silence %lu s -> re-armement RX (canal %d, SF%d)\r\n",
+       (unsigned long)((now - lastRadioRxMs) / 1000), g_opChannel, g_sf);
 }
 
 void loraReceiverLoop() {
@@ -776,26 +1123,44 @@ void loraReceiverLoop() {
 
   rxWatchdog();
 
+  // Re-armement periodique de la RX pendant la fenetre d'appairage. Sur ce montage
+  // startReceive() n'entre pas toujours reellement en RX (cf. rxWatchdog) : pour les donnees le
+  // watchdog rattrape au bout de 60 s, mais la fenetre d'appairage ne dure que 30 s et aucun
+  // trafic ne permet de detecter l'echec -> sans ca, un armement rate = fenetre entierement
+  // morte (symptome : le device emet ses PAIR_REQUEST, le recepteur n'en voit aucun). On re-arme
+  // toutes les 2 s tant qu'on attend un PAIR_REQUEST (pas pendant l'attente du CONFIRM, qui a sa
+  // propre fenetre courte). Le device emet toutes les 300 ms : un re-arme reussi capte vite.
+  static uint32_t lastPairRearmMs = 0;
+  if (loraPairingMode && !awaitingConfirm && !rxFlag && millis() - lastPairRearmMs > 2000) {
+    lastPairRearmMs = millis();
+    setChannel(LORA_PAIR_CHANNEL);
+    setSF(LORA_PAIR_SF);
+    radio.setDio1Action(onLoraRx);
+    radio.startReceive();
+  }
+
   // LED d'appairage : clignote tant que la fenêtre est ouverte, éteinte sinon.
   if (loraPairingMode) pairingLedTick(); else if (ledState) pairingLedOff();
 
-  // Fin de la fenêtre d'appairage -> retour à l'écoute des données.
+  // Fin de la fenêtre d'appairage -> retour à l'écoute des données sur la config operationnelle
+  // (le rendez-vous forcait canal 3 + SF11, il faut restaurer canal/SF op).
   if (loraPairingMode && (millis() - loraPairingStartMs > LORA_PAIR_WINDOW_MS)) {
     loraPairingMode = false; awaitingConfirm = false;
     pairingLedOff();
-    setChannel(LORA_OP_CHANNEL); radio.startReceive();
+    setChannel(g_opChannel); setSF(g_sf); radio.startReceive();
     LLOG("[LoRa] fenetre d'appairage fermee\r\n");
   }
-  // Pas de CONFIRM : on retourne écouter les PAIR_REQUEST.
+  // Pas de CONFIRM : on retourne écouter les PAIR_REQUEST sur le rendez-vous (canal 3, SF11).
   if (awaitingConfirm && millis() > confirmDeadline) {
     awaitingConfirm = false;
     LLOG("[LoRa] pas de PAIR_CONFIRM recu (timeout)\r\n");
-    if (loraPairingMode) { setChannel(LORA_PAIR_CHANNEL); radio.startReceive(); }
+    if (loraPairingMode) { setChannel(LORA_PAIR_CHANNEL); setSF(LORA_PAIR_SF); radio.startReceive(); }
   }
 
   if (!rxFlag) return;
   rxFlag = false;
-  lastRadioRxMs = millis();   // la radio vit : DIO1 a déclenché
+  // lastRadioRxMs n'est PAS mis a jour ici : DIO1 declenche aussi sur du bruit (MIC KO), ce
+  // qui arreterait le balayage SF a tort. Il l'est dans handleData, sur trame VALIDE seulement.
 
   uint8_t buf[64];
   int len = radio.getPacketLength();
@@ -807,7 +1172,8 @@ void loraReceiverLoop() {
     case T_PAIR_REQUEST: handlePairRequest(buf, len); break;   // gère son propre re-arm
     case T_PAIR_CONFIRM: handlePairConfirm(buf, len); radio.startReceive(); break;
     case T_ESSENTIAL:
-    case T_EXTENDED:     handleData(buf, len, rssi, snr); radio.startReceive(); break;
-    default:             radio.startReceive(); break;
+    case T_EXTENDED:      handleData(buf, len, rssi, snr); radio.startReceive(); break;
+    case T_POLL_RESPONSE: handlePollResponse(buf, len); radio.startReceive(); break;
+    default:              radio.startReceive(); break;
   }
 }
