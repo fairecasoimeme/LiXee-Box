@@ -2,8 +2,16 @@
 
 Spécification dérivée de l'analyse exhaustive de `ZLinky_TIC_Receiver.ino` (1939 lignes).
 Émetteur = ZLinky (JN5189 + SX1280) ; récepteur = ce firmware (RadioLib + AES-128 logiciel).
-Flux **unidirectionnel** émetteur → récepteur (sauf OTA qui a un ACK). Les layouts émetteur sont
-reconstruits depuis les parsers de réception (le firmware JN5189 n'est pas dans le dépôt).
+Flux **majoritairement montant** émetteur → récepteur. Deux exceptions : l'OTA (qui a un ACK)
+et la **lecture d'attribut à la demande** (POLL, §6), ajoutée en protocole v1. Les layouts
+émetteur sont reconstruits depuis les parsers de réception (le firmware JN5189 n'est pas dans
+le dépôt).
+
+> **Protocole v1 (firmware ZLinky 2026-05)** — changement majeur : les commandes de
+> configuration descendantes (`SET_CHANNEL`, `SET_SF`, `SET_TX_INTERVAL`, avec séquence
+> CONFIRM et compteur anti-rejeu) **ont été supprimées**. Les types `0x0B`/`0x0C` portent
+> désormais POLL_REQUEST / POLL_RESPONSE. Le SF et le canal sont des paramètres **réseau**,
+> négociés uniquement à l'appairage (§4).
 
 > ⚠️ Numéros de ligne = ceux de `ZLinky_TIC_Receiver.ino`.
 
@@ -17,7 +25,7 @@ reconstruits depuis les parsers de réception (le firmware JN5189 n'est pas dans
 |---|---|---|
 | Fréquence | par canal (2410–2480 MHz), init sur 2440 | 1580, 83-85 |
 | Bandwidth | **406.25 kHz** | 337, 1581 |
-| Spreading Factor | **SF11** | 337, 1581 |
+| Spreading Factor | **SF11** par défaut (voir note) | 337, 1581 |
 | Coding Rate | **4/5** | 337, 1581 |
 | Sync Word | **0x12** | 337, 1581 |
 | Power TX | **10 dBm** | 337, 1581 |
@@ -32,6 +40,11 @@ radio.setCRC(2); radio.explicitHeader(); radio.invertIQ(false);
 ```
 
 > ❗ **Incohérence** : l'en-tête/bannières annoncent SF10, mais le code utilise **SF11** (confirmé par les commentaires inline `/* SF11 */`). C'est SF11 la vérité.
+
+> **SF négocié (protocole v1)** : SF11 reste le SF du **rendez-vous d'appairage** (canal 3) et la
+> valeur de repli. Mais le SF **opérationnel** est désormais assigné par le récepteur dans le
+> `PAIR_RESPONSE` (`op_SF`, 7..12, cf. §4) : c'est un paramètre **réseau**, commun à tous les
+> émetteurs, et il ne peut plus être changé en fonctionnement — il faut refaire un appairage.
 
 ---
 
@@ -69,21 +82,30 @@ radio.setCRC(2); radio.explicitHeader(); radio.invertIQ(false);
 | 0x04 | PAIR_RESPONSE (émis par le récepteur) | **clair** |
 | 0x05 | PAIR_CONFIRM | **clair** |
 | 0x06–0x0A | OTA (start/data/end/ack…) | chiffré |
+| **0x0B** | **POLL_REQUEST** (émis par le récepteur, §6) | chiffré |
+| **0x0C** | **POLL_RESPONSE** (§6) | chiffré |
 
 `byte[1]` = **numéro de séquence** (seq, sur 1 octet, wrap mod 256), toujours en **clair**.
 
 ---
 
-## 4. Handshake d'appairage (sur 2440 MHz)
+## 4. Handshake d'appairage (rendez-vous : canal 3 + SF11)
 
 Manuel côté récepteur (bouton long-press 3 s ou commande série `P`), fenêtre **30 s**
 (`PAIR_LISTEN_TIMEOUT_MS=30000`). Multi-émetteur (jusqu'à **4**).
 
+Le rendez-vous est **fixe : canal 3 + SF11**, quelle que soit la configuration opérationnelle.
+C'est ce qui permet à un ZLinky tournant en SF7/canal 7 de revenir se faire entendre.
+
+> **C'est l'appairage qui fixe le SF et le canal opérationnels.** Ce sont des paramètres
+> **réseau**, communs à tous les ZLinky d'un même récepteur, et non des réglages par appareil :
+> pour les changer, on refait un appairage.
+
 ```
 Émetteur                          Récepteur (sur 2440)
   | -- PAIR_REQUEST (11B) ------->  | extrait MAC, génère clé AES-128
-  | <----- PAIR_RESPONSE (20B) ---  | clé (en clair) + op_channel
-  |  (passe sur op_channel)         | passe sur op_channel
+  | <----- PAIR_RESPONSE (21B) ---  | clé (en clair) + op_channel + op_SF
+  |  (passe sur op_channel/op_SF)   | passe sur op_channel/op_SF
   | -- PAIR_CONFIRM (15B) -------->  | vérifie preuve AES-ECB, sauve EEPROM
 ```
 
@@ -130,7 +152,7 @@ Exemple ZLinky : `device_id = 81`, `model = "ZLinky_TIC"` → 24 octets → temp
 > déposer son template dans `data/tp/`, comme pour un appareil Zigbee. Le couple
 > (device_id, model) est mémorisé dans `/config/lora.json` à l'appairage.
 
-### PAIR_RESPONSE — 20 octets (type 0x04 → byte0=`0x14`) *(émis par le récepteur)*
+### PAIR_RESPONSE — 21 octets (type 0x04 → byte0=`0x14`) *(émis par le récepteur)*
 | Off | Taille | Champ |
 |---|---|---|
 | 0 | 1 | version\|type (0x14) |
@@ -138,6 +160,17 @@ Exemple ZLinky : `device_id = 81`, `model = "ZLinky_TIC"` → 24 octets → temp
 | 2 | 16 | **netKey** (AES-128, EN CLAIR) |
 | 18 | 1 | status (0x00=OK) |
 | 19 | 1 | op_channel (0..7) que l'émetteur doit adopter |
+| **20** | **1** | **op_SF** (7..12) que l'émetteur doit adopter |
+
+Hors plage, l'émetteur retombe sur `PAIR_CHANNEL` (3) / **SF11**.
+
+> **Rétrocompat** : un récepteur qui envoie encore l'ancien format **20 octets** (sans `op_SF`)
+> reste accepté — l'émetteur applique SF11 par défaut. Idem pour un ZLinky déjà appairé dont
+> l'enregistrement PDM ne contient pas de SF.
+
+Le `PAIR_CONFIRM` est émis **sur la configuration opérationnelle** (op_channel + op_SF), pas sur
+le rendez-vous : l'émettre là **valide** cette configuration. Si elle ne passe pas, l'appairage
+échoue à cette étape plutôt que de laisser l'émetteur appairé sur une config muette.
 
 ### PAIR_CONFIRM — 15 octets (type 0x05 → byte0=`0x15`)
 | Off | Taille | Champ |
@@ -186,6 +219,8 @@ Multi-octets = **big-endian**. Octets [0] (type) et [1] (seq) en clair ; payload
 | 0x06 | COMPLEMENT | 9 | DPM1/FPM1/DPM2/FPM2/DPM3/FPM3 @3..8 (U8) |
 | **0x07** | **TARIFF_LABEL** | 6+N | mode @3, code tarif @4, longueur du libellé @5 (N), libellé ASCII @6..5+N (`LTARF` en Standard, `PTEC` en Historique) |
 | **0x08** | **METER_SERIAL** | 4..16 | longueur @3 (N, 0..12), numéro ASCII @4..3+N (`ADSC` en Standard, `ADCO` en Historique) |
+| **0x09** | **METER_DATE** | 4..17 | longueur @3 (N, 0..13), horodate ASCII `SAAMMJJhhmmss` @4..3+N (`DATE`, **Standard uniquement**) |
+| **0x0A** | **TARIFF_OPTION** | 16 | mode @3 ; `OPTARIF` 4 ASCII @4-7 ; `DEMAIN` 4 ASCII @8-11 ; `CCASN` @12-13, `CCASN-1` @14-15 (**int16 signés**, VA) |
 
 > Conversions : énergies U32 en **Wh bruts** (kWh = /1000) ; puissances en **VA** ; courants en **mA** ; tensions en **V**. Pas d'autre coefficient.
 
@@ -276,10 +311,144 @@ alors vu sans avoir à ré-appairer.
 > préfixe de longueur avant d'écrire l'attribut — contrairement aux chaînes du cluster FF66
 > (STGE, LTARF), où l'octet de longueur est attendu.
 
+
+### Sous-type 0x09 — METER_DATE (4..17 octets, taille variable)
+
+Horodate interne du compteur (étiquette `DATE`), **mode Standard uniquement**. En Historique
+l'étiquette n'existe pas : `N = 0`, le paquet fait 4 octets et peut être ignoré.
+
+| Off | Taille | Champ |
+|---|---|---|
+| 3 | 1 | longueur (N, 0..13) |
+| 4..3+N | N | horodate ASCII `SAAMMJJhhmmss` |
+
+Le **premier caractère porte deux informations** — saison *et* état de l'horloge :
+
+| Valeur | Signification |
+|---|---|
+| `E` / `H` | été / hiver, horloge **synchronisée** |
+| `e` / `h` | été / hiver, horloge en **mode dégradé** (non synchronisée) |
+| espace | saison inconnue |
+
+> ⚠️ **Fraîcheur** : ce sous-type ne passe qu'une fois par cycle round-robin (~3 min 40).
+> L'horodate peut donc avoir jusqu'à ~3 min de retard — utilisable pour vérifier l'horloge du
+> compteur, pas comme source de temps précise.
+
+Côté LiXee-Box : poussé sur `FF66/514` (chaîne préfixée de sa longueur). `N = 0` est ignoré.
+
+### Sous-type 0x0A — TARIFF_OPTION (16 octets)
+
+Option tarifaire souscrite, couleur Tempo du lendemain, courbe de charge soutirée. Les deux
+moitiés sont **mutuellement exclusives selon le mode**, d'où leur regroupement.
+
+| Off | Taille | Champ | Standard | Historique |
+|---|---|---|---|---|
+| 3 | 1 | mode Linky | | |
+| 4-7 | 4 | Option tarifaire (4 ASCII) | `0x00`×4 | `OPTARIF` |
+| 8-11 | 4 | Couleur Tempo du lendemain | `0x00`×4 | `DEMAIN` *(Tempo seul)* |
+| 12-13 | 2 | Courbe de charge, point courant (**int16 BE**) | `CCASN` | 0 |
+| 14-15 | 2 | Courbe de charge, point précédent (**int16 BE**) | `CCASN-1` | 0 |
+
+Les champs ASCII sont **complétés par `0x00`** dès qu'un caractère non imprimable est rencontré :
+un champ absent vaut `0x00 0x00 0x00 0x00`, ce qui le distingue sans ambiguïté d'une valeur réelle.
+
+- `OPTARIF` : `"BASE"`, `"HC.."`, `"EJP."`, `"BBR("` (Tempo) → poussé sur `FF66/0`
+- `DEMAIN` : `"BLEU"`, `"BLAN"`, `"ROUG"`, `"----"` (inconnue) → poussé sur `FF66/1`
+
+> ⚠️ `CCASN` / `CCASN-1` sont **signés** (int16), contrairement à la plupart des autres
+> puissances du protocole (uint16) : la courbe de charge peut être négative en injection.
+
+> **Pourquoi `OPTARIF` n'est pas transmis en Standard** : côté émetteur le champ interne porte
+> `OPTARIF` (4 car.) en Historique mais `NGTF` (nom du calendrier fournisseur, 16 car.) en
+> Standard. En transmettre les 4 premiers caractères donnerait un `NGTF` tronqué et trompeur.
+
 ---
 
+## 6. Lecture d'attribut à la demande (POLL)
 
-## 6. Cryptographie
+Le canal descendant sert **uniquement à interroger un attribut**, sur le modèle ZCL
+*Read Attributes*. Il ne modifie aucun état : le SF et le canal se négocient à l'appairage (§4).
+
+Une lecture étant **idempotente**, il n'y a **ni compteur anti-rejeu ni retour arrière** à gérer :
+rejouer une requête ne fait que relire la valeur courante.
+
+### Fenêtre de réception
+
+Le ZLinky ouvre une fenêtre RX de **300 ms juste après chaque TX**. Le récepteur, qui vient de
+recevoir l'uplink, y dépose sa requête.
+
+| Instant | Événement |
+|---|---|
+| T+0 | fin du TX uplink |
+| T+5 ms | ZLinky en RX |
+| T+20 ms | le récepteur a déchiffré, consulté sa file, démarre son TX |
+| T+60 ms | préambule détecté par le ZLinky |
+| T+300 ms | fenêtre fermée, retour en standby |
+
+⚠️ Il faut émettre **avant** le mapping des données (`readZigbeeDatas` = MQTT + écritures
+fichiers, plusieurs ms), sinon la fenêtre des ~20 ms est manquée.
+
+> Pourquoi une fenêtre et pas une écoute permanente : le SX1280 tire ~7-10 mA en RX contre
+> ~0,6 mA en standby. Écouter en permanence coûterait près du quart du budget TIC.
+
+### POLL_REQUEST — 6 octets clair (+2 MIC) — type 0x0B (byte0=`0x1B`)
+| Off | Taille | Champ |
+|---|---|---|
+| 0 | 1 | version\|type (0x1B) |
+| 1 | 1 | seq |
+| 2-3 | 2 | cluster_id (U16 BE) |
+| 4-5 | 2 | attribute_id (U16 BE) |
+
+### POLL_RESPONSE — 9..26 octets clair (+2 MIC) — type 0x0C (byte0=`0x1C`)
+| Off | Taille | Champ |
+|---|---|---|
+| 0 | 1 | version\|type (0x1C) |
+| 1 | 1 | seq |
+| 2-3 | 2 | cluster_id (écho) |
+| 4-5 | 2 | attribute_id (écho) |
+| 6 | 1 | statut |
+| 7 | 1 | **type ZCL** de la valeur |
+| 8 | 1 | longueur de la valeur (N) |
+| 9..8+N | N | valeur (big-endian pour les numériques) |
+
+| Statut | Signification |
+|---|---|
+| `0x00` | OK |
+| `0x01` | `UNKNOWN_ATTR` — couple (cluster, attribut) non géré (N = 0) |
+| `0x02` | `BAD_REQUEST` — requête malformée |
+
+Types ZCL utilisés : `0x20` uint8, `0x21` uint16, `0x23` uint32, `0x25` uint48, `0x28` int8,
+`0x29` int16, `0x41` octet string, `0x42` character string. Le récepteur n'a donc **pas besoin
+de connaître à l'avance** le type de chaque attribut.
+
+### Clusters adressables
+
+Mêmes identifiants que le firmware Zigbee LiXee — la connaissance des clusters se transfère
+d'un monde à l'autre :
+
+| Cluster | Contenu | Exemples |
+|---|---|---|
+| `0xFF66` | TIC spécifique | `0x0300` mode Linky, `0x0217` STGE, `0x0010` PTEC/LTARF, `0x0202` DATE |
+| `0x0702` | Index d'énergie (uint32) | `0x0000` EAST/BASE, `0x0001` EAIT, `0x0100..0x0109` index tarifaires |
+| `0x0B04` | Puissances / courants / tensions | `0x0505` URMS1, `0x0508` IRMS1, `0x050F` SINSTS1 |
+| `0x0B01` | Configuration compteur | `0x000D` PREF/ISOUSC, `0x000A` VTIC |
+
+Un couple hors de ces tables renvoie `UNKNOWN_ATTR`.
+
+### Mise en œuvre côté LiXee-Box
+
+- File d'**une** requête par émetteur (`loraQueuePoll`), émise dans la fenêtre RX du prochain
+  uplink et rejouée jusqu'à réponse — abandonnée après **8 essais**.
+- La valeur reçue est injectée dans `readZigbeeDatas()` : elle alimente la fiche de l'appareil,
+  MQTT et l'historique **sans code dédié**. Chaîne préfixée de sa longueur pour les handlers
+  `FF66`, numérique big-endian brut sinon.
+- Déclenchable depuis **Config → LoRa** (saisie hexa cluster/attribut) ou par le bouton ⟳ de
+  chaque ligne d'attribut sur la **fiche de l'appareil**.
+- Latence typique : une requête attend le prochain uplink, soit **~7 s**.
+
+---
+
+## 7. Cryptographie
 
 - **Payload** : AES-128-**CTR**. **MIC** : AES-128-**CMAC** tronqué à **2 octets**.
 - **Nonce (16 o)** = `MAC(8) || 0x00×7 || seq(1)` — dépend de **MAC + seq uniquement** (pas du type).
@@ -296,7 +465,7 @@ alors vu sans avoir à ré-appairer.
 
 ---
 
-## 7. Réception : robustesse
+## 8. Réception : robustesse
 
 - ISR DIO1 (`rxDone`) pose `rxFlag` ; traitement dans `loop()`.
 - Séquence : `missedPackets += (seq - attendu) & 0xFF` ; PDR = `100*rx/(rx+miss)`.
@@ -306,12 +475,13 @@ alors vu sans avoir à ré-appairer.
   | CRC consécutifs | `CRC_ERROR_RESET_THRESHOLD = 3` |
   | Préventif | `PREVENTIVE_RESET_INTERVAL = 50` paquets OK |
   | Dérive SNR | `snr < SNR_RESET_THRESHOLD = -25.0 dB` |
-- **Aucun ACK/retransmission** pour les données (fire-and-forget). ACK uniquement pour OTA (timeout 5 s).
+- **Aucun ACK/retransmission** pour les données montantes (fire-and-forget). Exceptions :
+  l'OTA (ACK, timeout 5 s) et le POLL (§6), dont la requête est rejouée jusqu'à réponse.
 - `startReceive(0xFFFF)` = réception continue.
 
 ---
 
-## 8. EEPROM (256 octets)
+## 9. EEPROM (256 octets)
 
 | Adr | Taille | Contenu |
 |---|---|---|
@@ -325,7 +495,7 @@ Stats par émetteur = **RAM uniquement** (jamais en EEPROM).
 
 ---
 
-## 9. Modes Linky (byte[16] de ESSENTIAL / POWER_MAX_CFG)
+## 10. Modes Linky (byte[16] de ESSENTIAL / POWER_MAX_CFG)
 
 | Mode | Signification | Tri |
 |---|---|---|
@@ -340,7 +510,7 @@ Le mode **ne change pas le layout** binaire (les 3 phases sont toujours présent
 
 ---
 
-## 10. Incohérences à retenir
+## 11. Incohérences à retenir
 1. **SF10 (commentaires) vs SF11 (code réel)** → utiliser **SF11**.
 2. CCA : commentaire « 100 ms » vs `delay(80)` réel.
 3. « Appairage 30 s au boot » : faux, appairage **manuel** (bouton/commande `P`).
