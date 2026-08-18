@@ -35,21 +35,35 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
         snprintf(clusterHex,5,"%04X",cluster);
         if (ini_exist(inifile))
         {
-        
+
           //ini_write(inifile,clusterHex, (String)attribute, (String)tmp);
 
           //MQTT
           if (ConfigSettings.enableMqtt)
           {
-            if ((cluster==2817) && (attribute==13))
+            // Issue #37 : les clusters sans handler dedie publiaient TOUJOURS la chaine hexa
+            // brute en type "string" (ex. pression SNZB-02M -> "03E2"). Cote Home Assistant,
+            // une entite a device_class numerique lit "03E2" comme 3x10^2 = 300 (notation
+            // scientifique) au lieu de 994 hPa : valeurs aberrantes et fluctuantes.
+            // On publie desormais en "numeric" des que le TEMPLATE declare l'attribut comme tel
+            // -- mqttPublish convertit alors l'hexa en decimal, comme le font deja les clusters
+            // dedies (cf. power.cpp). Les attributs reellement textuels restent en "string".
+            String attrType = "";
+            for (size_t k = 0; k < devices.size(); k++) {
+              if (devices[k]->getDeviceID() == inifile.substring(0, 16)) {
+                attrType = devices[k]->GetAttributeType(cluster, attribute);
+                break;
+              }
+            }
+            bool isNumericAttr = (attrType == "numeric" || attrType == "float");
+
+            if (((cluster==2817) && (attribute==13)) || isNumericAttr)
             {
-              String tmpvalue;
-              tmpvalue = String(strtol(tmp.c_str(), NULL, 16));
               mqttPublish(inifile.substring(0,16),String(cluster),String(attribute),"numeric",String(tmp));
             }else{
               mqttPublish(inifile.substring(0,16),String(cluster),String(attribute),"string",String(tmp));
             }
-            
+
           }
           //WebPush
           if (ConfigSettings.enableWebPush)

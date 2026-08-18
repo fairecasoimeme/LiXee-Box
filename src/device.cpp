@@ -425,6 +425,25 @@ float DeviceData::GetAttributeCoefficient(int cluster, int attribute)
   return coefficient;
 }
 
+// Type declare par le template pour un attribut ("numeric", "float", "string"...).
+// Renvoie "" si l'attribut n'est pas decrit par le template. Pendant de
+// GetAttributeCoefficient() : permet aux clusters sans handler dedie de savoir s'il faut
+// publier une valeur NUMERIQUE plutot que la chaine hexa brute (cf. issue #37).
+String DeviceData::GetAttributeType(int cluster, int attribute)
+{
+  if (_template != nullptr)
+  {
+    for (int i = 0; i < _template->StateSize(); i++)
+    {
+      if (_template->states[i].cluster == cluster && _template->states[i].attribute == attribute)
+      {
+        return String(_template->states[i].type);
+      }
+    }
+  }
+  return String("");
+}
+
 bool DeviceData::hasCluster(int cluster, int attribute) const {
     if (_template == nullptr) return false;
     

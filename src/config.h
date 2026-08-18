@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.22a"
+#define VERSION "v2.22x"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -24,6 +24,25 @@
 #define TXD2 18//18//16 
 
 #define MAXHEAP 1000000//ESP.getMaxAllocHeap() //(ESP.getFreeHeap() / 2) //96000
+
+/* ===================== Entiers signes ZCL (issue #34) =====================
+ * Les valeurs d'attributs sont stockees en HEXA. Jusqu'ici elles etaient toujours relues avec
+ * strtol(..., 16), donc interpretees comme NON SIGNEES : un int16 valant 0xFFE4 (-28 W sur un
+ * NodOn SEM-4) s'affichait 65508. Or le type ZCL recu dit si l'attribut est signe.
+ *
+ * Principe retenu : a la reception, si le type ZCL est signe ET la valeur negative, on etend le
+ * signe sur 32 bits AVANT de stocker (0xFFE4 -> "FFFFFFE4"). La valeur stockee devient ainsi
+ * auto-descriptive, sans avoir a memoriser le type ailleurs. Les lecteurs utilisent
+ * zclHexToSigned(), qui interprete le complement a deux 32 bits.
+ * (strtol saturerait a LONG_MAX sur "FFFFFFE4" : on passe par strtoul puis cast.)
+ */
+// Types entiers ZCL signes : 0x28 (int8) .. 0x2F (int64). Non signes : 0x20 (uint8) .. 0x27.
+static inline bool zclTypeIsSigned(uint8_t t) { return (t >= 0x28 && t <= 0x2F); }
+
+// Relit une valeur hexa d'attribut en entier signe 32 bits (complement a deux).
+static inline long zclHexToSigned(const char *hex) {
+    return (long)(int32_t)strtoul(hex, nullptr, 16);
+}
 // Détection des modules présents (le Zigbee et le LoRa peuvent coexister).
 // zigbeeDetected passe à true dès que la ZiGate répond au Get Version (trame 0x8010).
 extern bool zigbeeDetected;

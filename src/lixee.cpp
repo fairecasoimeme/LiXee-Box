@@ -45,13 +45,20 @@ static bool oldProdSupConso = false;
 // Initialiser le cache des devices une seule fois
 void initializeDeviceCache() {
     if (cacheInitialized) return;
-    
+
     deviceCache.clear();
     for (size_t i = 0; i < devices.size(); i++) {
         DeviceData* device = devices[i];
         deviceCache[device->getDeviceID().c_str()] = device;
     }
     cacheInitialized = true;
+}
+
+// Force la reconstruction du cache au prochain findDevice(). A appeler apres tout ajout ou
+// suppression dans `devices` (appairage a chaud, suppression d'appareil).
+void invalidateDeviceCache() {
+    cacheInitialized = false;
+    deviceCache.clear();
 }
 
 // Fonction helper pour trouver rapidement un device
@@ -233,19 +240,30 @@ void handleAttribute519(const String& inifile, uint8_t* datas, int len) {
 }
 
 void handleAttribute535(const String& inifile, uint8_t* datas, int len) {
-    if (len < 1) return;
-    int size = datas[0];
-    if (size > 8 || size + 1 > len) {
-        log_e("handleAttribute535: invalid size %d (len=%d)", size, len);
-        return;
-    }
-    char STGE[9];
+    if (len < 2) return;
 
-    for(int i = 0; i < size; i++) {
-        STGE[i] = datas[i + 1];
+    // Issue #36 : ce handler etait le SEUL du cluster FF66 a traiter datas[0] comme une longueur
+    // fiable et a ABANDONNER silencieusement si elle ne collait pas (return avant tout
+    // publishData) -- STGE n'etait alors jamais publie en MQTT, l'entite Home Assistant restant
+    // indefiniment "unknown", sans autre trace qu'un log_e sur la console serie.
+    // Les handlers freres du meme cluster (cf. handleAttribute514, champ DATE) ignorent
+    // simplement le premier octet et lisent le reste. On s'aligne, tout en exploitant datas[0]
+    // quand il est plausible : plus aucune trame n'est perdue, quelle que soit la mise en trame.
+    int avail = len - 1;                 // octets utiles apres le prefixe
+    int size  = datas[0];
+    if (size < 1 || size > avail) size = avail;   // prefixe non exploitable -> on prend tout
+    if (size > 8) size = 8;                       // STGE = 8 caracteres hexa au maximum
+
+    char STGE[9];
+    int n = 0;
+    for (int i = 0; i < size; i++) {
+        uint8_t c = datas[i + 1];
+        if (c == 0) break;               // fin de chaine anticipee
+        STGE[n++] = (char)c;
     }
-    STGE[size] = '\0';
-    
+    STGE[n] = '\0';
+    if (n == 0) return;                  // rien d'exploitable
+
     if (!ini_exist(inifile)) return;
     
     String deviceId = inifile.substring(0, 16);

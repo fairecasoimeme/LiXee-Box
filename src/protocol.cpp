@@ -21,6 +21,7 @@
 
 #include "device.h"
 #include "ElectricalMeasurement.h"
+#include "lixee.h"        // invalidateDeviceCache()
 #include "TemplateCache.h"
 extern TemplateCache templateCache;
 
@@ -180,23 +181,27 @@ String GetValueStatus(String IEEE, int key, int attribut, String type, float coe
       }
   }
 
+  // Issue #34 : lecture en complement a deux 32 bits. Les attributs de type ZCL signe sont
+  // stockes sign-etendus sur 32 bits a la reception ("FFFFFFE4"), ce que strtol() saturerait
+  // a LONG_MAX. zclHexToSigned() rend bien -28 ; les valeurs positives sont inchangees.
   if (type =="float")
    {
-       float tmpint = strtol(tmp.c_str(), NULL, 16);
+       float tmpint = zclHexToSigned(tmp.c_str());
        if (coefficient != 1)
        {
         tmpint = tmpint * coefficient;
        }
-       tmp=String(tmpint); 
+       tmp=String(tmpint);
    }else if (type =="numeric"){
-      int tmpint = strtol(tmp.c_str(), NULL, 16);
+      long tmpint = zclHexToSigned(tmp.c_str());
       if (coefficient != 1)
        {
-        tmpint = tmpint * coefficient;
+        tmp=String(tmpint * coefficient);
+       }else{
+        tmp=String(tmpint);
        }
-       tmp=String(tmpint); 
    }
-   
+
    return tmp;
 
 }
@@ -1581,6 +1586,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           if (dev->loadFromFile()) {
             devices.push_back(dev);
             invalidateElectricalDeviceCache();
+            invalidateDeviceCache();   // le cache findDevice() (lixee) doit aussi suivre l'ajout
           }
         }
 

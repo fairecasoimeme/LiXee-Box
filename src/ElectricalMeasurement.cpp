@@ -99,22 +99,32 @@ void handleElectricalNotification(const String& title, const String& text, int p
 }
 
 // Fonction centralisée pour créer les données de mesure depuis les données brutes
-ElectricalMeasurementData createMeasurementData(const String& inifile, int attribute, 
-                                               uint8_t* datas, int len) {
+ElectricalMeasurementData createMeasurementData(const String& inifile, int attribute,
+                                               uint8_t* datas, int len, uint8_t datatype) {
     String tmp = "";
     char value[3]; // Taille optimisée
-    
+
     for(int i = 0; i < len; i++) {
         snprintf(value, sizeof(value), "%02X", datas[i]);
         tmp += value;
     }
-    
+
+    // Issue #34 : ce cluster porte des grandeurs SIGNEES (Active Power int16, Power Factor int8,
+    // courbes de charge...). Stockees telles quelles, elles etaient relues en non signe :
+    // 0xFFE4 (-28 W) devenait 65508. Si le type ZCL est signe et la valeur negative, on etend le
+    // signe sur 32 bits avant stockage -> "FFFFFFE4", que zclHexToSigned() relit comme -28.
+    if (zclTypeIsSigned(datatype) && len > 0 && len < 4 && (datas[0] & 0x80)) {
+        String ext = "";
+        for (int i = len; i < 4; i++) ext += "FF";
+        tmp = ext + tmp;
+    }
+
     return {
         inifile.substring(0, 16),  // deviceId
         "2820",                    // clusterId
         String(attribute),         // attributeStr
         tmp,                       // value
-        strtol(tmp.c_str(), NULL, 16),                  // numericValue
+        zclHexToSigned(tmp.c_str()),                    // numericValue (signe)
         attribute                  // attribute
     };
 }
@@ -413,8 +423,8 @@ void handleVoltageNotifications(const ElectricalMeasurementData& data) {
 }
 
 // Gestionnaire pour l'attribut 1295 (puissance apparente avec notifications spéciales)
-void handleAttribute1295(const String& inifile, uint8_t* datas, int len) {
-    auto data = createMeasurementData(inifile, 1295, datas, len);
+void handleAttribute1295(const String& inifile, uint8_t* datas, int len, uint8_t datatype) {
+    auto data = createMeasurementData(inifile, 1295, datas, len, datatype);
     
     publishElectricalData(data, inifile);
     updateElectricalDeviceValue(data);
@@ -422,16 +432,16 @@ void handleAttribute1295(const String& inifile, uint8_t* datas, int len) {
 }
 
 // Gestionnaire pour les attributs 2319 et 2575 (mesures standard)
-void handleStandardMeasurement(const String& inifile, int attribute, uint8_t* datas, int len) {
-    auto data = createMeasurementData(inifile, attribute, datas, len);
+void handleStandardMeasurement(const String& inifile, int attribute, uint8_t* datas, int len, uint8_t datatype) {
+    auto data = createMeasurementData(inifile, attribute, datas, len, datatype);
     
     publishElectricalData(data, inifile);
     updateElectricalDeviceValue(data);
 }
 
 // Gestionnaire pour les attributs par défaut (avec gestion des tensions)
-void handleDefaultMeasurement(const String& inifile, int attribute, uint8_t* datas, int len) {
-    auto data = createMeasurementData(inifile, attribute, datas, len);
+void handleDefaultMeasurement(const String& inifile, int attribute, uint8_t* datas, int len, uint8_t datatype) {
+    auto data = createMeasurementData(inifile, attribute, datas, len, datatype);
     
     publishElectricalData(data, inifile);
     updateElectricalDeviceValue(data);
@@ -450,16 +460,16 @@ void ElectricalMeasurementManage(String inifile, int attribute, uint8_t datatype
     // Dispatch vers les gestionnaires spécialisés
     switch (attribute) {
         case 1295:
-            handleAttribute1295(inifile, data, len);
+            handleAttribute1295(inifile, data, len, datatype);
             break;
             
         case 2319:
         case 2575:
-            handleStandardMeasurement(inifile, attribute, data, len);
+            handleStandardMeasurement(inifile, attribute, data, len, datatype);
             break;
             
         default:
-            handleDefaultMeasurement(inifile, attribute, data, len);
+            handleDefaultMeasurement(inifile, attribute, data, len, datatype);
             break;
     }
 }

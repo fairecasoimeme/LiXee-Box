@@ -164,7 +164,7 @@ void mqttPublish(String IEEE, String cluster, String attribute, String type, Str
             if (type == "string") {
                 tmpvalue += "\"" + value + "\"";
             } else if (type == "numeric") {
-                tmpvalue += String(strtol(value.c_str(), NULL, 16));
+                tmpvalue += String(zclHexToSigned(value.c_str()));   // #34 : complement a deux 32 bits
             }
             tmpvalue += "}";
             topic = ConfigGeneral.headerMQTT + IEEE + "_" + cluster + "_" + attribute + "/state";
@@ -178,7 +178,7 @@ void mqttPublish(String IEEE, String cluster, String attribute, String type, Str
             if (type == "string") {
                 tmpvalue += "\"" + value + "\"";
             } else if (type == "numeric") {
-                tmpvalue += String(strtol(value.c_str(), NULL, 16));
+                tmpvalue += String(zclHexToSigned(value.c_str()));   // #34 : complement a deux 32 bits
             }
             tmpvalue += "}";
             tmpvalue += "]}";
@@ -193,7 +193,7 @@ void mqttPublish(String IEEE, String cluster, String attribute, String type, Str
             if (type == "string") {
                 tmpvalue.replace("<value>", "\"" + value + "\"");
             } else if (type == "numeric") {
-                tmpvalue.replace("<value>", String(strtol(value.c_str(), NULL, 16)));
+                tmpvalue.replace("<value>", String(zclHexToSigned(value.c_str())));   // #34
             }
             
             packetId = mqttClient.publish(ConfigGeneral.headerMQTT, 1, false, tmpvalue.c_str());

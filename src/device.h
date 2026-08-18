@@ -131,6 +131,8 @@ public:
 
     TemplateData* getTemplate();
     float GetAttributeCoefficient(int cluster, int attribute);
+    // Type declare par le template ("numeric", "float", "string"...), "" si inconnu.
+    String GetAttributeType(int cluster, int attribute);
     // Recharger le template (si modifié)
     bool reloadTemplate();
     
