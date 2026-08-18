@@ -1799,28 +1799,44 @@ void monitor_heap(void) {
     unsigned long now = millis();
     bool cooldownActive = (now - lastWatchdogAction < 60000 && lastWatchdogAction != 0);
 
+    // Periode de grace apres le boot. Au demarrage, WiFi + TLS + MQTT + Zigbee + serveur web
+    // s'initialisent en meme temps et le heap plonge transitoirement sous 80 KB pendant plusieurs
+    // secondes AVANT de se stabiliser. Sans grace, le watchdog coupait le tunnel sur ce simple pic
+    // de demarrage (observe : tunnel active a 89 KB puis coupe ~5 s plus tard a 72 KB, alors que ce
+    // n'etait pas un manque de memoire durable). On ne coupe donc rien pendant les 2 premieres
+    // minutes -- SAUF le reboot de securite < 40 KB, qui reste immediat (trop critique pour attendre).
+    const unsigned long WATCHDOG_GRACE_MS   = 120000;   // 2 min : laisse le demarrage se stabiliser
+    const unsigned long TUNNEL_CONFIRM_MS   = 30000;    // heap STABLEMENT bas 30 s avant de couper
+    const unsigned long MQTT_CONFIRM_MS     = 10000;
+    bool graceOver = (now > WATCHDOG_GRACE_MS);
+
     // --- Gestion des compteurs de durée sous seuil ---
-    // Tunnel : seuil 80KB, confirmation 5s
+    // Un passage au-dessus du seuil remet le compteur a zero : seul un heap qui RESTE bas
+    // (en continu) declenche la coupure. Un pic bas isole ne compte donc pas.
+    // Tunnel : seuil 80KB
     if (curheap < 80000) {
         if (tunnelLowSince == 0) tunnelLowSince = now;
     } else {
         tunnelLowSince = 0; // Heap remonté, reset du compteur
     }
 
-    // MQTT : seuil 60KB, confirmation 5s
+    // MQTT : seuil 60KB
     if (curheap < 60000) {
         if (mqttLowSince == 0) mqttLowSince = now;
     } else {
         mqttLowSince = 0;
     }
 
-    // --- Actions de coupure (soumises au cooldown + confirmation temporelle) ---
+    // --- Actions de coupure (soumises au cooldown + confirmation temporelle + grace de boot) ---
     if (!cooldownActive) {
-        // Palier 1 : < 80KB pendant 5s — arrêter le tunnel (libère ~15-20KB SSL)
-        if (tunnelLowSince != 0 && (now - tunnelLowSince >= 5000)
+        // Palier 1 : heap STABLEMENT < 80KB (30s continu, hors grace de demarrage) — arreter le
+        // tunnel (libere ~15-20KB SSL). La fenetre longue + la grace evitent de couper sur un pic
+        // transitoire ; on ne coupe que si le heap reste vraiment bas.
+        if (graceOver && tunnelLowSince != 0 && (now - tunnelLowSince >= TUNNEL_CONFIRM_MS)
             && !tunnelStopped && tunnel != nullptr) {
-            Serial.printf("[Watchdog] HEAP BAS %u < 80KB depuis 5s - Arret tunnel\n", curheap);
-            addDebugLog("Watchdog: arret tunnel (heap < 80KB pendant 5s)");
+            Serial.printf("[Watchdog] HEAP BAS %u < 80KB stable %lus - Arret tunnel\n",
+                          curheap, TUNNEL_CONFIRM_MS / 1000);
+            addDebugLog("Watchdog: arret tunnel (heap stable < 80KB)");
             tunnel->stop();
             delete tunnel;
             tunnel = nullptr;
@@ -1830,11 +1846,12 @@ void monitor_heap(void) {
             return;
         }
 
-        // Palier 2 : < 60KB pendant 5s — déconnecter MQTT (libère ~10-15KB SSL)
-        if (mqttLowSince != 0 && (now - mqttLowSince >= 5000)
+        // Palier 2 : heap stablement < 60KB — déconnecter MQTT (libère ~10-15KB SSL)
+        if (graceOver && mqttLowSince != 0 && (now - mqttLowSince >= MQTT_CONFIRM_MS)
             && !mqttStopped && mqttClient.connected()) {
-            Serial.printf("[Watchdog] HEAP BAS %u < 60KB depuis 5s - Deconnexion MQTT\n", curheap);
-            addDebugLog("Watchdog: deconnexion MQTT (heap < 60KB pendant 5s)");
+            Serial.printf("[Watchdog] HEAP BAS %u < 60KB stable %lus - Deconnexion MQTT\n",
+                          curheap, MQTT_CONFIRM_MS / 1000);
+            addDebugLog("Watchdog: deconnexion MQTT (heap stable < 60KB)");
             mqttClient.disconnect(true);
             mqttStopped = true;
             mqttLowSince = 0;
@@ -1842,7 +1859,7 @@ void monitor_heap(void) {
             return;
         }
 
-        // Palier 3 : < 40KB — reboot immédiat (pas de confirmation, trop critique)
+        // Palier 3 : < 40KB — reboot immédiat (pas de confirmation NI de grace, trop critique)
         if (curheap < 40000) {
             Serial.printf("[Watchdog] HEAP CRITIQUE %u < 40KB - REBOOT DE SECURITE\n", curheap);
             addDebugLog("Watchdog: reboot securite (heap < 40KB)");

@@ -34,6 +34,7 @@
 #include "log.h"
 #include "protocol.h"
 #include "zigbee.h"
+#include "lixee.h"        // invalidateDeviceCache()
 #include "basic.h"
 #include "thermostat.h"
 #include "presence.h"
@@ -74,7 +75,17 @@ extern bool updatePending ;
 
 extern NotificationManager notificationManager;
 
-// ISRG Root X1 (Let's Encrypt) - valid until 2035-06-04
+// Racines de confiance pour remote.lixee-box.fr (Let's Encrypt).
+// DEUX racines sont fournies : mbedtls_x509_crt_parse() accepte les certificats PEM concatenes.
+//   - ISRG Root X1 (RSA)   valable jusqu'au 2035-06-04
+//   - ISRG Root X2 (ECDSA) valable jusqu'au 2040-09-17
+// Pourquoi X2 : le serveur sert desormais une chaine ECDSA
+//     *.lixee-box.fr <- Let's Encrypt YE2 <- ISRG Root YE <- ISRG Root X2 <- ISRG Root X1
+// dont les maillons "Root YE" et le cross-sign X2 datent de mai 2026. Avec X1 comme seule ancre,
+// la validation devait remonter deux cross-signs et echouait cote mbedTLS : l'activation
+// renvoyait HTTP -1 (echec de handshake, jamais un refus du serveur), alors que le tunnel
+// WebSocket vers le MEME hote fonctionnait car il se connecte SANS verification de certificat.
+// Ancrer directement sur X2 fait terminer le chemin un cross-sign plus tot.
 static const char lixee_root_ca[] PROGMEM = R"EOF(
 -----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
@@ -84,28 +95,42 @@ WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
 ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
 MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
 h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
-0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6
-UA5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+s
-WT8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qy
-HB5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+U
-CvdGz7aLzIwBBVRnkLb1fqB3pVFnk/Cn6SfNhTU65JkZ+8/pBjYbl5cw+At+a1o
-Zr/Gt9XHDGR/M7hz45zB/al51fqzYsAOHagPl/MX3S6K8/riPMPOnfKjPPbXPyQh
-sPBBmFr8fVPbEOF8FjGDLUsbgpf0GIGMBoFnaBCCIZOHk5EVJI0oBNFN1G5W4SBK
-r8WI0tBQ+rKn0dXBqFB/I4ek0WqfXjKl/LUoxDq48wLMFNxWL5U4gO8cHj3bT97I
-6neIEBq+xfYLwY1zQOzkvAkr4VZnOaJ/3ceEF1g8rMqIK3rRbsIhSmvJMN3B1lMy
-LLpXBccWpU5tPBWYhNg+DlMRbAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
+0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
+A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
+T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
+B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
+B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
+KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
+OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
+jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
+qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
+rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
 HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
 hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
 ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
 3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
-NFtY2PwByVS5uCbMiogZiUvsaXPFJYcFIB7LREoA1g1BQuGyMPNjpCKWB5BhpE/m
-8tVFEkneA6D1JYxr/7xtAplJSl3MgIFvzPO0JKr3NZprMpI3OSnEbNBbnCCdflcR
-p5/G4MGSUVMK4D90rjZbsWi0+bBfUjTMOBtOWEjqFf5j+aKKlIorMkX71MCTHF/x
-nNohmGFiFqYSDA19VO+J0qw3SYTzfdxofsqFmObUhDce4f0Fdb2lyNGjIKH15m4y
-qkgMzFBBrkixNS0a6Y2gdMg3e3Fse3N5KJY49X0VfhIyNJVEhmj8LNYMdK5S3zuA
-jRaGTGHaYbSEX5EvGNmJ0lJ2bkw7z6FCh7S3kvPFfMk3AbsHtT2oCEsG5T8qR+hh
-5MUC9aO0dwPJ5w/FPbFk+fk/1x/ZerQFOr/5IxJVWMhnav8pu6f0w3dBG/nb7kNN
-VPQ/qKSM9nHHKq+s3YlBEfMD2JG+r8OnVJSS1JfM/IVHd2Y4y2n65Arx9g=
+NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
+ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
+TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
+jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
+oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
+4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
+mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
+emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIICGzCCAaGgAwIBAgIQQdKd0XLq7qeAwSxs6S+HUjAKBggqhkjOPQQDAzBPMQsw
+CQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJuZXQgU2VjdXJpdHkgUmVzZWFyY2gg
+R3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBYMjAeFw0yMDA5MDQwMDAwMDBaFw00
+MDA5MTcxNjAwMDBaME8xCzAJBgNVBAYTAlVTMSkwJwYDVQQKEyBJbnRlcm5ldCBT
+ZWN1cml0eSBSZXNlYXJjaCBHcm91cDEVMBMGA1UEAxMMSVNSRyBSb290IFgyMHYw
+EAYHKoZIzj0CAQYFK4EEACIDYgAEzZvVn4CDCuwJSvMWSj5cz3es3mcFDR0HttwW
++1qLFNvicWDEukWVEYmO6gbf9yoWHKS5xcUy4APgHoIYOIvXRdgKam7mAHf7AlF9
+ItgKbppbd9/w+kHsOdx1ymgHDB/qo0IwQDAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0T
+AQH/BAUwAwEB/zAdBgNVHQ4EFgQUfEKWrt5LSDv6kviejM9ti6lyN5UwCgYIKoZI
+zj0EAwMDaAAwZQIwe3lORlCEwkSHRhtFcP9Ymd70/aTSVaYgLXTWNLxBo1BfASdW
+tL4ndQavEi51mI38AjEAi/V3bNTIZargCyzuFJ0nN6T5U6VR5CmD1/iQMVtCnwr1
+/q4AaOeMSQ+2b1tbFfLn
 -----END CERTIFICATE-----
 )EOF";
 
@@ -280,29 +305,63 @@ void processTunnelActivation() {
     tunnelActivation.pending = false;
     tunnelActivation.processing = true;
 
-    Serial.printf("[Tunnel] Activation avec code: %s\n", tunnelActivation.code);
+    Serial.printf("[Tunnel] Activation avec code: %s (heap %u)\n",
+                  tunnelActivation.code, ESP.getFreeHeap());
 
-    WiFiClientSecure secClient;
-    secClient.setCACert(lixee_root_ca);
-    HTTPClient http;
     String url = "https://remote.lixee-box.fr/api/activate?code=" + String(tunnelActivation.code);
-    http.begin(secClient, url);
-    http.setTimeout(10000);
+    String body;
+    int  httpCode = 0;
+    char tlsErr[128] = {0};
 
-    int httpCode = http.GET();
+    // Un code HTTPClient NEGATIF (-1 typiquement) ne vient pas du serveur : la requete n'a
+    // jamais abouti (echec de resolution DNS, de connexion TCP ou surtout de handshake TLS).
+    // Le message generique precedent ("verifiez votre connexion") etait donc trompeur quand le
+    // code d'activation etait valide. On journalise desormais l'erreur TLS reelle et le heap :
+    // le handshake alloue plusieurs dizaines de Ko et echoue silencieusement si la RAM interne
+    // est trop basse. On retente aussi 3 fois, un echec isole n'etant pas rare.
+    for (int attempt = 1; attempt <= 3 && httpCode != 200; attempt++) {
+        WiFiClientSecure secClient;
+        secClient.setCACert(lixee_root_ca);
+        secClient.setHandshakeTimeout(20);      // secondes
+        secClient.setTimeout(20);
 
-    if (httpCode != 200) {
+        HTTPClient http;
+        if (!http.begin(secClient, url)) {
+            Serial.printf("[Tunnel] essai %d : http.begin() a echoue (URL invalide ?)\n", attempt);
+            continue;
+        }
+        http.setTimeout(20000);
+        httpCode = http.GET();
+
+        if (httpCode == 200) {
+            body = http.getString();
+        } else {
+            tlsErr[0] = 0;
+            secClient.lastError(tlsErr, sizeof(tlsErr));
+            Serial.printf("[Tunnel] essai %d/3 echoue : code=%d, heap=%u, TLS=%s\n",
+                          attempt, httpCode, ESP.getFreeHeap(),
+                          tlsErr[0] ? tlsErr : "(aucune erreur TLS remontee)");
+        }
         http.end();
-        tunnelActivation.success = false;
-        tunnelActivation.error = "Erreur de connexion au serveur, vérifiez votre connexion internet";
-        tunnelActivation.done = true;
-        tunnelActivation.processing = false;
-        Serial.printf("[Tunnel] Activation échouée: HTTP %d\n", httpCode);
-        return;
+        if (httpCode != 200 && attempt < 3) delay(1500);
     }
 
-    String body = http.getString();
-    http.end();
+    if (httpCode != 200) {
+        tunnelActivation.success = false;
+        if (httpCode < 0) {
+            // Transport : on n'a jamais parle au serveur. Le code d'activation n'est pas en cause.
+            tunnelActivation.error = "Impossible de joindre le serveur d'activation (erreur "
+                                     + String(httpCode) + "). Le code n'est pas en cause : "
+                                     "verifiez l'acces Internet, puis reessayez.";
+        } else {
+            tunnelActivation.error = "Le serveur d'activation a repondu HTTP " + String(httpCode);
+        }
+        tunnelActivation.done = true;
+        tunnelActivation.processing = false;
+        Serial.printf("[Tunnel] Activation echouee apres 3 essais : code=%d, heap=%u, TLS=%s\n",
+                      httpCode, ESP.getFreeHeap(), tlsErr[0] ? tlsErr : "-");
+        return;
+    }
 
     SpiRamJsonDocument doc(1024);
     if (deserializeJson(doc, body) != DeserializationError::Ok) {
@@ -2525,6 +2584,14 @@ const char HTTP_CONFIG_MENU_LORA[] PROGMEM =
     SVG_LORA_ICON "<br>"
     " Appareils"
     "</a>&nbsp"
+    // Config globale : parametres radio appliques a TOUS les emetteurs LoRa.
+    "<a href='/configLoraSettings' style='width:100px;height:64px;' class='btn btn-primary mb-1 {{menu_config_lora_settings}}' >"
+    "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'>"
+      "<circle cx='12' cy='12' r='3'></circle>"
+      "<path d='M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z'></path>"
+    "</svg><br>"
+    " Config"
+    "</a>&nbsp"
     ;
 
 const char HTTP_CONFIG_DEVICES_ZIGBEE[] PROGMEM =
@@ -2709,6 +2776,7 @@ const char HTTP_CONFIG_ZIGBEE[] PROGMEM =
           "</div>"
         "</div>"
       "</div>"
+      "{{readTool}}"
       /*"<h5 class='card-title mb-4 mt-4'>Firmware ZiGate</h5>"
       "<div class='card mx-auto shadow-sm'>"
         "<div class='card-body'>"
@@ -3437,12 +3505,29 @@ const char HTTP_LOGIN[] PROGMEM = R"(
 
       <div class='card mx-auto shadow-sm mb-3'>
         <div class='card-body'>
-          <h5 class='card-title'>Activation rapide</h5>
+          <h5 class='card-title'>&Eacute;tat du tunnel</h5>
           <div class='d-flex align-items-center gap-2 mb-3'>
             <span id='tunnelBadge' class='badge {{badgeClass}}'>{{badgeText}}</span>
             {{tunnelRemoteWarning}}
           </div>
           <div id='tunnelUrlBox'>{{tunnelUrl}}</div>
+          <form method='POST' action='saveConfigTunnel' id='formToggle'>
+            <div class='form-check form-switch'>
+              <input class='form-check-input' type='checkbox' id='enableTunnel' name='enableTunnel' {{checkedTunnel}} {{disabledNoSec}}>
+              <label class='form-check-label' for='enableTunnel'>Tunnel actif</label>
+            </div>
+            <div class='form-text'>Interrupteur unique : il commande le tunnel quelle que soit la
+            m&eacute;thode de configuration utilis&eacute;e ci-dessous (code ou manuelle).</div>
+            <input type='hidden' name='tunnelClientId' value='{{tunnelClientId}}'>
+            <input type='hidden' name='tunnelToken' value='{{tunnelToken}}'>
+            <noscript><button type='submit' class='btn btn-warning btn-sm mt-2'>Enregistrer</button></noscript>
+          </form>
+        </div>
+      </div>
+
+      <div class='card mx-auto shadow-sm mb-3'>
+        <div class='card-body'>
+          <h5 class='card-title'>Activation par code</h5>
           <div class='d-flex justify-content-center align-items-center gap-2 mb-3'>
             <div class='d-flex gap-1' id='codeInputs'>
               <input class='form-control text-center digit-input' type='text' inputmode='numeric' maxlength='1' pattern='[0-9]' style='width:42px;height:48px;font-size:1.4em;font-weight:bold;padding:0'>
@@ -3455,16 +3540,6 @@ const char HTTP_LOGIN[] PROGMEM = R"(
             <button class='btn btn-warning' type='button' id='btnActivate' style='height:48px' {{disabledNoSec}}>Activer</button>
           </div>
           <div id='activateStatus' class='d-none'></div>
-          <hr>
-          <form method='POST' action='saveConfigTunnel' id='formToggle'>
-            <div class='form-check form-switch'>
-              <input class='form-check-input' type='checkbox' id='enableTunnel' name='enableTunnel' {{checkedTunnel}} {{disabledNoSec}}>
-              <label class='form-check-label' for='enableTunnel'>Tunnel actif</label>
-            </div>
-            <input type='hidden' name='tunnelClientId' value='{{tunnelClientId}}'>
-            <input type='hidden' name='tunnelToken' value='{{tunnelToken}}'>
-            <noscript><button type='submit' class='btn btn-warning btn-sm mt-2'>Enregistrer</button></noscript>
-          </form>
         </div>
       </div>
 
@@ -3473,10 +3548,9 @@ const char HTTP_LOGIN[] PROGMEM = R"(
           <details>
             <summary class='h5' style='cursor:pointer'>Connexion manuelle (avancé)</summary>
             <form method='POST' action='saveConfigTunnel' class='mt-3'>
-              <div class='form-check form-switch mb-3'>
-                <input class='form-check-input' type='checkbox' name='enableTunnel' {{checkedTunnelManual}} {{disabledNoSec}}>
-                <label class='form-check-label'>Activer le Tunnel</label>
-              </div>
+              <!-- credsOnly : enregistre les identifiants SANS toucher a l'etat marche/arret.
+                   L'activation se fait uniquement par l'interrupteur en haut de page. -->
+              <input type='hidden' name='credsOnly' value='1'>
               <div class='mb-3'>
                 <label class='form-label'>Client ID</label>
                 <input class='form-control' type='text' name='tunnelClientId' value='{{tunnelClientId}}'>
@@ -3485,6 +3559,9 @@ const char HTTP_LOGIN[] PROGMEM = R"(
                 <label class='form-label'>Token</label>
                 <input class='form-control' type='password' name='tunnelToken' value='{{tunnelToken}}'>
               </div>
+              <div class='form-text mb-3'>Enregistre les identifiants sans changer l'&eacute;tat du
+              tunnel. Utilisez l'interrupteur <b>&Eacute;tat du tunnel</b> en haut de page pour
+              l'activer ou le d&eacute;sactiver.</div>
               <button type='submit' class='btn btn-warning' {{disabledNoSec}}>Enregistrer</button>
             </form>
           </details>
@@ -5106,12 +5183,16 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
 
       let current = 0;
       let timeout =0;
-      // Armes par getAlert() a la reception de l'alerte "appareil trouve" (code 3).
-      // En var (et non let) : getAlert() vit dans functions.js et les positionne sur window.
-      // Sans cette declaration, waitDevice() levait une ReferenceError des son 1er appel et
-      // la detection automatique ne fonctionnait pas.
+      // Armes par assistPoll() a la reception de l'alerte "appareil trouve" (code 3), puis
+      // consommes par waitDevice() (bascule vers l'etape 2) et showFoundDevice() (affichage).
       var deviceFound = false;
       var deviceFoundInfo = '';
+
+      // Icone de titre : logo LoRa (viewBox portrait) au lieu du logo Zigbee des steps.
+      // loraPaths est en guillemets doubles car les traces utilisent des quotes simples.
+      var assistIsLora = {{isLora}};
+      var loraViewBox  = '{{loraViewBox}}';
+      var loraPaths    = "{{loraPaths}}";
       const progress   = document.getElementById('progressBar');
       const iconEl     = document.getElementById('icon');
       const titleEl    = document.getElementById('stepTitle');
@@ -5135,8 +5216,43 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
         xhr.send();
       }
 
+      // Sondage d'alerte AUTONOME (ne depend pas de getAlert() de functions.js).
+      // getAlert() ecrit dans #alert / #deviceFound sans verifier leur existence ; or
+      // l'assistant n'a pas de #alert et #deviceFound n'existe qu'a l'etape 2. Servi par un
+      // functions.min.js.gz perime (LittleFS pas re-uploade), il levait donc une exception a
+      // l'etape 1 et l'appareil trouve n'etait jamais signale -> pas de bascule automatique.
+      // Cette page est servie par le firmware : sa detection ne doit dependre que d'elle-meme.
+      // On ne traite que le code 3 (appareil trouve) ; les autres alertes ne concernent pas
+      // l'assistant. L'alerte est destructive cote serveur (shift), d'ou un seul consommateur.
+      var assistPolling = false;   // une seule boucle, meme si assistPoll() est rappele
+      var foundHandled  = false;   // appareil trouve deja pris en compte (bascule faite)
+      function assistPoll()
+      {
+        if (assistPolling) return;
+        assistPolling = true;
+        (function loop() {
+          var xhr = new XMLHttpRequest();
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) return;
+            var t = xhr.responseText || '';
+            var p = t.indexOf(';');
+            if (p >= 0 && t.substring(0, p) === '3') {
+              deviceFoundInfo = t.substring(p + 1);   // <svg logo><div>...<span id='newDevice'>MAC</span></div>
+              deviceFound = true;
+              // Piloter la bascule ICI, sans dependre de la fenetre de 30 s de waitDevice() :
+              // l'appairage LoRa (bascule canal/SF cote emetteur) peut aboutir tardivement,
+              // apres l'expiration du compte a rebours, laissant sinon le wizard bloque.
+              onDeviceFound();
+            }
+            setTimeout(loop, 3000);
+          };
+          xhr.open('GET', '{{pollUrl}}', true);
+          xhr.send();
+        })();
+      }
+
       // Affiche l'appareil trouve. L'alerte peut arriver avant qu'on soit a l'etape 2 (la
-      // zone n'existe alors pas encore) : getAlert() memorise le libelle, on le pose ici.
+      // zone n'existe alors pas encore) : assistPoll() memorise le libelle, on le pose ici.
       function showFoundDevice()
       {
         const zone = document.getElementById('deviceFound');
@@ -5144,19 +5260,27 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
         nextBtn.style.display='block';
       }
 
+      // Bascule vers l'etape "appareil trouve". Idempotent (foundHandled) : appele soit par
+      // assistPoll() des reception du code 3, soit par waitDevice(), le premier gagne.
+      function onDeviceFound()
+      {
+        if (foundHandled || current < 1) return;
+        foundHandled = true;
+        deviceFound = false;
+        if (current != 2) { current = 2; timeout = 0; render(); }
+        showFoundDevice();
+      }
+
       function waitDevice()
       {
-        if (current < 1) return;
+        if (current < 1 || foundHandled) return;
 
-        if (deviceFound)
-        {
-          deviceFound = false;
-          if (current != 2) { current = 2; timeout = 0; render(); }
-          showFoundDevice();
-          return;
-        }
+        if (deviceFound) { onDeviceFound(); return; }
 
-        if (timeout>=30)
+        // Abandon : marge plus large en LoRa (appairage + bascule canal/SF plus longs qu'un
+        // permit-join Zigbee). Le succes passe de toute facon par assistPoll()/onDeviceFound() ;
+        // ce delai n'est qu'un garde-fou "pas trouve".
+        if (timeout >= (assistIsLora ? 45 : 30))
         {
           //not found
           timeout = 0;
@@ -5174,7 +5298,14 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
       function render(){
         const step = steps[current];
         progress.style.width = ((current+1)/steps.length)*100 + '%';
-        iconEl.innerHTML = step.icon;
+        if (assistIsLora) {
+          iconEl.setAttribute('viewBox', loraViewBox);
+          iconEl.style.width = '28px';
+          iconEl.style.height = '48px';
+          iconEl.innerHTML = loraPaths;
+        } else {
+          iconEl.innerHTML = step.icon;
+        }
         titleEl.textContent = step.title;
         descEl.textContent  = step.desc;
         dynamic.innerHTML   = '';
@@ -5189,7 +5320,7 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
            <img src="web/img/ziwifi32.gif" width="120px">
           </div>`;
           cmd("{{pairCmd}}");
-          getAlert();
+          assistPoll();
           setTimeout(function(){waitDevice();}, 1000);
           nextBtn.style.display='block';
         }else if(current === 2){
@@ -5222,7 +5353,7 @@ const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
           if (current === 0) {
             
           }else if (current === 1) {
-            getAlert();
+            assistPoll();
           }else if (current === 2) {
             IEEE = document.getElementById('newDevice').innerHTML;
           }
@@ -6603,7 +6734,7 @@ bool checkHeapForPage(AsyncWebServerRequest *request) {
     if (freeHeap < 50000) {
         Serial.printf("[WebServer] Heap trop bas (%u) - 503 renvoye\n", freeHeap);
         request->send(503, "text/html",
-            "<html><head><meta charset='utf-8'><meta http-equiv='refresh' content='3'>"
+            "<!DOCTYPE html><html><head><meta charset='utf-8'><meta http-equiv='refresh' content='3'>"
             "</head><body style='font-family:sans-serif;text-align:center;padding:40px;'>"
             "<h2>Serveur temporairement surcharg&eacute;</h2>"
             "<p>M&eacute;moire insuffisante. Rechargement automatique...</p>"
@@ -6613,8 +6744,112 @@ bool checkHeapForPage(AsyncWebServerRequest *request) {
     return true;
 }
 
+/* =============================================================================
+ * Reponse HTML assemblee en PSRAM, servie en chunked.
+ *
+ * POURQUOI : AsyncResponseStream accumule TOUTE la page dans un cbuf alloue en RAM
+ * INTERNE (cbuf utilise `new char[]`). Pire, il grandit via resizeAdd(needed) :
+ *   - la croissance est exactement de la taille manquante, sans aucune marge, donc
+ *     chaque debordement declenche une reallocation complete ;
+ *   - resize() alloue le nouveau buffer AVANT de liberer l'ancien -> pic a 2x la
+ *     taille courante a chaque fois ;
+ *   - sur une page construite par dizaines d'appels print(), cela fait autant de
+ *     cycles alloc/copie/free de blocs toujours plus gros, ce qui FRAGMENTE le heap.
+ * Sur /statusEnergy le heap interne (~292 Ko au total, partage WiFi/TLS/MQTT/Zigbee)
+ * tombait a ~22 Ko -> reboot watchdog de securite (< 40 Ko).
+ *
+ * ICI : le HTML est accumule en PSRAM (plusieurs Mo libres, append geometrique) et
+ * servi en chunked. La lib ne reclame que quelques centaines d'octets a la fois, qu'on
+ * recopie depuis la PSRAM : le heap interne ne contient JAMAIS la page entiere.
+ *
+ * L'API imite AsyncResponseStream (print / printf / addHeader) pour que les handlers
+ * existants n'aient a changer que leur ligne de creation et leur ligne d'envoi.
+ * ========================================================================== */
+// Sert un corps deja assemble en PSRAM, en chunked, SANS le recopier en RAM interne.
+// A utiliser a la place de request->send(code, type, str.c_str()) : cette forme passe par
+// AsyncBasicResponse, qui stocke le contenu dans un String -> recopie integrale de la page
+// dans le heap interne, ce qui annule tout le benefice d'avoir construit en PSRAM.
+// Le corps est pris par shared_ptr car le callback est appele APRES le retour du handler.
+static void sendPsramBody(AsyncWebServerRequest *request, const char *contentType,
+                          std::shared_ptr<PSRAMString> body,
+                          const std::vector<std::pair<String, String>> *headers = nullptr) {
+    AsyncWebServerResponse *r = request->beginChunkedResponse(
+        contentType,
+        [body](uint8_t *buf, size_t maxLen, size_t index) -> size_t {
+            size_t total = body->length();
+            if (index >= total) return 0;              // termine
+            size_t n = total - index;
+            if (n > maxLen) n = maxLen;
+            memcpy(buf, body->c_str() + index, n);
+            return n;
+        });
+    if (headers) {
+        for (size_t i = 0; i < headers->size(); i++) {
+            r->addHeader((*headers)[i].first.c_str(), (*headers)[i].second.c_str());
+        }
+    }
+    request->send(r);
+}
+
+class PsramResponse {
+public:
+    explicit PsramResponse(size_t reserve = 65536)
+        : _body(std::make_shared<PSRAMString>(reserve)) {}
+
+    void addHeader(const char *name, const char *value) {
+        _headers.emplace_back(String(name), String(value));
+    }
+
+    void print(const char *s)                { *_body += s; }
+    void print(const String &s)              { *_body += s; }
+    void print(const __FlashStringHelper *s) { *_body += s; }
+    void print(char c)                       { char b[2] = {c, '\0'}; *_body += b; }
+    void print(int v)                        { *_body += String(v); }
+    void print(unsigned int v)               { *_body += String(v); }
+    void print(long v)                       { *_body += String(v); }
+    void print(unsigned long v)              { *_body += String(v); }
+
+    void printf(const char *format, ...) {
+        // Cas courant : tient dans la pile, aucune allocation.
+        char stackBuf[256];
+        va_list ap;
+        va_start(ap, format);
+        int n = vsnprintf(stackBuf, sizeof(stackBuf), format, ap);
+        va_end(ap);
+        if (n < 0) return;
+        if ((size_t)n < sizeof(stackBuf)) { *_body += stackBuf; return; }
+        // Cas rare (chaine longue) : buffer temporaire en PSRAM, jamais en heap interne.
+        char *big = (char *)ps_malloc((size_t)n + 1);
+        if (!big) return;
+        va_start(ap, format);
+        vsnprintf(big, (size_t)n + 1, format, ap);
+        va_end(ap);
+        *_body += big;
+        free(big);
+    }
+
+    size_t length() const { return _body->length(); }
+
+    // Envoie la page. Le corps est capture par shared_ptr : le callback chunked est
+    // appele APRES le retour du handler, il doit donc garder le buffer en vie tout seul.
+    void send(AsyncWebServerRequest *request, const char *contentType = "text/html") {
+        sendPsramBody(request, contentType, _body, &_headers);
+    }
+
+private:
+    std::shared_ptr<PSRAMString> _body;
+    std::vector<std::pair<String, String>> _headers;
+};
+
 // === Helper pour streamer un bloc PROGMEM avec remplacement FormattedDate ===
 void streamSection(AsyncResponseStream *response, const char *progmem) {
+    String section = FPSTR(progmem);
+    section.replace("{{FormattedDate}}", FormattedDate);
+    response->print(section);
+}
+
+// Variante PSRAM (meme role, pour les pages passees en PsramResponse).
+void streamSection(PsramResponse *response, const char *progmem) {
     String section = FPSTR(progmem);
     section.replace("{{FormattedDate}}", FormattedDate);
     response->print(section);
@@ -6653,7 +6888,7 @@ void handleNotFound(AsyncWebServerRequest *request)
 {
   AsyncResponseStream *response = request->beginResponseStream("text/html");
   String result;
-  result = F("<html>");
+  result = F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ROOT);
@@ -6864,9 +7099,9 @@ void handleDashboard(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
 
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  PsramResponse *response = new PsramResponse(64000);   // assemble en PSRAM, servi en chunked
 
-  response->print(F("<html>"));
+  response->print(F("<!DOCTYPE html><html>"));
   response->print(FPSTR(HTTP_HEADERGRAPH));
   streamSection(response, HTTP_MENU);
 
@@ -6991,7 +7226,8 @@ void handleDashboard(AsyncWebServerRequest *request)
   response->print(footer());
   response->print(F("</html>"));
 
-  request->send(response);
+  response->send(request, "text/html");
+  delete response;
 }
 
 
@@ -6999,7 +7235,7 @@ void handleDashboard(AsyncWebServerRequest *request)
 /*void handleDashboard(AsyncWebServerRequest *request)
 {
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_DASHBOARD);
@@ -7172,7 +7408,7 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   PSRAMString result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_NETWORK);
@@ -7532,7 +7768,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   PSRAMString result(500000);
-  result = F("<html>");
+  result = F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADERGRAPH);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ENERGY);
@@ -7976,8 +8212,10 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
 
     unsigned long startTime = millis();
 
-    // Créer réponse streamée
-    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    // Reponse assemblee en PSRAM puis servie en chunked (cf. PsramResponse) : la version
+    // AsyncResponseStream accumulait toute la page en RAM interne et faisait tomber le heap
+    // a ~22 Ko -> reboot watchdog. C'est la page la plus lourde du firmware.
+    PsramResponse *response = new PsramResponse(96000);
     response->addHeader("Cache-Control", "no-cache, no-store, must-revalidate");
 
     // Pré-calculer toutes les valeurs nécessaires
@@ -7997,7 +8235,7 @@ void handleStatusEnergy(AsyncWebServerRequest *request)
     bool isHourMode = (time == "hour");
 
     // === Part 1 : Header statique ===
-    response->print(F("<html>"));
+    response->print(F("<!DOCTYPE html><html>"));
     response->print(FPSTR(HTTP_HEADERGRAPH));
 
     {
@@ -8276,9 +8514,12 @@ function preventCanvasZoom(canvasId) {
     response->print(footer());
     response->print(F("</html>"));
 
-    request->send(response);
+    size_t pageLen = response->length();
+    response->send(request, "text/html");
+    delete response;   // le corps survit via le shared_ptr capture par le callback chunked
 
-    log_d("handleStatusEnergy took %lu ms", millis() - startTime);
+    Serial.printf("[Energy] page servie : %u octets, heap libre %u, %lu ms\n",
+                  (unsigned)pageLen, ESP.getFreeHeap(), millis() - startTime);
 }
 #endif // USE_ENERGY_V2
 
@@ -8578,9 +8819,9 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     deviceList->clear();
   }
 
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  PsramResponse *response = new PsramResponse(96000);   // assemble en PSRAM, servi en chunked
 
-  response->print(F("<html>"));
+  response->print(F("<!DOCTYPE html><html>"));
   response->print(FPSTR(HTTP_HEADER));
 
   // Styles personnalisés pour les fiches
@@ -8801,14 +9042,15 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   response->print(footer());
   response->print(F("</html>"));
 
-  request->send(response);
+  response->send(request, "text/html");
+  delete response;
 }
 
 void handleConfigGeneral(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_GENERAL);
@@ -8864,6 +9106,68 @@ void handleConfigZigbee(AsyncWebServerRequest *request)
   result.replace("{{FormattedDate}}", FormattedDate);
   result.replace("{{SetMaskChannel}}", String(ZConfig.channel));
 
+  // --- Outil de lecture d'attribut a la demande (equivalent Zigbee du POLL LoRa) ---
+  // Envoie une Read Attributes ZCL vers l'appareil choisi, puis relit la valeur stockee.
+  {
+    String tool;
+    tool.reserve(3000);
+    tool += F("<h5 class='card-title mb-4 mt-4'>Lecture d'attribut &agrave; la demande</h5>"
+              "<div class='card mx-auto shadow-sm'><div class='card-body'>"
+              "<div style='color:#6c757d;font-size:13px;margin-bottom:10px;'>Envoie une requ&ecirc;te "
+              "<i>Read Attributes</i> vers l'appareil et affiche la valeur re&ccedil;ue. Cluster et "
+              "attribut en <b>hexa</b> (ex FF66 / 0217 = STGE).</div>"
+              "<div style='display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;'>"
+              "<div><label style='font-size:12px;color:#6c757d;'>Appareil</label><br>"
+              "<select id='zbDev' class='form-control' style='width:240px;'>");
+    int nbZb = 0;
+    for (size_t i = 0; i < devices.size(); i++) {
+      DeviceData *d = devices[i];
+      if (loraFindEmitterByMac(d->getDeviceID()) >= 0) continue;   // exclut les appareils LoRa
+      String label = d->getInfo().alias.length() ? d->getInfo().alias : d->getDeviceID();
+      tool += "<option value='" + d->getInfo().shortAddr + "|" + d->getInfo().endpoint + "|" +
+              d->getDeviceID() + "'>" + label + "</option>";
+      nbZb++;
+    }
+    tool += F("</select></div>"
+              "<div><label style='font-size:12px;color:#6c757d;'>Cluster (hex)</label><br>"
+              "<input id='zbCl' class='form-control' style='width:110px;' placeholder='FF66'></div>"
+              "<div><label style='font-size:12px;color:#6c757d;'>Attribut (hex)</label><br>"
+              "<input id='zbAt' class='form-control' style='width:110px;' placeholder='0217'></div>"
+              "<button class='btn btn-primary' onclick='zbRead()'>Lire</button></div>"
+              "<div id='zbBanner' style='margin-top:10px;display:none;padding:10px;border-radius:6px;'></div>"
+              "</div></div>"
+              "<script>"
+              "function zbRead(){"
+                "var s=document.getElementById('zbDev').value.split('|');"
+                "var sa=s[0],ep=s[1],mac=s[2];"
+                "var cl=parseInt(document.getElementById('zbCl').value,16);"
+                "var at=parseInt(document.getElementById('zbAt').value,16);"
+                "if(isNaN(cl)||isNaN(at)){alert('Cluster / attribut hexa invalides');return;}"
+                "var b=document.getElementById('zbBanner');b.style.display='block';"
+                "b.style.background='#e8f0fe';b.innerHTML='Lecture envoy\\u00e9e, attente de la r\\u00e9ponse\\u2026';"
+                "fetch('/ZigbeeReadAttribut?addr='+sa+'&endpoint='+ep+'&cluster='+cl+'&attr='+at)"
+                ".then(function(r){return r.json();}).then(function(d){"
+                  "if(!d.success){b.style.background='#fce8e6';b.innerHTML='&#10007; Echec de l\\'envoi';return;}"
+                  "zbPoll(mac,cl,at,0);"
+                "}).catch(function(){b.style.background='#fce8e6';b.innerHTML='&#10007; Erreur r\\u00e9seau';});}"
+              "function zbPoll(mac,cl,at,n){"
+                "var b=document.getElementById('zbBanner');"
+                "if(n>6){b.style.background='#fff3cd';b.innerHTML='&#9888; Pas de r\\u00e9ponse (l\\'appareil dort peut-\\u00eatre, ou attribut non support\\u00e9).';return;}"
+                "setTimeout(function(){"
+                  "fetch('/zigbeeReadValue?id='+encodeURIComponent(mac)+'&cluster='+cl+'&attr='+at)"
+                  ".then(function(r){return r.json();}).then(function(d){"
+                    "if(d.value&&d.value.length){"
+                      "var extra='';var dec=parseInt(d.value,16);"
+                      "if(/^[0-9A-Fa-f]{1,8}$/.test(d.value)&&!isNaN(dec)){extra=' (= '+dec+' d\\u00e9cimal)';}"
+                      "b.style.background='#e6f4ea';b.innerHTML='&#10003; Valeur : <b>'+d.value+'</b>'+extra;"
+                    "}else{zbPoll(mac,cl,at,n+1);}"
+                  "});"
+                "},1200);}"
+              "</script>");
+    if (nbZb == 0) tool = F("");   // pas d'appareil Zigbee : pas d'outil
+    result.replace("{{readTool}}", tool);
+  }
+
   request->send(200, F("text/html"), result);
 }
 
@@ -8871,7 +9175,7 @@ void handleConfigHorloge(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_HORLOGE);
@@ -8916,7 +9220,7 @@ void handleConfigMQTT(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_MQTT);
@@ -8987,7 +9291,7 @@ void handleConfigHTTP(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_HTTP);
@@ -9052,7 +9356,7 @@ void handleConfigRules(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result = F("<html>");
+  result = F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_RULES);
@@ -9203,7 +9507,7 @@ void handleEditRule(AsyncWebServerRequest *request)
 
   // Générer la page HTML avec le formulaire pré-rempli (PSRAM pour éviter le dépassement heap)
   PSRAMString result(100000);
-  result = F("<html>");
+  result = F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_EDIT_RULE_HTML);
@@ -9599,7 +9903,7 @@ void handleAddRule(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result = F("<html>");
+  result = F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += HTTP_ADD_RULE_HTML;
@@ -9784,7 +10088,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   if (!checkHeapForPage(request)) return;
   PSRAMString result;
   String listLinky,listProd,ListGaz,ListWater,listDevicesAction;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_PARAM_ENERGY);
@@ -9994,7 +10298,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
 void handleConfigNotifications(AsyncWebServerRequest *request) {
   if (!checkHeapForPage(request)) return;
   PSRAMString result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_NOTIFICATIONS);
@@ -10126,7 +10430,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result,list;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   //result += FPSTR(HTTP_CONFIG_GAZ);
@@ -10185,7 +10489,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result,list;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
  // result += FPSTR(HTTP_CONFIG_WATER);
@@ -10243,7 +10547,7 @@ void handleConfigNotificationMail(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_NOTIFICATION_MAIL);
@@ -10275,7 +10579,7 @@ void handleConfigWebPush(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_WEBPUSH);
@@ -10358,7 +10662,7 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_TUNNEL);
@@ -10395,19 +10699,16 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
   {
     if (viaTunnelPage) {
       result.replace("{{checkedTunnel}}", "checked disabled");
-      result.replace("{{checkedTunnelManual}}", "checked disabled");
       result.replace("{{tunnelRemoteWarning}}",
         "<small class='text-warning'>Le tunnel ne peut être désactivé qu'à partir de l'adresse IP locale.</small>");
     } else {
       result.replace("{{checkedTunnel}}", "Checked");
-      result.replace("{{checkedTunnelManual}}", "Checked");
       result.replace("{{tunnelRemoteWarning}}", "");
     }
   }
   else
   {
     result.replace("{{checkedTunnel}}", "");
-    result.replace("{{checkedTunnelManual}}", "");
     result.replace("{{tunnelRemoteWarning}}", "");
   }
 
@@ -10468,9 +10769,17 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
   bool saveOk = true;
   uint8_t error = 0;
 
+  // Un SEUL interrupteur pilote le tunnel (carte "Etat du tunnel"). Le formulaire de connexion
+  // manuelle n'en a plus : il poste `credsOnly` et se contente d'enregistrer les identifiants.
+  // Sans ce marqueur, son envoi (sans champ enableTunnel, une case decochee n'envoyant rien)
+  // serait interprete comme une demande de desactivation et couperait le tunnel.
+  bool credsOnly = request->hasArg("credsOnly");
+  bool wantEnable = credsOnly ? ConfigGeneral.enableTunnel                 // etat inchange
+                              : (request->arg("enableTunnel") == "on");
+
   // Empêcher la désactivation du tunnel depuis le tunnel lui-même
   bool viaTunnel = (request->client()->remoteIP() == IPAddress(127, 0, 0, 1));
-  if (viaTunnel && request->arg("enableTunnel") != "on") {
+  if (viaTunnel && !wantEnable) {
     AsyncWebServerResponse *response = request->beginResponse(302);
     response->addHeader(F("Location"), F("/configTunnel?error=4"));
     request->send(response);
@@ -10478,7 +10787,7 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
   }
 
   // Sécurité HTTP requise pour activer le tunnel
-  if (request->arg("enableTunnel") == "on" && !ConfigSettings.enableSecureHttp) {
+  if (wantEnable && !ConfigSettings.enableSecureHttp) {
     AsyncWebServerResponse *response = request->beginResponse(302);
     response->addHeader(F("Location"), F("/configTunnel?error=8"));
     request->send(response);
@@ -10489,7 +10798,7 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
   String token = request->arg("tunnelToken");
 
   // Validation si le tunnel est activé
-  if (request->arg("enableTunnel") == "on")
+  if (wantEnable)
   {
     if (clientId == "")
     {
@@ -10505,7 +10814,7 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
 
   if (saveOk)
   {
-    if (request->arg("enableTunnel") == "on")
+    if (wantEnable)
     {
       enableTunnel = "1";
       ConfigGeneral.enableTunnel = true;
@@ -10568,7 +10877,7 @@ void handleConfigUdpClient(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_UDPCLIENT);
@@ -10629,7 +10938,7 @@ void handleConfigWifi(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CONFIG_WIFI);
@@ -10716,7 +11025,7 @@ void handleLogs(AsyncWebServerRequest *request)
   if (!checkHeapForPage(request)) return;
   String result;
 
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -10756,7 +11065,7 @@ void handleNotifications(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -10775,7 +11084,7 @@ void handleTools(AsyncWebServerRequest *request)
  /* AsyncWebServerResponse *response = request->beginChunkedResponse("text/plain",[](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
     
     String result; 
-    result = F("<html>");
+    result = F("<!DOCTYPE html><html>");
     result += FPSTR(HTTP_HEADER);
     result += FPSTR(HTTP_MENU);
     result.replace("{{FormattedDate}}", FormattedDate);
@@ -10790,7 +11099,7 @@ void handleTools(AsyncWebServerRequest *request)
 
   /*String result;
   
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -10803,7 +11112,7 @@ void handleTools(AsyncWebServerRequest *request)
   
   String result;
   //AsyncResponseStream *response = request->beginResponseStream("text/html");
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -10868,7 +11177,7 @@ void handlePoll(AsyncWebServerRequest * request)
 void handleHelp(AsyncWebServerRequest * request) {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -10893,7 +11202,7 @@ void handleReboot(AsyncWebServerRequest *request)
 {
   String result;
 
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -12078,7 +12387,7 @@ void handleToolBackup(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -12537,7 +12846,7 @@ bool checkUpdateFirmware()
 // ============================================================================
 
 /* GESTIONNAIRE DE FICHIERS - desactive temporairement
-static void listFilesRecursive(AsyncResponseStream *response, const char* dirPath,
+static void listFilesRecursive(PsramResponse *response, const char* dirPath,
                                 int &fileCount, size_t &totalSize) {
     File root = LittleFS.open(dirPath);
     if (!root || !root.isDirectory()) {
@@ -12592,7 +12901,8 @@ static void listFilesRecursive(AsyncResponseStream *response, const char* dirPat
 void handleFilesManager(AsyncWebServerRequest *request) {
     if (!checkHeapForPage(request)) return;
 
-    AsyncResponseStream *response = request->beginResponseStream("text/html");
+    // Assemble en PSRAM, servi en chunked : la liste grossit avec le nombre de fichiers.
+    PsramResponse *response = new PsramResponse(64000);
 
     size_t totalBytes = LittleFS.totalBytes();
     size_t usedBytes = LittleFS.usedBytes();
@@ -12605,7 +12915,7 @@ void handleFilesManager(AsyncWebServerRequest *request) {
     snprintf(freeStr, sizeof(freeStr), "%.1f MB", freeBytes / 1048576.0);
 
     // HTML header
-    response->print(F("<html>"));
+    response->print(F("<!DOCTYPE html><html>"));
     response->print(FPSTR(HTTP_HEADER));
     response->print(FPSTR(HTTP_MENU));
 
@@ -12716,7 +13026,8 @@ void handleFilesManager(AsyncWebServerRequest *request) {
     response->print(footer());
     response->print(F("</html>"));
 
-    request->send(response);
+    response->send(request, "text/html");
+    delete response;
 }
 
 void handleDeleteFile(AsyncWebServerRequest *request) {
@@ -12758,7 +13069,7 @@ void handleToolUpdate(AsyncWebServerRequest *request)
 {
     if (!checkHeapForPage(request)) return;
     String result;
-    result += F("<html>");
+    result += F("<!DOCTYPE html><html>");
     result += FPSTR(HTTP_HEADER);
     result += FPSTR(HTTP_MENU);
     result.replace("{{FormattedDate}}", FormattedDate);
@@ -12778,7 +13089,7 @@ void handleConfigFiles(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -12839,7 +13150,7 @@ void handleDebugFiles(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
 
   // CSS pour l'interface
@@ -13031,7 +13342,7 @@ void handleFSbrowserBackup(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -13092,7 +13403,7 @@ void handleFSbrowser(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
 
   // CSS pour l'interface
@@ -13371,7 +13682,7 @@ void handleCreateDevice(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CREATE_DEVICE);
@@ -13384,7 +13695,7 @@ void handleOTA(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_OTA);
@@ -13397,7 +13708,7 @@ void handleCreateHistory(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_HISTORY);
@@ -13410,7 +13721,7 @@ void handleHistory(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
 
   // CSS pour l'interface
@@ -13697,7 +14008,7 @@ void handleCreateTemplate(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_CREATE_TEMPLATE);
@@ -13711,7 +14022,7 @@ void handleTemplates(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
 
   // CSS pour la nouvelle interface
@@ -14133,7 +14444,7 @@ void handleRules(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
 
   // CSS pour l'interface
@@ -14760,7 +15071,7 @@ void handleJavascript(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
   String result;
-  result += F("<html>");
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result.replace("{{FormattedDate}}", FormattedDate);
@@ -16168,10 +16479,10 @@ void handleConfigDevices(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
 
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  PsramResponse *response = new PsramResponse(96000);   // assemble en PSRAM, servi en chunked
 
   // === 1. Header HTML + CSS ===
-  response->print(F("<html>"));
+  response->print(F("<!DOCTYPE html><html>"));
   response->print(FPSTR(HTTP_HEADER));
 
   response->print(F("<style>"
@@ -16366,7 +16677,8 @@ void handleConfigDevices(AsyncWebServerRequest *request)
   response->print(footer());
   response->print(F("</html>"));
 
-  request->send(response);
+  response->send(request, "text/html");
+  delete response;
 }
 
 // ============================================================
@@ -16397,11 +16709,14 @@ void handleConfigDevice(AsyncWebServerRequest *request)
     return;
   }
   
-  PSRAMString result(150000);
-  result = F("<html>");
+  // shared_ptr : le corps doit survivre au handler (le callback chunked s'execute apres).
+  // La reference `result` garde l'ecriture de la page inchangee.
+  auto resultPtr = std::make_shared<PSRAMString>(150000);
+  PSRAMString &result = *resultPtr;
+  result = F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
-  
+
   // Styles CSS pour la page
   result += F("<style>");
   result += F(".device-card { background: #fff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }");
@@ -16521,6 +16836,26 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += F("setInterval(refreshDeviceValues, 5000);");
   // Premier refresh au chargement
   result += F("refreshDeviceValues();");
+
+  // POLL LoRa : lecture d'attribut a la demande depuis une ligne (§8). Met la requete en file
+  // pour l'emetteur (~7 s jusqu'a la prochaine trame), attend la reponse, puis rafraichit les
+  // valeurs affichees (refreshDeviceValues applique le bon formatage / coefficient).
+  result += F("function loraPollRow(btn,slot,cluster,attr){");
+  result += F("  var old=btn.innerHTML; btn.disabled=true; btn.innerHTML='&#8987;';");
+  result += F("  fetch('/loraPoll?slot='+slot+'&cluster='+cluster+'&attr='+attr).then(function(r){");
+  result += F("    if(!r.ok){throw new Error();} loraPollRowWait(btn,old,slot,0);");
+  result += F("  }).catch(function(){btn.disabled=false;btn.innerHTML=old;alert('Erreur lors de la mise en file');});");
+  result += F("}");
+  result += F("function loraPollRowWait(btn,old,slot,n){");
+  result += F("  if(n>12){btn.disabled=false;btn.innerHTML=old;alert('Pas de reponse (delai depasse)');return;}");
+  result += F("  fetch('/loraPollStatus?slot='+slot).then(function(r){return r.json();}).then(function(d){");
+  result += F("    if(d.state=='pending'){setTimeout(function(){loraPollRowWait(btn,old,slot,n+1);},2000);return;}");
+  result += F("    btn.disabled=false;btn.innerHTML=old;");
+  result += F("    if(d.state=='ok'){refreshDeviceValues();}");
+  result += F("    else if(d.state=='unknown'){alert('Attribut inconnu du firmware (UNKNOWN_ATTR)');}");
+  result += F("    else if(d.state=='bad'){alert('Requete rejetee (BAD_REQUEST)');}");
+  result += F("  }).catch(function(){btn.disabled=false;btn.innerHTML=old;});");
+  result += F("}");
   
   // Fonction de lecture d'attribut avec support manufacturer specific
   result += F("function readAttribute(btnElement, shortAddr, endpoint, cluster, attr, spanId, mfrCode) {");
@@ -16733,7 +17068,7 @@ void handleConfigDevice(AsyncWebServerRequest *request)
 
     result += F("<table class='attr-table'>");
     if (isLora) {
-      result += F("<thead><tr><th>Nom</th><th>Valeur</th><th>Unité</th></tr></thead>");
+      result += F("<thead><tr><th>Nom</th><th>Valeur</th><th>Unité</th><th></th></tr></thead>");
     } else {
       result += F("<thead><tr><th>Nom</th><th>Cluster</th><th>Attribut</th><th>Mfr</th><th>Valeur</th><th>Unité</th><th>Actions</th></tr></thead>");
     }
@@ -16828,8 +17163,19 @@ void handleConfigDevice(AsyncWebServerRequest *request)
       result += t->states[i].unit;
       result += F("</td>");
       
-      // Actions (Zigbee uniquement : lire/écrire supposent une requête vers l'appareil)
-      if (isLora) { result += F("</tr>"); continue; }
+      // En LoRa : un bouton Refresh par ligne qui declenche une lecture d'attribut a la demande
+      // (POLL, §8) sur le cluster/attribut de cette ligne. La valeur recue rafraichit la fiche.
+      if (isLora) {
+        result += F("<td data-label='' class='actions-cell'>");
+        result += F("<button class='btn-read' title='Lire (POLL)' onclick=\"loraPollRow(this,");
+        result += String(loraSlot);
+        result += F(",");
+        result += String(t->states[i].cluster);
+        result += F(",");
+        result += String(t->states[i].attribute);
+        result += F(")\">&#8635;</button></td></tr>");
+        continue;
+      }
 
       result += F("<td data-label='' class='actions-cell'>");
 
@@ -16915,8 +17261,10 @@ void handleConfigDevice(AsyncWebServerRequest *request)
   result += footer();
   result.replace("{{FormattedDate}}", FormattedDate);
   result += F("</html>");
-  
-  request->send(200, F("text/html"), result.c_str());
+
+  // Envoi en chunked depuis la PSRAM : request->send(..., result.c_str()) recopiait toute
+  // la page dans un String en RAM interne (AsyncBasicResponse), annulant le gain PSRAM.
+  sendPsramBody(request, "text/html", resultPtr);
 }
 
 void handleAssistDevice(AsyncWebServerRequest *request)
@@ -16933,7 +17281,7 @@ void handleAssistDevice(AsyncWebServerRequest *request)
   // Construction String pour garantir Content-Length (compatibilité tunnel)
   String result;
   result.reserve(8192);
-  result = F("<html>");
+  result = F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += FPSTR(HTTP_ASSIST_DEVICE);
@@ -16944,16 +17292,28 @@ void handleAssistDevice(AsyncWebServerRequest *request)
     result.replace("{{pairTitle}}", F("Fenêtre d'appairage LoRa ouverte"));
     result.replace("{{pairDesc}}",  F("La LiXee-Box écoute sur le canal d'appairage pendant 30 s. Mettez maintenant l'appareil LoRa en mode appairage."));
     result.replace("{{backUrl}}",   F("/configLora"));
+    result.replace("{{pollUrl}}",   F("loraPairStatus"));  // canal dedie, non partage
+    result.replace("{{isLora}}",     F("1"));
+    result.replace("{{loraViewBox}}", F(SVG_LORA_VIEWBOX));
+    result.replace("{{loraPaths}}",  F(SVG_LORA_PATHS));
   } else {
     result.replace("{{pairCmd}}",   F("PermitJoinAssist"));
     result.replace("{{pairTitle}}", F("Mode jumelage de la LiXee-Box"));
     result.replace("{{pairDesc}}",  F("Vérifiez que la LiXee-Box clignote"));
     result.replace("{{backUrl}}",   F("/configDevices"));
+    result.replace("{{pollUrl}}",   F("getAlert"));        // Zigbee : mecanisme historique
+    result.replace("{{isLora}}",     F("0"));
+    result.replace("{{loraViewBox}}", F(""));
+    result.replace("{{loraPaths}}",  F(""));
   }
   result += F("</html>");
 
   Serial.printf("[AssistDevice] Sending %u bytes text/html\n", result.length());
-  request->send(200, F("text/html"), result);
+  // no-store : le wizard (JS inline) evolue avec le firmware ; un cache navigateur servirait une
+  // ancienne version de assistPoll()/onDeviceFound() et l'appareil trouve ne serait pas signale.
+  AsyncWebServerResponse *response = request->beginResponse(200, F("text/html"), result);
+  response->addHeader(F("Cache-Control"), F("no-store, must-revalidate"));
+  request->send(response);
 }
 
 void handleZigbeeAction(AsyncWebServerRequest *request)
@@ -18972,6 +19332,7 @@ void handleDeleteDevice(AsyncWebServerRequest *request)
       free(*it);
       devices.erase(it);
       invalidateElectricalDeviceCache();
+      invalidateDeviceCache();   // le cache findDevice() garderait sinon un pointeur pendant
       break;
     }
   }
@@ -19751,8 +20112,10 @@ void handleSetThermostatFrost(AsyncWebServerRequest *request) {
 
 void handleThermostats(AsyncWebServerRequest *request) {
   if (!checkHeapForPage(request)) return;
-  PSRAMString result;
-  result += F("<html>");
+  // shared_ptr : le corps doit survivre au handler (callback chunked appele apres).
+  auto resultPtr = std::make_shared<PSRAMString>();
+  PSRAMString &result = *resultPtr;
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += F("<div class='container'>"
@@ -19847,9 +20210,9 @@ void handleThermostats(AsyncWebServerRequest *request) {
   result += footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
-  response->print(result.c_str());
-  request->send(response);
+  // Envoi chunked depuis la PSRAM : evite la recopie integrale en RAM interne
+  // (cbuf d'AsyncResponseStream) qui fragmentait le heap.
+  sendPsramBody(request, "text/html", resultPtr);
 }
 
 // Libellé lisible d'un device (alias sinon IEEE) pour les fiches.
@@ -19876,7 +20239,7 @@ static String jsEscapeSingle(const String& s) {
 // Redirection côté client (navigation normale) vers une URL relative.
 // Évite la redirection HTTP 303 que le relais/app du tunnel ne suit pas correctement.
 void sendThermoRedirect(AsyncWebServerRequest *request, const char *rel) {
-  String h = F("<html><head><meta charset='utf-8'>"
+  String h = F("<!DOCTYPE html><html><head><meta charset='utf-8'>"
                "<style>@keyframes ts{to{transform:rotate(360deg)}}</style></head>"
                "<body style='display:flex;align-items:center;justify-content:center;height:100vh;margin:0;'>"
                "<div style='width:48px;height:48px;border:5px solid #ccc;border-top-color:#2980b9;border-radius:50%;animation:ts 0.8s linear infinite;'></div>"
@@ -19891,8 +20254,10 @@ void sendThermoRedirect(AsyncWebServerRequest *request, const char *rel) {
 // Liste des zones sous forme de fiches (style Zigbee), avec boutons Modifier / Supprimer.
 void handleConfigThermostats(AsyncWebServerRequest *request) {
   if (!checkHeapForPage(request)) return;
-  PSRAMString result;
-  result += F("<html>");
+  // shared_ptr : le corps doit survivre au handler (callback chunked appele apres).
+  auto resultPtr = std::make_shared<PSRAMString>();
+  PSRAMString &result = *resultPtr;
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += F("<style>"
@@ -19960,9 +20325,9 @@ void handleConfigThermostats(AsyncWebServerRequest *request) {
   result += footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
-  response->print(result.c_str());
-  request->send(response);
+  // Envoi chunked depuis la PSRAM : evite la recopie integrale en RAM interne
+  // (cbuf d'AsyncResponseStream) qui fragmentait le heap.
+  sendPsramBody(request, "text/html", resultPtr);
 }
 
 // Icônes SVG plates monochromes (grises) pour les libellés du formulaire thermostat.
@@ -19992,8 +20357,10 @@ void handleEditThermostat(AsyncWebServerRequest *request) {
   bool existing = (id >= 0 && id < vThermostatCount);
   VirtualThermostat& t = existing ? vThermostats[id] : def;
 
-  PSRAMString result;
-  result += F("<html>");
+  // shared_ptr : le corps doit survivre au handler (callback chunked appele apres).
+  auto resultPtr = std::make_shared<PSRAMString>();
+  PSRAMString &result = *resultPtr;
+  result += F("<!DOCTYPE html><html>");
   result += FPSTR(HTTP_HEADER);
   result += FPSTR(HTTP_MENU);
   result += F("<div class='container' style='max-width:680px;margin-bottom:2rem;'>");
@@ -20120,9 +20487,9 @@ void handleEditThermostat(AsyncWebServerRequest *request) {
   result += footer();
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
-  response->print(result.c_str());
-  request->send(response);
+  // Envoi chunked depuis la PSRAM : evite la recopie integrale en RAM interne
+  // (cbuf d'AsyncResponseStream) qui fragmentait le heap.
+  sendPsramBody(request, "text/html", resultPtr);
 }
 
 // Enregistre une zone (création si id=new, sinon mise à jour de la zone id).
@@ -20260,13 +20627,143 @@ void handleLoraRemove(AsyncWebServerRequest *request) {
   request->send(200, "text/plain", "ok");
 }
 
+// Page de configuration RESEAU des emetteurs LoRa : le SF et le canal sont des parametres
+// communs, assignes a chaque emetteur lors de l'appairage (§4), et la lecture d'attribut a la
+// demande (POLL, §8) permet d'interroger un attribut precis.
+// Onglet "Config" du menu lateral LoRa, a cote de "Appareils".
+void handleConfigLoraSettings(AsyncWebServerRequest *request) {
+  if (!checkHeapForPage(request)) return;
+
+  int nb = loraCountEmitters();
+
+  // Assemble en PSRAM (et non dans un String en RAM interne), envoye en chunked.
+  auto resultPtr = std::make_shared<PSRAMString>(16000);
+  PSRAMString &result = *resultPtr;
+  result += F("<!DOCTYPE html><html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+
+  // En-tete + menu lateral (Appareils / Config), meme gabarit que la page Appareils.
+  result += F("<div class='row p-4 justify-content-md-center'>"
+              "<div class='col-sm-2'><div class='btn-group-horizontal'>");
+  {
+    String menuLora = FPSTR(HTTP_CONFIG_MENU_LORA);
+    menuLora.replace("{{menu_config_lora}}", "");
+    menuLora.replace("{{menu_config_lora_settings}}", "disabled");   // onglet actif
+    result += menuLora;
+  }
+  result += F("</div></div><div class='col-sm-10'>"
+              "<h4>Config LoRa</h4>");
+
+  result += F("<p style='color:#6c757d;margin-top:0;'>Param&egrave;tres <b>r&eacute;seau</b>, communs "
+              "&agrave; tous les &eacute;metteurs LoRa. Le SF et le canal sont assign&eacute;s "
+              "&agrave; chaque appairage : apr&egrave;s les avoir chang&eacute;s, <b>r&eacute;-appairez "
+              "chaque ZLinky</b> (appui long) pour qu'il bascule dessus.</p>");
+
+  // --- Parametres reseau : SF + canal, assignes a l'appairage (§4) ---
+  result += F("<div class='card' style='padding:16px;margin-bottom:14px;max-width:620px;'>"
+              "<label class='form-label'><b>Param&egrave;tres radio r&eacute;seau</b></label>"
+              "<div style='color:#6c757d;font-size:13px;margin-bottom:10px;'>Le <b>Spreading Factor</b> "
+              "(SF7&ndash;12) arbitre port&eacute;e et d&eacute;bit ; le <b>canal</b> (2410&ndash;2480 MHz) "
+              "aide en cas d'interf&eacute;rences Wi-Fi / BLE. Ces valeurs sont transmises &agrave; "
+              "l'&eacute;metteur lors de l'appairage.</div>"
+              "<div style='color:#b06000;font-size:13px;margin-bottom:10px;'>&#9888; Le changement "
+              "s'applique au <b>prochain appairage</b>. Les &eacute;metteurs d&eacute;j&agrave; "
+              "appair&eacute;s resteront muets tant qu'ils n'auront pas &eacute;t&eacute; r&eacute;-appair&eacute;s.</div>");
+  result += "<div style='display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;'>";
+  result += "<div><label style='font-size:12px;color:#6c757d;'>Spreading Factor</label><br>"
+            "<select id='sfSel' class='form-control' style='width:120px;'>";
+  for (int sf = 7; sf <= 12; sf++)
+    result += "<option value='" + String(sf) + "'" + (loraGetSF() == sf ? " selected" : "") + ">SF" + String(sf) + "</option>";
+  result += "</select></div>";
+  result += "<div><label style='font-size:12px;color:#6c757d;'>Canal</label><br>"
+            "<select id='chSel' class='form-control' style='width:210px;'>";
+  const int chMHz[8] = {2410, 2420, 2430, 2440, 2450, 2460, 2470, 2480};
+  for (int c = 0; c <= 7; c++)
+    result += "<option value='" + String(c) + "'" + (loraGetChannel() == c ? " selected" : "") +
+              ">Canal " + String(c) + " (" + String(chMHz[c]) + " MHz)</option>";
+  result += F("</select></div>"
+              "<button class='btn btn-success' onclick='applyNet()'>Appliquer</button></div>"
+              "<div id='netBanner' style='margin-top:10px;display:none;padding:10px;border-radius:6px;'></div>"
+              "</div>");
+
+  // --- Lecture d'attribut a la demande (POLL, §8) ---
+  if (nb > 0) {
+    result += F("<div class='card' style='padding:16px;margin-bottom:14px;max-width:620px;'>"
+                "<label class='form-label'><b>Lecture d'attribut &agrave; la demande</b></label>"
+                "<div style='color:#6c757d;font-size:13px;margin-bottom:10px;'>Interroge un attribut "
+                "pr&eacute;cis sans attendre le cycle p&eacute;riodique (~3 min 40). La requ&ecirc;te "
+                "part &agrave; la prochaine trame de l'&eacute;metteur (~7 s) et la valeur re&ccedil;ue "
+                "alimente sa fiche comme une donn&eacute;e normale.</div>");
+    result += "<div style='display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;'>";
+    // Selecteur d'emetteur
+    result += "<div><label style='font-size:12px;color:#6c757d;'>&Eacute;metteur</label><br>"
+              "<select id='emSel' class='form-control' style='width:220px;'>";
+    for (int s = 0; s < LORA_MAX_EMITTERS; s++) {
+      if (!loraEmitters[s].valid) continue;
+      char macHex[17];
+      for (int k = 0; k < 8; k++) snprintf(&macHex[k * 2], 3, "%02X", loraEmitters[s].mac[k]);
+      result += "<option value='" + String(s) + "'>" + String(loraEmitters[s].model) +
+                " (" + String(macHex).substring(8) + ")</option>";
+    }
+    result += "</select></div>";
+    // Cluster + attribut en hexa (saisie manuelle). Les identifiants sont les memes que le
+    // firmware Zigbee LiXee (cf. PROTOCOLE_LORA.md §8) : ex FF66/0300 = mode Linky.
+    result += F("<div><label style='font-size:12px;color:#6c757d;'>Cluster (hex)</label><br>"
+                "<input id='clHex' class='form-control' style='width:110px;' placeholder='FF66'></div>"
+                "<div><label style='font-size:12px;color:#6c757d;'>Attribut (hex)</label><br>"
+                "<input id='atHex' class='form-control' style='width:110px;' placeholder='0300'></div>"
+                "<button class='btn btn-primary' onclick='doPoll()'>Lire</button></div>"
+                "<div id='pollBanner' style='margin-top:10px;display:none;padding:10px;border-radius:6px;'></div>"
+                "</div>");
+  }
+
+  // --- JS : parametres reseau + lecture d'attribut ---
+  result += F("<script>"
+    "function applyNet(){"
+      "var sf=document.getElementById('sfSel').value,ch=document.getElementById('chSel').value;"
+      "if(!confirm('Changer les param\\u00e8tres r\\u00e9seau ? Chaque ZLinky d\\u00e9j\\u00e0 appair\\u00e9 devra \\u00eatre r\\u00e9-appair\\u00e9 (appui long) pour rester joignable.'))return;"
+      "var b=document.getElementById('netBanner');"
+      "var xhr=getXhr();xhr.onreadystatechange=function(){if(xhr.readyState==4){b.style.display='block';"
+        "if(xhr.status==200){b.style.background='#e6f4ea';b.innerHTML='&#10003; Param\\u00e8tres enregistr\\u00e9s. R\\u00e9-appairez les \\u00e9metteurs pour qu\\'ils basculent.';}"
+        "else{b.style.background='#fce8e6';b.innerHTML='&#10007; Erreur: '+xhr.responseText;}}};"
+      "xhr.open('GET','loraSetOpParams?channel='+ch+'&sf='+sf,true);xhr.send();}"
+    "function doPoll(){"
+      "var slot=document.getElementById('emSel').value;"
+      "var cl=parseInt(document.getElementById('clHex').value,16);"
+      "var at=parseInt(document.getElementById('atHex').value,16);"
+      "if(isNaN(cl)||isNaN(at)){alert('Cluster / attribut hexa invalides');return;}"
+      "var b=document.getElementById('pollBanner');b.style.display='block';"
+      "b.style.background='#e8f0fe';b.innerHTML='Lecture en attente d\\'un uplink (~7 s)…';"
+      "var xhr=getXhr();xhr.onreadystatechange=function(){if(xhr.readyState==4){"
+        "if(xhr.status==200){pollPoll(slot);}else{b.style.background='#fce8e6';b.innerHTML='&#10007; Erreur: '+xhr.responseText;}}};"
+      "xhr.open('GET','loraPoll?slot='+slot+'&cluster='+cl+'&attr='+at,true);xhr.send();}"
+    "function pollPoll(slot){"
+      "var xhr=getXhr();xhr.onreadystatechange=function(){if(xhr.readyState==4&&xhr.status==200){"
+        "var d=JSON.parse(xhr.responseText);var b=document.getElementById('pollBanner');"
+        "if(d.state=='pending'){b.style.background='#e8f0fe';b.innerHTML='Lecture en attente d\\'un uplink (~7 s)…';setTimeout(function(){pollPoll(slot);},2000);return;}"
+        "if(d.state=='ok'){b.style.background='#e6f4ea';b.innerHTML='&#10003; Valeur : <b>'+d.value+'</b> (type 0x'+d.type.toString(16)+')';return;}"
+        "if(d.state=='unknown'){b.style.background='#fce8e6';b.innerHTML='&#10007; Attribut inconnu du firmware (UNKNOWN_ATTR)';return;}"
+        "if(d.state=='bad'){b.style.background='#fce8e6';b.innerHTML='&#10007; Requ&ecirc;te rejet&eacute;e (BAD_REQUEST)';return;}"
+        "b.style.display='none';"
+      "}};xhr.open('GET','loraPollStatus?slot='+slot,true);xhr.send();}"
+    "</script>");
+
+  result += F("</div></div>");
+  result += footer();
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+
+  sendPsramBody(request, "text/html", resultPtr);   // chunked depuis la PSRAM
+}
+
 void handleConfigLora(AsyncWebServerRequest *request) {
   if (!checkHeapForPage(request)) return;
 
-  AsyncResponseStream *response = request->beginResponseStream("text/html");
+  PsramResponse *response = new PsramResponse(64000);   // assemble en PSRAM, servi en chunked
 
   // === 1. Header HTML + CSS (identique a handleConfigDevices) ===
-  response->print(F("<html>"));
+  response->print(F("<!DOCTYPE html><html>"));
   response->print(FPSTR(HTTP_HEADER));
 
   response->print(F("<style>"
@@ -20301,7 +20798,8 @@ void handleConfigLora(AsyncWebServerRequest *request) {
     "<div class='col-sm-2'><div class='btn-group-horizontal'>"));
   {
     String menuLora = FPSTR(HTTP_CONFIG_MENU_LORA);
-    menuLora.replace("{{menu_config_lora}}", "disabled");
+    menuLora.replace("{{menu_config_lora}}", "disabled");        // page Appareils : onglet actif
+    menuLora.replace("{{menu_config_lora_settings}}", "");
     response->print(menuLora);
   }
   response->print(F("</div></div><div class='col-sm-10'>"
@@ -20321,7 +20819,8 @@ void handleConfigLora(AsyncWebServerRequest *request) {
     response->print(F("</div></div>"));
     response->print(footer());
     response->print(F("</html>"));
-    request->send(response);
+    response->send(request, "text/html");
+    delete response;
     return;
   }
   response->print(F("<h5>Liste des appareils</h5>"
@@ -20389,7 +20888,8 @@ void handleConfigLora(AsyncWebServerRequest *request) {
                      (age < 0 || age > 300) ? "#c0392b" : "#27ae60", ageTxt.c_str());
     response->print(F("</table>"));
 
-    // Boutons : ni OTA ni Refresh, qui supposent une requete Zigbee vers l'appareil.
+    // Boutons : ni OTA ni Refresh, qui supposent une requete Zigbee vers l'appareil. La lecture
+    // d'attribut a la demande (POLL) est proposee par ligne sur la fiche de l'appareil.
     response->print(F("<div class='btn-actions'>"));
 
     response->print(F("<a href='/configDevice?id="));
@@ -20439,14 +20939,16 @@ void handleConfigLora(AsyncWebServerRequest *request) {
     "x2.open('GET','deleteDevice?devId='+encodeURIComponent(devId),true);x2.send();"
     "}else{alert('Erreur lors du desappairage');}}};"
     "xhr.open('GET','loraRemove?slot='+slot,true);"
-    "xhr.send();}}</script>"));
+    "xhr.send();}}"
+    "</script>"));
 
   // === 5. Fermeture + footer ===
   response->print(F("</div></div>"));
   response->print(footer());
   response->print(F("</html>"));
 
-  request->send(response);
+  response->send(request, "text/html");
+  delete response;
 }
 
 void handleToggleThermostat(AsyncWebServerRequest *request) {
@@ -20623,6 +21125,44 @@ void initWebServer()
   {
     if (!checkAuth(request)) return;
     handleLoraRemove(request);
+  });
+  // Page de configuration RESEAU des emetteurs LoRa (SF/canal assignes a l'appairage + POLL).
+  serverWeb.on("/configLoraSettings", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleConfigLoraSettings(request);
+  });
+  // Definit le canal (0..7) et le SF (7..12) OPERATIONNELS assignes aux emetteurs a l'appairage
+  // (§4). Le recepteur bascule sa radio dessus ; les emetteurs deja appaires doivent etre
+  // re-appaires pour suivre.
+  serverWeb.on("/loraSetOpParams", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    int ch = request->hasParam("channel") ? request->getParam("channel")->value().toInt() : -1;
+    int sf = request->hasParam("sf")      ? request->getParam("sf")->value().toInt()      : -1;
+    bool ok = loraSetOpParams((uint8_t)ch, (uint8_t)sf);
+    request->send(ok ? 200 : 400, F("text/plain"),
+                  ok ? F("ok") : F("canal 0..7 et SF 7..12 requis"));
+  });
+  // Met une lecture d'attribut (POLL, §8) en file pour un emetteur. Transmise au prochain uplink.
+  serverWeb.on("/loraPoll", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    int slot    = request->hasParam("slot")    ? request->getParam("slot")->value().toInt()    : -1;
+    int cluster = request->hasParam("cluster") ? request->getParam("cluster")->value().toInt() : -1;
+    int attr    = request->hasParam("attr")    ? request->getParam("attr")->value().toInt()    : -1;
+    if (cluster < 0 || cluster > 0xFFFF || attr < 0 || attr > 0xFFFF) {
+      request->send(400, F("text/plain"), F("cluster/attr 0..65535")); return;
+    }
+    bool ok = loraQueuePoll(slot, (uint16_t)cluster, (uint16_t)attr);
+    request->send(ok ? 200 : 400, F("text/plain"), ok ? F("queued") : F("slot invalide"));
+  });
+  // Etat de la derniere lecture d'attribut d'un emetteur (JSON), pour le suivi cote page.
+  serverWeb.on("/loraPollStatus", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    int slot = request->hasParam("slot") ? request->getParam("slot")->value().toInt() : -1;
+    request->send(200, F("application/json"), loraPollStatusJson(slot));
   });
   serverWeb.on("/toggleThermostat", HTTP_GET, [](AsyncWebServerRequest *request)
   {
@@ -21620,6 +22160,26 @@ void initWebServer()
     loraStartPairing();
     request->send(200, F("text/html"), "");
   });
+
+  // Canal DEDIE a l'assistant d'appairage LoRa (pas l'alerte partagee /getAlert, que d'autres
+  // pages consomment). Meme format de reponse que /getAlert code 3 pour que assistPoll() ne
+  // change pas de parsing : "3;<div>...<span id='newDevice'>MAC</span>...</div>", vide sinon.
+  serverWeb.on("/loraPairStatus", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    String mac, model, result = "";
+    if (loraTakePairResult(mac, model)) {
+      // Logo LoRa au-dessus de l'appareil (equivalent du logo Zigbee cote getAlert). On
+      // reutilise les traces (SVG_LORA_PATHS) a une taille dediee ; style inline obligatoire
+      // car style.css impose svg{width:100%}. Portrait (ratio 0.58) -> 16x28.
+      result = F("3;<svg xmlns='http://www.w3.org/2000/svg' fill='#0f70b7' "
+                 "style='width:16px;height:28px;' viewBox='" SVG_LORA_VIEWBOX "'>"
+                 SVG_LORA_PATHS "</svg>");
+      result += "<div align='center'><strong>" + model +
+                "</strong><br>(<span id='newDevice'>" + mac + "</span>)</div>";
+    }
+    request->send(200, F("text/html"), result);
+  });
   serverWeb.on("/cmdRawMode", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
     if (!checkAuth(request)) return;
@@ -21722,9 +22282,27 @@ void initWebServer()
     handleZigbeeWriteattribut(request); 
   });
   serverWeb.on("/ZigbeeReadAttribut", HTTP_GET, [](AsyncWebServerRequest *request)
-  { 
+  {
     if (!checkAuth(request)) return;
-    handleZigbeeReadattribut(request); 
+    handleZigbeeReadattribut(request);
+  });
+  // Relit la valeur STOCKEE d'un attribut (apres une Read Attributes) pour l'outil de lecture a
+  // la demande de la page Config Zigbee. Meme convention de cle que GetValueStatus : cluster en
+  // "%04X", attribut en decimal. Renvoie la valeur brute telle qu'elle a ete recue.
+  serverWeb.on("/zigbeeReadValue", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    String id      = request->hasParam("id")      ? request->getParam("id")->value()            : String();
+    int    cluster = request->hasParam("cluster") ? request->getParam("cluster")->value().toInt() : -1;
+    int    attr    = request->hasParam("attr")    ? request->getParam("attr")->value().toInt()    : -1;
+    String val;
+    if (id.length() && cluster >= 0 && attr >= 0) {
+      char clusterKey[5];
+      snprintf(clusterKey, sizeof(clusterKey), "%04X", (unsigned)cluster);
+      for (size_t i = 0; i < devices.size(); i++)
+        if (devices[i]->getDeviceID() == id) { val = devices[i]->getValue(clusterKey, String(attr).c_str()); break; }
+    }
+    request->send(200, F("application/json"), "{\"value\":\"" + val + "\"}");
   });
   serverWeb.on("/ZigbeeSendRequest", HTTP_GET, [](AsyncWebServerRequest *request)
   { 
@@ -22049,14 +22627,41 @@ void initWebServer()
   {
     AsyncResponseStream *response = request->beginResponseStream("application/javascript");
     response->addHeader("Cache-Control", "max-age=604800, immutable");
-    response->print(F("document.write(`"));
+    // Insertion de la barre de navigation en DOM, et NON via document.write().
+    //
+    // document.write() n'insere "a l'endroit du script" que tant que le parseur est actif. Si le
+    // script s'execute une fois le document analyse (chargement lent ou differe -- typiquement a
+    // travers le tunnel, ou la page et ses scripts transitent encodes en base64), document.write
+    // n'insere plus en place : le contenu part en FIN de document. D'ou une seconde barre de menu
+    // en bas de page, observee uniquement via le tunnel, et sur toutes les pages.
+    //
+    // L'insertion DOM ci-dessous est en outre IDEMPOTENTE (drapeau __lixeeNavDone) : meme si le
+    // script venait a s'executer deux fois, il ne peut plus exister deux barres.
+    // On insere en tete de <body>, exactement la ou document.write la placait (HTTP_MENU ouvre
+    // <body> juste avant ce script, donc document.body existe deja ici). Les noeuds sont deplaces
+    // un a un : aucun conteneur supplementaire, la structure DOM reste identique a avant.
+    // TOUT le contenu de menu.js est sous un garde de mono-execution.
+    // Constat sur le HTML reellement livre : le <style> @keyframes de HTTP_MENU_JS apparaissait
+    // DEUX fois dans le <head> -> ce script s'executait deux fois. Consequences : deux barres de
+    // navigation (ids dupliques, dont #FormattedDate) et surtout des ecouteurs de clic/submit
+    // poses en double, d'ou un menu qui ne repondait plus correctement.
+    response->print(F("if(!window.__lixeeMenuInit){window.__lixeeMenuInit=1;"));
+
+    // 1. Insertion de la barre, uniquement s'il n'y en a pas deja une (quelle qu'en soit la
+    //    source : execution anterieure, version en cache, injection par le relais...).
+    response->print(F("(function(){if(document.querySelector('nav.navbar'))return;"
+                      "var t=document.createElement('div');t.innerHTML=`"));
     response->print(FPSTR(HTTP_MENU_NAV));
-    response->print(F("`);"));
+    response->print(F("`;var b=document.body||document.documentElement,r=b.firstChild;"
+                      "while(t.firstChild){b.insertBefore(t.firstChild,r);}})();"));
+
+    // 2. Comportements du menu (spinner, liens resolus...) : une seule fois grace au garde.
     response->print(FPSTR(HTTP_MENU_JS));
-    // Masque les entrées dont le module n'est pas présent (data-mod='zigbee'|'lora').
-    // Les entrées sans data-mod restent toujours visibles.
-    // data-mod accepte une LISTE ('zigbee,lora') : l'entrée reste visible si AU MOINS un
-    // des modules cités est présent (ex. Mesures->Appareils liste les appareils des deux).
+
+    // 3. Masque les entrées dont le module n'est pas présent (data-mod='zigbee'|'lora').
+    //    Les entrées sans data-mod restent toujours visibles.
+    //    data-mod accepte une LISTE ('zigbee,lora') : l'entrée reste visible si AU MOINS un
+    //    des modules cités est présent (ex. Mesures->Appareils liste les appareils des deux).
     response->print(F(
       "(function(){var f={zigbee:(typeof HAS_ZIGBEE!=='undefined'&&HAS_ZIGBEE),"
       "lora:(typeof HAS_LORA!=='undefined'&&HAS_LORA)};"
@@ -22064,6 +22669,17 @@ void initWebServer()
       "for(var i=0;i<l.length;i++){var m=l[i].getAttribute('data-mod').split(','),ok=false;"
       "for(var j=0;j<m.length;j++){if(f[m[j]])ok=true;}"
       "if(!ok)l[i].remove();}})();"));
+
+    // 4. Filet de securite : ne laisser QU'UNE barre dans le document, meme si une autre a ete
+    //    ajoutee apres coup (document.write tardif d'une version en cache, injection tierce).
+    //    Rejoue a DOMContentLoaded ET a load, car un ajout tardif peut survenir apres le parsing.
+    response->print(F(
+      "(function(){function d(){var n=document.querySelectorAll('nav.navbar');"
+      "for(var i=1;i<n.length;i++)n[i].remove();}"
+      "d();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',d);"
+      "window.addEventListener('load',d);})();"));
+
+    response->print(F("}"));   // fin du garde de mono-execution
     request->send(response);
   });
   // === CORS : preflight OPTIONS handler (#24) ===
