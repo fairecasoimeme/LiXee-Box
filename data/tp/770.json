@@ -215,5 +215,74 @@
       ],
       "action": []
     }
+  ],
+  "STPH-4-1-00": [
+    {
+      "status": [
+        {
+          "name": "Temperature",
+          "cluster": "0402",
+          "attribut": 0,
+          "mqtt_device_class": "temperature",
+          "mqtt_icon": "thermometer",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "°C",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": -20,
+          "max": 60
+        },
+        {
+          "name": "Humidity",
+          "cluster": "0405",
+          "attribut": 0,
+          "mqtt_device_class": "humidity",
+          "mqtt_icon": "water-percent",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "%",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 100
+        },
+        {
+          "name": "Battery Voltage",
+          "cluster": "0001",
+          "attribut": 32,
+          "mqtt_icon": "battery",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.1,
+          "unit": "V",
+          "visible": 1
+        },
+        {
+          "name": "Bat",
+          "cluster": "0001",
+          "attribut": 33,
+          "mqtt_device_class": "battery",
+          "mqtt_icon": "battery",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "coefficient": 0.5,
+          "unit": "%",
+          "visible": 1,
+          "jauge": "battery",
+          "min": 0,
+          "max": 100
+        }
+      ],
+      "bind": "1026;1029;1",
+      "report": [
+        { "cluster": "0402", "attribut": 0, "type": 41, "min": 30, "max": 300, "change": 20 },
+        { "cluster": "0405", "attribut": 0, "type": 33, "min": 30, "max": 300, "change": 100 },
+        { "cluster": "0001", "attribut": 32, "type": 32, "min": 3600, "max": 43200, "change": 1 }
+      ],
+      "action": []
+    }
   ]
 }

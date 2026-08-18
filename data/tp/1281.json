@@ -1,0 +1,72 @@
+{
+  "SEM-4-1-00": [
+    {
+      "status": [
+        {
+          "name": "Tension",
+          "cluster": "0B04",
+          "attribut": 1285,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "V",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Intensite",
+          "cluster": "0B04",
+          "attribut": 1288,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "A",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Puissance active",
+          "cluster": "0B04",
+          "attribut": 1291,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "unit": "W",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Puissance apparente",
+          "cluster": "0B04",
+          "attribut": 1295,
+          "mqtt_device_class": "apparent_power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "unit": "VA",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Facteur de puissance",
+          "cluster": "0B04",
+          "attribut": 1296,
+          "mqtt_device_class": "power_factor",
+          "mqtt_icon": "angle-acute",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "unit": "%",
+          "visible": 1,
+          "poll": 1
+        }
+      ],
+      "bind": "2820;1794",
+      "action": []
+    }
+  ]
+}
