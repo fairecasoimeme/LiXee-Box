@@ -120,6 +120,28 @@ struct TunnelSlot {
 // (les pings ne sont plus traités). Le relais réassemble les fragments de façon transparente.
 class ChunkedWsClient : public WebSocketsClient {
 public:
+    // Vrai pendant l'emission d'un message fragmente.
+    //
+    // RFC 6455 : entre les fragments d'un message, on ne peut intercaler QUE des frames de
+    // CONTROLE (ping/pong/close), jamais une autre frame de DONNEES. Or on appelle loop() entre
+    // les fragments (pour repondre aux pings) : si ce loop() traite un message entrant qui
+    // declenche un envoi applicatif (reponse d'erreur, notification, heartbeat), la frame TEXT
+    // s'intercale et le relais reassemble un corps incoherent -- symptome observe : le debut de
+    // la page (entete + menu) reapparaissait a la fin, uniquement via le tunnel.
+    // On bloque donc ici tout envoi de DONNEES pendant la fragmentation ; les pongs, eux, sont
+    // emis par la lib via sendFrame() et passent toujours.
+    bool isFragmenting() const { return _fragmenting; }
+
+    // Toutes les surcharges de la classe de base sont redefinies : en declarer une seule les
+    // masquerait toutes (name hiding C++), et un appel non couvert pourrait soit ne plus
+    // compiler, soit contourner le garde via une conversion implicite.
+    bool sendTXT(String & payload)                                              { return _fragmenting ? false : WebSocketsClient::sendTXT(payload); }
+    bool sendTXT(char payload)                                                  { return _fragmenting ? false : WebSocketsClient::sendTXT(payload); }
+    bool sendTXT(const char * payload, size_t length = 0)                       { return _fragmenting ? false : WebSocketsClient::sendTXT(payload, length); }
+    bool sendTXT(char * payload, size_t length = 0, bool headerToPayload = false){ return _fragmenting ? false : WebSocketsClient::sendTXT(payload, length, headerToPayload); }
+    bool sendTXT(const uint8_t * payload, size_t length = 0)                     { return _fragmenting ? false : WebSocketsClient::sendTXT(payload, length); }
+    bool sendTXT(uint8_t * payload, size_t length = 0, bool headerToPayload = false){ return _fragmenting ? false : WebSocketsClient::sendTXT(payload, length, headerToPayload); }
+
     bool sendTXTChunked(uint8_t* payload, size_t length, size_t chunk = 8192) {
         if (_client.status != WSC_CONNECTED) return false;
         if (length <= chunk) {
@@ -127,19 +149,24 @@ public:
         }
         size_t offset = 0;
         bool first = true;
+        _fragmenting = true;
         while (offset < length) {
-            if (_client.status != WSC_CONNECTED) return false;
+            if (_client.status != WSC_CONNECTED) { _fragmenting = false; return false; }
             size_t n = length - offset;
             if (n > chunk) n = chunk;
             bool fin = (offset + n >= length);
             WSopcode_t op = first ? WSop_text : WSop_continuation;
-            if (!sendFrame(&_client, op, payload + offset, n, fin)) return false;
+            if (!sendFrame(&_client, op, payload + offset, n, fin)) { _fragmenting = false; return false; }
             offset += n;
             first = false;
             WebSocketsClient::loop();  // répondre aux pings entre les fragments
         }
+        _fragmenting = false;
         return true;
     }
+
+private:
+    bool _fragmenting = false;
 };
 
 class LiXeeBoxTunnel {
@@ -167,6 +194,18 @@ public:
     }
 
     void loop() {
+        // Mesure du plus long ecart entre deux passages ici. Le heartbeat WebSocket attend le
+        // pong sous 10 s et coupe apres 3 echecs : si la boucle principale se bloque (UART
+        // Zigbee, LittleFS, TLS MQTT, emission LoRa...), les pongs ne sont pas lus a temps et la
+        // deconnexion vient de NOUS, pas du relais. On journalise cet ecart a la deconnexion
+        // pour distinguer les deux causes sans avoir a deviner.
+        uint32_t nowMs = millis();
+        if (_lastLoopMs != 0) {
+            uint32_t gap = nowMs - _lastLoopMs;
+            if (gap > _maxLoopGapMs) _maxLoopGapMs = gap;
+        }
+        _lastLoopMs = nowMs;
+
         _ws.loop();
 
         if (!_connected) return;
@@ -292,6 +331,11 @@ private:
     String _path;
     uint16_t _localPort;
     bool _connected;
+    // Diagnostic de famine de boucle (cf. loop() / WStype_DISCONNECTED).
+    uint32_t _lastLoopMs   = 0;
+    uint32_t _maxLoopGapMs = 0;
+    // Messages recus pendant un envoi fragmente, rejoues juste apres (cf. WStype_TEXT).
+    std::vector<String> _deferredMsgs;
     bool _sending;  // True when a slot is currently doing sendTXT
     unsigned long _lastReconnect;
     unsigned long _lastHeartbeat;
@@ -395,8 +439,13 @@ private:
                 break;
 
             case WStype_DISCONNECTED:
-                Serial.printf("[Tunnel] WebSocket DISCONNECTED (heap: %u, uptime: %lus)\n",
-                              ESP.getFreeHeap(), millis() / 1000);
+                // maxLoopGap : plus long intervalle entre deux tunnel->loop() depuis la derniere
+                // connexion. > 10 s => la boucle principale a ete bloquee assez longtemps pour
+                // faire expirer le pong : la coupure vient de la box. Sinon, c'est le lien/relais.
+                Serial.printf("[Tunnel] WebSocket DISCONNECTED (heap: %u, uptime: %lus, maxLoopGap: %lums)\n",
+                              ESP.getFreeHeap(), millis() / 1000, (unsigned long)_maxLoopGapMs);
+                _maxLoopGapMs = 0;
+                _lastLoopMs   = 0;
                 _connected = false;
                 // Reset all active slots
                 for (int i = 0; i < MAX_CONCURRENT; i++) {
@@ -406,10 +455,19 @@ private:
                 // saurait plus a quoi rattacher leurs reponses, et les servir consommerait
                 // de la memoire pour rien.
                 _pending.clear();
+                _deferredMsgs.clear();   // idem pour les messages differes
                 break;
 
             case WStype_TEXT:
-                handleMessage((char*)payload, length);
+                // Recu pendant l'emission d'un message fragmente (via le loop() intercalaire) :
+                // on le met de cote au lieu de le traiter tout de suite, car son traitement
+                // emettrait une frame de donnees au milieu des fragments (cf. isFragmenting).
+                // Il sera rejoue des la fin de l'envoi -> rien n'est perdu.
+                if (_ws.isFragmenting()) {
+                    _deferredMsgs.push_back(String((char*)payload));
+                } else {
+                    handleMessage((char*)payload, length);
+                }
                 break;
 
             case WStype_BIN:
@@ -880,6 +938,23 @@ private:
         if (_sending) return;
         _sending = true;
 
+        // Declarer la longueur du corps REELLEMENT transmis.
+        // Le serveur local peut repondre en "Transfer-Encoding: chunked" (toutes les pages
+        // assemblees en PSRAM le sont). On dechunke ici, et on retire cet en-tete puisqu'il ne
+        // decrit plus le corps envoye -- mais sans le remplacer, la reponse relayee n'annonce NI
+        // Content-Length NI chunked : le client ne sait plus ou elle se termine et peut y coller
+        // la reponse suivante (symptome : entete + menu dupliques en bas de page, via le tunnel
+        // uniquement, y compris sur des pages legeres servies apres une page chunkee).
+        // On (re)pose donc un Content-Length coherent avec bodyLen.
+        {
+            bool hasCL = false;
+            for (auto& h : slot.respHeaders) {
+                String k = h.first; k.toLowerCase();
+                if (k == "content-length") { h.second = String(slot.bodyLen); hasCL = true; break; }
+            }
+            if (!hasCL) slot.respHeaders.push_back({"Content-Length", String(slot.bodyLen)});
+        }
+
         Serial.printf("[Tunnel] [%s] Encoding + sending (%u bytes body)\n",
                       slot.reqId.c_str(), slot.bodyLen);
 
@@ -976,6 +1051,18 @@ private:
 
         slot.reset();
         _sending = false;
+
+        // Rejouer les messages arrives pendant la fragmentation (plus rien n'est en vol).
+        drainDeferredMessages();
+    }
+
+    // Traite les messages mis de cote pendant un envoi fragmente. A n'appeler que hors envoi.
+    void drainDeferredMessages() {
+        while (!_deferredMsgs.empty()) {
+            String m = _deferredMsgs.front();
+            _deferredMsgs.erase(_deferredMsgs.begin());
+            handleMessage((char*)m.c_str(), m.length());
+        }
     }
 
     // ---- Utility methods ----
