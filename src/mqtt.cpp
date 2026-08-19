@@ -4,6 +4,7 @@
 #include "protocol.h"
 #include "SPIFFS_ini.h"
 #include <AsyncMqttClient.h>
+#include <WiFiClient.h>
 #include "smart_wifi_manager.h"
 
 extern AsyncMqttClient mqttClient;
@@ -17,6 +18,111 @@ extern const unsigned long CONNECTION_TEST_INTERVAL;
 extern bool connectionTestPending;
 extern uint16_t lastTestPacketId;
 extern bool reallyConnected;
+
+/* ===================== Verification prealable du serveur (anti boucle de reboot) =============
+ *
+ * Symptome traite : un port MQTT errone pointant sur un serveur WEB (typiquement 8123 = Home
+ * Assistant, ou 80) provoquait un REBOOT EN BOUCLE de la box. La reponse "HTTP/1.1 400..." est
+ * interpretee octet par octet par AsyncMqttClient comme des trames MQTT ('H' = 0x48 -> type 4 =
+ * PUBACK, packetId = "TP" = 21584), jusqu'a tomber sur un type invalide : la lib fait alors
+ * disconnect() mais CONTINUE de parser le buffer avec _currentParsedPacket resté NULL
+ * -> LoadProhibited (EXCVADDR=0). Le seul message prevu, log_i("PROTOCOL VIOLATION"), est
+ * neutralise par CORE_DEBUG_LEVEL=0 : l'utilisateur n'avait aucune information.
+ *
+ * On verifie donc AVANT de confier la connexion a la lib que le pair parle bien MQTT.
+ * Le sondage envoie un CONNECT *sans identifiants* : on ne teste que le TYPE du paquet de
+ * reponse (CONNACK), jamais le code retour. Un broker qui exige une authentification repond
+ * CONNACK "not authorized" -- ce qui prouve deja que c'est un broker. Les identifiants ne sont
+ * donc JAMAIS transmis a un serveur inconnu.
+ */
+#define MQTT_PROBE_TIMEOUT_MS 3000
+
+// true si l'hote repond en MQTT. `err` recoit un motif lisible en cas d'echec.
+static bool probeMqttServer(const char *host, uint16_t port, String &err) {
+    WiFiClient probe;
+    probe.setTimeout(MQTT_PROBE_TIMEOUT_MS / 1000);
+    if (!probe.connect(host, port, MQTT_PROBE_TIMEOUT_MS)) {
+        err = "hote injoignable sur " + String(host) + ":" + String(port);
+        return false;
+    }
+
+    // CONNECT MQTT 3.1.1 minimal, client id dedie pour ne pas perturber la session reelle.
+    static const char kProbeId[] = "lixee-probe";
+    const uint8_t idLen = sizeof(kProbeId) - 1;
+    uint8_t pkt[32];
+    uint8_t n = 0;
+    pkt[n++] = 0x10;                      // CONNECT
+    pkt[n++] = (uint8_t)(10 + 2 + idLen); // remaining length
+    pkt[n++] = 0x00; pkt[n++] = 0x04;
+    pkt[n++] = 'M'; pkt[n++] = 'Q'; pkt[n++] = 'T'; pkt[n++] = 'T';
+    pkt[n++] = 0x04;                      // niveau 4 (3.1.1)
+    pkt[n++] = 0x02;                      // clean session, pas de credentials
+    pkt[n++] = 0x00; pkt[n++] = 0x3C;     // keepalive 60 s
+    pkt[n++] = 0x00; pkt[n++] = idLen;
+    memcpy(&pkt[n], kProbeId, idLen); n += idLen;
+    probe.write(pkt, n);
+    probe.flush();
+
+    uint32_t start = millis();
+    while (!probe.available() && probe.connected() && (millis() - start) < MQTT_PROBE_TIMEOUT_MS) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (!probe.available()) {
+        probe.stop();
+        err = "aucune reponse du serveur (pas un broker MQTT ?)";
+        return false;
+    }
+
+    int first = probe.read();
+    probe.stop();
+
+    // Seul le TYPE compte : 0x2x = CONNACK.
+    if ((first >> 4) == 2) return true;
+
+    if (first == 'H') {                   // "HTTP/..." : cas le plus frequent
+        err = "le serveur repond en HTTP, ce n'est pas un broker MQTT "
+              "(port " + String(port) + " : interface web ?)";
+    } else {
+        err = "reponse non MQTT (premier octet 0x" + String(first, HEX) + ")";
+    }
+    return false;
+}
+
+/* Verifie (une seule fois par couple hote:port) que la cible parle bien MQTT.
+ * Le resultat est memorise : une cible validee n'est plus sondee, et si l'utilisateur corrige
+ * sa configuration le couple change, donc la sonde est rejouee automatiquement.
+ * DOIT etre consultee par TOUS les chemins de connexion : il en existe plusieurs (demarrage,
+ * reconnexion automatique, sauvegarde de la config web) et n'en proteger qu'un ne sert a rien.
+ */
+bool mqttServerLooksValid() {
+    static String probedTarget = "";
+    static bool   probedOk     = false;
+
+    String target = String(ConfigGeneral.servMQTT) + ":" + String(ConfigGeneral.portMQTT);
+    if (target == probedTarget) return probedOk;
+
+    String err;
+    probedOk     = probeMqttServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT), err);
+    probedTarget = target;
+
+    if (probedOk) {
+        Serial.printf("[MQTT] Serveur %s valide (CONNACK recu)\n", target.c_str());
+    } else {
+        // Serial.printf et non log_i : ce dernier est neutralise par CORE_DEBUG_LEVEL=0,
+        // ce qui laissait l'utilisateur sans le moindre indice avant le reboot.
+        Serial.printf("[MQTT] Connexion refusee vers %s : %s\n", target.c_str(), err.c_str());
+        Serial.println("[MQTT] Verifiez l'adresse et le port : un broker MQTT ecoute en general "
+                       "sur 1883, PAS sur 8123/80/443 qui sont des interfaces web.");
+    }
+    return probedOk;
+}
+
+// Unique point d'entree pour etablir la connexion MQTT : refuse une cible qui ne parle pas MQTT.
+bool mqttConnectChecked() {
+    if (!mqttServerLooksValid()) return false;
+    mqttClient.connect();
+    return true;
+}
 
 // Variables pour la gestion robuste de la connexion
 static unsigned long lastMqttPublish = 0;
@@ -117,20 +223,25 @@ void mqttAutoReconnect() {
     log_i("🔄 MQTT: Reconnection attempt %d/%d", reconnectAttempts, MAX_RECONNECT_ATTEMPTS);
     log_i("   Server: %s:%s", ConfigGeneral.servMQTT, ConfigGeneral.portMQTT);
     
+    if (!mqttServerLooksValid()) {
+        reconnectionInProgress = false;   // on retentera : le serveur peut revenir
+        return;
+    }
+
     // Forcer une déconnexion propre avant de reconnecter
     mqttClient.disconnect(true);
     vTaskDelay(pdMS_TO_TICKS(100)); // Petit délai pour la déconnexion
-    
+
     // Reconfigurer le client
     mqttClient.setServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT));
     mqttClient.setClientId(ConfigGeneral.clientIDMQTT);
-    
+
     if (String(ConfigGeneral.userMQTT) != "") {
         mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
     }
-    
+
     // Tenter la connexion
-    mqttClient.connect();
+    mqttConnectChecked();
     
     // La reconnection sera marquée comme terminée dans le callback onConnect ou après timeout
     vTaskDelay(pdMS_TO_TICKS(500)); // Laisser le temps à la connexion de s'établir

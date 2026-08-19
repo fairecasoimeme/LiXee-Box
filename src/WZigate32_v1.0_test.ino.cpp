@@ -1165,7 +1165,7 @@ void connectToMqtt() {
     {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
     }
-    mqttClient.connect();
+    mqttConnectChecked();   // refuse une cible qui ne parle pas MQTT (cf. mqtt.h)
   }
 
 }
@@ -1936,7 +1936,8 @@ void initWiFiServices() {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
     }
     if (!heapCritique) {
-      mqttClient.connect();
+      // Chemin de DEMARRAGE : c'est celui-ci qui plantait sur un serveur non-MQTT.
+      mqttConnectChecked();
     }
   }
 

@@ -35,6 +35,7 @@
 #include "protocol.h"
 #include "zigbee.h"
 #include "lixee.h"        // invalidateDeviceCache()
+#include "mqtt.h"         // mqttConnectChecked()
 #include "basic.h"
 #include "thermostat.h"
 #include "presence.h"
@@ -15971,7 +15972,8 @@ void handleSaveConfigMQTT(AsyncWebServerRequest *request)
     {
       mqttClient.setCredentials(ConfigGeneral.userMQTT, ConfigGeneral.passMQTT);
     }
-    mqttClient.connect();
+    // La config vient de changer : la sonde est rejouee sur le nouveau couple hote:port.
+    mqttConnectChecked();
     
   }else{
     mqttClient.disconnect();
