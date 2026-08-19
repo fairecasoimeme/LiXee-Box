@@ -1,5 +1,65 @@
 # Changelog
 
+## v2.22
+
+### LoRa 2.4 GHz (nouvelle fonctionnalité majeure)
+- La box reçoit désormais des objets **LoRa 2.4 GHz** en plus du Zigbee — le premier étant le **ZLinky LoRa**, qui émet ses trames TIC chiffrées (AES-128)
+- Un objet LoRa est un **appareil normal** : ses données passent par le même traitement que le Zigbee, sur les mêmes clusters. Pages Énergie, historiques, export CSV, MQTT et tarif du thermostat fonctionnent **sans code dédié**
+- Un nouvel objet LoRa ne demande **aucun développement** : seulement son template dans `data/tp/` (son type est annoncé à l'appairage)
+- **Détection automatique** des modules présents (Zigbee et/ou LoRa) et **menu adaptatif**
+- Appairage AES-128, déchiffrement AES-128-CTR + contrôle d'intégrité, **multi-émetteur** (jusqu'à 4)
+- Page **Réseau → LoRa** calquée sur la page Zigbee : fiches d'appareils avec **RSSI / SNR / PDR**, assistant d'appairage dédié, distinction visuelle LoRa / Zigbee dans la liste des appareils
+- **Protocole v1** : le spreading factor et le canal sont négociés à l'appairage (paramètres réseau communs), réglables depuis **Config → LoRa**
+- **Lecture d'attribut à la demande** : interroger un attribut précis sans attendre le cycle périodique (~3 min 40), depuis la page de configuration ou par le bouton ⟳ de chaque ligne sur la fiche de l'appareil
+- Nouvelles données TIC remontées : tarif en cours (`LTARF`/`PTEC`), numéro de série (`ADSC`/`ADCO`), horodate du compteur (`DATE`), option tarifaire (`OPTARIF`/`DEMAIN`) et courbe de charge soutirée
+- Fiabilisation de l'appairage : purge des interruptions radio à chaque changement de canal et ré-armement périodique de l'écoute (une fenêtre d'appairage pouvait rester « ouverte » sans jamais rien recevoir)
+
+### Stabilité — fin des reboots par saturation mémoire
+- Les pages HTML étaient **intégralement assemblées en RAM interne**, avec des réallocations sans marge : sur les pages lourdes (Énergie, Appareils) la mémoire libre tombait à ~22 Ko et déclenchait un **redémarrage de sécurité**. Elles sont désormais assemblées en **PSRAM** et servies par tranches
+- Mémoire libre en fonctionnement : **~72 Ko → ~120 Ko**
+- 10 pages concernées : Énergie, Appareils, Config appareils, fiche appareil, tableau de bord, LoRa (liste et config), gestionnaire de fichiers, thermostats
+- **Surveillance mémoire** : le tunnel n'est plus coupé sur le simple pic de démarrage (période de grâce après le boot, et coupure uniquement si la mémoire reste durablement basse)
+
+### MQTT
+- **Correction d'une boucle de redémarrage** : un port erroné pointant vers un serveur web (typiquement **8123** = Home Assistant, ou 80) mettait la box en redémarrage permanent, **sans aucun message d'erreur**. La box vérifie désormais que la cible répond bien en MQTT avant de s'y connecter, et affiche la cause en clair
+- Les identifiants ne sont **jamais transmis** à un serveur qui n'est pas un broker MQTT
+
+### Accès distant (tunnel)
+- **Activation par code réparée** : le certificat racine embarqué était corrompu, toute activation échouait en `HTTP -1`. Prise en charge de la nouvelle chaîne de certification Let's Encrypt
+- Correction de **pages tronquées ou dupliquées** en accès distant (la réponse relayée n'annonçait plus sa longueur)
+- Respect du protocole WebSocket sur les gros envois fragmentés — plus de page corrompue sous charge
+- **File d'attente** au lieu d'un refus « serveur occupé », qui cassait le chargement de certaines pages
+- Assets statiques **versionnés** : fin des bibliothèques périmées conservées en cache après une mise à jour
+
+### Interface
+- Correction du **menu dupliqué en bas de page** et des **menus déroulants inopérants** en accès distant
+- Ajout du **doctype HTML5** sur toutes les pages : elles s'affichaient en mode de compatibilité, ce qui perturbait la mise en page et le fonctionnement des menus
+- **Config Tunnel** : un **seul** interrupteur d'activation (il y en avait deux), les deux méthodes de configuration restant disponibles
+- Nouvel outil de **lecture d'attribut à la demande** côté Zigbee (Config → Zigbee)
+- Assistant d'appairage : passage à l'étape suivante fiabilisé
+
+### Règles
+- Nouveau champ **propriété** sur les conditions portant sur **STGE** (#31) : comparer un état précis (contact sec, organe de coupure, surtension, dépassement de puissance, tarif en cours…) au lieu du mot d'état entier, avec les libellés correspondants proposés dans l'éditeur
+
+### Correctifs
+- **Valeurs signées** (#34) : les grandeurs négatives s'affichaient en positif géant (65508 W au lieu de −28 W pour la puissance active ; idem facteur de puissance)
+- **Attributs numériques génériques** (#37) : les clusters sans traitement dédié publiaient une chaîne hexadécimale brute, que Home Assistant interprétait en notation scientifique (300 hPa au lieu de 994)
+- **STGE jamais publié en MQTT** (#36) : l'entité restait indéfiniment indisponible
+- **CSRF** (#32, #33) : l'accès distant hors tunnel (DynDNS + NAT, reverse proxy, VPN, domaine perso) était rejeté en 403 — création de règles et mise à jour du firmware bloquées
+- **Export CSV puissance** (#30) : la fenêtre 24 h glissante ne correspondait pas à celle du graphe
+- **Thermostat** : le forçage manuel (Auto / Marche / Arrêt) était perdu à chaque redémarrage
+- Un appareil appairé **à chaud** restait invisible pour certains traitements (mode Linky bloqué à 0 sur un ZLinky fraîchement appairé) ; un appareil supprimé pouvait laisser une référence invalide
+- Chaque appareil LoRa dispose désormais d'une **adresse propre** : la mise à jour temps réel ne concernait auparavant que le premier de la liste
+- **Page Énergie** : génération de l'historique de puissance **275 ms → ~60 ms**
+
+### Nouveaux appareils / templates
+- **NodOn SEM-4-1-00** (module de mesure : tension, intensité, puissances, facteur de puissance)
+- **NodOn STPH-4-1-00** (température, humidité, batterie)
+
+### Build / maintenance
+- **Dépendances épinglées** (plate-forme ESP32 et bibliothèques du serveur web) : compilations reproductibles, plus de montée de version involontaire
+- Documentation du protocole radio LoRa mise à jour (`recepteur/PROTOCOLE_LORA.md`)
+
 ## v2.21
 
 ### Thermostat virtuel (nouvelle fonctionnalité majeure)
