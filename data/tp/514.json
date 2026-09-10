@@ -5,7 +5,9 @@
         {
           "name": "current_position",
           "cluster": "0102",
-          "attribut": 8
+          "attribut": 8,
+          "type": "numeric",
+          "unit": "%"
         },
         {
           "name": "moving_state",
@@ -56,6 +58,13 @@
           "endpoint": 1,
           "value": 2,
           "visible": 1
+        },
+        {
+          "name": "Position",
+          "command": 252,
+          "endpoint": 1,
+          "value": 0,
+          "visible": 1
         }
       ]
     }
@@ -66,7 +75,9 @@
         {
           "name": "current_position",
           "cluster": "0102",
-          "attribut": 8
+          "attribut": 8,
+          "type": "numeric",
+          "unit": "%"
         },
         {
           "name": "window_covering_type",
@@ -100,6 +111,13 @@
           "command": 250,
           "endpoint": 1,
           "value": 2,
+          "visible": 1
+        },
+        {
+          "name": "Position",
+          "command": 252,
+          "endpoint": 1,
+          "value": 0,
           "visible": 1
         }
       ]
