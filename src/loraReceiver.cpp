@@ -276,6 +276,29 @@ static inline bool isTri(const LoraEmitter &e)      { return  (e.linkyMode & 0x0
 static inline bool histoBase(const LoraEmitter &e)  { return e.tariffKnown && e.tariffCode == 1; }
 static inline bool histoTempo(const LoraEmitter &e) { return e.tariffKnown && e.tariffCode >= 6 && e.tariffCode <= 11; }
 
+// Efface les index tarifaires Tier1/Tier2 s'ils portent encore une valeur alors que l'option
+// souscrite est BASE (ou ils n'existent pas). Cas typique : valeur ecrite pendant les ~3 min qui
+// precedent l'identification de l'option, qui resterait ensuite affichee en double de BASE/EAST.
+// Ne fait rien si les attributs sont deja vides : pas d'ecriture inutile a chaque trame.
+static void clearStaleTierValues(const String &inifile) {
+  String id = inifile.substring(0, 16);
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() != id) continue;
+    bool changed = false;
+    for (const char *attr : {"256", "258"}) {
+      if (devices[i]->getValue("0702", attr).length() > 0) {
+        devices[i]->setValue("0702", attr, "");
+        changed = true;
+      }
+    }
+    if (changed) {
+      devices[i]->saveToFile();   // sinon la valeur reviendrait au prochain redemarrage
+      LLOG("[LoRa] option BASE : index tarifaires 256/258 effaces (doublon de BASE/EAST)\r\n");
+    }
+    return;
+  }
+}
+
 /* ===================== Mapping des trames TIC ===================== */
 static void mapEssential(const String &inifile, const uint8_t *b, int len, LoraEmitter &e) {
   if (len != SZ_ESSENTIAL) return;
@@ -343,11 +366,22 @@ static void mapExtended(const String &inifile, const uint8_t *b, int len, LoraEm
       pushZ(inifile, 0x0702, 0, getU32(&b[3]), 4);      // EAST / BASE
       if (std) pushZ(inifile, 0x0702, 1, getU32(&b[7]), 4);   // EAIT : Standard seul
       // Tier1/2 -> mêmes attributs qu'en Zigbee (le template les nomme déjà
-      // « HC / EJPHN / BBRHCJB / EASF01 »). En Historique BASE ils n'existent pas :
-      // l'index total est déjà publié ci-dessus.
-      if (std || !histoBase(e)) {
+      // « HC / EJPHN / BBRHCJB / EASF01 »). En Historique option BASE ils n'ont pas de sens :
+      // le protocole y place l'index BASE dans Tier1 (§7.2.1), donc les publier afficherait
+      // DEUX FOIS le meme index (une fois en « BASE / EAST », une fois en « HC / ... »).
+      //
+      // En Historique on attend donc de CONNAITRE l'option tarifaire avant d'ecrire quoi que ce
+      // soit : tariffKnown ne devient vrai qu'a la reception de POWER_MAX_CFG ou TARIFF_LABEL,
+      // soit jusqu'a ~3 min 40 apres le demarrage. Sans cette attente, histoBase() etait faux
+      // pendant toute cette fenetre, l'attribut 256 recevait l'index BASE... et la valeur
+      // restait ensuite affichee indefiniment, meme apres l'identification de l'option.
+      if (std || (e.tariffKnown && !histoBase(e))) {
         pushZ(inifile, 0x0702, 256, getU32(&b[11]), 4);  // EASF01 / HCHC / EJPHN / BBRHCJB
         pushZ(inifile, 0x0702, 258, getU32(&b[15]), 4);  // EASF02 / HCHP / EJPHPM / BBRHPJB
+      } else if (histoBase(e)) {
+        // Reparation : efface une valeur ecrite avant que l'option soit connue (ou par une
+        // version anterieure), sinon l'index resterait duplique sur une box deja en service.
+        clearStaleTierValues(inifile);
       }
       break;
     case 0x02:                                        // ENERGY_2 (19B)
@@ -395,7 +429,14 @@ static void mapExtended(const String &inifile, const uint8_t *b, int len, LoraEm
       // si l'index 1 est « Base », « HC » ou « HC Bleu ») -> on attend le libellé.
       if (!cfgStd && !e.labelFromEmitter) {
         const char *ptec = histoPtecCode(b[17]);
-        if (ptec) pushZStr(inifile, 0xFF66, 16, ptec);
+        if (ptec) {
+          pushZStr(inifile, 0xFF66, 16, ptec);
+          // 0702/32 « Tarif en cours Histo » : c'est CET attribut que lit la banniere de la
+          // page Energie en mode Historique (handleAPITariff), et non FF66/16. Sans lui la
+          // banniere restait vide. Chaine BRUTE : handleAttribute32 passe par
+          // createTextMeterData, qui consomme les octets sans prefixe de longueur.
+          pushZRawStr(inifile, 0x0702, 32, ptec);
+        }
       }
       pushZ(inifile, 0x0B04, 1293, getU16(&b[3]), 2);   // SMAXSN / PMAX
       pushZ(inifile, 0x0B01, 13,   b[15], 1);           // PREF (kVA) / ISOUSC (A)
@@ -456,6 +497,9 @@ static void mapExtended(const String &inifile, const uint8_t *b, int len, LoraEm
       // LTARF, donc on l'y remet aussi pour que la fiche soit identique.
       pushZStr(inifile, 0xFF66, 16, label);
       if (lblStd) pushZStr(inifile, 0xFF66, 512, label);
+      // En Historique, la banniere de la page Energie lit 0702/32 (« Tarif en cours Histo »),
+      // la ou le ZLinky Zigbee publie PTEC. Chaine BRUTE (cf. createTextMeterData).
+      if (!lblStd) pushZRawStr(inifile, 0x0702, 32, label);
 
       if (!e.labelFromEmitter) {
         e.labelFromEmitter = true;

@@ -137,10 +137,22 @@ static void fireActuatorOne(const char* ieee, bool on, const char* name) {
 static void sendActuator(VirtualThermostat& t, bool on) {
   // En marche : action chaud ou froid selon le mode courant ; à l'arrêt : action arrêt.
   const char* name = on ? (t.heating ? t.actionHeat : t.actionCool) : t.actionOff;
-  // Appareil principal + toutes les prises supplémentaires reçoivent la même commande
+  Serial.printf("[Action] thermostat \"%s\" : %s -> %s (%d appareil(s))\n", t.name,
+                on ? "marche" : "arret", name[0] ? name : "on/off", 1 + t.actuatorsExtraCount);
+  // Appareil principal + toutes les prises supplémentaires reçoivent la même commande.
+  // Un appareil declare DEUX fois (principal et supplementaire, ou deux fois en supplementaire)
+  // recevait la commande deux fois -- une clim bipait deux fois. On ne l'envoie qu'une fois.
   fireActuatorOne(t.actuatorIEEE, on, name);
   for (int k = 0; k < t.actuatorsExtraCount; k++) {
-    fireActuatorOne(t.actuatorsExtra[k], on, name);
+    const char* ieee = t.actuatorsExtra[k];
+    bool dup = (strcmp(ieee, t.actuatorIEEE) == 0);
+    for (int j = 0; j < k && !dup; j++) dup = (strcmp(ieee, t.actuatorsExtra[j]) == 0);
+    if (dup) {
+      Serial.printf("[Thermostat] zone \"%s\" : %s declare deux fois, commande envoyee une seule fois\n",
+                    t.name, ieee);
+      continue;
+    }
+    fireActuatorOne(ieee, on, name);
   }
 }
 

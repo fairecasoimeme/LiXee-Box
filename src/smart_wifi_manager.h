@@ -49,6 +49,10 @@ public:
     // === ÉTAT ET INFORMATIONS ===
     WiFiState getState() const { return _currentState; }
     bool isConnected() const { return _currentState == WIFI_STATE_CONNECTED; }
+
+    // Vrai si le provisioning BLE a ete charge durant cette session. Sa memoire (~64 Ko de
+    // heap INTERNE) n'est jamais rendue : voir checkBleMemoryReclaim() dans le .ino.
+    bool bleWasUsed() const { return _bleLoadAttempted; }
     bool isProvisioning() const { return _currentState == WIFI_STATE_BLE_PROVISIONING; }
     String getSSID() const;
     String getLocalIP() const;

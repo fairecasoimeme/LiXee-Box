@@ -35,15 +35,21 @@ extern bool reallyConnected;
  * CONNACK "not authorized" -- ce qui prouve deja que c'est un broker. Les identifiants ne sont
  * donc JAMAIS transmis a un serveur inconnu.
  */
-#define MQTT_PROBE_TIMEOUT_MS 3000
+// Timeout volontairement court : connect() est BLOQUANT et gele la boucle principale le temps
+// de l'attente. 1,5 s suffit largement sur un reseau local.
+#define MQTT_PROBE_TIMEOUT_MS 1500
 
-// true si l'hote repond en MQTT. `err` recoit un motif lisible en cas d'echec.
-static bool probeMqttServer(const char *host, uint16_t port, String &err) {
+// Verdict de la sonde :
+//    1 = l'hote parle MQTT
+//    0 = injoignable / muet -> TRANSITOIRE (broker eteint, reseau coupe) : il faudra resonder
+//   -1 = repond autre chose que du MQTT -> DEFINITIF : la configuration est fausse
+// `err` recoit un motif lisible en cas d'echec.
+static int probeMqttServer(const char *host, uint16_t port, String &err) {
     WiFiClient probe;
     probe.setTimeout(MQTT_PROBE_TIMEOUT_MS / 1000);
     if (!probe.connect(host, port, MQTT_PROBE_TIMEOUT_MS)) {
         err = "hote injoignable sur " + String(host) + ":" + String(port);
-        return false;
+        return 0;                       // transitoire : le broker peut revenir
     }
 
     // CONNECT MQTT 3.1.1 minimal, client id dedie pour ne pas perturber la session reelle.
@@ -70,14 +76,14 @@ static bool probeMqttServer(const char *host, uint16_t port, String &err) {
     if (!probe.available()) {
         probe.stop();
         err = "aucune reponse du serveur (pas un broker MQTT ?)";
-        return false;
+        return 0;                       // transitoire aussi : peut-etre juste lent
     }
 
     int first = probe.read();
     probe.stop();
 
     // Seul le TYPE compte : 0x2x = CONNACK.
-    if ((first >> 4) == 2) return true;
+    if ((first >> 4) == 2) return 1;
 
     if (first == 'H') {                   // "HTTP/..." : cas le plus frequent
         err = "le serveur repond en HTTP, ce n'est pas un broker MQTT "
@@ -85,7 +91,7 @@ static bool probeMqttServer(const char *host, uint16_t port, String &err) {
     } else {
         err = "reponse non MQTT (premier octet 0x" + String(first, HEX) + ")";
     }
-    return false;
+    return -1;                          // definitif : ce n'est pas un broker
 }
 
 /* Verifie (une seule fois par couple hote:port) que la cible parle bien MQTT.
@@ -95,15 +101,36 @@ static bool probeMqttServer(const char *host, uint16_t port, String &err) {
  * reconnexion automatique, sauvegarde de la config web) et n'en proteger qu'un ne sert a rien.
  */
 bool mqttServerLooksValid() {
-    static String probedTarget = "";
-    static bool   probedOk     = false;
+    static String        probedTarget = "";
+    static bool          probedOk     = false;
+    static bool          probedFinal  = false;   // le verdict memorise est-il definitif ?
+    static unsigned long lastProbeMs  = 0;
+
+    // La sonde est BLOQUANTE : sur un hote injoignable, connect() attend tout le timeout et
+    // gele la boucle principale. La rejouer a chaque tentative de reconnexion (toutes les 5 s)
+    // faisait decrocher le tunnel, faute d'etre servi -- observe : maxLoopGap 7749 ms alors que
+    // le heap etait sain (126 Ko). On espace donc les re-sondages.
+    const unsigned long PROBE_RETRY_MS = 60000;
 
     String target = String(ConfigGeneral.servMQTT) + ":" + String(ConfigGeneral.portMQTT);
-    if (target == probedTarget) return probedOk;
+    bool sameTarget = (target == probedTarget);
+
+    // Verdict DEFINITIF (le pair repond autre chose que du MQTT) : inutile de resonder.
+    if (sameTarget && probedFinal) return probedOk;
+
+    // Echec TRANSITOIRE recent (broker eteint, reseau coupe) : on retentera, mais plus tard.
+    // Renvoyer false sans sonder ne coute rien : sans broker joignable il n'y a de toute facon
+    // pas de connexion possible, et surtout aucun octet parasite a redouter pour le parseur.
+    if (sameTarget && lastProbeMs != 0 && (millis() - lastProbeMs) < PROBE_RETRY_MS) {
+        return false;
+    }
 
     String err;
-    probedOk     = probeMqttServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT), err);
+    int verdict  = probeMqttServer(ConfigGeneral.servMQTT, atoi(ConfigGeneral.portMQTT), err);
+    probedOk     = (verdict == 1);
+    probedFinal  = (verdict != 0);
     probedTarget = target;
+    lastProbeMs  = millis();
 
     if (probedOk) {
         Serial.printf("[MQTT] Serveur %s valide (CONNACK recu)\n", target.c_str());

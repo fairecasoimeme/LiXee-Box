@@ -36,13 +36,10 @@ uint32_t lastCrcError = 0;
 uint32_t crcErrorCount = 0;
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
-extern CircularBuffer<SerialPacket, 300> *QueuePacket;
-extern CircularBuffer<SerialPacket, 30> *PriorityQueuePacket;
 
 extern CircularBuffer<Alert, 10> *alertList;
+extern CircularBuffer<Device, 50> *deviceList;   // mises a jour en direct de la page Appareils
 
-extern SemaphoreHandle_t Queue_Mutex ;
-extern SemaphoreHandle_t QueuePrio_Mutex;
 
 extern String epochTime;
 extern unsigned long timeLog;
@@ -415,6 +412,16 @@ void SetInfoStatus( String inifile, String val)
     DeviceData* device = devices[i];
     if (device->getDeviceID() == inifile.substring(0, 16))
     {
+      // Signale a la page Appareils un changement VISIBLE d'etat radio (apparition, disparition
+      // ou changement de code d'erreur), qu'elle affiche en direct. Uniquement sur changement :
+      // 0x8011 et 0x8102 remettent "00" a chaque trame et satureraient sinon la file (50).
+      const String &old = device->getInfo().Status;
+      bool wasFault = old.length() && strtol(old.c_str(), nullptr, 16) != 0;
+      bool isFault  = val.length() && strtol(val.c_str(), nullptr, 16) != 0;
+      if ((wasFault != isFault || (isFault && old != val)) && !deviceList->isFull()) {
+        deviceList->push(Device{device->getInfo().shortAddr.toInt(),
+                                RADIO_STATUS_CLUSTER, RADIO_STATUS_ATTR, val});
+      }
       device->setInfoStatus(val);
       break;
     }
@@ -500,94 +507,6 @@ bool deviceExist(String mac)
 }
 
 
-void datasManage(char packet[256],int count)
-{
-  // Vérification des bounds AVANT traitement
-  if (count > 256 || count < 6) {
-      log_e("Invalid packet size: %d", count);
-      return;
-  }
-  uint8_t CRC=0;
-  ZiGateProtocol protocol = {};
-
-  if (count >=6)
-  {
-    protocol.type = int(packet[0])<<8 ;
-    CRC=CRC ^ uint8_t(packet[0]);
-    protocol.type |= int(packet[1]) ;
-    CRC=CRC ^ uint8_t(packet[1]);
-    protocol.ln = int(packet[2])<<8 ;
-    CRC=CRC ^ uint8_t(packet[2]);
-    protocol.ln |= int(packet[3]) ;
-    CRC=CRC ^ uint8_t(packet[3]);
-    protocol.chksum = uint8_t(packet[4]);    
-
-    if (protocol.ln > (int)sizeof(protocol.payload)) {
-        log_e("Payload too large: %d", protocol.ln);
-        return;
-    }
-    
-    // Protection supplémentaire
-    for (int i = 5; i < (5 + protocol.ln) && i < count; i++) {
-      if ((i-5) >= sizeof(protocol.payload)) {
-          log_e("Payload buffer overflow prevented");
-          break;
-      }
-      CRC = CRC ^ uint8_t(packet[i]);
-      protocol.payload[(i-5)] = packet[i];
-    }
-
-    if (protocol.chksum == CRC)
-    {
-      DecodePayload(protocol,count); 
-      memset(packet,0,sizeof(packet));
-    }else{   
-      crcErrorCount++;
-      uint32_t now = millis();
-      uint32_t interval = now - lastCrcError;
-      lastCrcError = now;
-      
-      log_e("🔴 CRC ERROR #%d - Intervalle: %dms", crcErrorCount, interval);
-      log_e("   Type: 0x%04X, Len: %d, CRC calc: 0x%02X, CRC reçu: 0x%02X", 
-            protocol.type, protocol.ln, CRC, protocol.chksum);
-      log_e("   Core: %d, Task: %s, Free heap: %d", 
-            xPortGetCoreID(), pcTaskGetName(NULL), ESP.getFreeHeap());      
-      // Afficher les premiers bytes pour pattern analysis
-      log_e("   Packet: %02X %02X %02X %02X %02X [%d bytes total]",
-            packet[0], packet[1], packet[2], packet[3], packet[4], count);
-      
-      // Auto-recovery si trop d'erreurs consécutives
-      if (crcErrorCount > 10 && interval < 5000) {
-        log_e("🔥 TROP D'ERREURS CRC - TENTATIVE DE RECOVERY");
-        Serial1.flush(); // Vider le buffer série
-        vTaskDelay(100);  // Pause pour resync
-        crcErrorCount = 0; // Reset compteur
-      }
-      
-      for (int i=0; i< count; i++)
-      {
-        char tmpP[4];
-        snprintf(tmpP,3, "%02X",packet[i]);
-        DEBUG_PRINT(tmpP);
-        DEBUG_PRINT(F(" "));
-      }
-      memset(packet,0,sizeof(packet));
-      addDebugLog(F("CRC error"));
-      log_w("CRC error : ");
-    }
-    
-  }else{
-    memset(packet,0,sizeof(packet));
-    addDebugLog(F("Packet < 6"));
-    log_w("Packet < 6");
-  }
-
-  size_t HeapSize = ESP.getHeapSize();
-  size_t freeMemory = ESP.getFreeHeap();
-  size_t freeMemoryPS = ESP.getFreePsram();
-  Serial.printf("📊 - Core : %d - Heap size : %ld - Free heap : %ld - Free PSRAM: %ld - uxTaskGetStackHighWaterMark: %ld \r\n",xPortGetCoreID(),HeapSize,freeMemory,freeMemoryPS,uxTaskGetStackHighWaterMark(NULL));
-
-}
 
 bool loadOTAFile(const char* filename) {
     
@@ -737,6 +656,20 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
 {
   esp_task_wdt_reset();
   switch(protocol.type){
+    // ACK DATA : l'appareil a accuse reception d'une commande. S'il etait signale en erreur
+    // radio (0x8702), il est donc de nouveau joignable. Sans cela, un actionneur qui ne remonte
+    // pas de mesures (prise, volet...) resterait marque en erreur alors qu'il obeit bien : seul
+    // un envoi de sa part (0x8002 / 0x8102) remettait jusqu'ici le statut a 00.
+    // Format ZiGate : <status u8><adresse destination u16><endpoint u8><cluster u16>
+    // SetInfoStatus() ne touche que la memoire : aucune ecriture flash a chaque accuse.
+    case 0x8011:
+    {
+      if (protocol.payload[0] == 0x00) {
+        int SA = (protocol.payload[1] << 8) | protocol.payload[2];
+        SetInfoStatus(GetMacAdrr(SA), String("00"));
+      }
+    }
+    break;
     case 0x8702:
     {
       uint8_t ShortAddr[2];
@@ -1943,108 +1876,6 @@ uint8_t getChecksum(int type, int len, uint8_t datas[512])
 }
 
 
-//void protocolDatas(String sp)
-/*void protocolDatas(uint8_t sp[4092], size_t len)
-{ 
-  int count;
-  int i=0;
-  int j=0;
-  bool stx=false;
-  bool transcodage=false;
-  char packet[256];
-  int numPacket = 0;
- 
-  //for (count=0; count<sp.length(); count++)
-  for (count=0; count<len; count++)
-  {
-    // PROTECTION CRITIQUE
-    if (i >= (sizeof(packet) - 1)) {
-        log_e("Packet buffer overflow, resetting");
-        i = 0;
-        stx = false;
-        continue;
-    }
-    j++;
-    if (sp[count]==0x01)
-    {
-      //Début de trame
-      i=0;
-      memset(packet,0,sizeof(packet));
-      stx = true;
-    }else if (sp[count]==0x03)
-    {
-      if (stx)
-      {
-        stx=false;
-        //log_d("core : %d - numPacket: %d - i: %d - j : %d - Total: %d",xPortGetCoreID(),numPacket,i,j,sp.length());
-        log_d("core : %d - numPacket: %d - i: %d - j : %d - Total: %d",xPortGetCoreID(),numPacket,i,j,len);
-        SerialPacket sp;
-        sp.len=i;
-        memcpy(sp.raw,packet,i);
-        int type;
-        type = int(packet[0])<<8 ;
-        type |= int(packet[1]) ;
-        if (type == 0x8501)
-        {
-          datasManage((char *)sp.raw,sp.len);
-        }
-        else if ((type == 0x4d) || (type == 0x8043) || (type == 0x8045)|| (type == 0x8503))
-        {
-          if (!PriorityQueuePacket->isFull())
-          {
-            xSemaphoreTake(QueuePrio_Mutex, portMAX_DELAY);
-            PriorityQueuePacket->push(sp);
-            xSemaphoreGive(QueuePrio_Mutex);
-            log_w("ProtocolDatas - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
-          }
-        }else if((type == 0x8011) || (type == 0x8012))
-        {
-            //Ignore packet
-        }else{
-          if (!QueuePacket->isFull())
-          {
-            xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
-            QueuePacket->push(sp);
-            xSemaphoreGive(Queue_Mutex);
-            log_w("ProtocolDatas - uxTaskGetStackHighWaterMark(NULL) : %d",uxTaskGetStackHighWaterMark(NULL));
-          }else{
-            addDebugLog("QueuePacket FULL !");
-            while (!QueuePacket->isEmpty())
-            {
-              //DEBUG_PRINTLN("Packet shift : protocol datas");
-              SerialPacket packet;
-              xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
-              packet = (SerialPacket)QueuePacket->shift();
-              xSemaphoreGive(Queue_Mutex);
-              datasManage((char *)packet.raw,packet.len);
-              vTaskDelay(10);
-            }
-            xSemaphoreTake(Queue_Mutex, portMAX_DELAY);
-            QueuePacket->push(sp);
-            xSemaphoreGive(Queue_Mutex);
-          }
-        }
-        memset(packet,0,sizeof(packet));
-        //datasManage(packet,i);
-        i=0;
-        numPacket++;
-      }
-    }else if (sp[count]==0x02)
-    {
-      transcodage= true;
-    }else{
-      if (transcodage)
-      {
-        transcodage=false;
-        char temp = (int(sp[count]) ^0x10);
-        packet[i]=temp;
-      }else{
-        packet[i]=sp[count];
-      }
-      i++;
-    }
-  }
-}*/
 
 bool ScanDeviceToPoll() {
   for (size_t i = 0; i < devices.size(); i++) 

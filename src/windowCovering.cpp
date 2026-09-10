@@ -7,6 +7,7 @@
 #include <WebPush.h>
 #include "mqtt.h"
 #include "device.h"
+#include "windowCovering.h"
 
 extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
@@ -34,6 +35,33 @@ void SendWindowCoveringAction(int shortaddr, int endpoint, String value)
     datas[5]= value.toInt();
     
     memcpy(trame.datas,datas,6);
+    PrioritycommandList->push(trame);
+}
+
+// Commande ZCL "Go To Lift Percentage" (0x05), transmise par la commande ZiGate 0x00FA suivie
+// d'un octet de pourcentage (doc ZiGate : "5 = Go To Lift Percentage, extra cmd : 0-100").
+// `openPercent` est TOUJOURS une ouverture (0 = ferme, 100 = ouvert) : c'est ce qu'affiche le
+// curseur et ce que passent regles et groupes. En ZCL, la position de levage mesure au
+// contraire la FERMETURE (0 = ouvert, 100 = ferme) : on convertit, sauf pour les appareils qui
+// inversent deja le sens (voir windowCovering.h).
+void SendWindowCoveringPosition(int shortaddr, int endpoint, int openPercent, bool inverted)
+{
+    if (openPercent < 0)   openPercent = 0;
+    if (openPercent > 100) openPercent = 100;
+    uint8_t lift = inverted ? (uint8_t)openPercent : (uint8_t)(100 - openPercent);
+
+    Packet trame;
+    trame.cmd = 0x00fa;
+    trame.len = 7;
+    uint8_t datas[7] = {
+        0x02,                                           // adressage par adresse courte
+        (uint8_t)(shortaddr >> 8), (uint8_t)(shortaddr & 0xFF),
+        1,                                              // endpoint source (ZiGate)
+        (uint8_t)endpoint,                              // endpoint destination
+        0x05,                                           // Go To Lift Percentage
+        lift                                            // pourcentage de levage ZCL
+    };
+    memcpy(trame.datas, datas, 7);
     PrioritycommandList->push(trame);
 }
 

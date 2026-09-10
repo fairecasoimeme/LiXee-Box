@@ -40,6 +40,8 @@ extern "C" {
 #include <esp_log.h>
 #include "mail.h"
 #include "rules.h"
+#include "actionGroups.h"
+#include "windowCovering.h"
 
 #include <esp_heap_caps.h>
 #include "device.h"
@@ -253,11 +255,9 @@ RulesManager rulesManager;
 
 CircularBuffer<Packet, 100> *commandList = nullptr;
 CircularBuffer<Packet, 70> *PrioritycommandList = nullptr;
-CircularBuffer<SerialPacket, 30> *PriorityQueuePacket = nullptr;
 CircularBuffer<Alert, 10> *alertList = nullptr;
 CircularBuffer<Device, 50> *deviceList = nullptr;
 CircularBuffer<Notification, 10> *notifList = nullptr;
-CircularBuffer<SerialPacket, 300> *QueuePacket = nullptr;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -349,10 +349,6 @@ void initCircularBuffer()
   if (!PrioritycommandList) { log_e("PSRAM alloc failed: PrioritycommandList"); ESP.restart(); }
   new(PrioritycommandList) CircularBuffer<Packet,70>();
 
-  PriorityQueuePacket = (CircularBuffer<SerialPacket,30>*)heap_caps_malloc(sizeof(*PriorityQueuePacket), MALLOC_CAP_SPIRAM);
-  if (!PriorityQueuePacket) { log_e("PSRAM alloc failed: PriorityQueuePacket"); ESP.restart(); }
-  new(PriorityQueuePacket) CircularBuffer<SerialPacket,30>();
-
   alertList = (CircularBuffer<Alert,10>*)heap_caps_malloc(sizeof(*alertList), MALLOC_CAP_SPIRAM);
   if (!alertList) { log_e("PSRAM alloc failed: alertList"); ESP.restart(); }
   new(alertList) CircularBuffer<Alert,10>();
@@ -365,9 +361,6 @@ void initCircularBuffer()
   if (!deviceList) { log_e("PSRAM alloc failed: deviceList"); ESP.restart(); }
   new(deviceList) CircularBuffer<Device,50>();
 
-  QueuePacket = (CircularBuffer<SerialPacket,300>*)heap_caps_malloc(sizeof(*QueuePacket), MALLOC_CAP_SPIRAM);
-  if (!QueuePacket) { log_e("PSRAM alloc failed: QueuePacket"); ESP.restart(); }
-  new(QueuePacket) CircularBuffer<SerialPacket,300>();
 }
 
 void delayRebootCallBack()
@@ -851,8 +844,6 @@ const uint32_t communicationTimeout_ms = 500;
 SemaphoreHandle_t uart_buffer_Mutex = NULL;
 SemaphoreHandle_t file_Mutex = NULL;
 SemaphoreHandle_t inifile_Mutex = NULL;
-SemaphoreHandle_t Queue_Mutex = NULL;
-SemaphoreHandle_t QueuePrio_Mutex = NULL;
 
 
 void datasTreatment(void * pvParameters)
@@ -887,8 +878,6 @@ void printCrcStats() {
         uint32_t crcErrorsThisPeriod = crcErrorCount - lastCrcCount;
         
         log_e("📊 Serial Stats:");
-        log_e("   QueuePacket size: %d/%d", QueuePacket->size(), 300);
-        log_e("   PriorityQueue size: %d/%d", PriorityQueuePacket->size(), 30);
         log_e("   🔴 CRC Errors: %d total (%d dernières 30s)", crcErrorCount, crcErrorsThisPeriod);
         
         // Alert si taux d'erreur élevé
@@ -1368,6 +1357,14 @@ void onMqttMessage(char* topic, char* payload, AsyncMqttClientMessageProperties 
     Serial.printf("MQTT: Action trouvée - command=%d endpoint=%d value=%d\n", 
                   actionFound->command, actionFound->endpoint, actionFound->value);
     
+    // Positionnement de volet : la commande par nom ne porte aucune position. Envoyer la valeur
+    // du template (0) fermerait le volet par surprise : on refuse plutot.
+    if (actionFound->command == CMD_COVER_POSITION || actionFound->command == CMD_COVER_POSITION_INVERTED) {
+      Serial.printf("MQTT: '%s' attend une position (0-100) : non pris en charge par cette commande\n",
+                    payloadBuffer);
+      return;
+    }
+
     // Exécuter l'action
     SendAction(actionFound->command, shortAddr, actionFound->endpoint, String(actionFound->value));
     Serial.println("MQTT: Action exécutée!");
@@ -1769,6 +1766,50 @@ bool setupSTAWifi() {
     
 }
 
+/* --- Recuperation des ~64 Ko du provisioning BLE ------------------------------------------
+ * Le BLE ne se charge que si le WiFi rate sa connexion initiale -- ce qui arrive souvent
+ * (raisons 201 NO_AP_FOUND / 203 ASSOC_FAIL observees a chaque demarrage sur certains
+ * reseaux). Ses ~64 Ko de heap INTERNE ne sont ensuite JAMAIS rendus :
+ * esp_bt_controller_mem_release() est volontairement desactive dans dynamic_ble_manager.cpp,
+ * il provoquait des plantages. La box tourne donc toute sa session avec ~86 Ko au lieu de
+ * ~150 Ko, et la moindre page un peu lourde la fait tomber.
+ *
+ * Parade retenue : une fois le WiFi STABLE, redemarrer proprement UNE SEULE FOIS. Au
+ * redemarrage la configuration WiFi est valide, le BLE n'est pas charge, et le heap repart a
+ * ~150 Ko. Aucune API risquee n'est touchee.
+ *
+ * Garde anti-boucle -- indispensable ici : le temoin vit en RTC_NOINIT, qui survit a un reset
+ * logiciel mais contient des donnees aleatoires apres une coupure d'alimentation. Un WiFi qui
+ * echoue a CHAQUE demarrage ne peut donc provoquer qu'un seul redemarrage par mise sous
+ * tension, jamais une boucle.
+ */
+#define BLE_RECLAIM_MAGIC     0xB1E5B007
+#define BLE_RECLAIM_STABLE_MS 30000        // WiFi ininterrompu avant de juger la connexion sure
+
+RTC_NOINIT_ATTR uint32_t bleReclaimGuard;
+
+static void checkBleMemoryReclaim() {
+    static unsigned long wifiStableSince = 0;
+    static bool          done            = false;
+
+    if (done) return;
+    if (!smartWiFi.bleWasUsed()) { done = true; return; }   // BLE jamais charge : rien a faire
+    if (bleReclaimGuard == BLE_RECLAIM_MAGIC) { done = true; return; }  // deja fait ce cycle
+
+    if (!smartWiFi.isConnected()) { wifiStableSince = 0; return; }
+    if (wifiStableSince == 0) { wifiStableSince = millis(); return; }
+    if (millis() - wifiStableSince < BLE_RECLAIM_STABLE_MS) return;
+
+    Serial.printf("[BLE] WiFi stable %lus apres chargement du BLE - redemarrage pour liberer "
+                  "~64 Ko (heap actuel : %u)\n",
+                  BLE_RECLAIM_STABLE_MS / 1000, ESP.getFreeHeap());
+    addDebugLog("Redemarrage: recuperation de la memoire BLE");
+    bleReclaimGuard = BLE_RECLAIM_MAGIC;
+    done = true;
+    delay(300);
+    ESP.restart();
+}
+
 uint32_t prevheap = 0;
 void monitor_heap(void) {
     uint32_t curheap = ESP.getFreeHeap();
@@ -1795,6 +1836,7 @@ void monitor_heap(void) {
     // Timestamps de première détection sous seuil (0 = pas sous seuil)
     static unsigned long tunnelLowSince = 0;
     static unsigned long mqttLowSince = 0;
+    static unsigned long criticalLowSince = 0;
 
     unsigned long now = millis();
     bool cooldownActive = (now - lastWatchdogAction < 60000 && lastWatchdogAction != 0);
@@ -1808,6 +1850,18 @@ void monitor_heap(void) {
     const unsigned long WATCHDOG_GRACE_MS   = 120000;   // 2 min : laisse le demarrage se stabiliser
     const unsigned long TUNNEL_CONFIRM_MS   = 30000;    // heap STABLEMENT bas 30 s avant de couper
     const unsigned long MQTT_CONFIRM_MS     = 10000;
+
+    // Palier 3 : une simple TRANSMISSION HTTP fait plonger le heap interne de plusieurs
+    // dizaines de KB -- lwIP conserve en pbufs (heap interne) tout ce qui n'est pas encore
+    // acquitte par le client. Observe : page Energie de 36 Ko servie en 117 ms avec 62 Ko
+    // libres, puis chute a 37,6 Ko -> REBOOT, alors que la box fonctionnait parfaitement et que
+    // le heap serait remonte des l'acquittement. On exige donc que le heap RESTE critique
+    // quelques secondes : assez long pour laisser passer un pic d'emission, assez court pour
+    // rebooter vite sur une vraie fuite.
+    // Sous HEAP_DESPERATE en revanche les allocations echouent deja : attendre n'apporte rien.
+    const unsigned long CRITICAL_CONFIRM_MS = 3000;
+    const uint32_t HEAP_CRITICAL  = 40000;
+    const uint32_t HEAP_DESPERATE = 25000;
     bool graceOver = (now > WATCHDOG_GRACE_MS);
 
     // --- Gestion des compteurs de durée sous seuil ---
@@ -1825,6 +1879,13 @@ void monitor_heap(void) {
         if (mqttLowSince == 0) mqttLowSince = now;
     } else {
         mqttLowSince = 0;
+    }
+
+    // Reboot de securite : seuil 40KB
+    if (curheap < HEAP_CRITICAL) {
+        if (criticalLowSince == 0) criticalLowSince = now;
+    } else {
+        criticalLowSince = 0;   // le heap est remonte : ce n'etait qu'un pic
     }
 
     // --- Actions de coupure (soumises au cooldown + confirmation temporelle + grace de boot) ---
@@ -1860,9 +1921,18 @@ void monitor_heap(void) {
         }
 
         // Palier 3 : < 40KB — reboot immédiat (pas de confirmation NI de grace, trop critique)
-        if (curheap < 40000) {
-            Serial.printf("[Watchdog] HEAP CRITIQUE %u < 40KB - REBOOT DE SECURITE\n", curheap);
-            addDebugLog("Watchdog: reboot securite (heap < 40KB)");
+        // Palier 3a : effondrement reel -- reboot immediat, sans confirmation.
+        if (curheap < HEAP_DESPERATE) {
+            Serial.printf("[Watchdog] HEAP DESESPERE %u - REBOOT IMMEDIAT\n", curheap);
+            addDebugLog("Watchdog: reboot securite (heap desespere)");
+            delay(500);
+            ESP.restart();
+        }
+        // Palier 3b : critique mais STABLEMENT bas -- un pic d emission ne compte pas.
+        if (criticalLowSince != 0 && (now - criticalLowSince >= CRITICAL_CONFIRM_MS)) {
+            Serial.printf("[Watchdog] HEAP CRITIQUE %u bas depuis %lus - REBOOT DE SECURITE\n",
+                          curheap, (now - criticalLowSince) / 1000);
+            addDebugLog("Watchdog: reboot securite (heap critique stable)");
             delay(500);
             ESP.restart();
         }
@@ -2164,26 +2234,6 @@ void setup(void)
   delay(2000);
   DEBUG_PRINTLN(F("Send data to UART0 in order to activate the RX callback"));
 
-  // creates a mutex object to control access to files
-  Queue_Mutex = xSemaphoreCreateMutex();
-  if (Queue_Mutex == NULL) {
-    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
-    while (true) {
-      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
-      delay(1000);
-    }
-  }
-
-  // creates a mutex object to control access to files
-  QueuePrio_Mutex = xSemaphoreCreateMutex();
-  if (QueuePrio_Mutex == NULL) {
-    DEBUG_PRINTLN(F("Error creating Mutex. Sketch will fail."));
-    while (true) {
-      DEBUG_PRINTLN(F("Mutex error (NULL). Program halted."));
-      delay(1000);
-    }
-  }
-
   // creates a mutex object to control access to LittleFS files
   file_Mutex = xSemaphoreCreateMutex();
   if (file_Mutex == NULL) {
@@ -2301,6 +2351,13 @@ void setup(void)
     String power = device->getValue("0B04","1295");
 
     Serial.println("Device " + String(i) + " shortAddr = " + sa +" power = " + power);
+  }
+
+  // Groupes d'actions : chargement UNIQUE au demarrage, apres les appareils (leurs actions y
+  // font reference). Ils restent ensuite en memoire (PSRAM) ; le fichier n'est relu que sur
+  // redemarrage, et reecrit uniquement lors d'une modification.
+  if (actionGroups.loadFromFile()) {
+    Serial.printf("Groupes d'actions charges : %u\n", (unsigned)actionGroups.size());
   }
 
   
@@ -2600,6 +2657,7 @@ void loop(void)
       mqttAutoReconnect();
 
       monitor_heap();
+      checkBleMemoryReclaim();
   }
 
   /*// Appel OBLIGATOIRE (gère heartbeat + monitoring)

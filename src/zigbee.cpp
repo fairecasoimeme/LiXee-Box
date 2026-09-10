@@ -118,6 +118,12 @@ void SendAction(int command, int ShortAddr, int endpoint, String tmpValue)
       case 250 :
         SendWindowCoveringAction(ShortAddr,endpoint,tmpValue);
       break;
+      case CMD_COVER_POSITION :            // 251 : ouverture 0..100, appareil conforme ZCL
+        SendWindowCoveringPosition(ShortAddr, endpoint, tmpValue.toInt(), false);
+      break;
+      case CMD_COVER_POSITION_INVERTED :   // 252 : idem, appareil qui inverse le sens
+        SendWindowCoveringPosition(ShortAddr, endpoint, tmpValue.toInt(), true);
+      break;
       case 200:  // IR_ACTION_LEARN - Apprentissage ON/OFF
       case 201:  // IR_ACTION_SEND - Envoyer code IR
         SendIRAction(ShortAddr, endpoint, command, tmpValue);

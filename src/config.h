@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.22"
+#define VERSION "v2.23b"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -292,10 +292,6 @@ typedef struct __attribute__((packed)) {
     uint8_t datas[512];
 } Packet;
 
-typedef struct __attribute__((packed)) {
-    uint16_t len;           // uint16_t au lieu de unsigned int
-    uint8_t raw[256];
-} SerialPacket;
 
 typedef struct {
   String section;
@@ -353,6 +349,12 @@ typedef struct {
   int attribute;
   String value;
 } Device;
+
+// Entree "etat radio" de la file deviceList (mise a jour en direct de la page Appareils).
+// Couple cluster/attribut volontairement hors de toute plage ZCL : il ne peut pas entrer en
+// collision avec un vrai attribut, et getDeviceValue le reconnait pour rendre l'icone.
+#define RADIO_STATUS_CLUSTER 0xFFFF
+#define RADIO_STATUS_ATTR    0xFFFF
 
 typedef struct {
   String title;

@@ -36,6 +36,10 @@
 #include "zigbee.h"
 #include "lixee.h"        // invalidateDeviceCache()
 #include "mqtt.h"         // mqttConnectChecked()
+#include "SimpleMeter.h"  // isZLinkyHistoBaseOption()
+#include "actionGroups.h"  // groupes d'actions (boutons page Appareils)
+#include "agIcons.h"       // icones SVG monochromes des groupes d'actions
+#include "windowCovering.h" // positionnement des volets (curseur)
 #include "basic.h"
 #include "thermostat.h"
 #include "presence.h"
@@ -734,6 +738,12 @@ const char HTTP_MENU_NAV[] PROGMEM =
    "  <path d='M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z'/>"
    "</svg>"
    " Règles"
+   "</a>"
+   "<a class='dropdown-item' href='/configActionGroups'>"
+   "<svg style='width:16px;' xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' class='bi bi-lightning-charge' viewBox='0 0 16 16'>"
+   "  <path d='M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09zM4.157 8.5H7a.5.5 0 0 1 .478.647L6.11 13.59l5.732-6.09H9a.5.5 0 0 1-.478-.647L9.89 2.41z'/>"
+   "</svg>"
+   " Groupes d'actions"
    "</a>"
    "<a class='dropdown-item' href='/configHorloge'>"
    "<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='currentColor' style='width:16px;' class='bi bi-clock' viewBox='0 0 16 16'>"
@@ -5123,6 +5133,188 @@ const char HTTP_FOOTER_ASSIST[] PROGMEM = R"(
     </script>
     )";
 
+// Editeur des groupes d'actions (page Config -> Groupes d'actions).
+// Toutes les requetes portent X-Requested-With : checkAuth repond alors 401 plutot qu'une
+// redirection 302 muette, ce qui permet de renvoyer l'utilisateur vers /login si sa session
+// a expire -- au lieu d'un echec silencieux.
+const char HTTP_ACTION_GROUPS_JS[] PROGMEM = R"JS(
+<script>
+var GROUPS=[], EDIT=-1, CUR=null;
+var DEVS=null;   // catalogue des appareils : charge a la premiere ouverture de l'editeur
+// Icones : catalogue AG_THEMES / AG_ICONS charge par /agicons.js (voir agIcons.h).
+// Renvoie le SVG d'une icone du catalogue, ou '' si le nom est inconnu.
+function agSvg(name){
+  var ic=(typeof AG_ICONS!=='undefined')?AG_ICONS[name]:null;
+  return ic?"<svg viewBox='0 0 24 24' aria-hidden='true'><path d='"+ic[2]+"'/></svg>":'';
+}
+// Icone d'un groupe pour l'affichage. Un groupe cree avant le passage aux icones SVG contient
+// encore un emoji : on l'affiche tel quel plutot que de le perdre.
+function agIconHtml(icon){
+  if(!icon) return '';
+  var s=agSvg(icon);
+  return s?"<span class='ag-badge'>"+s+"</span>":"<span>"+esc(icon)+"</span>";
+}
+var HDR={'X-Requested-With':'XMLHttpRequest'};
+function esc(x){return String(x).replace(/[<>&"]/g,function(c){
+  return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c];});}
+function post(url,body,json){
+  var h=Object.assign({},HDR);
+  h['Content-Type']=json?'application/json':'application/x-www-form-urlencoded';
+  return fetch(url,{method:'POST',credentials:'same-origin',headers:h,body:body})
+    .then(function(r){if(r.status===401){location.href='/login';return null;}return r.json();});
+}
+function load(){
+  fetch('/api/actiongroups/list',{credentials:'same-origin',headers:HDR})
+    .then(function(r){if(r.status===401){location.href='/login';return null;}return r.json();})
+    .then(function(d){if(!d)return;GROUPS=d.groups||[];render();});
+}
+function render(){
+  var h='';
+  if(!GROUPS.length){h="<p class='ag-muted'>Aucun groupe pour l'instant.</p>";}
+  GROUPS.forEach(function(g,i){
+    h+="<div class='ag-card'><div class='ag-row'>";
+    h+="<span class='ag-chip' style='background:"+esc(g.color)+"'>"+agIconHtml(g.icon)+esc(g.name)+"</span>";
+    h+="<span class='ag-muted'>"+g.actions.length+" action(s)</span><span style='flex:1'></span>";
+    h+="<button class='btn btn-sm btn-secondary' onclick='testG("+i+")'>Tester</button> ";
+    h+="<button class='btn btn-sm btn-primary' onclick='editG("+i+")'>Modifier</button> ";
+    h+="<button class='btn btn-sm btn-danger' onclick='delG("+i+")'>Supprimer</button>";
+    h+="</div></div>";
+  });
+  document.getElementById('list').innerHTML=h;
+}
+function testG(i){
+  var f=new URLSearchParams();f.append('index',i);
+  post('/api/actiongroups/run',f,false).then(function(d){
+    if(d)alert(d.ok?(d.sent+" action(s) envoyee(s)"):("Echec : "+(d.error||'')));});
+}
+function delG(i){
+  if(!confirm('Supprimer ce groupe ?'))return;
+  var f=new URLSearchParams();f.append('index',i);
+  post('/api/actiongroups/delete',f,false).then(function(){load();});
+}
+// Charge le catalogue des appareils une seule fois, a la premiere ouverture de l'editeur.
+// La liste des groupes s'affiche ainsi immediatement, sans attendre le parsing des templates.
+function ensureDevs(cb){
+  if(DEVS){cb();return;}
+  fetch('/api/actiongroups/devices',{credentials:'same-origin',headers:HDR})
+    .then(function(r){if(r.status===401){location.href='/login';return null;}return r.json();})
+    .then(function(d){if(!d)return;DEVS=d;cb();})
+    .catch(function(){alert('Chargement des appareils impossible');});
+}
+function newGroup(){EDIT=-1;ensureDevs(function(){showEditor({name:'',icon:'',color:'#0d6efd',enabled:true,actions:[]});});}
+function editG(i){EDIT=i;ensureDevs(function(){showEditor(JSON.parse(JSON.stringify(GROUPS[i])));});}
+function showEditor(g){
+  CUR=g;
+  var e=document.getElementById('editor');e.style.display='block';
+  var h="<div class='ag-row mb-3'>";
+  // L'icone se choisit via le bouton place a cote du nom, qui ouvre la popup de selection.
+  h+="<div><label class='ag-muted'>Nom</label><div class='ag-namegrp'>"
+    +"<button type='button' id='iconBtn' class='ag-iconbtn' onclick='openIconPicker()'></button>"
+    +"<input id='gn' class='form-control' value='"+esc(g.name)+"'></div></div>";
+  h+="<div><label class='ag-muted'>Couleur</label><br><input id='gc' type='color' class='form-control' style='width:70px' value='"+esc(g.color||'#0d6efd')+"'></div>";
+  h+="</div><div id='acts'></div>";
+  h+="<button class='btn btn-sm btn-secondary' onclick='addAct()'>Ajouter une action</button> ";
+  h+="<button class='btn btn-success' onclick='saveG()'>Enregistrer</button> ";
+  h+="<button class='btn btn-outline-secondary' onclick='hideEditor()'>Annuler</button>";
+  e.innerHTML=h;updateIconBtn();renderActs();
+}
+// Bouton d'icone : affiche l'icone courante, ou un "+" en pointilles s'il n'y en a pas.
+function updateIconBtn(){
+  var b=document.getElementById('iconBtn'); if(!b) return;
+  var s=agSvg(CUR.icon);
+  if(s){ b.innerHTML=s; b.classList.remove('empty'); b.title=AG_ICONS[CUR.icon][1]+' (changer)'; }
+  else if(CUR.icon){ b.innerHTML=esc(CUR.icon); b.classList.remove('empty'); b.title='Changer l’icône'; }
+  else { b.innerHTML='+'; b.classList.add('empty'); b.title='Choisir une icône'; }
+  b.setAttribute('aria-label', b.title);
+}
+function openIconPicker(){
+  if(typeof AG_ICONS==='undefined'){ alert('Catalogue d’icônes indisponible'); return; }
+  var byTheme={};
+  Object.keys(AG_ICONS).forEach(function(n){ var t=AG_ICONS[n][0]; (byTheme[t]=byTheme[t]||[]).push(n); });
+  var h="<div class='agm' role='dialog' aria-modal='true' aria-label='Choisir une icône'>"
+    +"<div class='agm-head'><span>Choisir une icône</span>"
+    +"<button type='button' class='btn-close' onclick='closeIconPicker()' aria-label='Fermer'></button></div>"
+    +"<div class='agm-body'>";
+  AG_THEMES.forEach(function(label,t){
+    if(!byTheme[t]) return;
+    h+="<div class='agm-cat'>"+esc(label)+"</div><div class='agm-grid'>";
+    byTheme[t].forEach(function(n){
+      var l=esc(AG_ICONS[n][1]);
+      h+="<button type='button' class='agm-ic"+(n===CUR.icon?' sel':'')+"' data-n='"+n+"' title='"+l+"' aria-label='"+l+"' onclick='pickIcon(this.dataset.n)'>"+agSvg(n)+"</button>";
+    });
+    h+="</div>";
+  });
+  h+="<div class='agm-cat'>Aucune</div><div class='agm-grid'>"
+    +"<button type='button' class='agm-ic"+(CUR.icon?'':' sel')+"' data-n='' title='Aucune icône' aria-label='Aucune icône' onclick='pickIcon(this.dataset.n)'>∅</button></div>";
+  h+="</div></div>";
+  var bk=document.getElementById('iconModal');
+  bk.innerHTML=h; bk.hidden=false;
+  document.addEventListener('keydown',escIconPicker);
+  var sel=bk.querySelector('.agm-ic.sel'); if(sel) sel.focus();
+}
+function escIconPicker(e){ if(e.key==='Escape') closeIconPicker(); }
+function closeIconPicker(){
+  var bk=document.getElementById('iconModal');
+  bk.hidden=true; bk.innerHTML='';
+  document.removeEventListener('keydown',escIconPicker);
+  var b=document.getElementById('iconBtn'); if(b) b.focus();
+}
+function pickIcon(n){ CUR.icon=n; updateIconBtn(); closeIconPicker(); }
+function hideEditor(){document.getElementById('editor').style.display='none';}
+function renderActs(){
+  var h='';
+  CUR.actions.forEach(function(a,j){
+    h+="<div class='ag-act'><div class='ag-row'>";
+    h+="<select class='form-control' style='width:230px' onchange='setDev("+j+",this.value)'>";
+    h+="<option value=''>-- appareil --</option>";
+    DEVS.forEach(function(d){
+      h+="<option value='"+d.i+"'"+(d.i===a.IEEE?' selected':'')+">"+esc(d.n)+"</option>";});
+    h+="</select>";
+    h+="<select class='form-control' style='width:230px' onchange='setAct("+j+",this.value)'>";
+    h+="<option value=''>-- action --</option>";
+    var dd=DEVS.filter(function(d){return d.i===a.IEEE;})[0];
+    if(dd){dd.a.forEach(function(x){
+      h+="<option value='"+esc(x.n)+"'"+(x.n===a.actionName?' selected':'')+">"+esc(x.n)+"</option>";});}
+    h+="</select>";
+    h+="<button class='btn btn-sm btn-danger' onclick='rmAct("+j+")'>Retirer</button>";
+    h+="</div></div>";
+  });
+  if(!CUR.actions.length){h="<p class='ag-muted'>Aucune action. Cliquez sur \"Ajouter une action\".</p>";}
+  document.getElementById('acts').innerHTML=h;
+}
+function addAct(){
+  if(CUR.actions.length>=10){alert('10 actions maximum par groupe');return;}
+  CUR.actions.push({type:'device',IEEE:'',actionName:'',endpoint:1,command:-1,value:''});
+  renderActs();
+}
+function rmAct(j){CUR.actions.splice(j,1);renderActs();}
+function setDev(j,v){
+  CUR.actions[j].IEEE=v;CUR.actions[j].actionName='';
+  var d=DEVS.filter(function(x){return x.i===v;})[0];
+  if(d&&d.a.length)CUR.actions[j].endpoint=d.a[0].e;
+  renderActs();
+}
+function setAct(j,v){
+  CUR.actions[j].actionName=v;
+  var d=DEVS.filter(function(x){return x.i===CUR.actions[j].IEEE;})[0];
+  if(d){var a=d.a.filter(function(x){return x.n===v;})[0];if(a)CUR.actions[j].endpoint=a.e;}
+}
+function saveG(){
+  CUR.name=document.getElementById('gn').value.trim();
+  CUR.color=document.getElementById('gc').value;
+  if(!CUR.name){alert('Le nom est obligatoire');return;}
+  if(CUR.actions.filter(function(a){return !a.IEEE||!a.actionName;}).length){
+    alert('Chaque action doit avoir un appareil et une action');return;}
+  var body=JSON.parse(JSON.stringify(CUR));
+  if(EDIT>=0)body.index=EDIT;
+  post('/api/actiongroups/save',JSON.stringify(body),true).then(function(d){
+    if(!d)return;
+    if(d.ok){hideEditor();load();}else alert('Echec : '+(d.error||''));});
+}
+load();
+</script>
+)JS";
+
 const char HTTP_ASSIST_DEVICE[] PROGMEM = R"(
 
 <div class="container py-5">
@@ -5422,6 +5614,15 @@ const char HTTP_NOTIF_ALERT[] PROGMEM = R"(
     "<h5>Firmware Source & Issues</h5>"
     "Please go here :</br>"
     "<a href=\"https://github.com/fairecasoimeme/LiXee-Gateway\" target='_blank'>Sources</a>";*/
+
+// Libelle d'un index tarifaire ZLinky pour l'affichage.
+// En Historique option BASE il n'existe aucun index tarifaire : l'index total est range dans
+// l'emplacement 256 (cf. SimpleMeter.cpp). Le nom du template pour 256
+// ("HC / EJPHN / BBRHCJB / EASF01") serait alors trompeur -- on affiche "BASE".
+String zlinkyIndexName(int attrId) {
+  if (attrId == 256 && isZLinkyHistoBaseOption()) return String("BASE");
+  return GetNameStatus(97, "0702", attrId, "ZLinky_TIC");
+}
 
 String footer()
 {
@@ -6358,7 +6559,7 @@ String createPowerGraph(String IEEE)
       }
       if (section[cntsection]!="1") // on exclut EAIT
       {
-        JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{\"name\":\"" + GetNameStatus(97, "0702", String(section[cntsection]).toInt(), "ZLinky_TIC") + "\",\"coeff\":1,\"price\":" + getTarif(String(section[cntsection]).toInt(),"energy") +",\"abo\":"+ConfigGeneral.tarifAbo+",\"taxe\":"+ConfigGeneral.tarifCSPE+",\"unit\":\"Wh\"}";
+        JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{\"name\":\"" + zlinkyIndexName(String(section[cntsection]).toInt()) + "\",\"coeff\":1,\"price\":" + getTarif(String(section[cntsection]).toInt(),"energy") +",\"abo\":"+ConfigGeneral.tarifAbo+",\"taxe\":"+ConfigGeneral.tarifCSPE+",\"unit\":\"Wh\"}";
       } 
       result += sep + String(section[cntsection]);
       i++;
@@ -6468,7 +6669,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
       {
         int sectionInt = String(section[cntsection]).toInt();
         // Appel unique au cache — réutilisé pour JsonEuros et labels
-        String sectionName = GetNameStatus(97, "0702", sectionInt, "ZLinky_TIC");
+        String sectionName = zlinkyIndexName(sectionInt);
         JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{";
         JsonEuros += "\"name\":\"" + sectionName + "\",";
         JsonEuros += "\"coeff\":1,";
@@ -6792,6 +6993,48 @@ static void sendPsramBody(AsyncWebServerRequest *request, const char *contentTyp
     request->send(r);
 }
 
+/* --- Envoi de JSON sans jamais passer par le heap interne ---------------------------------
+ * Deux pieges evites ici :
+ *   - beginResponseStream(type, taille) PRE-ALLOUE son buffer en heap INTERNE ;
+ *   - request->send(code, type, String) RECOPIE la chaine dans un AsyncBasicResponse,
+ *     soit deux fois sa taille en heap interne.
+ * Sur un historique de puissance charge (9 appareils) cela reclamait ~50 Ko d'un seul bloc.
+ * Deux symptomes en decoulaient, longtemps pris pour des bugs distincts :
+ *   - l'allocation echoue    -> reponse vide, le graphe reste un canvas NOIR ;
+ *   - elle passe de justesse -> heap 60 876 -> 4 328 octets, reboot du watchdog.
+ * On serialise donc en PSRAM et on emet en chunked, exactement comme les pages HTML.
+ */
+static void sendBytesFromPsram(AsyncWebServerRequest *request, const char *contentType,
+                               const char *src, size_t n) {
+    std::shared_ptr<char> buf((char *)ps_malloc(n + 1), free);
+    if (!buf) { request->send(500, contentType, "{}"); return; }
+    memcpy(buf.get(), src, n);
+    buf.get()[n] = 0;
+    request->send(request->beginChunkedResponse(contentType,
+        [buf, n](uint8_t *dst, size_t maxLen, size_t index) -> size_t {
+            if (index >= n) return 0;
+            size_t c = n - index;
+            if (c > maxLen) c = maxLen;
+            memcpy(dst, buf.get() + index, c);
+            return c;
+        }));
+}
+
+static void sendJsonFromPsram(AsyncWebServerRequest *request, JsonDocument &doc) {
+    size_t n = measureJson(doc);
+    std::shared_ptr<char> buf((char *)ps_malloc(n + 1), free);
+    if (!buf) { request->send(500, "application/json", "{}"); return; }
+    serializeJson(doc, buf.get(), n + 1);
+    request->send(request->beginChunkedResponse("application/json",
+        [buf, n](uint8_t *dst, size_t maxLen, size_t index) -> size_t {
+            if (index >= n) return 0;
+            size_t c = n - index;
+            if (c > maxLen) c = maxLen;
+            memcpy(dst, buf.get() + index, c);
+            return c;
+        }));
+}
+
 class PsramResponse {
 public:
     explicit PsramResponse(size_t reserve = 65536)
@@ -7096,6 +7339,83 @@ void handleRoot(AsyncWebServerRequest *request)
 
 }
 
+/* --- Curseur de position de volet ---------------------------------------------------------
+ * Une action de template de commande 251 / 252 (voir windowCovering.h) est rendue en curseur
+ * 0-100 % plutot qu'en bouton, sur les pages Appareils, fiche appareil et tableau de bord.
+ * HTML autonome (styles et gestionnaires en ligne) : aucune CSS ni script a ajouter aux pages,
+ * il ne depend que de ZigbeeAction(), deja presente partout ou des actions sont affichees.
+ * La commande n'est envoyee qu'au RELACHEMENT (onchange) : l'envoyer a chaque pas du glissement
+ * (oninput) inonderait la file Zigbee de positionnements successifs.
+ */
+static inline bool isCoverPositionCmd(int cmd) {
+  return cmd == CMD_COVER_POSITION || cmd == CMD_COVER_POSITION_INVERTED;
+}
+
+String coverSliderHtml(DeviceData *device, int shortAddr, const char *name, int cmd, int endpoint) {
+  // Position connue : attribut ZCL 0x0102/0x0008 (stocke en hexa), qui mesure la FERMETURE.
+  String raw = device->getValue("0102", "8");
+  bool known = raw.length() > 0;
+  long lift = known ? strtol(raw.c_str(), nullptr, 16) : 0;
+  if (lift < 0) lift = 0;
+  if (lift > 100) lift = 100;
+  int open = (cmd == CMD_COVER_POSITION_INVERTED) ? (int)lift : (int)(100 - lift);
+
+  String label = name;
+  label.replace("'", "’");                     // emis dans des attributs entre apostrophes
+
+  String h;
+  h.reserve(560);
+  h += F("<div class='cover-slider' style='display:flex;align-items:center;gap:10px;width:100%;'>"
+         "<span style='font-size:13px;color:#6c757d;font-weight:500;'>");
+  h += label;
+  h += F("</span><input type='range' class='cs-range' min='0' max='100' step='1' value='");
+  h += String(known ? open : 0);
+  h += F("' data-cmd='");
+  h += String(cmd);
+  h += F("' data-pos='");                      // id de l'attribut current_position de la carte
+  h += String(shortAddr);
+  h += F("_258_8' aria-label='");
+  h += label;
+  // padding/background/border remis a zero : style.css applique a TOUS les <input>
+  // "padding:0 15px", ce qui empechait la pastille d'atteindre les extremites (a 100 % elle
+  // s'arretait ~20 px avant le bout, alors que la barre continuait jusqu'au bord).
+  h += F("' style='flex:1;min-width:0;margin:0;padding:0;border:0;background:transparent;"
+         "accent-color:" LIXEE_BLUE ";' "
+         "oninput=\"this.nextElementSibling.textContent=this.value+' %'\" "
+         "onchange=\"this.nextElementSibling.textContent=this.value+' %';ZigbeeAction(");
+  h += String(shortAddr);
+  h += ',';
+  h += String(cmd);
+  h += ',';
+  h += String(endpoint);
+  h += F(",this.value)\"><span class='cs-val' style='font-family:Courier New,monospace;"
+         "font-size:13px;font-weight:600;min-width:44px;text-align:right;'>");
+  h += known ? (String(open) + " %") : String("–");
+  h += F("</span></div>");
+  return h;
+}
+
+// Page Appareils (mise a jour en direct) : les curseurs suivent la position reelle. Quand
+// l'attribut current_position de la carte est rafraichi, on recale le curseur -- sauf pendant
+// que l'utilisateur le manipule, avec un petit delai apres le relachement pour qu'il ne saute
+// pas en arriere avant que le volet ne commence a bouger.
+const char HTTP_COVER_SYNC_JS[] PROGMEM = R"JS(
+<script>
+document.querySelectorAll('.cs-range').forEach(function(r){
+  var src=document.getElementById(r.dataset.pos); if(!src) return;
+  var drag=false;
+  r.addEventListener('pointerdown',function(){drag=true;});
+  r.addEventListener('pointerup',function(){setTimeout(function(){drag=false;},1500);});
+  new MutationObserver(function(){
+    if(drag) return;
+    var p=parseInt(src.textContent,10); if(isNaN(p)) return;
+    var v=(r.dataset.cmd==='252')?p:100-p;
+    r.value=v; r.nextElementSibling.textContent=v+' %';
+  }).observe(src,{childList:true,characterData:true,subtree:true});
+});
+</script>
+)JS";
+
 void handleDashboard(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
@@ -7189,6 +7509,11 @@ void handleDashboard(AsyncWebServerRequest *request)
         if (t->actions[i].visible)
         {
           exist++;
+          if (isCoverPositionCmd(t->actions[i].command)) {   // curseur plutot que bouton
+            response->print(coverSliderHtml(device, ShortAddr, t->actions[i].name,
+                                            t->actions[i].command, t->actions[i].endpoint));
+            continue;
+          }
           response->printf("<button onclick=\"ZigbeeAction(%d,%d,%d,%d",
             ShortAddr, t->actions[i].command, t->actions[i].endpoint, t->actions[i].value);
           if (t->actions[i].command == 400) {
@@ -8811,6 +9136,76 @@ $(document).ready(function() {
 </script>
 )rawliteral";
 
+/* --- Etat radio d'un appareil Zigbee (pages Appareils et Reseau -> Zigbee) ------------------------------
+ * Le statut est celui de la derniere tentative de livraison : 0x8702 (echec) y inscrit le
+ * code d'erreur, et il repasse a 00 des que l'appareil se manifeste (0x8002 / 0x8102) ou
+ * accuse reception d'une commande (0x8011).
+ * Volontairement discret : RIEN n'est affiche quand tout va bien. Seul un appareil en
+ * difficulte recoit une icone, en bleu LiXee, dont l'infobulle donne la cause et le dernier
+ * contact -- utile pour un capteur sur pile, qui peut rater une commande en dormant sans
+ * etre en panne, et qui redeviendra "OK" a son prochain envoi.
+ * Icones Material Design (Pictogrammers, Apache 2.0), meme jeu que les groupes d'actions.
+ */
+static const char RADIO_ICON_NO_ACK[]   = "M18,3V16.18L21,19.18V3H18M4.28,5L3,6.27L10.73,14H8V21H11V14.27L13,16.27V21H16V19.27L19.73,23L21,21.72L4.28,5M13,9V11.18L16,14.18V9H13M3,18V21H6V18H3Z";   // signal-off
+static const char RADIO_ICON_NO_ROUTE[] = "M4,1C2.89,1 2,1.89 2,3V7C2,8.11 2.89,9 4,9H1V11H13V9H10C11.11,9 12,8.11 12,7V3C12,1.89 11.11,1 10,1H4M4,3H10V7H4V3M14,13C12.89,13 12,13.89 12,15V19C12,20.11 12.89,21 14,21H11V23H23V21H20C21.11,21 22,20.11 22,19V15C22,13.89 21.11,13 20,13H14M3.88,13.46L2.46,14.88L4.59,17L2.46,19.12L3.88,20.54L6,18.41L8.12,20.54L9.54,19.12L7.41,17L9.54,14.88L8.12,13.46L6,15.59L3.88,13.46M14,15H20V19H14V15Z";   // lan-disconnect
+static const char RADIO_ICON_ERROR[]    = "M11,15H13V17H11V15M11,7H13V13H11V7M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 0,1 4,12A8,8 0 0,1 12,4A8,8 0 0,1 20,12A8,8 0 0,1 12,20Z";   // alert-circle-outline
+
+template <typename R>
+static void printRadioStatus(R *response, DeviceData *device) {
+  const String &st = device->getInfo().Status;
+  if (st.length() == 0) return;                   // jamais eu de tentative : rien a signaler
+  long code = strtol(st.c_str(), nullptr, 16);
+  if (code == 0) return;                          // 00 : tout va bien, aucune icone
+
+  const char *path, *label;
+  if (code == 0xE9) {         // IEEE 802.15.4 NO_ACK
+    path = RADIO_ICON_NO_ACK;   label = "Pas d’accusé de réception : appareil éteint, hors de portée ou en veille";
+  } else if (code == 0xD4) {  // pile NXP : destination injoignable
+    path = RADIO_ICON_NO_ROUTE; label = "Appareil injoignable, souvent dû à une route cassée";
+  } else {
+    path = RADIO_ICON_ERROR;    label = "Échec de transmission radio";
+  }
+
+  // Libelles sans apostrophe droite (U+2019 a la place) : ils sont emis dans des attributs
+  // entre apostrophes.
+  char tip[220];
+  const String &seen = device->getInfo().lastSeen;
+  if (seen.length()) {
+    snprintf(tip, sizeof(tip), "%s (code %02lX) — dernier contact : %s", label, code, seen.c_str());
+  } else {
+    snprintf(tip, sizeof(tip), "%s (code %02lX)", label, code);
+  }
+  response->print(F("<span class='radio-st' role='img' title='"));
+  response->print(tip);
+  response->print(F("' aria-label='"));
+  response->print(tip);
+  response->print(F("'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='"));
+  response->print(path);
+  response->print(F("'/></svg></span>"));
+}
+
+// Adaptateur pour rendre l'icone dans une String (reponse de getDeviceValue).
+struct RadioStringSink {
+  String &s;
+  void print(const char *x)                { s += x; }
+  void print(const __FlashStringHelper *x) { s += x; }
+};
+
+// HTML de l'etat radio d'un appareil designe par son adresse courte, vide s'il est joignable.
+// Uniquement des apostrophes et aucun ';' : il transite tel quel dans la reponse de
+// getDeviceValue, faite de chaines entre guillemets "id;contenu".
+static String radioStatusHtml(int shortAddr) {
+  String out;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getInfo().shortAddr.toInt() == shortAddr) {
+      RadioStringSink sink{out};
+      printRadioStatus(&sink, devices[i]);
+      break;
+    }
+  }
+  return out;
+}
+
 void handleStatusDevices(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
@@ -8840,6 +9235,14 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     ".attr-value{font-family:'Courier New',monospace;font-size:14px;font-weight:600;color:#212529}"
     ".attr-unit{color:#adb5bd;font-size:12px;margin-left:4px}"
     ".actions-bar{display:flex;flex-wrap:wrap;gap:8px;padding:12px 18px;background:#f8f9fa;border-top:1px solid #e9ecef}"
+    ".ag-btn{border:none;color:#fff;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 6px rgba(0,0,0,.12);transition:transform .15s,filter .15s}"
+    ".ag-btn:hover{filter:brightness(1.08);transform:translateY(-1px)}"
+    ".ag-btn:disabled{opacity:.6;cursor:default;transform:none}"
+    ".ag-btn.ok{background:#198754!important}"
+    ".ag-btn.ko{background:#dc3545!important}"
+    ".ag-ico{font-size:16px;line-height:1}"
+    ".ag-badge{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;background:#fff;flex-shrink:0}"
+    ".ag-badge svg{width:18px;height:18px;fill:" LIXEE_BLUE "}"
     ".btn-action{background:#0d6efd;border:none;color:#fff;padding:7px 14px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;transition:background 0.2s}"
     ".btn-action:hover{background:#0b5ed7}"
     ".btn-action:active{background:#0a58ca}"
@@ -8864,6 +9267,10 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     // pour qu'ils pesent optiquement pareil.
     ".radio-tag .ic-lora{width:8px!important;height:14px!important}"
     ".radio-tag .ic-zb{width:13px!important;height:13px!important}"
+    ".radio-live{display:inline-flex;align-items:center;margin-left:6px;border-radius:4px}"
+    ".radio-live:empty{display:none}"
+    ".card-header-custom .radio-st{display:inline-flex;cursor:help}"
+    ".card-header-custom .radio-st svg{width:18px;height:18px;margin:0!important;fill:" LIXEE_BLUE "}"
   "</style>"));
 
   // Sprite : les traces sont declares UNE fois par page puis reference par <use> sur chaque
@@ -8877,6 +9284,43 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   streamSection(response, HTTP_MENU);
 
   response->print(F("<div class='container py-4'>"));
+
+  // ---- Barre des groupes d'actions, en PREMIERE ligne ----
+  // Rendue cote serveur (et non en AJAX) : les boutons sont visibles des le premier rendu,
+  // sans attendre une requete supplementaire. Masquee s'il n'existe aucun groupe.
+  if (actionGroups.size() > 0) {
+    response->print(F("<div class='row mb-4'><div class='col-12'>"
+      "<div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;'>"));
+    for (size_t gi = 0; gi < actionGroups.size(); gi++) {
+      const ActionGroup* g = actionGroups.get(gi);
+      if (!g || !g->enabled) continue;
+      String color = String(g->color.c_str());
+      if (color.length() == 0) color = "#0d6efd";
+      response->printf(
+        "<button class='ag-btn' id='ag%u' data-idx='%u' onclick='runActionGroup(%u)' "
+        "style='background:%s;'>", (unsigned)gi, (unsigned)gi, (unsigned)gi, color.c_str());
+      if (g->icon.size() > 0) {
+        const AgIcon *ic = agIconFind(g->icon.c_str());
+        if (ic) {
+          // Icone monochrome : trace SVG bleu LiXee dans un badge blanc, lisible quelle que
+          // soit la couleur de fond choisie pour le bouton.
+          response->print(F("<span class='ag-badge'><svg viewBox='0 0 24 24' aria-hidden='true'><path d='"));
+          response->print(ic->path);
+          response->print(F("'/></svg></span>"));
+        } else {
+          // Groupe cree avant le passage aux icones SVG : le champ contient un emoji.
+          response->print(F("<span class='ag-ico'>"));
+          response->print(g->icon.c_str());
+          response->print(F("</span>"));
+        }
+      }
+      response->print(F("<span class='ag-lbl'>"));
+      response->print(g->name.c_str());
+      response->print(F("</span></button>"));
+    }
+    response->print(F("</div></div></div>"));
+  }
+
   response->print(F("<h4 style='color:#212529;font-weight:600;margin-bottom:20px;'>Mesures des appareils</h4>"));
   response->print(F("<div class='row g-4' id='masonry-grid'>"));
 
@@ -8922,6 +9366,12 @@ void handleStatusDevices(AsyncWebServerRequest *request)
     } else {
       response->print(F("<span class='radio-tag' title='Recu par Zigbee'>"
         "<svg class='ic-zb'><use href='#ic-zb'/></svg>Zigbee</span>"));
+      // Etat radio : conteneur TOUJOURS present (vide, donc masque, si tout va bien) afin que
+      // la mise a jour en direct puisse faire apparaitre ou disparaitre l'icone sans recharger.
+      response->printf("<span class='radio-live' id='%d_%d_%d'>",
+                       device->getInfo().shortAddr.toInt(), RADIO_STATUS_CLUSTER, RADIO_STATUS_ATTR);
+      printRadioStatus(response, device);
+      response->print(F("</span>"));
     }
     response->print(F("</a></div>"));
 
@@ -9008,6 +9458,12 @@ void handleStatusDevices(AsyncWebServerRequest *request)
         for (int i = 0; i < t->ActionSize(); i++)
         {
           esp_task_wdt_reset();
+          if (isCoverPositionCmd(t->actions[i].command)) {   // curseur plutot que bouton
+            response->print(coverSliderHtml(device, device->getInfo().shortAddr.toInt(),
+                                            t->actions[i].name, t->actions[i].command,
+                                            t->actions[i].endpoint));
+            continue;
+          }
           response->printf("<button onclick=\"ZigbeeAction(%s,%d,%d,%d",
             device->getInfo().shortAddr.c_str(),
             t->actions[i].command,
@@ -9040,6 +9496,35 @@ void handleStatusDevices(AsyncWebServerRequest *request)
   }else{
     response->print(F("<div align='center' style='height:100px;font-size:28px;font-weight:bold;'>No devices yet</div> <br>"));
   }
+
+  // Declenchement d'un groupe. On envoie le jeton CSRF comme les autres POST, et
+  // X-Requested-With pour que checkAuth reponde 401 (et non une redirection 302 muette)
+  // si la session a expire -- sinon l'echec serait invisible pour l'utilisateur.
+  if (actionGroups.size() > 0) {
+    response->print(F("<script>"
+      "function runActionGroup(i){"
+        "var b=document.getElementById('ag'+i);if(!b||b.disabled)return;"
+        "var lbl=b.querySelector('.ag-lbl');var old=lbl.textContent;"
+        "b.disabled=true;lbl.textContent='...';"
+        "var f=new URLSearchParams();f.append('index',i);"
+        "fetch('/api/actiongroups/run',{method:'POST',credentials:'same-origin',"
+          "headers:{'Content-Type':'application/x-www-form-urlencoded',"
+                   "'X-Requested-With':'XMLHttpRequest'},body:f})"
+        ".then(function(r){if(r.status===401){window.location.href='/login';return null;}return r.json();})"
+        ".then(function(d){"
+          "if(!d)return;"
+          "b.classList.add(d.ok?'ok':'ko');"
+          "lbl.textContent=d.ok?('\u2713 '+d.sent):'\u2717';"
+          "setTimeout(function(){b.classList.remove('ok','ko');lbl.textContent=old;b.disabled=false;},1800);"
+        "}).catch(function(){"
+          "b.classList.add('ko');lbl.textContent='\u2717';"
+          "setTimeout(function(){b.classList.remove('ko');lbl.textContent=old;b.disabled=false;},1800);"
+        "});"
+      "}"
+      "</script>"));
+  }
+
+  response->print(FPSTR(HTTP_COVER_SYNC_JS));   // suivi en direct des curseurs de volet
   response->print(footer());
   response->print(F("</html>"));
 
@@ -16495,6 +16980,10 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     ".card-header-cfg a{color:#222;text-decoration:none;font-weight:600;font-size:14px;display:flex;align-items:center}"
     ".card-header-cfg a:hover{color:#6c757d;opacity:0.95}"
     ".card-header-cfg svg{flex-shrink:0;margin-right:8px;width:16px;height:16px}"
+    ".card-header-cfg{display:flex;align-items:center;gap:8px}"
+    ".card-header-cfg a{flex:1;min-width:0}"
+    ".card-header-cfg .radio-st{display:inline-flex;flex-shrink:0;cursor:help}"
+    ".card-header-cfg .radio-st svg{width:20px;height:20px;margin:0;fill:" LIXEE_BLUE "}"
     ".config-card .card-body{border-top:none}"
     ".config-card .card-body table td{padding:6px 4px;border:none}"
     ".config-card .btn-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;padding-top:12px;border-top:1px solid #e9ecef}"
@@ -16576,7 +17065,9 @@ void handleConfigDevices(AsyncWebServerRequest *request)
     }
 
     response->print(device->getInfo().alias.length() > 0 ? device->getInfo().alias : device->getDeviceID());
-    response->print(F("</a></div><div class='card-body' style='padding:12px 16px;'>"
+    response->print(F("</a>"));
+    printRadioStatus(response, device);   // icone discrete, uniquement en cas de probleme
+    response->print(F("</div><div class='card-body' style='padding:12px 16px;'>"
       "<table style='width:100%;font-size:12px;'><tr>"
       "<td style='color:#6c757d;font-weight:500;'>Manufacturer</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
     response->print(device->getInfo().manufacturer);
@@ -17234,6 +17725,11 @@ void handleConfigDevice(AsyncWebServerRequest *request)
     result += F("<div style='display:flex;flex-wrap:wrap;gap:5px;'>");
     
     for (int i = 0; i < t->ActionSize(); i++) {
+      if (isCoverPositionCmd(t->actions[i].command)) {   // curseur plutot que bouton
+        result += coverSliderHtml(device, shortAddr, t->actions[i].name,
+                                  t->actions[i].command, t->actions[i].endpoint);
+        continue;
+      }
       result += F("<button onclick=\"ZigbeeAction(");
       result += String(shortAddr);
       result += F(",");
@@ -17354,6 +17850,13 @@ void handleZigbeeAction(AsyncWebServerRequest *request)
       mfrCode = (uint16_t)request->arg(5).toInt();
   }
   
+  // Trace de diagnostic : chaque action lancee depuis l'interface (bouton, curseur). Permet de
+  // reperer une commande recue plusieurs fois -- double requete du navigateur, relance d'une
+  // requete par le tunnel (aucune detection de doublon par reqId), etc.
+  bool viaTunnel = (request->client()->remoteIP() == IPAddress(127, 0, 0, 1));
+  Serial.printf("[Action] web%s : cmd=%d adr=%04X ep=%d val=%s\n", viaTunnel ? " (tunnel)" : "",
+                command, ShortAddr, endpoint, tmpValue.c_str());
+
   // Appeler la version étendue si cluster est spécifié
   if (cluster != 0) {
       SendActionEx(command, ShortAddr, endpoint, cluster, mfrCode, tmpValue);
@@ -17934,12 +18437,8 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
       // plein) -- ce qui serait bien pire que la String qu'on cherche a supprimer.
       SpiRamJsonDocument *doc = buildPowerChartDoc(device->powerHistory, now);
       if (!doc) { request->send(200, F("application/json"), F("{}")); break; }
-      size_t jsonSize = measureJson(*doc);
-      AsyncResponseStream *response =
-          request->beginResponseStream(F("application/json"), jsonSize + 64);
-      serializeJson(*doc, *response);
+      sendJsonFromPsram(request, *doc);
       delete doc;
-      request->send(response);
 #else
       request->send(200, F("application/json"), toJson(device->powerHistory,now));
 #endif
@@ -18468,7 +18967,9 @@ void handleLoadEnergyChart(AsyncWebServerRequest* request) {
   String result = buildEnergyChartJson(pd, time);
   esp_task_wdt_reset();
 
-  request->send(200, "application/json", result);
+  // Copie vers la PSRAM : request->send(..., String) recopierait la chaine en heap interne,
+  // soit le double du JSON -- ce que le heap ne supporte plus avec beaucoup d'appareils.
+  sendBytesFromPsram(request, "application/json", result.c_str(), result.length());
 }
 
 // ============================================================
@@ -18634,7 +19135,7 @@ void handleExportEnergyChart(AsyncWebServerRequest* request) {
   for (int i = 0; i < arrayLength; i++) {
     if (section[i] == "0" || section[i] == "1") continue;
     int sId = section[i].toInt();
-    String nm = GetNameStatus(97, "0702", sId, "ZLinky_TIC");
+    String nm = zlinkyIndexName(sId);
     if (nm == "") nm = section[i];
     cols.push_back({section[i], nm + " (Wh)"});
   }
@@ -18874,7 +19375,12 @@ void handleGetDeviceValue(AsyncWebServerRequest *request)
       if (i>0){result+=",";}
       result += "\""+String(d.shortAddr)+"_"+String(d.cluster)+"_"+String(d.attribute);
       result += F(";");
-      result += d.value+"\"";
+      // Etat radio : on renvoie directement le HTML de l'icone (vide si l'appareil est de nouveau
+      // joignable). Le JS l'injecte tel quel dans le conteneur de la carte.
+      if (d.cluster == RADIO_STATUS_CLUSTER && d.attribute == RADIO_STATUS_ATTR)
+        result += radioStatusHtml(d.shortAddr) + "\"";
+      else
+        result += d.value+"\"";
       i++;
     }
     result +="]";
@@ -20978,6 +21484,211 @@ void handleDeleteThermostat(AsyncWebServerRequest *request) {
   sendThermoRedirect(request, "configThermostats");
 }
 
+
+/* ===================== Groupes d'actions ===================== */
+
+// Page de configuration (Config -> Groupes d'actions) : creation, edition, test, suppression.
+void handleConfigActionGroups(AsyncWebServerRequest *request) {
+  unsigned long t0 = millis();
+  if (!checkHeapForPage(request)) return;
+
+  PsramResponse *response = new PsramResponse(64000);
+  response->print(F("<!DOCTYPE html><html>"));
+  response->print(FPSTR(HTTP_HEADER));
+  response->print(F("<style>"
+    ".ag-card{background:#fff;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,.08);padding:16px;margin-bottom:14px}"
+    ".ag-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}"
+    ".ag-chip{color:#fff;padding:8px 14px;border-radius:8px;font-weight:600}"
+    ".ag-act{background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;padding:10px;margin-bottom:8px}"
+    ".ag-muted{color:#6c757d;font-size:13px}"
+    ".ag-chip{display:inline-flex;align-items:center;gap:8px}"
+    ".ag-badge{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;background:#fff;flex-shrink:0}"
+    ".ag-badge svg{width:17px;height:17px;fill:" LIXEE_BLUE "}"
+    ".ag-namegrp{display:flex;gap:6px;align-items:stretch}"
+    ".ag-iconbtn{width:44px;min-width:44px;border:1px solid #ced4da;border-radius:6px;background:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0;font-size:22px;color:#adb5bd}"
+    ".ag-iconbtn:hover{border-color:" LIXEE_BLUE ";background:#eef5fb}"
+    ".ag-iconbtn.empty{border-style:dashed}"
+    ".ag-iconbtn svg{width:24px;height:24px;fill:" LIXEE_BLUE "}"
+    ".agm-back{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:2000;padding:16px}"
+    ".agm{background:#fff;border-radius:12px;width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 30px rgba(0,0,0,.25)}"
+    ".agm-head{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #e9ecef;font-weight:600}"
+    ".agm-body{overflow:auto;padding:4px 18px 18px}"
+    ".agm-cat{font-size:11px;color:#6c757d;text-transform:uppercase;letter-spacing:.04em;margin:14px 0 6px}"
+    ".agm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:8px}"
+    ".agm-ic{height:48px;border:1px solid #dee2e6;background:#fff;border-radius:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-size:20px;color:#adb5bd}"
+    ".agm-ic:hover{background:#eef5fb;border-color:" LIXEE_BLUE "}"
+    ".agm-ic.sel{border:2px solid " LIXEE_BLUE ";background:#e7f1fa}"
+    ".agm-ic svg{width:26px;height:26px;fill:" LIXEE_BLUE "}"
+    "</style>"));
+  streamSection(response, HTTP_MENU);
+
+  response->print(F("<div class='container py-4'>"
+    "<h4 class='mb-1'>Groupes d'actions</h4>"
+    "<p class='ag-muted'>Un groupe rassemble plusieurs actions, sur des appareils "
+    "diff&eacute;rents, derri&egrave;re un seul bouton affich&eacute; en haut de la page "
+    "<b>Appareils</b>.</p>"
+    "<div id='list'></div>"
+    "<button class='btn btn-primary' onclick='newGroup()'>Ajouter un groupe</button>"
+    "<div id='editor' style='display:none;' class='ag-card mt-3'></div>"
+    "<div id='iconModal' class='agm-back' hidden onclick='if(event.target===this)closeIconPicker()'></div>"
+    "</div>"));
+
+  // Le catalogue des appareils n'est PLUS injecte ici : le construire impose un
+  // getTemplate() par appareil, qui lit et parse le JSON du template depuis LittleFS au
+  // premier acces. Avec beaucoup d'appareils la page mettait plusieurs secondes a arriver, et
+  // la liste des groupes -- pourtant deja en memoire -- n'apparaissait qu'a la fin.
+  // Il est desormais charge a la demande, seulement a l'ouverture de l'editeur.
+
+  // Catalogue d'icones : script statique mis en cache (voir handleAgIconsJs). Le suffixe de
+  // version force son rechargement quand le firmware ou le nombre d'icones change.
+  response->printf("<script src='/agicons.js?v=%s-%u'></script>", VERSION, (unsigned)AG_ICON_COUNT);
+  response->print(FPSTR(HTTP_ACTION_GROUPS_JS));
+
+  response->print(footer());
+  response->print(F("</html>"));
+  size_t pageLen = response->length();
+  response->send(request, "text/html");
+  delete response;
+  Serial.printf("[Groupes] page servie : %u octets, heap libre %u, %lu ms\n",
+                (unsigned)pageLen, ESP.getFreeHeap(), millis() - t0);
+}
+
+// Catalogue d'icones des groupes d'actions, servi comme un script statique.
+// Il est genere depuis la table de agIcons.h (source unique, aussi utilisee par la page
+// Appareils) et mis en cache "immutable" : ~16 Ko que le navigateur ne telecharge qu'une fois,
+// au lieu de les recevoir a chaque affichage de la page -- ce qui compte via le tunnel.
+void handleAgIconsJs(AsyncWebServerRequest *request) {
+  PsramResponse *response = new PsramResponse(20000);
+  response->print(F("var AG_THEMES=["));
+  for (size_t t = 0; t < AG_THEME_COUNT; t++) {
+    response->print(t ? F(",'") : F("'"));
+    response->print(AG_ICON_THEMES[t]);
+    response->print(F("'"));
+  }
+  response->print(F("];var AG_ICONS={"));
+  for (size_t i = 0; i < AG_ICON_COUNT; i++) {
+    const AgIcon &ic = AG_ICONS[i];
+    response->printf("%s'%s':[%u,'%s','", i ? "," : "", ic.name, (unsigned)ic.theme, ic.label);
+    response->print(ic.path);   // trace long : pas via printf (tampon de pile de 256 octets)
+    response->print(F("']"));
+  }
+  response->print(F("};"));
+  response->addHeader("Cache-Control", "public, max-age=31536000, immutable");
+  response->send(request, "application/javascript; charset=utf-8");
+  delete response;
+}
+
+// Catalogue des appareils ACTIONNABLES, charge a la demande par l'editeur.
+// Exclus : les appareils LoRa (reception seule -- une action ne partirait jamais) et ceux dont
+// le template ne declare aucune action.
+void APIActionGroupDevices(AsyncWebServerRequest *request) {
+  unsigned long t0 = millis();
+  PsramResponse *response = new PsramResponse(16000);
+  response->print(F("["));
+  bool firstDev = true;
+  for (size_t i = 0; i < devices.size(); i++) {
+    DeviceData* d = devices[i];
+    if (loraFindEmitterByMac(d->getDeviceID()) >= 0) continue;
+    TemplateData* t = d->getTemplate();
+    if (!t || t->ActionSize() == 0) continue;
+    String label = d->getInfo().alias.length() ? d->getInfo().alias : d->getDeviceID();
+    label.replace("\"", " ");
+    if (!firstDev) response->print(F(","));
+    firstDev = false;
+    response->printf("{\"i\":\"%s\",\"n\":\"%s\",\"a\":[", d->getDeviceID().c_str(), label.c_str());
+    bool firstAct = true;
+    for (int k = 0; k < t->ActionSize(); k++) {
+      if (!t->actions[k].visible) continue;
+      if (isCoverPositionCmd(t->actions[k].command)) continue;   // curseur : aucune position fixe a proposer
+      String an = String(t->actions[k].name);
+      an.replace("\"", " ");
+      if (!firstAct) response->print(F(","));
+      firstAct = false;
+      response->printf("{\"n\":\"%s\",\"e\":%u}", an.c_str(), t->actions[k].endpoint);
+    }
+    response->print(F("]}"));
+  }
+  response->print(F("]"));
+  size_t n = response->length();
+  response->send(request, "application/json");
+  delete response;
+  Serial.printf("[Groupes] catalogue appareils : %u octets, %lu ms\n", (unsigned)n, millis() - t0);
+}
+
+// Liste des groupes, pour la barre de boutons de la page Appareils et pour l'editeur.
+void APIListActionGroups(AsyncWebServerRequest *request) {
+  unsigned long t0 = millis();
+  SpiRamJsonDocument doc(16384);
+  JsonArray arr = doc.createNestedArray("groups");
+  for (size_t i = 0; i < actionGroups.size(); i++) {
+    JsonObject o = arr.createNestedObject();
+    o["index"] = (int)i;
+    actionGroups.toJson(i, o);
+  }
+  doc["max"] = MAX_ACTION_GROUPS;
+  String out;
+  serializeJson(doc, out);
+  request->send(200, F("application/json"), out);
+  Serial.printf("[Groupes] liste : %u groupe(s), %u octets, %lu ms\n",
+                (unsigned)actionGroups.size(), (unsigned)out.length(), millis() - t0);
+}
+
+// Declenche un groupe. Retour "optimiste" : on confirme des que les commandes sont mises en
+// file. Attendre l'acquittement Zigbee reel imposerait de correler les APS confirms par
+// appareil, pour un gain minime sur des prises qui repondent en quelques centaines de ms.
+void APIRunActionGroup(AsyncWebServerRequest *request) {
+  int idx = request->hasParam("index", true) ? request->getParam("index", true)->value().toInt()
+                                             : -1;
+  if (idx < 0) {
+    request->send(400, F("application/json"), F("{\"ok\":false,\"error\":\"index manquant\"}"));
+    return;
+  }
+  int sent = actionGroups.run((size_t)idx);
+  if (sent < 0) {
+    request->send(404, F("application/json"), F("{\"ok\":false,\"error\":\"groupe introuvable ou desactive\"}"));
+    return;
+  }
+  request->send(200, F("application/json"), "{\"ok\":true,\"sent\":" + String(sent) + "}");
+}
+
+void APIDeleteActionGroup(AsyncWebServerRequest *request) {
+  int idx = request->hasParam("index", true) ? request->getParam("index", true)->value().toInt()
+                                             : -1;
+  bool ok = (idx >= 0) && actionGroups.remove((size_t)idx);
+  request->send(ok ? 200 : 400, F("application/json"),
+                ok ? F("{\"ok\":true}") : F("{\"ok\":false}"));
+}
+
+// Creation (index absent ou -1) ou remplacement d'un groupe. Corps JSON reassemble : le
+// callback est appele par tranches quand la requete depasse un paquet.
+void APISaveActionGroup(AsyncWebServerRequest *request, uint8_t *data, size_t len,
+                        size_t index, size_t total) {
+  static String body;
+  if (index == 0) body = "";
+  body.reserve(total + 1);
+  for (size_t i = 0; i < len; i++) body += (char)data[i];
+  if (index + len < total) return;              // fragment : on attend la suite
+
+  SpiRamJsonDocument doc(16384);
+  DeserializationError err = deserializeJson(doc, body);
+  body = "";
+  if (err) {
+    request->send(400, F("application/json"), F("{\"ok\":false,\"error\":\"JSON invalide\"}"));
+    return;
+  }
+
+  JsonObjectConst obj = doc.as<JsonObjectConst>();
+  int idx = doc["index"] | -1;
+  bool ok = (idx >= 0) ? actionGroups.replaceFromJson((size_t)idx, obj)
+                       : actionGroups.addFromJson(obj);
+  if (!ok) {
+    request->send(400, F("application/json"),
+                  F("{\"ok\":false,\"error\":\"nom vide, limite atteinte ou index invalide\"}"));
+    return;
+  }
+  request->send(200, F("application/json"), F("{\"ok\":true}"));
+}
+
 void initWebServer()
 {
   static bool webServerInitialized = false;
@@ -21455,6 +22166,51 @@ void initWebServer()
     { 
       if (!checkAuth(request)) return;
       APIAddRule(request, data, len, index, total);
+    }
+  );
+
+  // ---------- Groupes d'actions (boutons de la page Appareils) ----------
+  serverWeb.on("/configActionGroups", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleConfigActionGroups(request);
+  });
+  // Catalogue d'icones : donnees statiques et publiques, sans authentification (comme les
+  // autres ressources statiques) pour que le cache navigateur fonctionne pleinement.
+  serverWeb.on("/agicons.js", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    handleAgIconsJs(request);
+  });
+  serverWeb.on("/api/actiongroups/devices", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    APIActionGroupDevices(request);
+  });
+  // Liste des groupes (pour la barre de boutons et l'editeur).
+  serverWeb.on("/api/actiongroups/list", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    APIListActionGroups(request);
+  });
+  // Declenchement. POST (et non GET) : c'est une action a effet de bord, elle doit passer
+  // par la protection CSRF de checkAuth et ne pas etre rejouable par un simple lien.
+  serverWeb.on("/api/actiongroups/run", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    APIRunActionGroup(request);
+  });
+  serverWeb.on("/api/actiongroups/delete", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    APIDeleteActionGroup(request);
+  });
+  serverWeb.on("/api/actiongroups/save", HTTP_POST,
+    [](AsyncWebServerRequest *request){},
+    NULL,
+    [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total)
+    {
+      if (!checkAuth(request)) return;
+      APISaveActionGroup(request, data, len, index, total);
     }
   );
 

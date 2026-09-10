@@ -122,6 +122,14 @@ public:
         return (idx < rules_.size()) ? &rules_[idx] : nullptr;
     }
 
+    // Execute UNE action isolee, hors de tout contexte de regle. Utilise par les groupes
+    // d'actions (boutons manuels de la page Appareils) : ils reutilisent ainsi le meme
+    // executeur -- resolution du template, endpoint, valeurs dynamiques, on/off -- au lieu
+    // d'en dupliquer la logique.
+    // Les actions de type "notification" substituent normalement des variables tirees de la
+    // regle declenchante ({value}, {device}...) ; sans regle, ces variables restent vides.
+    void runAction(const ActionRule& act, const char* groupName = nullptr);
+
 private:
     // subfield (issue #31) : si non vide, decode un attribut composite (STGE) et renvoie
     // seulement ce champ. Vide = valeur brute, comportement inchange.

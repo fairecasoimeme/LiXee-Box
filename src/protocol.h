@@ -2,11 +2,6 @@
 #define PROTOCOL_H_
 #include "config.h"
 
-//void protocolDatas(uint8_t raw[2048], int DatasSize);
-//void protocolDatas(SerialPacket sp);
-//void protocolDatas(String sp);
-void protocolDatas(uint8_t sp[4092],size_t len);
-void datasManage(char packet[256],int count);
 void DecodePayload(struct ZiGateProtocol protocol, int packetSize);
 void sendPacket(Packet p);
 void sendZigbeeCmd(Packet p);

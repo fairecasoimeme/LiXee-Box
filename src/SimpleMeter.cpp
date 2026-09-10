@@ -207,16 +207,54 @@ int getCurrentTariffAttributeId() {
     return 256;
 }
 
+// Vrai si le compteur est en Historique option BASE.
+// En Historique, PTEC (FF66/16) vaut "TH.." (Toutes Heures) quand l'option souscrite est BASE ;
+// les autres options donnent HC../HP../HN../PM../HCJB... On accepte aussi "BASE" par securite,
+// certaines sources publiant directement le libelle.
+bool isHistoBaseOption(DeviceData* device) {
+    int mode = device->getInfo().linkyMode.toInt();
+    if (mode != 0 && mode != 2) return false;          // Standard : les EASFxx existent
+    String ptec = device->getValue("FF66", "16");
+    ptec.trim();
+    ptec.toUpperCase();
+    return ptec.startsWith("TH") || ptec.startsWith("BASE");
+}
+
+// Idem, pour le ZLinky designe dans la configuration Energie. Utilise par l'affichage :
+// en option BASE l'index total est range dans le premier emplacement tarifaire (256), dont le
+// libelle du template ("HC / EJPHN / BBRHCJB / EASF01") serait alors trompeur.
+bool isZLinkyHistoBaseOption() {
+    DeviceData* z = findSimpleMeterDevice(ConfigGeneral.ZLinky);
+    return z ? isHistoBaseOption(z) : false;
+}
+
 // Fonction centralisée pour mettre à jour les valeurs des devices avec gestion des index
 void updateSimpleMeterDeviceValue(const SimpleMeterData& data) {
     DeviceData* device = findSimpleMeterDevice(data.deviceId);
     if (!device) return;
-    
+
     // Cas spécial pour ZLinky_TIC avec attribut 0
     if (device->getInfo().model == "ZLinky_TIC" && data.attribute == 0) {
         device->setValue("0702",
                         data.attributeStr.c_str(),
                         data.value.c_str());
+
+        // L'attribut 0 (EAST / BASE) est l'index TOTAL. On ne l'ajoute normalement pas a
+        // l'historique : en Standard comme en HC/HP il est la SOMME des index tarifaires
+        // (256, 258...), qui l'alimentent deja -- l'y ajouter ferait un double comptage.
+        // La page Energie l'ignore d'ailleurs explicitement (`section` parcouru a partir de
+        // l'indice 2, qui saute "0" et "1").
+        //
+        // MAIS en Historique option BASE, il n'existe AUCUN index tarifaire : l'index total
+        // est le seul publie par le compteur. Sans ce cas particulier, rien n'alimente
+        // l'historique et le fichier /hst/nrg_<IEEE>.json reste entierement a 0.
+        // On le range donc dans le premier emplacement tarifaire (256), celui que
+        // getCurrentTariffAttributeId() renvoie deja pour BASE et que la page sait lire.
+        if (data.isNumeric && isHistoBaseOption(device) &&
+            strcmp(ConfigGeneral.ZLinky, data.deviceId.c_str()) == 0) {
+            addEnergyMeasurement(device->energyHistory, "256", data.numericValue);
+            device->updateIndex(0, data.numericValue);   // index logique 0 = premier tarif
+        }
         return;
     }
 

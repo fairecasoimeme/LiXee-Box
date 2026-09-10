@@ -1,5 +1,6 @@
 // rules.cpp
 #include "rules.h"
+#include "actionGroups.h"   // actions de type "actiongroup"
 #include "protocol.h"
 #include "config.h"
 #include "log.h"
@@ -834,6 +835,18 @@ DeviceData* RulesManager::findDeviceByIEEE(const char* IEEE) const {
 // EXÉCUTION DES ACTIONS
 // ============================================================================
 
+// Execute une action hors contexte de regle (groupes d'actions manuels).
+// executeAction() n'utilise `rule` que pour la branche "notification" (substitution de
+// variables et texte des conditions) ; les branches device/onoff/dynamic l'ignorent. On lui
+// passe donc une regle vide : les actions d'appareil se comportent a l'identique.
+void RulesManager::runAction(const ActionRule& act, const char* groupName) {
+    Rule dummy;
+    // Le nom sert d'origine dans les traces [Action] : "groupe \"Absence\"" plutot qu'une regle.
+    String origin = String("groupe \"") + (groupName ? groupName : "?") + "\"";
+    dummy.name = PsString(origin.c_str(), PsramAllocator<char>());
+    executeAction(act, dummy);
+}
+
 void RulesManager::executeAction(const ActionRule& act, const Rule& rule) {
 
     // ===== TYPE NOTIFICATION (avec substitution de variables) =====
@@ -923,6 +936,26 @@ void RulesManager::executeAction(const ActionRule& act, const Rule& rule) {
                 String value = String(tpl->actions[i].value);
                 String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
 
+                // Positionnement de volet : la position doit venir de l'action (regle, groupe).
+                // La valeur du template n'a pas de sens ici -- l'envoyer (0) FERMERAIT le volet par
+                // surprise. Sans position fournie, on n'envoie donc rien.
+                if (command == CMD_COVER_POSITION || command == CMD_COVER_POSITION_INVERTED) {
+                    if (act.value.size() == 0) {
+                        log_w("Action exec: '%s' attend une position (0-100), aucune fournie",
+                              actionNameStr.c_str());
+                        actionFound = true;
+                        break;
+                    }
+                    value = String(act.value.c_str());
+                }
+
+                // Trace de diagnostic : origine (regle ou groupe), cible et commande envoyee.
+                {
+                    String origin = String(rule.name.c_str());
+                    if (!origin.startsWith("groupe \"")) origin = "regle \"" + origin + "\"";
+                    Serial.printf("[Action] %s : %s -> %s (cmd=%d val=%s)\n", origin.c_str(),
+                                  act.IEEE.c_str(), actionNameStr.c_str(), command, value.c_str());
+                }
                 if (command == 400) {
                     int cluster = tpl->actions[i].cluster;
                     uint16_t mfrCode = tpl->actions[i].manufacturerCode;
@@ -947,6 +980,19 @@ void RulesManager::executeAction(const ActionRule& act, const Rule& rule) {
         String shortAddr = String(GetShortAddr(String(act.IEEE.c_str()) + ".json"));
         int endpoint = (act.endpoint > 0) ? act.endpoint : 1;
         SendOnOffAction(shortAddr.toInt(), endpoint, act.value.c_str());
+        return;
+    }
+
+    // ===== TYPE GROUPE D'ACTIONS =====
+    // Declenche un groupe entier (cf. actionGroups.h). Le groupe est designe par son NOM,
+    // range dans actionName : un index se decalerait si l'utilisateur supprimait un autre
+    // groupe, et la regle declencherait alors le mauvais.
+    if (act.type == "actiongroup") {
+        int n = actionGroups.runByName(act.actionName.c_str());
+        if (n < 0) {
+            log_w("Action exec: groupe d'actions '%s' introuvable, desactive ou imbrique",
+                  act.actionName.c_str());
+        }
         return;
     }
 
