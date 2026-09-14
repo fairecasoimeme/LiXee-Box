@@ -320,10 +320,12 @@ Envoie une commande prédéfinie à un appareil Zigbee, en utilisant les actions
 | **Appareil** | Appareil cible |
 | **Action** | Commande du template (ex : `ON`, `OFF`, `SetLevel`, `SetPoint`) |
 | **Endpoint** | Endpoint Zigbee (défaut : 1) |
+| **Position** | Pour l'action **Position** d'un volet uniquement : position de 0 à 100 % (sans position, rien n'est envoyé) |
 
 **Exemples :**
 ```
 Volet salon     → Ouvrir
+Volet chambre   → Position 30 %
 Ampoule bureau  → OFF
 Thermostat      → SetPoint (température consigne)
 Prise connectée → OFF
@@ -386,6 +388,36 @@ Envoie une notification interne avec un titre et un message. Les [variables dyna
 | **Message** | Corps du message (supporte les variables) |
 
 Les valeurs actuelles des capteurs impliqués dans les conditions sont automatiquement ajoutées en pied de notification.
+
+---
+
+### 6.4 Groupe d'actions (`actiongroup`)
+
+*À partir de la v2.23.*
+
+Déclenche un **groupe d'actions** entier : toutes les actions du groupe sont exécutées, comme lors d'un clic sur son bouton en haut de la page **Appareils**. Idéal pour réutiliser un même scénario (« Fermeture des volets », « Absence »…) dans plusieurs règles sans ressaisir ses actions.
+
+| Champ | Description |
+|---|---|
+| **Groupe** | Groupe d'actions à déclencher, choisi dans la liste des groupes créés dans **Config** → **Groupes d'actions** |
+
+**Exemples :**
+```
+Groupe d'actions → Fermeture des volets
+Groupe d'actions → Absence
+```
+
+**Bon à savoir :**
+- Le groupe est désigné par son **nom** (champ `actionName` dans `rules.json`) : supprimer ou réordonner un autre groupe ne change rien à la règle. En revanche, **renommer** le groupe oblige à le resélectionner dans la règle
+- Un groupe **désactivé** ou **supprimé** n'est pas exécuté
+- Un groupe ne peut pas en déclencher un autre : l'imbrication est refusée, pour éviter une boucle infinie
+- Utilisable aussi en **action SINON**
+- Le résumé de la règle affiche « déclencher le groupe d'actions *Nom* »
+
+**Format JSON :**
+```json
+{ "type": "actiongroup", "actionName": "Fermeture des volets" }
+```
 
 ---
 
@@ -606,6 +638,25 @@ Actions SI :
   Prise four → OFF
   Notification — "Budget énergie atteint" / "La prise four a consommé {value} Wh aujourd'hui."
 ```
+
+### Exemple 8 — Bouton sans fil qui ferme tous les volets
+
+**Objectif :** un appui simple sur le bouton 2 d'un SONOFF SNZB-01M ferme tous les volets, grâce au groupe d'actions « Fermeture des volets ».
+
+```
+Nom         : Bouton fermeture volets
+Déclencheur : Événement — Bouton → Action
+
+Conditions :
+  Bouton — Action  ==  single_button_2
+
+Mode        : Répété à chaque évaluation
+
+Actions SI :
+  Groupe d'actions → Fermeture des volets
+```
+
+> **Pourquoi le mode Répété ?** En mode « Une seule fois », les actions ne partent que lors du passage FAUX → VRAI. Après un premier appui, l'action reste `single_button_2` : un second appui identique ne ferait pas changer l'état de la condition, et le groupe ne serait pas redéclenché. En mode Répété, avec un déclencheur Événement, chaque appui déclenche le groupe.
 
 ---
 
