@@ -813,6 +813,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
 | **Tuya/Moes** | TS130F | Position 0–100 % (curseur), calibration, inversion moteur | 📋 | ✅ |
+| **Sonoff** | MINI-ZBRBS | Module encastrable pour volet roulant : montée, descente, stop et position 0–100 % (curseur), via le template générique des volets | | ✅ |
 | **Tuya/Moes** | Curtain Switch, Roller Shutter Module | Nombreux modèles disponibles | | ✅ |
 | **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | | ✅ |
 | **LoraTap** | SC500ZB, divers modèles | Compatible Zigbee2MQTT | | |
@@ -1053,7 +1054,7 @@ Deux codes de commande positionnent un volet de 0 à 100 % (commande ZCL *Go To 
 | `command` | Usage |
 |-----------|-------|
 | `251` | Appareil conforme ZCL |
-| `252` | Appareil dont le sens est inversé (ex. TS130F) |
+| `252` | Appareil dont le sens est inversé (ex. TS130F, SONOFF MINI-ZBRBS) |
 
 Si 100 % ferme le volet au lieu de l'ouvrir, utilisez l'autre code.
 
