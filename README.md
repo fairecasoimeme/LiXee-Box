@@ -2,7 +2,7 @@
 
 ## Description
 
-**LiXee-Box** est une passerelle multi-protocole pour appareils Zigbee, conçue pour être un hub central de **gestion de l'énergie** et de domotique. Cette application transforme votre LiXee-ZiWifi32 en une passerelle complète capable de gérer vos appareils Zigbee, votre Linky, compteur de production, gaz, eau, et d'intégrer le tout dans votre système domotique.
+**LiXee-Box** est une passerelle multi-protocole pour appareils **Zigbee** et **LoRa 2.4 GHz**, conçue pour être un hub central de **gestion de l'énergie** et de domotique. Cette application transforme votre LiXee-ZiWifi32 en une passerelle complète capable de gérer vos appareils Zigbee, votre Linky, compteur de production, gaz, eau, et d'intégrer le tout dans votre système domotique.
 
 **Pour avoir plus d'informations (moins techniques) vous pouvez parcourir (https://lixee-box.fr)**
 
@@ -13,6 +13,9 @@ Cette application fonctionne avec :
 - **[LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)** (WiFi uniquement)
   - Basé sur ESP32-S3-WROOM-N16R8 (PSRAM : 8MB Flash : 16MB)
   - Équipé d'un module JN5189 exécutant le [firmware ZiGate v2](https://github.com/fairecasoimeme/ZiGatev2)
+- **LiXee-Box équipée du module LoRa 2.4 GHz** (à partir de la v2.22)
+  - Même base ESP32-S3, avec en plus un module radio **SX1281** pour recevoir les objets LoRa LiXee (ex. **ZLinky LoRa**)
+  - Les modules présents (Zigbee et/ou LoRa) sont **détectés automatiquement** et le menu s'adapte
 
 > **Note** : Vous pouvez également utiliser ce code avec d'autres cartes ESP32S3, selon les connexions de broches de votre carte.
 
@@ -48,8 +51,17 @@ L'appareil peut être configuré via un site web local
 - Création et gestion d'objets Zigbee
 - Modèles personnalisables pour différents types d'appareils
 - Gestion des états et actions
+- **Groupes d'actions** : un bouton pour déclencher plusieurs actions sur des appareils différents (à partir de la v2.23)
+- **Volets roulants** : position 0–100 % par curseur, avec retour d'état en temps réel (à partir de la v2.23)
+- **État radio** : icône signalant un appareil injoignable (à partir de la v2.23)
 - Historique des données pour les appareils de puissance et d'énergie
 - Mises à jour OTA (Over-The-Air) automatiques et manuelles
+
+### 📡 Objets LoRa 2.4 GHz (à partir de la v2.22)
+- Réception d'objets **LoRa 2.4 GHz** en plus du Zigbee, le premier étant le **ZLinky LoRa**
+- Un objet LoRa est traité comme un appareil Zigbee : pages Énergie, historiques, export CSV, MQTT et règles fonctionnent à l'identique
+- Appairage chiffré **AES-128**, jusqu'à 4 émetteurs
+- Page **Réseau → LoRa** avec la qualité de réception (**RSSI / SNR / PDR**)
 
 ### 📊 Surveillance et Tableau de Bord
 - Tableau de bord énergétique avec jauges et graphiques
@@ -78,8 +90,9 @@ L'appareil peut être configuré via un site web local
 
 ### 🔒 Sécurité
 - Authentification par sessions (token 32 caractères, durée 24h, max 4 sessions simultanées)
-- Page de connexion dédiée avec redirection automatique
+- Page de connexion dédiée avec redirection automatique, et retour sur la page demandée après connexion
 - Compatibilité Basic Auth pour les clients API
+- Tunnel d'accès distant autorisé uniquement si l'accès sécurisé est activé **avec un identifiant et un mot de passe** (à partir de la v2.23)
 - Masquage des mots de passe et tokens dans l'interface
 - Protection contre le path traversal
 
@@ -191,6 +204,21 @@ Interface complète pour configurer et surveiller tous vos appareils Zigbee conn
 ![Configuration des Appareils Zigbee](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_devices_v2.12.png)
 ![État des Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_StatusDevices_complete_v2.12.png)
 ![Propriété d'un appareil](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_device.png)
+
+#### Volets roulants : position 0–100 % (à partir de la v2.23)
+Les volets dont le template propose l'action **Position** affichent un **curseur** sur les pages Appareils, fiche appareil et tableau de bord. La position est envoyée au relâchement, et le curseur suit la position réelle du volet en direct.
+
+![Curseur de position d'un volet](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Volet_Position.png)
+
+#### État radio des appareils (à partir de la v2.23)
+Quand le dernier envoi vers un appareil a échoué, une **icône discrète** apparaît dans **Réseau → Zigbee** et sur la page **Appareils**. Survolez-la pour voir la cause et la date du dernier contact :
+- **D4** : appareil injoignable, souvent dû à une route cassée (appareil éteint, déplacé ou hors de portée)
+- **E9** : l'appareil n'a pas accusé réception
+- autre code : échec de transmission
+
+L'icône disparaît d'elle-même dès que l'appareil accuse réception d'une commande.
+
+![État radio d'un appareil](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Etat_Radio.png)
 
 
 
@@ -333,6 +361,32 @@ Si ce cas arrive, vous aurez sur le graphique de puissance les données d'inject
 
 ![Injection](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Injection_autoconsommation.PNG)
 
+## 📡 LoRa 2.4 GHz (à partir de la v2.22)
+
+> Nécessite une LiXee-Box équipée du module LoRa 2.4 GHz.
+
+La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier est le **ZLinky LoRa**, qui transmet la téléinformation du compteur Linky sur de longues distances, là où le Zigbee ne passe pas.
+
+### Fonctionnement
+- Un objet LoRa est un **appareil comme les autres** : ses données utilisent les mêmes clusters que le Zigbee. Pages Énergie, historiques, export CSV, MQTT, règles et tarif du thermostat fonctionnent sans adaptation
+- Un nouvel objet LoRa ne demande qu'un **template** dans `data/tp/` : son type est annoncé à l'appairage
+- Trames **chiffrées AES-128** avec contrôle d'intégrité, jusqu'à **4 émetteurs**
+
+### Appairage
+1. Allez dans **Réseau → LoRa** et lancez l'assistant d'appairage
+2. Aucune manipulation particulière n'est nécessaire sur le ZLinky LoRa
+3. Le spreading factor et le canal sont négociés automatiquement ; ils restent réglables dans **Config → LoRa**
+
+### Suivi
+- Fiche de chaque appareil avec la qualité de réception : **RSSI**, **SNR** et taux de réception (**PDR**)
+- **Lecture d'attribut à la demande** avec le bouton ⟳ de chaque ligne, sans attendre le cycle périodique (~3 min 40)
+
+![Fiche d'un appareil LoRa](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_LoRa_Reseau.png)
+
+> **Documentation technique** : le protocole radio est décrit dans [recepteur/PROTOCOLE_LORA.md](recepteur/PROTOCOLE_LORA.md).
+
+---
+
 ## 🌍 Tunnel d'accès distant (à partir de la v2.17)
 
 Le tunnel permet d'accéder à votre LiXee-Box depuis Internet, sans avoir besoin d'ouvrir de ports sur votre box Internet. La connexion passe par un reverse proxy WebSocket sécurisé.
@@ -342,6 +396,8 @@ Le tunnel permet d'accéder à votre LiXee-Box depuis Internet, sans avoir besoi
 La LiXee-Box établit une connexion WebSocket sortante vers le serveur [`remote.lixee-box.fr`](https://remote.lixee-box.fr). Ce serveur relaye les requêtes HTTP entrantes vers votre LiXee-Box, qui les traite localement et renvoie les réponses. Votre box Internet n'a besoin d'aucune configuration particulière (pas de NAT, pas de port forwarding).
 
 ### Activation
+
+> **Prérequis (à partir de la v2.23)** : l'accès sécurisé doit être activé **avec un identifiant et un mot de passe** (**Config** → **Securité**). Sans cela, le tunnel ne peut pas être activé ; s'il l'était déjà, il reste **suspendu** jusqu'à ce que l'accès sécurisé soit configuré. Une box dont l'accès sécurisé était activé sans identifiant ni mot de passe le voit désactivé automatiquement au démarrage.
 
 1. Accédez à la page **Config** → **Tunnel**
 2. Entrez le code d'activation à 6 chiffres fourni par LiXee
@@ -382,9 +438,36 @@ Configuration dans **Config → Thermostat**, visuel temps réel dans **Mesures 
 
 > **Documentation complète** : voir [THERMOSTATS.md](THERMOSTATS.md) pour le guide détaillé (modes de régulation, capteurs, actionneurs, algorithmes TPI/hystérésis, paramètres avancés, cadran, priorités, cas d'usage, dépannage).
 
+## 🎛️ Groupes d'actions (à partir de la v2.23)
+
+Un **groupe d'actions** est un bouton qui déclenche **plusieurs actions sur des appareils différents** en un seul clic : « Fermeture des volets », « Absence », « Nuit »…
+
+### Utilisation
+- Les groupes s'affichent en **tête de la page Appareils** : un clic lance toutes leurs actions
+- Ils peuvent aussi être déclenchés par une **règle** : action de type « Groupe d'actions », en « alors » comme en « sinon »
+
+![Groupes d'actions sur la page Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Groupes_Actions_Barre.png)
+
+### Création
+Allez dans **Config** → **Groupes d'actions**, puis :
+1. Cliquez sur **Ajouter un groupe**
+2. Donnez-lui un **nom** et choisissez une **icône** avec le bouton placé à côté du nom : 56 icônes domotiques en 9 thèmes (volets, température, éclairage, sécurité…)
+3. Ajoutez les **actions** : un appareil et l'une de ses actions (ex. volet → DOWN, prise → OFF, volet → Position 30 %)
+4. Enregistrez, puis vérifiez le groupe avec le bouton **Tester**
+
+![Liste des groupes d'actions](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Groupes_Actions_Edition.png)
+
+### Bon à savoir
+- Jusqu'à **8 groupes**, de **10 actions** chacun
+- Les actions sont liées à l'**adresse IEEE** des appareils : un changement d'adresse réseau Zigbee ne casse pas le groupe
+- Une règle désigne un groupe par son **nom** : supprimer ou réordonner un autre groupe ne change rien
+- Les groupes sont enregistrés dans `/config/actiongroups.json`
+
+---
+
 ## Les règles (automatismes)
 
-> **Documentation complète** : voir [RULES.md](RULES.md) pour le guide détaillé de toutes les fonctionnalités (9 types de conditions, 3 types d'actions, exemples, variables de notification, etc.)
+> **Documentation complète** : voir [RULES.md](RULES.md) pour le guide détaillé de toutes les fonctionnalités (9 types de conditions, 4 types d'actions, exemples, variables de notification, etc.)
 
 Pour accéder à toutes les règles, il faut suivre **Config** --> **Règles**
 La page permet de suivre la liste des règles avec leur état et la date de dernière exécution.
@@ -400,7 +483,7 @@ Vous pourrez **créer**, **modifier** ou **supprimer** une règle.
   * **Événement** : évaluée dès qu'un attribut Zigbee spécifique est mis à jour
 * Une règle peut contenir une ou plusieurs **conditions** combinées en ET / OU.
 * **9 types de conditions** : appareil Zigbee, comparaison de 2 appareils, heure, plage horaire, jour de semaine, date, date+heure, jour du mois, mois.
-* **3 types d'actions** : commande appareil, valeur dynamique (calcul linéaire), notification.
+* **4 types d'actions** : commande appareil, valeur dynamique (calcul linéaire), groupe d'actions, notification.
 * **Actions SINON** : exécutées quand les conditions redeviennent fausses.
 * **Options d'évaluation** : durée de maintien, mode une fois / répété, intervalle minimum, limite par jour.
 
@@ -433,10 +516,11 @@ Vous pourrez **créer**, **modifier** ou **supprimer** une règle.
 │   │   ├── cluster2          // (device_compare) 2e cluster
 │   │   └── attribute2        // (device_compare) 2e attribut
 │   ├── actions[...]
-│   │   ├── type              // "device", "dynamic", "notification"
+│   │   ├── type              // "device", "dynamic", "actiongroup", "notification"
 │   │   ├── IEEE              // (device, dynamic) Appareil cible
-│   │   ├── actionName        // (device, dynamic) Nom de l'action template
+│   │   ├── actionName        // (device, dynamic) Nom de l'action template, (actiongroup) nom du groupe
 │   │   ├── endpoint          // (device, dynamic) Endpoint Zigbee
+│   │   ├── value             // (device) Position 0-100 pour l'action Position d'un volet
 │   │   ├── sourceIEEE        // (dynamic) Appareil source
 │   │   ├── sourceCluster     // (dynamic) Cluster source
 │   │   ├── sourceAttribute   // (dynamic) Attribut source
@@ -478,11 +562,12 @@ Par défaut : `mode = "timer"`
 
 | Paramètre | Obligatoire | Type | Valeur | Commentaire |
 |-----------|:-----------:|------|--------|-------------|
-| `type` | ✓ | String | `"device"` `"dynamic"` `"notification"` | |
+| `type` | ✓ | String | `"device"` `"dynamic"` `"actiongroup"` `"notification"` | |
 | `IEEE` | device/dynamic | String | Adresse MAC cible | |
-| `actionName` | device/dynamic | String | Nom de l'action template | ex : `"ON"`, `"OFF"`, `"SetPoint"` |
+| `actionName` | device/dynamic/actiongroup | String | Nom de l'action template, ou nom du groupe d'actions | ex : `"ON"`, `"OFF"`, `"SetPoint"`, `"Fermeture des volets"` |
 | `endpoint` | device/dynamic | Decimal | Endpoint Zigbee | Défaut : 1 |
 | `command` | | Decimal | Override commande | -1 = utiliser le template |
+| `value` | | String | Valeur envoyée | Position 0-100 pour l'action Position d'un volet (sans position, rien n'est envoyé) |
 | `sourceIEEE` | dynamic | String | Adresse MAC source | |
 | `sourceCluster` | dynamic | Decimal | Cluster source | |
 | `sourceAttribute` | dynamic | Decimal | Attribut source | |
@@ -622,7 +707,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | 0x0001 | Power Configuration | Gestion batterie |
 | 0x0006 | On/Off | Commandes marche/arrêt |
 | 0x0012 | Multistate Input | Entrées multi-états (boutons) |
-| 0x0102 | Window Covering | Contrôle volets/stores |
+| 0x0102 | Window Covering | Contrôle volets/stores (montée, descente, stop, position) |
 | 0x0201 | Thermostat | Contrôle thermostatique |
 | 0x0202 | Fan Control | Contrôle ventilation |
 | 0x0402 | Temperature Measurement | Mesure de température |
@@ -634,6 +719,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | 0xEF00 | Tuya | Cluster propriétaire Tuya |
 | 0xFC00 | NodOn Heating | Cluster propriétaire NodOn (fil pilote) |
 | 0xFC11 | Sonoff/Xiaomi Custom | Cluster propriétaire Sonoff/Xiaomi |
+| 0xFC12 | Sonoff Button | Cluster propriétaire Sonoff (actions du bouton SNZB-01M) |
 | 0xFC41 | Legrand | Cluster propriétaire Legrand |
 | 0xFCC0 | Aqara Presence | Cluster propriétaire Aqara (présence) |
 | 0xFF66 | LiXee | Cluster propriétaire LiXee |
@@ -646,6 +732,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 |----------|-------------|-------------|:--------:|:-----:|
 | **ZLinky_TIC** | 0x0051, 0x0061, 0x0101 | Téléinformation Linky (70+ attributs TIC) | 📋 | ✅ |
 | **ZiPulses** | 0x0107 | Compteur d'impulsions (eau, gaz), batterie, température | 📋 | ✅ |
+| **ZLinky LoRa** | LoRa 2.4 GHz | Téléinformation Linky en LoRa longue portée (nécessite le module LoRa) | 📋 | ✅ |
 
 ---
 
@@ -655,6 +742,14 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | Marque | Modèles | Mesures | Notes | Template | Testé |
 |--------|---------|---------|-------|:--------:|:-----:|
 | **Hiking / TOMZN** | DDS238-2 | Tension, courant, puissance, énergie | Compteur monophasé DIN rail 65A, énergie bidirectionnelle | 📋 | ✅ |
+
+---
+
+### 📏 Modules de mesure d'énergie
+
+| Marque | Modèles | Mesures | Notes | Template | Testé |
+|--------|---------|---------|-------|:--------:|:-----:|
+| **NodOn** | SEM-4-1-00 | Tension, intensité, puissances, facteur de puissance | Module de mesure | 📋 | |
 
 ---
 
@@ -717,7 +812,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
-| **Tuya/Moes** | TS130F | Position, calibration, inversion moteur | 📋 | ✅ |
+| **Tuya/Moes** | TS130F | Position 0–100 % (curseur), calibration, inversion moteur | 📋 | ✅ |
 | **Tuya/Moes** | Curtain Switch, Roller Shutter Module | Nombreux modèles disponibles | | ✅ |
 | **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | | ✅ |
 | **LoraTap** | SC500ZB, divers modèles | Compatible Zigbee2MQTT | | |
@@ -726,7 +821,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 | **Zemismart** | Roller Shade Motor | Moteur tubulaire | | |
 
 #### Autres volets compatibles (clusters standards)
-Tout appareil utilisant le cluster Window Covering (0x0102) avec les commandes Up/Down/Stop.
+Tout appareil utilisant le cluster Window Covering (0x0102) avec les commandes Up/Down/Stop, et *Go To Lift Percentage* pour la position (voir [Position de volet](#position-de-volet-à-partir-de-la-v223)).
 
 ---
 
@@ -736,6 +831,7 @@ Tout appareil utilisant le cluster Window Covering (0x0102) avec les commandes U
 | Marque | Modèles | Pression | Écran | Notes | Template | Testé |
 |--------|---------|:--------:|:-----:|-------|:--------:|:-----:|
 | **Sonoff** | SNZB-02D | ❌ | ✅ | Écran LCD, calibration, plages de confort | 📋 | ✅ |
+| **NodOn** | STPH-4-1-00 | ❌ | ❌ | Température, humidité, batterie | 📋 | |
 | **Sonoff** | SNZB-02, SNZB-02P | ❌ | ❌ | Économique | | ✅ |
 | **Aqara** | WSDCGQ11LM, T1 (TH-S02D) | ✅ | ❌ | Capteur Sensirion, très précis | | |
 | **IKEA** | VINDSTYRKA, Timmerflotte | ❌ | ✅ | Qualité de l'air sur VINDSTYRKA | | |
@@ -811,6 +907,7 @@ Tout appareil utilisant le cluster IAS Zone (0x0500) avec Zone Type Water Sensor
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
 | **Xiaomi/Aqara** | lumi.sensor_switch.aq2 (WXKG11LM) | Bouton simple clic, multi-clic | 📋 | ✅ |
+| **Sonoff** | SNZB-01M (Orb 4-in-1) | 4 boutons : simple, double, long et triple appui (`single_button_1` … `triple_button_4`), utilisables dans les règles et en MQTT. Batterie | 📋 | ✅ |
 | **IKEA** | TRÅDFRI Shortcut Button | Compatible clusters standards | | |
 | **Tuya/Moes** | Boutons scène, télécommandes | Via cluster 0x0006 ou 0x0012 | | |
 
@@ -949,6 +1046,18 @@ Exemple de fichier 24321.json pour l'appareil id (5F01 Hex) :
 | `endpoint` | ✓ | Decimal | Numéro de point de terminaison |
 | `value` | ✓ | Decimal | Valeur à envoyer |
 | `visible` | | Decimal | 1 (visible) ou 0 (masqué) |
+
+#### Position de volet (à partir de la v2.23)
+Deux codes de commande positionnent un volet de 0 à 100 % (commande ZCL *Go To Lift Percentage*). L'action s'affiche alors sous forme de **curseur** :
+
+| `command` | Usage |
+|-----------|-------|
+| `251` | Appareil conforme ZCL |
+| `252` | Appareil dont le sens est inversé (ex. TS130F) |
+
+Si 100 % ferme le volet au lieu de l'ouvrir, utilisez l'autre code.
+
+Exemple : `{ "name": "Position", "command": 252, "endpoint": 1, "value": 0, "visible": 1 }`
 
 ### Bind
 Liste des clusters (en numérique) qui seront liés
@@ -1265,8 +1374,12 @@ Merci à tous les auteurs des bibliothèques tierces utilisées dans ce projet :
 * [ESP32Async/AsyncTCP](https://github.com/ESP32Async/AsyncTCP)
 * [ESP32Async/ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer)
 * [Links2004/WebSockets](https://github.com/Links2004/arduinoWebSockets)
+* [jgromes/RadioLib](https://github.com/jgromes/RadioLib)
+* [bblanchon/StreamUtils](https://github.com/bblanchon/ArduinoStreamUtils)
 
 Merci à [ZigStar](https://github.com/mercenaruss) pour la mise à jour OTA
+
+Icônes des groupes d'actions : [Material Design Icons](https://pictogrammers.com/library/mdi/) par Pictogrammers (licence Apache 2.0)
 
 
 
