@@ -249,6 +249,80 @@ bool checkCsrf(AsyncWebServerRequest *request) {
     return false;
 }
 
+// ==================== Retour a la page apres connexion ====================
+// Encode une composante d'URL (RFC 3986 : seuls les caracteres non reserves passent tels quels).
+static String urlEncodeComponent(const String& s) {
+    static const char HEX_DIGITS[] = "0123456789ABCDEF";
+    String out;
+    out.reserve(s.length() + 16);
+    for (size_t i = 0; i < s.length(); i++) {
+        uint8_t c = (uint8_t)s[i];
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += (char)c;
+        } else {
+            out += '%';
+            out += HEX_DIGITS[c >> 4];
+            out += HEX_DIGITS[c & 0x0F];
+        }
+    }
+    return out;
+}
+
+// Echappe une valeur injectee dans un attribut HTML.
+static String htmlAttrEscape(const String& s) {
+    String out;
+    out.reserve(s.length() + 8);
+    for (size_t i = 0; i < s.length(); i++) {
+        char c = s[i];
+        switch (c) {
+            case '&':  out += F("&amp;");  break;
+            case '<':  out += F("&lt;");   break;
+            case '>':  out += F("&gt;");   break;
+            case '"':  out += F("&quot;"); break;
+            case '\'': out += F("&#39;");  break;
+            default:   out += c;
+        }
+    }
+    return out;
+}
+
+/* Page ou revenir apres connexion ("next"). Ne jamais la reprendre telle quelle du client : une
+ * valeur libre ferait de /login une redirection ouverte (lien piege ".../login?next=https://..."
+ * renvoyant vers un faux site juste apres une vraie connexion). Seul un chemin LOCAL passe :
+ * un seul '/' en tete, pas de '\' (que les navigateurs lisent comme '/', donc "/\" = "//" = un
+ * autre hote), ni caractere de controle ou espace (injection d'en-tete dans Location), ASCII
+ * uniquement, et pas /login ni /logout (boucle). Tout le reste -> "/".
+ */
+static String sanitizeNext(const String& next) {
+    if (next.length() < 2 || next.length() > 256) return "/";
+    if (next[0] != '/' || next[1] == '/') return "/";
+    for (size_t i = 0; i < next.length(); i++) {
+        uint8_t c = (uint8_t)next[i];
+        if (c <= 0x20 || c >= 0x7F || c == '\\') return "/";
+    }
+    if (next.startsWith("/login") || next.startsWith("/logout")) return "/";
+    return next;
+}
+
+// URL de connexion qui ramene ensuite a la page demandee. Pour une navigation GET seulement :
+// rejouer en GET, apres connexion, l'URL d'un formulaire POST n'aurait pas de sens.
+static String loginUrlFor(AsyncWebServerRequest *request) {
+    if (request->method() != HTTP_GET || request->url() == "/") return "/login";
+    String target = request->url();
+    bool first = true;
+    size_t n = request->params();
+    for (size_t i = 0; i < n; i++) {
+        auto p = request->getParam(i);
+        if (p->isPost() || p->isFile()) continue;
+        target += first ? '?' : '&';
+        first = false;
+        target += urlEncodeComponent(p->name());
+        target += '=';
+        target += urlEncodeComponent(p->value());
+    }
+    return "/login?next=" + urlEncodeComponent(target);
+}
+
 bool checkAuth(AsyncWebServerRequest *request) {
     if (!ConfigSettings.enableSecureHttp) return true;
 
@@ -274,15 +348,32 @@ bool checkAuth(AsyncWebServerRequest *request) {
         }
     }
 
-    // 3. Not authenticated - determine response type
-    bool isAjax = request->hasHeader("X-Requested-With") ||
-                  (request->hasHeader("Accept") &&
-                   request->header("Accept").indexOf("application/json") >= 0);
+    // 3. Non authentifie. Seule une NAVIGATION est redirigee vers /login (le navigateur annonce
+    //    alors text/html dans Accept), avec la page demandee en "next" pour y revenir ensuite.
+    //    Les fetch/XHR des pages (sondages periodiques compris) recoivent un 401 court.
+    //    Auparavant, seules les requetes marquees (X-Requested-With, Accept JSON) recevaient ce
+    //    401 : les autres suivaient en silence la redirection et rapatriaient la page de login a
+    //    CHAQUE sondage, sans jamais s'arreter. Observe via le tunnel : une page restee ouverte
+    //    sur une session perdue (sessions en RAM, un reboot les efface) tirait /getAlert,
+    //    /api/stats et /getDeviceAttrValues toutes les 5 s, ~6 Ko chacun. La page, elle, repart
+    //    vers /login des le premier 401 (cf. SESSION_GUARD_JS).
+    //    Le 401 est reserve aux requetes emises PAR UNE PAGE de la box : SESSION_GUARD_JS les
+    //    marque toutes de X-Requested-With (relaye par le tunnel, contrairement a Referer, qui
+    //    ne compte qu'en acces local). Un client natif -- widgets de LiXee-Assist -- garde la
+    //    redirection historique : il s'en sert pour detecter une session expiree et se
+    //    reconnecter (observe : /poll -> 302 -> POST /login -> /poll 200). Avec un 401, les
+    //    widgets ne fonctionnaient plus.
+    String accept = request->header("Accept");
+    bool fromPage   = request->hasHeader("X-Requested-With") || request->hasHeader("Referer");
+    bool wantsHtml  = accept.indexOf("text/html") >= 0;
+    bool wantsJson  = accept.indexOf("application/json") >= 0;
+    bool isNavigation = !request->hasHeader("X-Requested-With") && !wantsJson &&
+                        (wantsHtml || !fromPage);
 
-    if (isAjax) {
-        request->send(401, "application/json", "{\"error\":\"unauthorized\"}");
+    if (isNavigation) {
+        request->redirect(loginUrlFor(request));
     } else {
-        request->redirect("/login");
+        request->send(401, "application/json", "{\"error\":\"unauthorized\"}");
     }
     return false;
 }
@@ -303,6 +394,20 @@ struct TunnelActivation {
 static TunnelActivation tunnelActivation = {};
 
 // Appelée depuis loop() dans le main .ino
+/* --- Condition d'activation du tunnel ------------------------------------------------------
+ * Le tunnel publie l'interface de la box sur Internet. Il n'est autorise que si l'acces HTTP
+ * est reellement protege : securite activee ET identifiant ET mot de passe renseignes.
+ * Tester seulement "securite activee" ne suffisait pas : handleSaveConfigHTTP l'activait avant
+ * de valider les identifiants, si bien qu'elle pouvait etre activee avec des identifiants
+ * vides -- le tunnel exposait alors une interface sans protection reelle.
+ * A consulter par TOUS les chemins qui activent ou (re)demarrent le tunnel : activation par
+ * code, page Tunnel, /api/tunnel/credentials, demarrage de la box, relance par le watchdog.
+ */
+bool tunnelSecurityOk() {
+  return ConfigSettings.enableSecureHttp &&
+         ConfigGeneral.userHTTP[0] != '\0' && ConfigGeneral.passHTTP[0] != '\0';
+}
+
 void processTunnelActivation() {
     if (!tunnelActivation.pending || tunnelActivation.processing) return;
     // Attendre 2s pour que la réponse {"status":"pending"} soit renvoyée au navigateur via le tunnel
@@ -380,6 +485,16 @@ void processTunnelActivation() {
     if (!doc["success"].as<bool>()) {
         tunnelActivation.success = false;
         tunnelActivation.error = doc["error"].as<String>();
+        tunnelActivation.done = true;
+        tunnelActivation.processing = false;
+        return;
+    }
+
+    // Derniere verification juste avant d'activer : la securite a pu changer pendant l'echange
+    // avec le serveur d'activation.
+    if (!tunnelSecurityOk()) {
+        tunnelActivation.success = false;
+        tunnelActivation.error = "L'accès sécurisé HTTP (identifiant et mot de passe) doit être configuré avant d'activer le tunnel.";
         tunnelActivation.done = true;
         tunnelActivation.processing = false;
         return;
@@ -472,6 +587,43 @@ const char HTTP_SHELLY_EMULE[] PROGMEM =
 
 "}";
 
+/* Session perdue : renvoyer la page vers /login au lieu de la laisser sonder la box a vide.
+ * checkAuth repond 401 a toute requete qui n'est pas une navigation. Ce script, pose dans
+ * l'en-tete de TOUTES les pages, intercepte ce 401 quel que soit l'appel -- jQuery,
+ * XMLHttpRequest brut (functions.min.js : getAlert...) ou fetch() -- et part une seule fois
+ * vers /login, avec la page courante en "next" pour y revenir apres reconnexion.
+ * Il remplace l'ancien $(document).ajaxError, qui ne voyait que les appels jQuery : getAlert
+ * (XHR brut, toutes les pages), /api/stats (fetch, pied de page) et /getDeviceAttrValues
+ * (fetch, page appareil) continuaient indefiniment.
+ * Seuls comptent les 401 de la box elle-meme (meme origine) : un service tiers qui refuserait
+ * l'acces ne doit pas deconnecter l'utilisateur.
+ * Le script marque aussi chaque appel vers la box d'un en-tete X-Requested-With : c'est ce qui
+ * permet a checkAuth de reconnaitre une page (401) d'un client natif comme les widgets
+ * (redirection, dont ils ont besoin pour se reconnecter). Referer ne suffit pas : il n'arrive
+ * pas jusqu'a la box via le tunnel, alors que X-Requested-With est relaye. Jamais ajoute vers
+ * une autre origine (il declencherait une requete CORS preliminaire).
+ * Pas de guillemet double dans le script : il est insere dans des chaines C.
+ */
+#define SESSION_GUARD_JS \
+  "<script>(function(){var gone=0,XR='X-Requested-With';" \
+  "function same(u){try{return new URL(String(u),location.href).origin===location.origin;}" \
+  "catch(e){return false;}}" \
+  "function chk(s,u){if(s!==401||gone||location.pathname==='/login')return;" \
+  "if(u&&!same(u))return;gone=1;" \
+  "location.href='/login?next='+encodeURIComponent(location.pathname+location.search);}" \
+  "var op=XMLHttpRequest.prototype.open,snd=XMLHttpRequest.prototype.send;" \
+  "XMLHttpRequest.prototype.open=function(m,u){this._lxSame=same(u);return op.apply(this,arguments);};" \
+  "XMLHttpRequest.prototype.send=function(){" \
+  "if(this._lxSame){try{this.setRequestHeader(XR,'XMLHttpRequest');}catch(e){}}" \
+  "this.addEventListener('load',function(){chk(this.status,this.responseURL);});" \
+  "return snd.apply(this,arguments);};" \
+  "if(window.fetch){var nf=window.fetch;window.fetch=function(i,o){" \
+  "if(same((i&&i.url)||i)){o=Object.assign({},o);" \
+  "var h=new Headers(o.headers||(i&&i.headers)||{});" \
+  "if(!h.has(XR))h.set(XR,'XMLHttpRequest');o.headers=h;}" \
+  "return nf.call(window,i,o).then(function(r){chk(r.status,r.url);return r;});};}" \
+  "})();</script>"
+
 const char HTTP_HEADER[] PROGMEM =
     "<head>"
     "<link rel='icon' type='image/x-icon' href='web/favicon.ico'>"
@@ -495,7 +647,7 @@ const char HTTP_HEADER[] PROGMEM =
     "<script type='text/javascript' src='web/js/masonry.pkgd.min.js?v=" VERSION "'></script>"
     //"<script type='text/javascript' src='web/js/bootstrap.min.js'></script>"
     "<script type='text/javascript' src='web/js/functions.min.js?v=" VERSION "'></script>"
-    "<script>$(document).ajaxError(function(e,x){if(x.status===401)window.location.href='/login';});</script>"
+    SESSION_GUARD_JS
     "<link href='web/css/bootstrap.min.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
     "<meta charset='utf-8'>"
@@ -531,7 +683,7 @@ const char HTTP_HEADERGRAPH[] PROGMEM =
     "<script type='text/javascript' src='web/js/jquery-min.js?v=" VERSION "'></script>"
     "<script type='text/javascript' src='web/js/presence.min.js?v=" VERSION "'></script>"
     "<script src='https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js'></script>"
-    "<script>$(document).ajaxError(function(e,x){if(x.status===401)window.location.href='/login';});</script>"
+    SESSION_GUARD_JS
     "<link href='web/css/bootstrap.min.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
     "<link href='web/css/style.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
     "<link href='web/css/energy.css?v=" VERSION "' rel='stylesheet' type='text/css' />"
@@ -3131,8 +3283,10 @@ const char HTTP_EDIT_RULE_HTML[] PROGMEM = R"rawstring(
 </div>
 )rawstring";
 
+// ?v= : change l'URL a chaque version, ce qui ecarte l'ancien rules.js deja en cache "immutable"
+// (voir aussi la route /web/js/rules.js dans initWebServer, servie en no-cache).
 const char HTTP_EDIT_RULE_JS[] PROGMEM = R"rawstring(
-<script src='web/js/rules.js'></script>
+<script src='web/js/rules.js?v=)rawstring" VERSION R"rawstring('></script>
 <script>
 $(document).ready(function(){
   initRulesEditor('edit', typeof ruleToEdit!=='undefined' ? ruleToEdit : null);
@@ -3261,7 +3415,7 @@ const char HTTP_ADD_RULE_HTML[] PROGMEM = R"rawstring(
 )rawstring";
 
 const char HTTP_ADD_RULE_JS[] PROGMEM = R"rawstring(
-<script src='web/js/rules.js'></script>
+<script src='web/js/rules.js?v=)rawstring" VERSION R"rawstring('></script>
 <script>
 $(document).ready(function(){
   initRulesEditor('add');
@@ -3424,6 +3578,7 @@ const char HTTP_LOGIN[] PROGMEM = R"(
       </div>
       <div id='error' class='alert alert-danger {{errorDisplay}}'>{{errorMsg}}</div>
       <form method='POST' action='/login'>
+        <input type='hidden' name='next' value='{{next}}'>
         <div class='mb-3'>
           <label for='user' class='form-label'>Identifiant</label>
           <input class='form-control' id='user' type='text' name='user' required autofocus>
@@ -8871,6 +9026,7 @@ function preventCanvasZoom(canvasId) {
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<link rel='icon' type='image/x-icon' href='web/favicon.ico'>"
         "<title>LiXee TV</title>"
+        SESSION_GUARD_JS
         "<script src='web/js/chart.umd.min.js'></script>"
         "<style>"
         ":root{"
@@ -11169,6 +11325,11 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
     } else {
       result.replace("{{tunnelUrl}}", "");
     }
+  } else if (ConfigGeneral.enableTunnel && !tunnelSecurityOk()) {
+    // Active dans la configuration mais suspendu : l'acces HTTP n'est pas protege.
+    result.replace("{{badgeClass}}", "bg-danger");
+    result.replace("{{badgeText}}", "Suspendu");
+    result.replace("{{tunnelUrl}}", "");
   } else if (ConfigGeneral.enableTunnel) {
     result.replace("{{badgeClass}}", "bg-warning text-dark");
     result.replace("{{badgeText}}", "Déconnecté");
@@ -11210,11 +11371,12 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
   }
 
   // Sécurité HTTP requise pour le tunnel
-  if (!ConfigSettings.enableSecureHttp) {
+  if (!tunnelSecurityOk()) {
     result.replace("{{securityWarning}}",
       "<div class='alert alert-warning mb-3'>"
       "<strong>S&eacute;curit&eacute; requise</strong> &mdash; "
-      "L'acc&egrave;s s&eacute;curis&eacute; (identifiant + mot de passe) doit &ecirc;tre activ&eacute; avant de pouvoir utiliser le tunnel. "
+      "L'acc&egrave;s s&eacute;curis&eacute; doit &ecirc;tre activ&eacute;, avec un identifiant et un mot de passe, pour utiliser le tunnel. "
+      "Tant qu'il ne l'est pas, le tunnel reste suspendu, m&ecirc;me s'il avait &eacute;t&eacute; activ&eacute; auparavant. "
       "<a href='/configHTTP' class='alert-link'>Configurer l'acc&egrave;s s&eacute;curis&eacute;</a>"
       "</div>");
     result.replace("{{disabledNoSec}}", "disabled");
@@ -11240,7 +11402,7 @@ void handleConfigTunnel(AsyncWebServerRequest *request)
     }
     if ((request->arg("error").toInt() & 8) == 8)
     {
-      error = "Erreur : L'acc&egrave;s s&eacute;curis&eacute; HTTP doit &ecirc;tre activ&eacute; avant d'activer le tunnel.";
+      error = "Erreur : l'acc&egrave;s s&eacute;curis&eacute; HTTP doit &ecirc;tre activ&eacute;, avec un identifiant et un mot de passe, avant d'activer le tunnel.";
     }
   }
   result.replace("{{error}}", error);
@@ -11273,7 +11435,7 @@ void handleSaveConfigTunnel(AsyncWebServerRequest *request)
   }
 
   // Sécurité HTTP requise pour activer le tunnel
-  if (wantEnable && !ConfigSettings.enableSecureHttp) {
+  if (wantEnable && !tunnelSecurityOk()) {
     AsyncWebServerResponse *response = request->beginResponse(302);
     response->addHeader(F("Location"), F("/configTunnel?error=8"));
     request->send(response);
@@ -16471,82 +16633,81 @@ void handleSaveConfigMQTT(AsyncWebServerRequest *request)
 
 void handleSaveConfigHTTP(AsyncWebServerRequest *request)
 {
-
   String path = "configGeneral.json";
-  String enableHTTP;
-  if (request->arg("enableSecureHttp") == "on")
-  {
-    enableHTTP = "1";
-    ConfigSettings.enableSecureHttp = true;
-  }
-  else
-  {
-    enableHTTP = "0";
-    ConfigSettings.enableSecureHttp = false;
-
-    // Couper le tunnel si la sécurité HTTP est désactivée
-    if (ConfigGeneral.enableTunnel) {
-      ConfigGeneral.enableTunnel = false;
-      config_write(path, "enableTunnel", "0");
-      if (tunnel != nullptr) {
-        tunnel->stop();
-        delete tunnel;
-        tunnel = nullptr;
-        Serial.println("[Tunnel] Arrêté (sécurité HTTP désactivée)");
-        addDebugLog("Tunnel arrêté : sécurité HTTP désactivée");
-      }
-    }
-  }
-  config_write(path, "enableSecureHttp", enableHTTP);
-
+  // Tunnel actif : l'interrupteur de securite est affiche GRISE (voir handleConfigHTTP), et un
+  // champ grise n'est jamais envoye avec le formulaire. Sans ce verrou cote serveur, enregistrer
+  // la page (pour changer de mot de passe, par ex.) etait lu comme "securite decochee" : la
+  // securite etait desactivee et le tunnel coupe -- depuis l'acces distant, la coupure assuree.
+  // Desactiver la securite impose donc de desactiver le tunnel d'abord, comme l'indique la page.
+  bool locked = ConfigGeneral.enableTunnel && ConfigSettings.enableSecureHttp;
+  bool wantSecure = locked || (request->arg("enableSecureHttp") == "on");
   String user = request->arg("userHTTP");
   String pass = request->arg("passHTTP");
-  bool saveOk=true;
-  uint8_t error=0;
-  
-  if (request->arg("enableSecureHttp") == "on")
-  {
+  // "********" : champ masque renvoye tel quel, le mot de passe est inchange.
+  bool passUnchanged = (pass == "********");
+  String effectivePass = passUnchanged ? String(ConfigGeneral.passHTTP) : pass;
 
-    if (strlen(pass.c_str())<4)
-    {
-      saveOk=saveOk & false;  
-      error=error+1;
-    }  
+  // Validation AVANT toute modification. Auparavant la securite etait activee et enregistree
+  // d'abord, puis les identifiants verifies : en cas d'erreur la page le signalait, mais la
+  // securite RESTAIT activee avec les anciens identifiants -- eventuellement vides. La box
+  // demandait alors un mot de passe impossible a fournir, et le tunnel pouvait etre active.
+  // Desormais une saisie invalide ne modifie rien.
+  uint8_t error = 0;
+  if (wantSecure) {
+    if (effectivePass.length() < 4) error += 1;
+    if (user == "")                 error += 2;
+  }
+  if (error) {
+    AsyncWebServerResponse *response = request->beginResponse(303);
+    response->addHeader(F("Location"), "/configHTTP?error=" + String(error));
+    request->send(response);
+    return;
+  }
 
-    if (user == "")
-    {
-      saveOk=saveOk & false;  
-      error=error+2;
+  ConfigSettings.enableSecureHttp = wantSecure;
+  config_write(path, "enableSecureHttp", wantSecure ? "1" : "0");
+
+  // Sans securite, le tunnel n'est plus autorise : on le coupe.
+  if (!wantSecure && ConfigGeneral.enableTunnel) {
+    ConfigGeneral.enableTunnel = false;
+    config_write(path, "enableTunnel", "0");
+    if (tunnel != nullptr) {
+      tunnel->stop();
+      delete tunnel;
+      tunnel = nullptr;
+      Serial.println("[Tunnel] Arrêté (sécurité HTTP désactivée)");
+      addDebugLog("Tunnel arrêté : sécurité HTTP désactivée");
     }
   }
 
-  if (saveOk)
-  {
-     if (request->arg("userHTTP"))
-    {
-      strlcpy(ConfigGeneral.userHTTP, request->arg("userHTTP").c_str(), sizeof(ConfigGeneral.userHTTP));
-      config_write(path, "userHTTP", String(request->arg("userHTTP")));
-    }
-
-    if (pass=="********")
-    {
-      pass = ConfigGeneral.passHTTP;
-      strlcpy(ConfigGeneral.passHTTP, pass.c_str(), sizeof(ConfigGeneral.passHTTP));
-      config_write(path, "passHTTP", pass);
-    }else{
-      strlcpy(ConfigGeneral.passHTTP, pass.c_str(), sizeof(ConfigGeneral.passHTTP));
-      config_write(path, "passHTTP", pass);
-    }
-
-    AsyncWebServerResponse *response = request->beginResponse(303);
-    response->addHeader(F("Location"), F("/configHTTP"));
-    request->send(response);
-  }else{
-    AsyncWebServerResponse *response = request->beginResponse(303);
-    String url="/configHTTP?error="+String(error);
-    response->addHeader(F("Location"), url);
-    request->send(response);
+  if (request->hasArg("userHTTP")) {
+    strlcpy(ConfigGeneral.userHTTP, user.c_str(), sizeof(ConfigGeneral.userHTTP));
+    config_write(path, "userHTTP", user);
   }
+  if (!passUnchanged) {
+    strlcpy(ConfigGeneral.passHTTP, pass.c_str(), sizeof(ConfigGeneral.passHTTP));
+    config_write(path, "passHTTP", pass);
+  }
+
+  // Tunnel suspendu faute de securite (voir tunnelSecurityOk()) : il reprend des que l'acces
+  // securise est configure, sans attendre un redemarrage de la box.
+  if (ConfigGeneral.enableTunnel && tunnel == nullptr && strlen(ConfigGeneral.tunnelToken) > 0
+      && tunnelSecurityOk()) {
+    String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
+    tunnelUrl += ConfigGeneral.tunnelToken;
+    if (strlen(ConfigGeneral.tunnelClientId) > 0) {
+      tunnelUrl += "&clientId=";
+      tunnelUrl += ConfigGeneral.tunnelClientId;
+    }
+    tunnel = new LiXeeBoxTunnel(tunnelUrl.c_str(), 80);
+    tunnel->begin();
+    Serial.println("[Tunnel] Reprise : acces securise configure");
+    addDebugLog("Tunnel repris : securite HTTP configuree");
+  }
+
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/configHTTP"));
+  request->send(response);
 }
 
 void handleSaveConfigWebPush(AsyncWebServerRequest *request)
@@ -21704,11 +21865,12 @@ void initWebServer()
     if (ConfigSettings.enableSecureHttp) {
       String token = getSessionCookie(request);
       if (isValidSession(token)) {
-        request->redirect("/");
+        request->redirect(sanitizeNext(request->arg("next")));
         return;
       }
     }
     String page = FPSTR(HTTP_LOGIN);
+    page.replace("{{next}}", htmlAttrEscape(sanitizeNext(request->arg("next"))));
     if (request->hasArg("error")) {
         page.replace("{{errorDisplay}}", "");
         page.replace("{{errorMsg}}", "Identifiant ou mot de passe incorrect");
@@ -21724,16 +21886,21 @@ void initWebServer()
     String user = request->arg("user");
     String pass = request->arg("pass");
 
+    // Page d'origine transmise par le champ cache "next" du formulaire, revalidee ici.
+    String next = sanitizeNext(request->arg("next"));
+
     if (user == ConfigGeneral.userHTTP && pass == ConfigGeneral.passHTTP) {
         String token = createSession();
         AsyncWebServerResponse *response = request->beginResponse(303);
-        response->addHeader("Location", "/");
+        response->addHeader("Location", next);
         response->addHeader("Set-Cookie",
             "session=" + token + "; Path=/; HttpOnly; SameSite=Strict; Max-Age=86400");
         request->send(response);
     } else {
         AsyncWebServerResponse *response = request->beginResponse(303);
-        response->addHeader("Location", "/login?error=1");
+        String loc = "/login?error=1";
+        if (next != "/") loc += "&next=" + urlEncodeComponent(next);
+        response->addHeader("Location", loc);
         request->send(response);
     }
   });
@@ -21917,9 +22084,9 @@ void initWebServer()
   serverWeb.on("/api/tunnelActivate", HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
 
-    if (!ConfigSettings.enableSecureHttp) {
+    if (!tunnelSecurityOk()) {
       request->send(200, "application/json",
-        "{\"status\":\"error\",\"error\":\"L'acc\\u00e8s s\\u00e9curis\\u00e9 HTTP doit \\u00eatre activ\\u00e9 avant d'activer le tunnel.\"}");
+        "{\"status\":\"error\",\"error\":\"L'acc\\u00e8s s\\u00e9curis\\u00e9 HTTP doit \\u00eatre activ\\u00e9, avec un identifiant et un mot de passe, avant d'activer le tunnel.\"}");
       return;
     }
 
@@ -22007,7 +22174,7 @@ void initWebServer()
         }
       }
 
-      if (changed && ConfigGeneral.enableTunnel) {
+      if (changed && ConfigGeneral.enableTunnel && tunnelSecurityOk()) {
         if (tunnel != nullptr) {
           tunnel->stop();
           delete tunnel;
@@ -23368,6 +23535,14 @@ void initWebServer()
     if (!checkAuth(request)) return;
     request->send(LittleFS, "/bk/backup.tar", "application/x-tar");
   });
+  // rules.js change souvent (editeur de regles) sans que VERSION change forcement : avec le cache
+  // "immutable" du bloc /web ci-dessous, le navigateur executait l'ancien rules.js jusqu'a une
+  // semaine apres une mise a jour de LittleFS, sans meme revalider. En "no-cache" il revalide a
+  // chaque chargement : l'ETag (CRC du .gz) lui vaut un 304 sans corps tant que le fichier n'a
+  // pas change, et la nouvelle version des qu'il change.
+  // A declarer AVANT /web : c'est le premier handler qui accepte la requete qui la sert.
+  serverWeb.serveStatic("/web/js/rules.js", LittleFS, "/web/js/rules.js")
+    .setCacheControl("no-cache");
   serverWeb.serveStatic("/web", LittleFS, "/web")
     .setCacheControl("max-age=604800, immutable");
   // Menu commun servi une seule fois (mis en cache navigateur) au lieu d'etre re-envoye dans

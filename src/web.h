@@ -33,3 +33,7 @@ void checkUpdateFirmware();
 void runUpdateFirmware(uint8_t *data, size_t len);
 void launchUpdateTask();
 void chunkedRestoreApplyIfPending();
+
+// Vrai si le tunnel peut etre active ou demarre : acces HTTP protege (securite activee,
+// identifiant et mot de passe renseignes). Voir web.cpp.
+bool tunnelSecurityOk();

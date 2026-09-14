@@ -1,6 +1,7 @@
 // rules.cpp
 #include "rules.h"
 #include "actionGroups.h"   // actions de type "actiongroup"
+#include "actionPacer.h"    // file cadencee des actions radio
 #include "protocol.h"
 #include "config.h"
 #include "log.h"
@@ -744,7 +745,7 @@ void RulesManager::evaluateRule(const Rule& rule) {
                         (String("1|") + FormattedDate).c_str());
                 }
                 lastExecTime_[rule.name] = millis();
-                for (const auto& act : rule.actions) executeAction(act, rule);
+                for (const auto& act : rule.actions) dispatchAction(act, rule);
             }
         } else {
             // Cooldown check
@@ -766,7 +767,7 @@ void RulesManager::evaluateRule(const Rule& rule) {
                     (String("1|") + FormattedDate).c_str());
             }
             lastExecTime_[rule.name] = millis();
-            for (const auto& act : rule.actions) executeAction(act, rule);
+            for (const auto& act : rule.actions) dispatchAction(act, rule);
         }
     } else {
         pendingSince_.erase(rule.name);
@@ -774,7 +775,7 @@ void RulesManager::evaluateRule(const Rule& rule) {
             config_write("statusRules.json", rule.name.c_str(),
                 (String("0|") + FormattedDate).c_str());
             if (oldSt == 1) {
-                for (const auto& act : rule.elseActions) executeAction(act, rule);
+                for (const auto& act : rule.elseActions) dispatchAction(act, rule);
             }
         }
     }
@@ -845,6 +846,22 @@ void RulesManager::runAction(const ActionRule& act, const char* groupName) {
     String origin = String("groupe \"") + (groupName ? groupName : "?") + "\"";
     dummy.name = PsString(origin.c_str(), PsramAllocator<char>());
     executeAction(act, dummy);
+}
+
+// Une action radio n'utilise la regle que pour son nom (traces) : une regle vide portant ce
+// nom suffit. Les notifications, qui ont besoin de la vraie regle, ne passent pas par la file.
+void RulesManager::runQueuedAction(const ActionRule& act, const char* origin) {
+    Rule dummy;
+    dummy.name = PsString(origin ? origin : "", PsramAllocator<char>());
+    executeAction(act, dummy);
+}
+
+void RulesManager::dispatchAction(const ActionRule& act, const Rule& rule) {
+    if (ActionPacer::isRadioAction(act)) {
+        actionPacer.enqueue(act, rule.name.c_str());
+    } else {
+        executeAction(act, rule);
+    }
 }
 
 void RulesManager::executeAction(const ActionRule& act, const Rule& rule) {

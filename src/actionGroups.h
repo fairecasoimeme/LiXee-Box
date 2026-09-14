@@ -46,9 +46,11 @@ public:
     const ActionGroup* get(size_t idx) const { return idx < groups_.size() ? &groups_[idx] : nullptr; }
     ActionGroup*       get(size_t idx)       { return idx < groups_.size() ? &groups_[idx] : nullptr; }
 
-    // Declenche toutes les actions du groupe. Renvoie le nombre d'actions emises, -1 si l'index
-    // est invalide ou le groupe desactive. Les commandes partent par la file Zigbee, deja
-    // cadencee a 100 ms : aucune rafale a redouter meme avec 10 actions.
+    // Declenche toutes les actions du groupe. Renvoie le nombre d'actions lancees, -1 si
+    // l'index est invalide ou le groupe desactive. Les actions radio passent par la file
+    // cadencee (actionPacer.h) : chacune attend l'accuse de la precedente, 1 s au plus. Les
+    // 100 ms de la file Zigbee ne suffisaient pas : ils protegent la liaison serie, pas la
+    // table d'attente d'accuses de la ZiGate.
     int run(size_t idx);
 
     // Recherche par NOM. Une regle designe un groupe par son nom et non par son index :

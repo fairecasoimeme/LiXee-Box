@@ -20,6 +20,7 @@
 #include "humidity.h"
 #include "power.h"
 #include "windowCovering.h"
+#include "sonoffButton.h"
 #include "Infrared.h"
 #include "thermostat.h"
 #include "hvac.h"
@@ -3365,7 +3366,7 @@ void readZigbeeClusterCommand(String filename, uint8_t Cluster[2],
 
 
 
-void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType, int len, char* datas)
+void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType, int len, char* datas, uint8_t endpoint)
 {
   int cluster;
   int attribute;
@@ -3416,6 +3417,9 @@ void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], ui
       break;
     case 61184: // 0xEF00 - Tuya Proprietary (TS0601 thermostats)
       tuyaThermostatManage(filename, attribute, DataType, len, datas);
+      break;
+    case 64530: // 0xFC12 SONOFF SNZB-01M : action de bouton, le bouton etant l'endpoint source
+      sonoffKeyActionManage(filename, endpoint, attribute, len, datas);
       break;
     case 57348: // 0xE004 zosungIRControl
     case 60672: // 0xED00 zosungIRTransmit

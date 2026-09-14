@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 #include "log.h"
+#include "actionPacer.h"
 
 extern RulesManager rulesManager;
 
@@ -126,9 +127,16 @@ int ActionGroupManager::run(size_t idx) {
     }
     running_ = true;
     int sent = 0;
+    // Actions radio : en file cadencee (chacune attend l'accuse de la precedente, cf.
+    // actionPacer.h). Les autres (notification) : tout de suite.
+    String origin = String("groupe \"") + g->name.c_str() + "\"";
     for (const auto& act : g->actions) {
-        rulesManager.runAction(act, g->name.c_str());
-        sent++;
+        if (ActionPacer::isRadioAction(act)) {
+            if (actionPacer.enqueue(act, origin.c_str())) sent++;
+        } else {
+            rulesManager.runAction(act, g->name.c_str());
+            sent++;
+        }
     }
     running_ = false;
     log_i("Groupe d'actions '%s' declenche : %d action(s)", g->name.c_str(), sent);

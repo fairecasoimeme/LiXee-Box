@@ -553,6 +553,9 @@ void SmartWiFiManager::staticWiFiEventHandler(WiFiEvent_t event, WiFiEventInfo_t
 
 // Gestionnaire événements WiFi
 void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    // Redemarrage en cours (cf. prepareRestart) : l'arret du WiFi genere des evenements qu'il
+    // ne faut surtout pas traiter.
+    if (_shuttingDown) return;
     switch (event) {
         case ARDUINO_EVENT_WIFI_SCAN_DONE:
             ConfigGeneral.scanNumber = info.wifi_scan_done.number;
@@ -573,18 +576,18 @@ void SmartWiFiManager::handleWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) 
                 // 203 = Handshake timeout
                 // 204 = Beacon timeout (AP disparu)
             ConfigSettings.connectedWifiSta = false;
-            // Auth failed = redémarrer provisioning
-            if (info.wifi_sta_disconnected.reason == 201) {
-                //DEBUG_PRINTLN("🔐 Authentication failed, starting provisioning...");
-                delay(1000);
-                startBLEProvisioning();
-            } else {
-                // Autres raisons = reconnexion automatique
-                if (_autoReconnect) {
-                    Serial.println("🔄 Déconnexion détectée → reconnexion auto activée");
-                    _reconnecting = true;
-                    _lastReconnectTime = millis();
-                }
+            // Toutes les raisons passent par la reconnexion automatique, qui bascule en BLE
+            // apres _maxReconnectAttempts echecs -- depuis la boucle principale.
+            // Auparavant la raison 201 lancait le BLE immediatement, en la prenant pour un
+            // mauvais mot de passe. Or 201 est WIFI_REASON_NO_AP_FOUND (point d'acces pas vu,
+            // frequent et passager au demarrage) ; un vrai refus est 202 / 15 / 204. Resultat :
+            // BLE charge a presque chaque demarrage malgre une config valide, ~64 Ko de heap
+            // interne perdus, puis le reboot de recuperation (checkBleMemoryReclaim). Et le BLE
+            // etait charge ICI, dans la tache arduino_events, dont la pile est tres reduite.
+            if (_autoReconnect) {
+                Serial.println("🔄 Déconnexion détectée → reconnexion auto activée");
+                _reconnecting = true;
+                _lastReconnectTime = millis();
             }
             break;
             

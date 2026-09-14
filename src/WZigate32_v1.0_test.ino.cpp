@@ -41,6 +41,7 @@ extern "C" {
 #include "mail.h"
 #include "rules.h"
 #include "actionGroups.h"
+#include "actionPacer.h"
 #include "windowCovering.h"
 
 #include <esp_heap_caps.h>
@@ -349,6 +350,9 @@ void initCircularBuffer()
   if (!PrioritycommandList) { log_e("PSRAM alloc failed: PrioritycommandList"); ESP.restart(); }
   new(PrioritycommandList) CircularBuffer<Packet,70>();
 
+  // File cadencee des actions radio (regles, groupes) : avant toute evaluation de regle.
+  actionPacer.begin();
+
   alertList = (CircularBuffer<Alert,10>*)heap_caps_malloc(sizeof(*alertList), MALLOC_CAP_SPIRAM);
   if (!alertList) { log_e("PSRAM alloc failed: alertList"); ESP.restart(); }
   new(alertList) CircularBuffer<Alert,10>();
@@ -363,10 +367,28 @@ void initCircularBuffer()
 
 }
 
+/* Redemarrage logiciel sans plantage.
+ * ESP.restart() coupe le WiFi ; l'evenement de deconnexion qui en resulte etait traite dans la
+ * tache arduino_events (pile de quelques Ko) en plein arret -- changement d'etat, traces,
+ * deconnexion MQTT -- et la faisait deborder. Observe deux fois : "Stack canary watchpoint
+ * triggered (arduino_events)", apres le reboot de recuperation BLE et apres un reboot du
+ * watchdog. La box redemarrait quand meme, mais par un plantage, au milieu d'eventuelles
+ * ecritures en flash.
+ * On neutralise donc ces evenements, puis on coupe MQTT et WiFi depuis la boucle principale
+ * avant de redemarrer. A utiliser depuis la boucle principale uniquement.
+ */
+static void cleanRestart() {
+  smartWiFi.prepareRestart();
+  if (mqttClient.connected()) mqttClient.disconnect(true);
+  WiFi.disconnect(true);
+  delay(300);          // laisse aussi partir les dernieres traces sur la liaison serie
+  ESP.restart();
+}
+
 void delayRebootCallBack()
 {
   DEBUG_PRINTLN("reboot...");
-  ESP.restart();
+  cleanRestart();
 }
 
 bool ScanDevicesToRAZ() {
@@ -1806,8 +1828,21 @@ static void checkBleMemoryReclaim() {
     addDebugLog("Redemarrage: recuperation de la memoire BLE");
     bleReclaimGuard = BLE_RECLAIM_MAGIC;
     done = true;
-    delay(300);
-    ESP.restart();
+    cleanRestart();
+}
+
+// Contexte memoire au moment d'un reboot de securite. Distingue un heap simplement BAS (ligne
+// de base deja entamee, typiquement par le BLE de provisioning qui ne rend jamais ses ~64 Ko)
+// d'une RAFALE d'allocations (nombreuses requetes simultanees) : les blocs de plus de 4 Ko
+// partent deja en PSRAM (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL), seules les petites allocations
+// restent en memoire interne.
+static void logHeapContext() {
+  Serial.print("[Watchdog] plus grand bloc libre : ");  Serial.print(ESP.getMaxAllocHeap());
+  Serial.print(" | minimum depuis le boot : ");         Serial.print(ESP.getMinFreeHeap());
+  Serial.print(" | BLE charge : ");                     Serial.print(smartWiFi.bleWasUsed() ? "oui" : "non");
+  Serial.print(" | uptime : ");                         Serial.print(millis() / 1000);
+  Serial.println(" s");
+  if (tunnel != nullptr) tunnel->logInFlight();
 }
 
 uint32_t prevheap = 0;
@@ -1924,17 +1959,17 @@ void monitor_heap(void) {
         // Palier 3a : effondrement reel -- reboot immediat, sans confirmation.
         if (curheap < HEAP_DESPERATE) {
             Serial.printf("[Watchdog] HEAP DESESPERE %u - REBOOT IMMEDIAT\n", curheap);
+            logHeapContext();
             addDebugLog("Watchdog: reboot securite (heap desespere)");
-            delay(500);
-            ESP.restart();
+            cleanRestart();
         }
         // Palier 3b : critique mais STABLEMENT bas -- un pic d emission ne compte pas.
         if (criticalLowSince != 0 && (now - criticalLowSince >= CRITICAL_CONFIRM_MS)) {
             Serial.printf("[Watchdog] HEAP CRITIQUE %u bas depuis %lus - REBOOT DE SECURITE\n",
                           curheap, (now - criticalLowSince) / 1000);
+            logHeapContext();
             addDebugLog("Watchdog: reboot securite (heap critique stable)");
-            delay(500);
-            ESP.restart();
+            cleanRestart();
         }
     }
 
@@ -1943,7 +1978,8 @@ void monitor_heap(void) {
     if (curheap > 120000) {
         if (tunnelStopped) {
             // Relancer le tunnel si configuré
-            if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0 && tunnel == nullptr) {
+            if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0 && tunnel == nullptr
+                && tunnelSecurityOk()) {
                 String tunnelUrl = "wss://remote.lixee-box.fr/tunnel?token=";
                 tunnelUrl += ConfigGeneral.tunnelToken;
                 if (strlen(ConfigGeneral.tunnelClientId) > 0) {
@@ -2057,7 +2093,17 @@ void initWiFiServices() {
   }
 
   // === Tunnel reverse proxy ===
-  if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0 && !heapCritique) {
+  // Demarre seulement si l'acces HTTP est protege (voir tunnelSecurityOk()). Une box dont le
+  // tunnel avait ete active sans securite ne l'expose plus : il reste suspendu jusqu'a ce que
+  // l'acces securise soit configure.
+  bool tunnelBlocked = ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0
+                       && !tunnelSecurityOk();
+  if (tunnelBlocked) {
+    Serial.println("[Tunnel] Suspendu : acces securise HTTP (identifiant + mot de passe) non configure");
+    addDebugLog("Tunnel suspendu : securite HTTP non configuree");
+  }
+  if (ConfigGeneral.enableTunnel && strlen(ConfigGeneral.tunnelToken) > 0 && !heapCritique
+      && !tunnelBlocked) {
     if (!firstInit && tunnel != nullptr) {
       // Reconnexion : nettoyer l'ancien tunnel avant d'en créer un nouveau
       Serial.println("[Tunnel] Cleanup ancien tunnel avant reconnexion");
@@ -2273,6 +2319,29 @@ void setup(void)
   } else {
     configOK=true;
     DEBUG_PRINTLN(F("Conf ok LittleFS"));
+  }
+
+  // Securite HTTP activee SANS identifiant ou SANS mot de passe : etat incoherent, herite de
+  // l'ancienne validation qui activait la securite AVANT de verifier les identifiants. La box
+  // demandait alors un mot de passe impossible a fournir (client verrouille dehors), et le
+  // tunnel passait le controle "securite activee". On desactive la securite, et donc le tunnel,
+  // qui n'est pas autorise sans elle (voir tunnelSecurityOk()). Le jeton du tunnel est conserve :
+  // il suffira de configurer l'acces securise puis de reactiver le tunnel.
+  if (ConfigSettings.enableSecureHttp && !tunnelSecurityOk()) {
+    ConfigSettings.enableSecureHttp = false;
+    config_write("configGeneral.json", "enableSecureHttp", "0");
+    bool tunnelWasOn = ConfigGeneral.enableTunnel;
+    if (tunnelWasOn) {
+      ConfigGeneral.enableTunnel = false;
+      config_write("configGeneral.json", "enableTunnel", "0");
+    }
+    Serial.print("[Securite] Acces securise active sans identifiant/mot de passe : desactive");
+    Serial.println(tunnelWasOn ? " (tunnel desactive aussi)" : "");
+    if (alertList && !alertList->isFull()) {
+      alertList->push(Alert{String(tunnelWasOn
+        ? "Accès sécurisé désactivé (aucun identifiant ni mot de passe) : tunnel désactivé aussi. Configurez l'accès sécurisé pour le réactiver."
+        : "Accès sécurisé désactivé : il était activé sans identifiant ni mot de passe."), 2});
+    }
   }
 
   // Thermostats virtuels (Phase 0)
@@ -2649,6 +2718,7 @@ void loop(void)
 
       chunkedRestoreApplyIfPending();
 
+      actionPacer.tick();   // action suivante des regles / groupes, une fois la precedente acquittee
       sendTreatment();
 
       printCrcStats();

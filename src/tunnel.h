@@ -301,6 +301,26 @@ public:
         Serial.println("[Tunnel] Stopped");
     }
 
+    // Diagnostic du watchdog memoire : requetes du tunnel en cours au moment d'un reboot de
+    // securite. Chaque transfert local (boucle 127.0.0.1) immobilise jusqu'a ~12 Ko de heap
+    // INTERNE en segments lwIP (emission + reception), et un envoi WebSocket en cours en ajoute
+    // encore : cette liste dit quelles requetes pesaient au moment de la chute.
+    void logInFlight() {
+        static const char* const NAMES[] = { "libre", "connexion", "attente reponse",
+            "lecture en-tetes", "lecture corps", "lecture corps (chunked)",
+            "lecture corps (close)", "pret a envoyer" };
+        int n = 0;
+        for (int i = 0; i < MAX_CONCURRENT; i++) {
+            const TunnelSlot& s = _slots[i];
+            if (s.state == TunnelSlot::IDLE) continue;
+            n++;
+            Serial.printf("[Watchdog]   tunnel slot %d : %s %s -- %s, %u octets lus\n", i,
+                          s.method.c_str(), s.path.c_str(), NAMES[s.state], (unsigned)s.bodyLen);
+        }
+        Serial.printf("[Watchdog]   tunnel : %d requete(s) en cours, %u en file, envoi WebSocket en cours : %s\n",
+                      n, (unsigned)_pending.size(), _sending ? "oui" : "non");
+    }
+
     bool isConnected() { return _connected; }
     String getDeviceId() { return _deviceId; }
     String getSubdomain() { return _subdomain; }
@@ -390,8 +410,8 @@ private:
             slot.bodyB64     = r.bodyB64;
             slot.state       = TunnelSlot::CONNECT_SEND;
             slot.stateStartTime = millis();
-            Serial.printf("[Tunnel] [%d] Queued: %s %s (reqId: %s)\n",
-                          i, r.method.c_str(), r.path.c_str(), r.reqId.c_str());
+            Serial.printf("[Tunnel] [%d] Queued: %s %s (reqId: %s, heap: %u)\n",
+                          i, r.method.c_str(), r.path.c_str(), r.reqId.c_str(), ESP.getFreeHeap());
             return true;
         }
         return false;
@@ -1039,8 +1059,9 @@ private:
                 _ws.loop();
             }
 
-            Serial.printf("[Tunnel] [%s] Response sent: %d (%u bytes)\n",
-                          slot.reqId.c_str(), slot.statusCode, offset);
+            Serial.printf("[Tunnel] [%s] Response sent: %d (%u bytes, %s, heap: %u)\n",
+                          slot.reqId.c_str(), slot.statusCode, offset, slot.path.c_str(),
+                          ESP.getFreeHeap());
             free(respBuf);
         } else {
             Serial.printf("[Tunnel] [%s] Failed to allocate %u bytes for response\n",

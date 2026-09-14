@@ -23,6 +23,7 @@
 #include "ElectricalMeasurement.h"
 #include "lixee.h"        // invalidateDeviceCache()
 #include "TemplateCache.h"
+#include "actionPacer.h"   // file cadencee des actions (regles, groupes)
 extern TemplateCache templateCache;
 
 extern DeviceList devices;
@@ -664,9 +665,29 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
     // SetInfoStatus() ne touche que la memoire : aucune ecriture flash a chaque accuse.
     case 0x8011:
     {
+      int SA = (protocol.payload[1] << 8) | protocol.payload[2];
       if (protocol.payload[0] == 0x00) {
-        int SA = (protocol.payload[1] << 8) | protocol.payload[2];
         SetInfoStatus(GetMacAdrr(SA), String("00"));
+      }
+      actionPacer.onRadioResult(0x8011, (uint16_t)SA, protocol.payload[0]);
+    }
+    break;
+    // ROUTE DISCOVERY CONFIRM : issue d'une recherche de route lancee par la ZiGate apres un D4.
+    // Format : <status u8><statut reseau u8><adresse cible u16>. D0 = aucune route trouvee.
+    case 0x8701:
+    {
+      uint16_t SA = ((uint16_t)protocol.payload[2] << 8) | protocol.payload[3];
+      actionPacer.onRadioResult(0x8701, SA, protocol.payload[0]);
+    }
+    break;
+    // APS DATA CONFIRM : trame remise au premier saut (statut 00) ou non.
+    // Format : <status u8><src ep u8><dst ep u8><mode d'adresse u8><adresse u16 si courte><seq u8>
+    // Seule la file cadencee s'en sert (issue d'une trame envoyee sans demande d'accuse).
+    case 0x8012:
+    {
+      if (protocol.payload[3] == 0x02 || protocol.payload[3] == 0x07) {
+        uint16_t SA = ((uint16_t)protocol.payload[4] << 8) | protocol.payload[5];
+        actionPacer.onRadioResult(0x8012, SA, protocol.payload[0]);
       }
     }
     break;
@@ -677,6 +698,7 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
       ShortAddr[1]=protocol.payload[5];
       String inifile;
       int SA = (int)(ShortAddr[0] * 256)+ShortAddr[1];
+      actionPacer.onRadioResult(0x8702, (uint16_t)SA, protocol.payload[0]);
       inifile = GetMacAdrr(SA);
       char tmpStatus[4];
       snprintf(tmpStatus, sizeof(tmpStatus), "%02x",protocol.payload[0]);
@@ -900,6 +922,10 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           break;
       }
       log_d("( %02X )",protocol.payload[0]);
+      // <status u8><seq u8><type de la commande u16>... : un refus signale a la file cadencee
+      // qu'aucun accuse ne viendra pour la commande qu'elle attend.
+      actionPacer.onCommandStatus(protocol.payload[0],
+                                  ((uint16_t)protocol.payload[2] << 8) | protocol.payload[3]);
       break;
     case 0x8010:
       ZConfig.type = protocol.payload[0];
@@ -1276,7 +1302,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           }
 
           //Traitement données
-          readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[offset]);
+          readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[offset],
+                          (uint8_t)protocol.payload[5]);   // endpoint source (0x8002)
         }
         else
         {
@@ -1332,7 +1359,8 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
           SetInfoStatus(inifile,String("00"));
 
            //Traitement données
-          readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[12]);
+          readZigbeeDatas(inifile,Cluster,Attribute,DataType,ln,&protocol.payload[12],
+                          (uint8_t)protocol.payload[3]);   // endpoint source (0x8100/0x8102)
 
         }
 
@@ -1836,6 +1864,7 @@ void sendZigbeeCmd(Packet p){
     DEBUG_PRINTLN();
 
     sendPacket(p);
+    actionPacer.onSent(p);   // file cadencee : la trame attendue est partie
     
     
 }

@@ -130,7 +130,15 @@ public:
     // regle declenchante ({value}, {device}...) ; sans regle, ces variables restent vides.
     void runAction(const ActionRule& act, const char* groupName = nullptr);
 
+    // Execute une action radio sortie de la file cadencee (cf. actionPacer.h). `origin` : nom
+    // de la regle, ou "groupe \"X\"" -- il sert d'origine aux traces [Action].
+    void runQueuedAction(const ActionRule& act, const char* origin);
+
 private:
+    // Actions radio (device, dynamic, onoff) : mises en file cadencee, qui attend l'accuse de
+    // chacune avant d'envoyer la suivante. Les autres (notification...) : executees tout de suite.
+    void dispatchAction(const ActionRule& act, const Rule& rule);
+
     // subfield (issue #31) : si non vide, decode un attribut composite (STGE) et renvoie
     // seulement ce champ. Vide = valeur brute, comportement inchange.
     String getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE,

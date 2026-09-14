@@ -47,4 +47,7 @@ void sendOtaImageNotify( int u16ShortAddr, byte u8NotifyType, uint32_t u32FileVe
 void readZigbeeClusterCommand(String filename, uint8_t Cluster[2], uint8_t commandId, int len, uint8_t* datas);
 
 //void readZigbeeDatas(uint8_t ShortAddr[2],uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
-void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas);
+// `endpoint` : endpoint source de la trame. Utile aux appareils dont les canaux ne se distinguent
+// QUE par l'endpoint (ex. SONOFF SNZB-01M, un bouton par endpoint). Vaut 1 pour les appelants
+// qui ne le connaissent pas (LoRa, zone IAS...), ce qui laisse leur comportement inchange.
+void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], uint8_t DataType,int len, char* datas, uint8_t endpoint = 1);

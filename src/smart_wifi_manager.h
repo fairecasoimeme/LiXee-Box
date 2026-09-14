@@ -53,6 +53,12 @@ public:
     // Vrai si le provisioning BLE a ete charge durant cette session. Sa memoire (~64 Ko de
     // heap INTERNE) n'est jamais rendue : voir checkBleMemoryReclaim() dans le .ino.
     bool bleWasUsed() const { return _bleLoadAttempted; }
+
+    // A appeler juste avant un redemarrage logiciel : les evenements WiFi produits par l'arret
+    // (deconnexion...) sont ignores. Sinon leur traitement -- changement d'etat, callbacks,
+    // deconnexion MQTT -- s'execute dans la tache arduino_events en plein arret et fait
+    // deborder sa pile (plantage "Stack canary watchpoint triggered (arduino_events)").
+    void prepareRestart() { _shuttingDown = true; }
     bool isProvisioning() const { return _currentState == WIFI_STATE_BLE_PROVISIONING; }
     String getSSID() const;
     String getLocalIP() const;
@@ -99,6 +105,7 @@ private:
     // === BLE PROVISIONING (chargé dynamiquement) ===
     DynamicBLEManager* _bleManager;                  // Pointeur dynamique
     bool _bleLoadAttempted;                          // Flag pour éviter les rechargements
+    volatile bool _shuttingDown = false;             // redemarrage en cours (prepareRestart)
     bool _provisioningRequired;                      // BLE requis ?
 
     uint8_t _ledPin;
