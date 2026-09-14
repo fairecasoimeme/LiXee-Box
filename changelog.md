@@ -1,5 +1,69 @@
 # Changelog
 
+## v2.23
+
+### Groupes d'actions (nouvelle fonctionnalité)
+- Un **groupe d'actions** est un bouton qui déclenche **plusieurs actions sur des appareils différents** (ex. « Fermeture des volets », « Absence »). Les groupes s'affichent en **tête de la page Appareils**
+- Nouvelle page **Config → Groupes d'actions** : création, modification, test et suppression
+- **Icônes monochromes bleu LiXee** adaptées à la domotique (volets, température, éclairage, sécurité…) : 56 icônes en 9 thèmes, choisies dans une fenêtre ouverte depuis le bouton placé à côté du nom
+- Un groupe peut être déclenché **par une règle**, en action « alors » comme « sinon ». Il est désigné par son nom : supprimer un autre groupe ne décale rien. Le **résumé de la règle** décrit l'action
+- Les actions d'un groupe restent liées à l'adresse IEEE des appareils : un changement d'adresse courte ne casse pas le groupe
+
+### Envoi cadencé des commandes (groupes et règles)
+- Les commandes d'un groupe ou d'une règle à plusieurs actions partaient **toutes en même temps**, ce qui saturait la ZiGate : commandes perdues sans aucun message, volets qui ne bougeaient pas
+- Elles partent désormais **une par une** : chaque commande attend l'accusé de réception (ou l'échec) de la précédente, **1 s au plus**
+- Appareil momentanément sans route (erreur D4) : la box attend la fin de la recherche de route avant d'envoyer la commande suivante, au lieu de lancer toutes les recherches à la fois
+- ZiGate saturée : la commande est **remise en file et renvoyée** dès qu'une place se libère, au lieu d'être perdue
+- Un groupe déclenché deux fois de suite n'envoie pas deux fois les mêmes commandes
+
+### Volets roulants
+- Nouvelle action **Position 0–100 %** : curseur sur les pages Appareils, fiche appareil et tableau de bord, qui suit la position réelle en direct
+- La position courante s'affiche en **pourcentage** (elle apparaissait en hexadécimal au chargement de la page : « 32 » pour 50 %)
+- Une règle ou un groupe sans position renseignée n'envoie rien (la valeur par défaut aurait fermé le volet)
+
+### État radio des appareils
+- **Icône discrète** lorsque le dernier envoi vers un appareil a échoué (D4 : appareil injoignable, souvent une route cassée ; E9 : pas d'accusé…), dans **Réseau → Zigbee** et sur la page **Appareils**, mise à jour en direct
+- L'icône disparaît dès que l'appareil accuse réception d'une commande
+
+### Sécurité et accès distant
+- Le **tunnel** ne peut être activé que si l'**accès sécurisé HTTP** est activé **avec un identifiant et un mot de passe**. Sinon il reste suspendu (badge « Suspendu » sur la page Tunnel)
+- Une box dont l'accès sécurisé était activé **sans identifiant ni mot de passe** le voit désactivé automatiquement au démarrage, le tunnel aussi, avec une alerte expliquant pourquoi
+- Page **Sécurité HTTP** : une saisie invalide ne modifie plus rien (la sécurité pouvait rester activée avec des identifiants vides, rendant la box inaccessible) ; désactiver la sécurité coupe le tunnel
+- **Session expirée** : une page restée ouverte revient à la page de connexion au lieu d'interroger la box en boucle (en accès distant, chaque interrogation faisait transiter la page de connexion, ~6 Ko toutes les 5 s)
+- Après connexion, retour **sur la page d'origine** plutôt que sur l'accueil
+- Les **widgets LiXee-Assist** continuent de se reconnecter automatiquement
+
+### Stabilité
+- **WiFi** : une absence passagère du point d'accès au démarrage ne lance plus le provisioning BLE, qui immobilisait ~64 Ko de mémoire. Le BLE n'est proposé qu'après 10 échecs de reconnexion
+- Si le BLE a tout de même été chargé, la box redémarre **une seule fois**, une fois le WiFi stable, pour récupérer cette mémoire
+- **Redémarrages propres** : les redémarrages logiciels (mise à jour, surveillance mémoire, récupération BLE) se terminaient par un plantage, potentiellement en pleine écriture en flash
+- **Surveillance mémoire** : le redémarrage de sécurité ne se déclenche plus sur un simple pic lors de l'envoi d'une page (le seuil bas doit durer 3 s ; seul un effondrement sous 25 Ko reste immédiat)
+- **Graphes des pages Énergie** : les données sont préparées en PSRAM, ce qui supprime une chute brutale de la mémoire et le redémarrage qui suivait
+- **MQTT** : la vérification du serveur ne bloque plus la box (délai 1,5 s, nouvelle tentative au plus une fois par minute)
+- Suppression d'un ancien circuit de réception inutilisé (~85 Ko de PSRAM libérés)
+
+### ZLinky LoRa — option Base (mode Historique)
+- L'**historique d'énergie** est alimenté (le fichier restait à zéro), avec le libellé **BASE** à l'affichage et dans l'export CSV
+- Plus d'index dupliqué dans les compteurs Heures Creuses / Heures Pleines
+- La bannière **tarif en cours** de la page Énergie est renseignée
+
+### Interface
+- Éditeur de règles : une mise à jour de l'interface est prise en compte **immédiatement** (l'ancien script restait en cache jusqu'à une semaine)
+
+### Nouveaux appareils / templates
+- **SONOFF SNZB-01M** (bouton Orb 4-in-1) : une action par bouton et par type d'appui (`single_button_2`, `double_button_1`, `long_button_3`, `triple_button_4`…), utilisable dans les règles et en MQTT, et niveau de batterie
+
+### Diagnostic
+- Traces `[Action]` indiquant l'origine de chaque commande (interface, tunnel, règle, groupe, thermostat) et `[Cadence]` pour l'envoi cadencé
+- Au redémarrage de sécurité, la liste des requêtes du tunnel en cours est journalisée
+- Thermostat : un appareil déclaré deux fois dans une zone ne reçoit la commande qu'une fois
+
+### Documentation
+- Nouveau guide **CLIM.md** : pilotage des climatiseurs par le thermostat virtuel
+
+### Mise à jour
+- Flasher le firmware **et** mettre à jour le système de fichiers (`data/web/js/rules.js.gz`, `data/tp/514.json`, `data/tp/1.json`), puis redémarrer
+
 ## v2.22
 
 ### LoRa 2.4 GHz (nouvelle fonctionnalité majeure)
