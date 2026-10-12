@@ -1479,7 +1479,19 @@ void DecodePayload(struct ZiGateProtocol protocol, int packetSize)
         }
       }
       break;
-      case 0x8120:   
+      // WRITE ATTRIBUTE RESPONSE : reponse de l'appareil a une ecriture d'attribut (actions des
+      // templates en ecriture : SystemMode HVAC, modes...). Jusqu'ici ignoree : un REFUS de
+      // l'appareil (ex. 0x87 INVALID_VALUE sur SystemMode=Chaud si ControlSequenceOfOperation
+      // vaut "froid seulement") etait invisible, la commande semblait juste ne pas partir.
+      // Trame brute journalisee : le statut ZCL y figure (00 = accepte, 86/87/88 = refus).
+      case 0x8110:
+      {
+        Serial.print(F("[WriteAttr] reponse :"));
+        for (int k = 0; k < protocol.ln && k < 24; k++) Serial.printf(" %02X", (uint8_t)protocol.payload[k]);
+        Serial.println();
+      }
+      break;
+      case 0x8120:
       {
         DEBUG_PRINT(F("Config report response : "));
          DEBUG_PRINT(F(" Size : "));

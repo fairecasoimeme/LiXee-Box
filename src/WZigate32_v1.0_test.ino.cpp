@@ -392,11 +392,6 @@ void delayRebootCallBack()
 }
 
 bool ScanDevicesToRAZ() {
-  // Récupérer l'heure courante
-  time_t now = time(nullptr);
-  struct tm nowTm;
-  localtime_r(&now, &nowTm);
-
   // Liste des attributs tarifaires pour les sous-compteurs
   const int tarifAttrs[] = {256, 258, 260, 262, 264, 266, 268, 270, 272, 274};
   const int tarifAttrsCount = 10;
@@ -686,10 +681,27 @@ bool ScanDevicesToRAZ() {
     // Si lastSeen est trop vieux (>3600s), on remet à zéro le compteur courant
     time_t lastSeen = device->getLastSeenEpoch();
 
-    if (lastSeen != (time_t)-1 && (now - lastSeen) > 3600) {
-      
-      String textError = "device : " + deviceId + " - Pas vu depuis plus de 1 heure";
-      addDebugLog(textError);
+    // Journal : UNE entree quand l'appareil devient muet, une autre quand il revient. Ce test
+    // tourne chaque minute : un appareil durablement absent (pile vide, retire du reseau)
+    // remplissait sinon le journal de debug d'une ligne par minute, noyant tout le reste.
+    static PsUnorderedMap<bool> staleLogged;
+    PsString staleKey(deviceId.c_str(), PsramAllocator<char>());
+    // Heure courante lue sur la MEME horloge que lastSeen (cf. formattedDateToEpoch) : surtout
+    // pas time(nullptr), l'horloge systeme, qui peut diverger de plusieurs heures.
+    time_t nowBox = formattedDateToEpoch(FormattedDate);
+    bool isStale = (lastSeen != (time_t)-1 && nowBox != (time_t)-1 && (nowBox - lastSeen) > 3600);
+    if (!isStale && staleLogged.count(staleKey)) {
+      staleLogged.erase(staleKey);
+      addDebugLog("device : " + deviceId + " - de nouveau vu");
+    }
+
+    if (isStale) {
+
+      if (!staleLogged.count(staleKey)) {
+        staleLogged[staleKey] = true;
+        addDebugLog("device : " + deviceId + " - Pas vu depuis plus de 1 heure (dernier contact : "
+                    + device->getInfo().lastSeen + ")");
+      }
 
       device->setValue("0B04", "1295", "0");
       device->setValue("0B04", "2319", "0");

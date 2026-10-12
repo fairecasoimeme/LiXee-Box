@@ -22,10 +22,18 @@ DeviceData::~DeviceData() {
 }
 
 time_t DeviceData::getLastSeenEpoch() const {
-    // Format réel produit par NTPClient::getFullFormattedTime() : "DD/MM/YYYY HH:MM"
+    return formattedDateToEpoch(_info.lastSeen.c_str());
+}
+
+// Convertit une date "DD/MM/YYYY HH:MM" (format de FormattedDate / lastSeen) en secondes.
+// Pour mesurer l'âge d'un lastSeen, comparer au résultat de cette MÊME fonction appliquée à
+// FormattedDate (l'heure courante de la box) : les deux dates viennent alors de la même
+// horloge (NTP + fuseau + décalage configurés). Comparer à time(nullptr), l'horloge système
+// que le firmware ne règle pas, donnait un écart faux d'une heure ou plus : un ZLinky vu à
+// l'instant était déclaré « pas vu depuis plus de 1 heure » et ses puissances remises à 0.
+time_t formattedDateToEpoch(const char* s) {
     struct tm t = {};
-    const char* s = _info.lastSeen.c_str();
-    int len = _info.lastSeen.length();
+    int len = s ? strlen(s) : 0;
 
     // Vérifier longueur minimale et format "DD/MM/YYYY HH:MM" (16 chars)
     if (len < 16 || s[2] != '/' || s[5] != '/') {

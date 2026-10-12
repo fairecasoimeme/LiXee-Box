@@ -75,6 +75,14 @@ struct LoraEmitter {
   uint8_t  pollRespType;     // type ZCL de la valeur renvoyee
   uint8_t  pollRespLen;      // longueur de la valeur
   uint8_t  pollRespValue[24];// valeur brute (big-endian pour les numeriques)
+
+  // --- Identification de l'objet par POLL (PROTOCOLE_LORA.md §8, cluster Basic 0x0000) ----
+  // Le PAIR_REQUEST (11 octets) ne dit pas quel objet s'appaire : apres l'appairage, la box
+  // lit 0x0000/0xFF00 (device_id, nomme data/tp/<device_id>.json) puis 0x0000/0x0005 (model,
+  // la cle dans ce fichier). Tant que ce n'est pas fait, deviceId/model sont vides et l'appareil
+  // n'a pas de template. RAM seulement : au boot, une identite incomplete relance la lecture.
+  uint8_t  identStep;        // 0 = identifie, 1 = attend le device_id, 2 = attend le model
+  uint32_t identNextMs;      // prochaine tentative (apres un abandon, on espace les essais)
 };
 
 extern LoraEmitter loraEmitters[LORA_MAX_EMITTERS];

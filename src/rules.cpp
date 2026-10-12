@@ -229,9 +229,12 @@ bool RulesManager::loadFromFile(const char* path) {
     JsonArray arr = doc["rules"].as<JsonArray>();
     rules_.clear();
     rules_.reserve(arr.size());
-    pendingSince_.clear();
-    lastExecTime_.clear();
-    execCounters_.clear();
+    // L'état d'exécution (début du maintien, dernière exécution, compteur du jour) n'est PAS
+    // effacé ici : ce fichier est relu CHAQUE MINUTE, juste avant l'évaluation des règles timer.
+    // L'effacer remettait à zéro le décompte du « Maintien » à chaque évaluation -- une règle
+    // avec un maintien > 0 ne se déclenchait jamais (issue #45) -- et rendait inopérants
+    // l'intervalle minimum et le max par jour. Seules les entrées des règles disparues sont
+    // retirées, après le chargement (pruneRuntimeState).
 
     for (JsonObject r : arr) {
         Rule rule;
@@ -361,7 +364,25 @@ bool RulesManager::loadFromFile(const char* path) {
         rules_.push_back(std::move(rule));
     }
 
+    pruneRuntimeState();
     return true;
+}
+
+// Retire l'état d'exécution des règles qui n'existent plus (supprimées ou renommées) ; celui des
+// autres est conservé d'un rechargement à l'autre (cf. loadFromFile).
+template <typename M>
+static void pruneByRuleNames(M& m, const std::vector<Rule, PsramAllocator<Rule>>& rules) {
+    for (auto it = m.begin(); it != m.end(); ) {
+        bool found = false;
+        for (const auto& r : rules) { if (r.name == it->first) { found = true; break; } }
+        if (found) ++it; else it = m.erase(it);
+    }
+}
+
+void RulesManager::pruneRuntimeState() {
+    pruneByRuleNames(pendingSince_,  rules_);
+    pruneByRuleNames(lastExecTime_,  rules_);
+    pruneByRuleNames(execCounters_,  rules_);
 }
 
 String RulesManager::getCurrentValueAsString(const char* type, int cluster, int attribute, const char* IEEE,
@@ -748,7 +769,10 @@ void RulesManager::evaluateRule(const Rule& rule) {
                     config_write("statusRules.json", rule.name.c_str(),
                         (String("2|") + FormattedDate).c_str());
                 }
-            } else if (millis() - it->second >= (unsigned long)(rule.duration * 1000)) {
+            // Tolérance de 2 s : les règles timer ne sont évaluées qu'une fois par minute, à
+            // quelques ms près ; sans elle, un maintien de 60 s ratait la 2e évaluation (59,98 s
+            // écoulées) et ne se déclenchait qu'à la 3e, soit au bout de 2 minutes.
+            } else if (millis() - it->second + 2000UL >= (unsigned long)(rule.duration * 1000)) {
                 pendingSince_.erase(it);
 
                 // Cooldown check

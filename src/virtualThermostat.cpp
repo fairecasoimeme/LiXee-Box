@@ -16,6 +16,14 @@ extern ConfigGeneralStruct ConfigGeneral;
 int getCurrentTariffAttributeId();  // défini dans SimpleMeter.cpp
 String tariffLabelForAttr(int attrId);  // défini dans lixee.cpp
 
+// Délai par défaut sans aucune trame du capteur de température avant de le juger « HS ».
+// 3 h : un capteur sur pile n'émet souvent que sur VARIATION de température, et sinon au rythme
+// de son rapport périodique maximal (1 h chez beaucoup de modèles, parfois plus). L'ancien
+// défaut (60 min) tombait pile sur ce rythme : une pièce à température stable voyait son capteur
+// passer « HS » et la zone coupée alors que tout fonctionnait.
+#define SENSOR_TIMEOUT_DEFAULT_SEC  10800
+#define SENSOR_TIMEOUT_OLD_DEFAULT   3600   // ancien défaut, migré vers le nouveau au chargement
+
 // Globals (modèle de données déclaré extern dans config.h)
 VirtualThermostat vThermostats[MAX_VTHERMOSTATS];
 int vThermostatCount = 0;
@@ -251,7 +259,7 @@ void initThermostatDefaults(VirtualThermostat& t) {
   t.tpiKi = 0.1f;
   t.minOnSec = 180;
   t.minOffSec = 180;
-  t.sensorTimeoutSec = 3600;  // 60 min
+  t.sensorTimeoutSec = SENSOR_TIMEOUT_DEFAULT_SEC;
   t.operMode = 0;
   t.schedule[0] = '\0';
   t.tariffPeriods[0] = '\0';
@@ -260,6 +268,8 @@ void initThermostatDefaults(VirtualThermostat& t) {
   // runtime
   t.currentTemp = 0.0f;
   t.sensorValid = false;
+  t.sensorReason = 1;
+  t.sensorAgeSec = -1;
   t.occupied = true;
   t.windowOpen = false;
   t.schedActive = true;
@@ -328,7 +338,10 @@ void loadThermostats() {
     t.tpiKi = o["tpiKi"] | 0.1;
     t.minOnSec = o["minOnSec"] | 180;
     t.minOffSec = o["minOffSec"] | 180;
-    t.sensorTimeoutSec = o["sensorTimeoutSec"] | 3600;
+    t.sensorTimeoutSec = o["sensorTimeoutSec"] | SENSOR_TIMEOUT_DEFAULT_SEC;
+    // Zone enregistrée avec l'ancien défaut (60 min), jamais personnalisé en pratique : passage
+    // au nouveau. Les autres valeurs, choisies par l'utilisateur, sont conservées.
+    if (t.sensorTimeoutSec == SENSOR_TIMEOUT_OLD_DEFAULT) t.sensorTimeoutSec = SENSOR_TIMEOUT_DEFAULT_SEC;
     t.operMode = o["operMode"] | 0;
     strlcpy(t.schedule, o["schedule"] | "", sizeof(t.schedule));
     strlcpy(t.tariffPeriods, o["tariffPeriods"] | "", sizeof(t.tariffPeriods));
@@ -405,8 +418,11 @@ bool saveThermostats() {
 static void refreshZoneSensors(VirtualThermostat& t) {
   bool valid = false;
   float tC = t.currentTemp;
+  t.sensorReason = 1;    // capteur introuvable, sauf preuve du contraire
+  t.sensorAgeSec = -1;
   DeviceData* s = findDevice(t.sensorIEEE);
   if (s) {
+    t.sensorReason = 2;  // trouvé, mais aucune température lue
     // Sonde 0x0402, sinon température locale HVAC/clim 0x0201 attr 0
     int tempCluster = 1026;
     String raw = s->getValue("0402", "0");
@@ -417,15 +433,24 @@ static void refreshZoneSensors(VirtualThermostat& t) {
       float coef = s->GetAttributeCoefficient(tempCluster, 0);
       if (coef == 0.0f) coef = 0.01f;  // sécurité si template sans coefficient
       tC = r * coef;
-      bool online = getDeviceStatus(String(t.sensorIEEE) + ".json") != "d4";
+      // Seul critere : le capteur s'est-il manifeste recemment ? lastSeen est date par TOUTE
+      // trame recue (temperature, humidite, batterie...), pas seulement par la temperature.
+      // L'etat radio "d4" n'est volontairement PAS pris en compte : il signale l'echec d'un envoi
+      // VERS le capteur (lecture, poll), frequent sur un capteur a pile qui dort, et ne dit rien
+      // de sa capacite a remonter ses mesures. Il faisait passer "HS" un capteur qui fonctionnait.
       bool fresh = true;
-      time_t now = (time_t)epochTime.toInt();
+      // Même horloge que lastSeen (cf. formattedDateToEpoch), comme ScanDevicesToRAZ().
+      time_t now = formattedDateToEpoch(FormattedDate);
       if (now > 0) {
         time_t ls = s->getLastSeenEpoch();
-        long timeout = (t.sensorTimeoutSec > 0) ? t.sensorTimeoutSec : 3600;
-        if (ls > 0 && (now - ls) > timeout) fresh = false;  // mesure trop ancienne => périmé
+        long timeout = (t.sensorTimeoutSec > 0) ? t.sensorTimeoutSec : SENSOR_TIMEOUT_DEFAULT_SEC;
+        // Tolérance d'une minute : lastSeen n'est précis qu'à la minute ("DD/MM/YYYY HH:MM").
+        timeout += 60;
+        if (ls > 0) t.sensorAgeSec = (long)(now - ls);
+        if (ls > 0 && (now - ls) > timeout) fresh = false;  // aucune trame depuis trop longtemps
       }
-      valid = online && fresh;
+      valid = fresh;
+      t.sensorReason = fresh ? 0 : 3;
     }
   }
   t.currentTemp = tC;
@@ -474,10 +499,13 @@ void regulationTick() {
     bool windowOpen = t.windowOpen;
     if (valid) t.lastSensorMs = nowMs;
 
-    // 2) Failsafe : capteur HS => couper par sécurité
+    // 2) Failsafe : capteur HS => couper par sécurité (régulation et hors-gel impossibles).
+    //    Exception : la MARCHE FORCÉE, choix explicite de l'utilisateur qui ne dépend pas de la
+    //    température. Auparavant elle était recoupée au tick suivant dès que le capteur était
+    //    jugé HS : impossible de mettre la zone en marche.
     bool desired;
     if (!valid) {
-      desired = false;
+      desired = (t.forceMode == 1);
       t.duty = 0.0f;
       t.integral = 0.0f;
     } else {
@@ -541,7 +569,8 @@ String thermostatsToJson() {
   for (int i = 0; i < vThermostatCount; i++) {
     VirtualThermostat& t = vThermostats[i];
     // Rafraîchir les états de capteurs en direct pour que la fiche reflète tout changement immédiatement
-    if (t.enabled) refreshZoneSensors(t);
+    // (lecture seule : aussi pour une zone désactivée, sinon sa température n'était jamais lue)
+    refreshZoneSensors(t);
     if (i) j += ",";
     j += "{\"id\":" + String(i);
     j += ",\"name\":\"" + jsonEscape(t.name) + "\"";
@@ -552,6 +581,9 @@ String thermostatsToJson() {
     if (t.sensorValid) j += ",\"temp\":" + String(t.currentTemp, 1);
     else               j += ",\"temp\":null";
     j += ",\"sensorValid\":" + String(t.sensorValid ? 1 : 0);
+    // Raison d'un capteur HS et âge de sa dernière trame, affichés sur la vignette.
+    j += ",\"sensorReason\":" + String(t.sensorReason);
+    j += ",\"sensorAge\":" + String(t.sensorAgeSec);
     j += ",\"occupied\":" + String(t.occupied ? 1 : 0);
     j += ",\"windowOpen\":" + String(t.windowOpen ? 1 : 0);
     j += ",\"hasPresence\":" + String(strlen(t.presenceIEEE) > 0 ? 1 : 0);

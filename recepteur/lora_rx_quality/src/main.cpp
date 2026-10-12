@@ -21,7 +21,7 @@
  *   ce firmware ne peut jamais effacer les donnees de la box.
  *
  * Parametres radio identiques au firmware principal (src/loraReceiver.cpp) :
- *   BW 406.25 kHz, CR 4/5, syncword 0x12, preambule 16, CRC 2 octets, en-tete explicite.
+ *   BW 406.25 kHz, CR 4/5, syncword 0x12, preambule 8, CRC 2 octets, en-tete explicite.
  *
  * Commandes serie (terminer par Entree) :
  *   h        aide
@@ -220,7 +220,7 @@ static bool radioBegin() {
   pinMode(PIN_NSS, OUTPUT);
   digitalWrite(PIN_NSS, HIGH);
   loraSpi.begin(PIN_SCK, PIN_MISO, PIN_MOSI, PIN_NSS);
-  int st = radio.begin(CH_FREQ[curChannel], 406.25, curSF, 5, 0x12, 10, 16);
+  int st = radio.begin(CH_FREQ[curChannel], 406.25, curSF, 5, 0x12, 10, 8);   // preambule 8, comme le ZLinky
   if (st != RADIOLIB_ERR_NONE) {
     Serial.printf("[Test] radio.begin() = %d : module LoRa absent ou non repondant\r\n", st);
     return false;

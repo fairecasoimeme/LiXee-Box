@@ -60,16 +60,29 @@ static const float CH_FREQ[8] = {2410.0, 2420.0, 2430.0, 2440.0, 2450.0, 2460.0,
 #define SZ_PAIR_CONFIRM  15
 #define SZ_ESSENTIAL     17
 // Rendez-vous d'appairage : canal 3 + SF fixes (§4), quelle que soit la config operationnelle.
-// SF10 plutot que SF11 : le temps d'emission est divise par deux, donc la fenetre de 30 s laisse
-// passer deux fois plus de tentatives et le PAIR_CONFIRM revient plus vite. On perd ~2,5 dB de
-// budget de liaison, sans consequence pour un appairage qui se fait a portee de main.
+// SF11 : c'est le SF de rendez-vous du firmware actuel du ZLinky LoRa. Un passage en SF10 (temps
+// d'emission divise par deux, plus de tentatives dans la fenetre de 30 s) a ete essaye, mais il
+// rendait impossible l'appairage des ZLinky non mis a jour : il est remis a plus tard.
 // ATTENTION : l'emetteur doit utiliser le MEME SF pour le rendez-vous, sinon il n'est pas entendu.
-#define LORA_PAIR_SF     10
+#define LORA_PAIR_SF     11
 
-// Type par défaut si l'émetteur ne l'annonce pas (PAIR_REQUEST historique de 11 octets) :
-// c'était forcément un ZLinky. device_id nomme le template data/tp/81.json, model en est la clé.
+// Preambule (en symboles), identique en emission et en reception. DOIT etre le meme que celui du
+// ZLinky LoRa (8 depuis son passage de 16 a 8). Seul un downlink a bas SF l'allonge (cf.
+// downlinkPreamble) : un preambule plus long que celui attendu reste compatible.
+#define LORA_PREAMBLE    8
+
+// Identité d'un ZLinky : device_id nomme le template data/tp/81.json, model en est la clé.
+// Utilisée UNIQUEMENT en repli : pour un émetteur appairé avant l'identification par POLL
+// (lora.json sans deviceId), et pour un émetteur dont le firmware ne connaît pas le cluster
+// Basic (réponse UNKNOWN_ATTR) -- un firmware aussi ancien est forcément celui du ZLinky.
 #define LORA_ZLINKY_DEVICE_ID "81"
 #define LORA_ZLINKY_MODEL     "ZLinky_TIC"
+
+// Identification par POLL (cluster Basic, PROTOCOLE_LORA.md §8)
+#define POLL_CLUSTER_BASIC  0x0000
+#define POLL_ATTR_DEVICE_ID 0xFF00   // uint16
+#define POLL_ATTR_MODEL     0x0005   // character string (ModelIdentifier, comme en Zigbee)
+#define IDENT_RETRY_MS      300000UL // après 8 essais sans réponse : nouvel essai 5 min plus tard
 
 /* ===================== État ===================== */
 LoraEmitter loraEmitters[LORA_MAX_EMITTERS];
@@ -754,6 +767,7 @@ uint8_t loraGetSF()      { return g_sf; }
 // On le signale bruyamment ici : c'est la seule erreur qui ne se voit pas dans les logs
 // de réception (les trames arrivent et sont déchiffrées normalement).
 static void warnIfNoTemplate(const char *deviceId, const char *model) {
+  if (!deviceId[0]) { LLOG("[LoRa] identite pas encore lue : template applique apres le POLL\r\n"); return; }
   String path = "/tp/" + String(deviceId) + ".json";
   if (!LittleFS.exists(path)) {
     LLOG("[LoRa] ATTENTION : template %s introuvable -> la fiche de l'appareil sera vide.\r\n"
@@ -849,7 +863,7 @@ static void loraStartPairingNow() {
   awaitingConfirm    = false;
   pinMode(LED_PIN, OUTPUT);           // deja fait au boot, mais on ne depend pas de l'ordre d'init
   ledLastToggle = 0; ledState = false;   // demarre le clignotement des le prochain loop
-  // Rendez-vous d'appairage FIXE : canal 3 + SF10 (§4), quelle que soit la config operationnelle.
+  // Rendez-vous d'appairage FIXE : canal 3 + SF11 (§4), quelle que soit la config operationnelle.
   // C'est ce qui permet a un ZLinky tournant sur un autre canal/SF de revenir se faire entendre.
   setChannel(LORA_PAIR_CHANNEL);
   setSF(LORA_PAIR_SF);
@@ -871,22 +885,24 @@ static void handlePairRequest(const uint8_t *buf, int len) {
   if (!loraPairingMode || awaitingConfirm || len < SZ_PAIR_REQUEST) return;
   memcpy(pendingMAC, &buf[2], MAC_SIZE);
 
-  // Type de l'objet. Format étendu (14+N octets) : [11-12] device_id (uint16 BE),
-  // [13] longueur du model, [14..] model. Ils désignent le template, comme en Zigbee,
-  // pour que d'autres objets LoRa que le ZLinky soient supportés sans code dédié.
-  // Format historique (11 octets, sans type) : c'est un ZLinky.
+  // Type de l'objet (device_id + model, qui désignent le template comme en Zigbee).
+  // Format de base (11 octets, celui du firmware actuel) : rien n'est annoncé -> identité
+  // VIDE, lue par POLL du cluster Basic une fois l'appairage confirmé (cf. handlePairConfirm).
+  // Format étendu (14+N octets, firmwares intermédiaires) : [11-12] device_id (uint16 BE),
+  // [13] longueur du model, [14..] model -> pris tel quel, pas de POLL.
   if (len >= 14 && (14 + buf[13]) <= len && buf[13] < sizeof(pendingModel)) {
     snprintf(pendingDeviceId, sizeof(pendingDeviceId), "%u", getU16(&buf[11]));
     memcpy(pendingModel, &buf[14], buf[13]);
     pendingModel[buf[13]] = '\0';
   } else {
-    strlcpy(pendingDeviceId, LORA_ZLINKY_DEVICE_ID, sizeof(pendingDeviceId));
-    strlcpy(pendingModel,    LORA_ZLINKY_MODEL,     sizeof(pendingModel));
+    pendingDeviceId[0] = '\0';
+    pendingModel[0]    = '\0';
   }
 
   for (int i = 0; i < KEY_SIZE; i++) pendingKey[i] = (uint8_t)(esp_random() & 0xFF);
   LLOG("[LoRa] PAIR_REQUEST de %s (device_id=%s, model=%s)\r\n",
-       macToHex(pendingMAC).c_str(), pendingDeviceId, pendingModel);
+       macToHex(pendingMAC).c_str(),
+       pendingDeviceId[0] ? pendingDeviceId : "a lire", pendingModel[0] ? pendingModel : "a lire");
 
   uint8_t pkt[SZ_PAIR_RESPONSE];
   pkt[0] = 0x14;                       // v1 | PAIR_RESPONSE
@@ -939,6 +955,9 @@ static void handlePairConfirm(const uint8_t *buf, int len) {
   loraEmitters[slot].rxCount  = 0;
   loraEmitters[slot].missed   = 0;
   loraEmitters[slot].pollPending = false;
+  // Identité inconnue (PAIR_REQUEST de base) : la lire par POLL dès le prochain uplink.
+  loraEmitters[slot].identStep   = pendingDeviceId[0] ? 0 : 1;
+  loraEmitters[slot].identNextMs = millis();
   saveLoraConfig();
   ensureLoraDevice(pendingMAC, pendingDeviceId, pendingModel);
 
@@ -952,7 +971,7 @@ static void handlePairConfirm(const uint8_t *buf, int len) {
   // l'assistant recevait toujours une reponse vide). On expose un etat dedie a l'appairage
   // LoRa, lu via /loraPairStatus par l'assistant, que rien d'autre ne consomme.
   strlcpy(loraPairedMac,   macToHex(pendingMAC).c_str(), sizeof(loraPairedMac));
-  strlcpy(loraPairedModel, pendingModel,                 sizeof(loraPairedModel));
+  strlcpy(loraPairedModel, pendingModel[0] ? pendingModel : "Appareil LoRa", sizeof(loraPairedModel));
   loraPairedPending = true;
 }
 
@@ -961,10 +980,10 @@ static void handlePairConfirm(const uint8_t *buf, int len) {
 // Le device ne detecte le preambule que vers T+40-60 ms apres son uplink (stabilisation de
 // sa fenetre RX) : a SF7 un preambule de 16 symboles (~5 ms) est deja fini a cet instant et
 // n'est jamais vu. On vise ~40 ms de preambule. Tsym = 2^sf / 406250 s ; N = 0.040 * 406250
-// / 2^sf = 16250 >> sf. Un preambule plus long reste compatible avec un recepteur regle sur 16.
+// / 2^sf = 16250 >> sf. Un preambule plus long reste compatible avec le recepteur (LORA_PREAMBLE).
 static uint16_t downlinkPreamble(uint8_t sf) {
   uint32_t n = 16250UL >> sf;
-  return (n < 16) ? 16 : (uint16_t)n;
+  return (n < LORA_PREAMBLE) ? LORA_PREAMBLE : (uint16_t)n;
 }
 
 // Injecte la valeur d'une reponse POLL dans le pipeline habituel (readZigbeeDatas). La forme
@@ -1004,9 +1023,9 @@ static void sendPollRequest(LoraEmitter &e) {
 
   uint16_t pre = downlinkPreamble(radioSF);
   radio.clearDio1Action();
-  if (pre != 16) radio.setPreambleLength(pre);        // preambule long pour couvrir la fenetre
+  radio.setPreambleLength(pre);                        // preambule long pour couvrir la fenetre
   int st = radio.transmit(pkt, total);                 // bloquant (time-on-air)
-  if (pre != 16) radio.setPreambleLength(16);          // restaurer : notre RX attend un preambule 16
+  radio.setPreambleLength(LORA_PREAMBLE);              // restaurer le preambule normal
   radio.setDio1Action(onLoraRx);
   radio.startReceive();                      // re-ecoute : la reponse arrive comme une trame normale
   e.pollRetries++;
@@ -1035,12 +1054,21 @@ static void handleData(uint8_t *buf, int len, float rssi, float snr) {
     e.rxCount++; e.lastRssi = rssi; e.lastSnr = snr; e.lastSeenMs = millis();
     lastRadioRxMs = millis();      // trame VALIDE de notre device (base du watchdog)
 
+    // Identification en cours (cluster Basic) : la mettre en file si rien d'autre n'attend.
+    if (e.identStep && !e.pollPending && (int32_t)(millis() - e.identNextMs) >= 0) {
+      loraQueuePoll(i, POLL_CLUSTER_BASIC,
+                    e.identStep == 1 ? POLL_ATTR_DEVICE_ID : POLL_ATTR_MODEL);
+    }
+
     // Fenetre descendante (§8) : si une lecture d'attribut attend, l'emettre MAINTENANT, avant
     // le mapping (readZigbeeDatas = MQTT + fichiers, plusieurs ms) qui ferait rater les ~20 ms.
     // Best-effort borne : au-dela de 8 uplinks sans reponse, on abandonne (perte durable).
     if (e.pollPending) {
       if (e.pollRetries >= 8) {
         e.pollPending = false;
+        // Identification sans réponse : on ne renonce pas (sans identité, pas de template),
+        // on réessaiera plus tard plutôt qu'à chaque uplink.
+        if (e.identStep && e.pollCluster == POLL_CLUSTER_BASIC) e.identNextMs = millis() + IDENT_RETRY_MS;
         LLOG("[LoRa] POLL cluster=0x%04X attr=0x%04X abandonne (pas de reponse apres %d essais)\r\n",
              e.pollCluster, e.pollAttr, e.pollRetries);
       } else {
@@ -1060,6 +1088,42 @@ static void handleData(uint8_t *buf, int len, float rssi, float snr) {
     return;
   }
   LLOG("[LoRa] trame chiffree non attribuee (MIC KO pour toutes les cles), len=%d\r\n", len);
+}
+
+// Réponse à la lecture d'identité (cluster Basic). device_id d'abord, puis model ; une fois les
+// deux connus, l'appareil reçoit son template. Un firmware qui ne connaît pas le cluster Basic
+// (UNKNOWN_ATTR) est un ancien ZLinky : on retombe sur son identité.
+static void handleIdentResponse(int slot, uint16_t attr, uint8_t status, uint8_t ztype,
+                                const uint8_t *val, uint8_t vlen) {
+  LoraEmitter &e = loraEmitters[slot];
+  if (status == POLL_UNKNOWN_ATTR) {
+    LLOG("[LoRa] %s ne connait pas le cluster Basic : firmware ancien, identite ZLinky par defaut\r\n",
+         macToHex(e.mac).c_str());
+    strlcpy(e.deviceId, LORA_ZLINKY_DEVICE_ID, sizeof(e.deviceId));
+    strlcpy(e.model,    LORA_ZLINKY_MODEL,     sizeof(e.model));
+    e.identStep = 0;
+  } else if (status != POLL_OK) {
+    e.identNextMs = millis() + IDENT_RETRY_MS;   // requête refusée : nouvel essai plus tard
+    return;
+  } else if (attr == POLL_ATTR_DEVICE_ID && e.identStep == 1) {
+    uint32_t id = 0;
+    for (uint8_t k = 0; k < vlen && k < 4; k++) id = (id << 8) | val[k];   // big-endian
+    snprintf(e.deviceId, sizeof(e.deviceId), "%u", (unsigned)id);
+    e.identStep   = 2;                           // puis le model
+    e.identNextMs = millis();
+    LLOG("[LoRa] %s : device_id = %s (type 0x%02X)\r\n", macToHex(e.mac).c_str(), e.deviceId, ztype);
+    return;                                      // rien à créer tant que le model manque
+  } else if (attr == POLL_ATTR_MODEL && e.identStep == 2) {
+    uint8_t n = (vlen < sizeof(e.model) - 1) ? vlen : sizeof(e.model) - 1;
+    memcpy(e.model, val, n);
+    e.model[n] = '\0';
+    e.identStep = 0;
+  } else {
+    return;                                      // réponse hors séquence : on attend la bonne
+  }
+  LLOG("[LoRa] %s identifie : device_id=%s, model=%s\r\n", macToHex(e.mac).c_str(), e.deviceId, e.model);
+  saveLoraConfig();
+  ensureLoraDevice(e.mac, e.deviceId, e.model);  // met à jour la fiche et charge le template
 }
 
 // Reçoit le POLL_RESPONSE (type 0x0C, chiffré, §8). Valide le MIC via la clé de l'émetteur,
@@ -1092,6 +1156,12 @@ static void handlePollResponse(uint8_t *buf, int len) {
     LLOG("[LoRa] POLL_RESPONSE cluster=0x%04X attr=0x%04X statut=0x%02X type=0x%02X len=%d\r\n",
          cluster, attr, status, ztype, vlen);
 
+    // Réponse d'identification (cluster Basic) : traitée ici, PAS injectée dans le pipeline
+    // de données -- c'est l'identité de l'objet, pas une mesure.
+    if (cluster == POLL_CLUSTER_BASIC && e.identStep) {
+      handleIdentResponse(i, attr, status, ztype, &buf[9], vlen);
+      return;
+    }
     if (status == POLL_OK) {
       String inifile = macToHex(e.mac) + ".json";
       injectPollValue(inifile, cluster, attr, ztype, &buf[9], vlen);
@@ -1106,8 +1176,8 @@ bool loraReceiverBegin() {
   loadLoraConfig();
 
   // Le bus SPI (loraSpi) est déjà ouvert par detectLoRa() : ne pas le ré-initialiser.
-  // Config identique à l'émetteur : BW 406.25, SF11, CR4/5, syncword 0x12, préambule 16
-  int st = radio.begin(CH_FREQ[g_opChannel], 406.25, g_sf, 5, 0x12, 10, 16);
+  // Config identique à l'émetteur : BW 406.25, SF11, CR4/5, syncword 0x12, préambule 8
+  int st = radio.begin(CH_FREQ[g_opChannel], 406.25, g_sf, 5, 0x12, 10, LORA_PREAMBLE);
   if (st != RADIOLIB_ERR_NONE) { LLOG("[LoRa] radio.begin()=%d\r\n", st); return false; }
   radio.setCRC(2);
   radio.explicitHeader();
@@ -1122,9 +1192,14 @@ bool loraReceiverBegin() {
   lastRadioRxMs = millis();
 
   // Les émetteurs déjà appairés doivent réapparaître comme appareils au boot.
+  // Une identification interrompue (reboot avant les réponses) est relancée.
   for (int i = 0; i < LORA_MAX_EMITTERS; i++)
-    if (loraEmitters[i].valid)
+    if (loraEmitters[i].valid) {
+      loraEmitters[i].identStep   = (loraEmitters[i].deviceId[0] && loraEmitters[i].model[0]) ? 0
+                                  : (loraEmitters[i].deviceId[0] ? 2 : 1);
+      loraEmitters[i].identNextMs = millis();
       ensureLoraDevice(loraEmitters[i].mac, loraEmitters[i].deviceId, loraEmitters[i].model);
+    }
 
   LLOG("[LoRa] recepteur pret (canal %d, SF%d, %d emetteur(s))\r\n", g_opChannel, g_sf, loraCountEmitters());
   return true;
@@ -1198,14 +1273,14 @@ void loraReceiverLoop() {
   if (loraPairingMode) pairingLedTick(); else if (ledState) pairingLedOff();
 
   // Fin de la fenêtre d'appairage -> retour à l'écoute des données sur la config operationnelle
-  // (le rendez-vous forcait canal 3 + SF10, il faut restaurer canal/SF op).
+  // (le rendez-vous forcait canal 3 + SF11, il faut restaurer canal/SF op).
   if (loraPairingMode && (millis() - loraPairingStartMs > LORA_PAIR_WINDOW_MS)) {
     loraPairingMode = false; awaitingConfirm = false;
     pairingLedOff();
     setChannel(g_opChannel); setSF(g_sf); radio.startReceive();
     LLOG("[LoRa] fenetre d'appairage fermee\r\n");
   }
-  // Pas de CONFIRM : on retourne écouter les PAIR_REQUEST sur le rendez-vous (canal 3, SF10).
+  // Pas de CONFIRM : on retourne écouter les PAIR_REQUEST sur le rendez-vous (canal 3, SF11).
   if (awaitingConfirm && millis() > confirmDeadline) {
     awaitingConfirm = false;
     LLOG("[LoRa] pas de PAIR_CONFIRM recu (timeout)\r\n");

@@ -13,6 +13,40 @@
 // 100 kWh/h = impossible en résidentiel (max abonnement France = 36 kVA)
 #define MAX_ENERGY_DELTA_WH 100000
 
+// Second déclencheur du lissage, cette fois sur le TEMPS écoulé plutôt que sur la valeur.
+// Les templates ZLinky demandent un rapport d'index au plus toutes les 300 s (5 min, cf.
+// data/tp/81.json, cluster 0702). Au-delà de 45 min sans la moindre mesure, un ou plusieurs
+// créneaux horaires ont forcément été manqués (coupure secteur, box hors tension, redémarrage
+// prolongé) : le delta accumulé pendant ce trou ne doit pas être attribué EN BLOC à l'heure du
+// retour. Sans ce test, seul MAX_ENERGY_DELTA_WH (100 kWh) déclenchait le lissage : une coupure
+// de quelques heures ne représente que quelques kWh, bien en-dessous de ce seuil, et produisait
+// un pic impossible sur le graphe horaire (toute l'énergie de la coupure comptée en 1 heure).
+#define ENERGY_GAP_THRESHOLD_SEC (45 * 60)
+
+extern time_t formattedDateToEpoch(const char* s);
+
+// Vrai si plus de ENERGY_GAP_THRESHOLD_SEC se sont écoulées depuis la dernière mesure reçue.
+static bool energyGapDetected(const String &lastUpdate) {
+    if (lastUpdate.length() < 16) return false;   // jamais mis à jour : rien à comparer
+    time_t last = formattedDateToEpoch(lastUpdate.c_str());
+    time_t now  = formattedDateToEpoch(FormattedDate);
+    if (last == (time_t)-1 || now == (time_t)-1 || now <= last) return false;
+    return (now - last) > ENERGY_GAP_THRESHOLD_SEC;
+}
+
+// Durée écoulée depuis lastUpdate, en heures ENTIÈRES (1 minimum, l'heure en cours comptant
+// toujours comme une tranche entamée). Sert à répartir un delta sur le temps RÉELLEMENT écoulé,
+// plutôt que sur les seules heures de la journée courante : l'ancienne répartition ("0..heure
+// courante", cf. git blame) débordait sur les heures d'avant minuit lors d'une coupure à cheval
+// sur la nuit, et à l'inverse ré-écrivait à tort les heures du matin -- déjà correctement
+// enregistrées -- lors d'une coupure survenue en cours de journée.
+static long energyGapHours(const String &lastUpdate) {
+    time_t last = formattedDateToEpoch(lastUpdate.c_str());
+    time_t now  = formattedDateToEpoch(FormattedDate);
+    if (last == (time_t)-1 || now == (time_t)-1 || now <= last) return 1;
+    return (long)(now - last) / 3600 + 1;
+}
+
 
 // Lit un objet JSON contenant { "256": x, "258": y, "512": z, ... }
 // et le stocke dans valueMap.attributes[256] = x, etc.
@@ -273,8 +307,8 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
         return true;
     }
 
-    // Anti-spike avec lissage pour sous-compteurs
-    if (delta > MAX_ENERGY_DELTA_WH) {
+    // Anti-spike avec lissage pour sous-compteurs : valeur énorme OU créneau(x) manqué(s).
+    if (delta > MAX_ENERGY_DELTA_WH || energyGapDetected(hist.lastUpdate)) {
         // Calculer le gap depuis lastUpdate
         int lastDay = 0, lastMonth = 0, lastYear = 0;
         if (hist.lastUpdate.length() >= 16) {
@@ -309,13 +343,20 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
         }
         hist.days.trend.attributes[tariffAttrId] = deltaPerDay;
 
-        // HOURLY : distribuer la part du jour sur les heures
-        int hoursToday = curHour + 1;
-        long deltaPerHour = deltaPerDay / hoursToday;
-        for (int h = 0; h <= curHour; h++) {
-            char hourKey[3];
-            snprintf(hourKey, sizeof(hourKey), "%02d", h);
-            hist.hours.graph[PsString(hourKey)].attributes[tariffAttrId] += deltaPerHour;
+        // HOURLY : répartir sur les créneaux horaires RÉELLEMENT concernés par le trou (jusqu'à
+        // 24, au-delà le graphe -- fenêtre glissante "00".."23" sans date -- ne peut de toute
+        // façon rien montrer de plus ancien), en remontant depuis l'heure courante.
+        long gapHours  = energyGapHours(hist.lastUpdate);
+        int  hourSlots = (int)((gapHours > 24) ? 24 : gapHours);
+        long deltaPerHour = delta / gapHours;
+        {
+            int h = curHour;
+            for (int i = 0; i < hourSlots; i++) {
+                char hourKey[3];
+                snprintf(hourKey, sizeof(hourKey), "%02d", h);
+                hist.hours.graph[PsString(hourKey)].attributes[tariffAttrId] += deltaPerHour;
+                h = (h == 0) ? 23 : h - 1;
+            }
         }
         hist.hours.trend.attributes[tariffAttrId] = deltaPerHour;
 
@@ -377,22 +418,26 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
             hist.years.data[PsString(Year)].attributes[attrId] = value;
 
             // --- Anti-spike avec lissage ---
-            // Si la valeur a sauté de plus de MAX_ENERGY_DELTA_WH depuis la dernière mesure,
-            // c'est une reconnexion après période hors-ligne.
+            // Déclenché si la valeur a sauté de plus de MAX_ENERGY_DELTA_WH depuis la dernière
+            // mesure (saut énorme), OU si aucune mesure n'est arrivée depuis
+            // ENERGY_GAP_THRESHOLD_SEC (créneau(x) manqué -- coupure, box hors tension...) même
+            // si le delta en Wh reste modeste : une coupure de quelques heures ne représente que
+            // quelques kWh, trop peu pour franchir le seuil en valeur, mais bien assez pour
+            // produire un pic impossible si tout est compté sur la seule heure du retour.
             // Au lieu de perdre les données, on distribue le delta uniformément
             // sur la période où les données étaient absentes.
             if (hist.hours.last.attributes[attrId] != 0) {
                 long previousLast = hist.hours.last.attributes[attrId];
-                if (value > previousLast && (value - previousLast) > MAX_ENERGY_DELTA_WH) {
+                bool hugeJump = (value - previousLast) > MAX_ENERGY_DELTA_WH;
+                if (value > previousLast && (hugeJump || energyGapDetected(hist.lastUpdate))) {
                     long totalDelta = value - previousLast;
 
                     // Calculer le gap depuis lastUpdate
-                    int lastDay = 0, lastMonth = 0, lastYear = 0, lastHour = 0;
+                    int lastDay = 0, lastMonth = 0, lastYear = 0;
                     if (hist.lastUpdate.length() >= 16) {
                         lastDay   = hist.lastUpdate.substring(0, 2).toInt();
                         lastMonth = hist.lastUpdate.substring(3, 5).toInt();
                         lastYear  = hist.lastUpdate.substring(6, 10).toInt();
-                        lastHour  = hist.lastUpdate.substring(11, 13).toInt();
                     }
 
                     int curDay   = atoi(Day);
@@ -426,13 +471,25 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
                     hist.days.trend.attributes[attrId] = deltaPerDay;
                     hist.days.last.attributes[attrId] = value;
 
-                    // --- HOURLY : distribuer la part du jour courant sur les heures ---
-                    int hoursToday = curHour + 1;
-                    long deltaPerHour = deltaPerDay / hoursToday;
-                    for (int h = 0; h <= curHour; h++) {
-                        char hourKey[3];
-                        snprintf(hourKey, sizeof(hourKey), "%02d", h);
-                        hist.hours.graph[PsString(hourKey)].attributes[attrId] = deltaPerHour;
+                    // --- HOURLY : répartir sur les créneaux horaires RÉELLEMENT concernés par
+                    // le trou (jusqu'à 24, au-delà le graphe -- fenêtre glissante "00".."23"
+                    // sans date -- ne peut de toute façon rien montrer de plus ancien), en
+                    // remontant depuis l'heure courante. Corrige deux défauts de l'ancienne
+                    // répartition "0..heure courante" : elle débordait sur les heures d'avant
+                    // minuit lors d'une coupure à cheval sur la nuit, et ré-écrivait à tort les
+                    // heures du matin (déjà correctement enregistrées) lors d'une coupure
+                    // survenue en cours de journée.
+                    long gapHours  = energyGapHours(hist.lastUpdate);
+                    int  hourSlots = (int)((gapHours > 24) ? 24 : gapHours);
+                    long deltaPerHour = totalDelta / gapHours;
+                    {
+                        int h = curHour;
+                        for (int i = 0; i < hourSlots; i++) {
+                            char hourKey[3];
+                            snprintf(hourKey, sizeof(hourKey), "%02d", h);
+                            hist.hours.graph[PsString(hourKey)].attributes[attrId] = deltaPerHour;
+                            h = (h == 0) ? 23 : h - 1;
+                        }
                     }
                     hist.hours.trend.attributes[attrId] = deltaPerHour;
                     hist.hours.last.attributes[attrId] = value;

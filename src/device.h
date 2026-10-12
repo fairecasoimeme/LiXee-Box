@@ -12,6 +12,10 @@
 #include "TemplateData.h"
 
 class DeviceData; // Forward declaration
+
+// Date "DD/MM/YYYY HH:MM" (FormattedDate, lastSeen) -> secondes ; (time_t)-1 si invalide.
+time_t formattedDateToEpoch(const char* s);
+
 using DeviceList = std::vector<DeviceData*, PsramAllocator<DeviceData*>>;
 
 const uint16_t INDEX_ID_LIST[11] = {256, 258, 260, 262, 264,
@@ -85,7 +89,7 @@ public:
     DeviceEnergyHistory energyHistory;
     int otaInProgress;
     int otaPercentage;
-    time_t getLastSeenEpoch() const;
+    time_t getLastSeenEpoch() const;   // à comparer à formattedDateToEpoch(FormattedDate)
 
     // Constructeur : on transmet le nom de fichier JSON + un "deviceID" si besoin
     DeviceData(const String &filename, const String &deviceID);

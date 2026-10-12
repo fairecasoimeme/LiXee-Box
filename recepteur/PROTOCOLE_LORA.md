@@ -41,9 +41,8 @@ radio.setCRC(2); radio.explicitHeader(); radio.invertIQ(false);
 
 > ❗ **Incohérence** : l'en-tête/bannières annoncent SF10, mais le code utilise **SF11** (confirmé par les commentaires inline `/* SF11 */`). C'est SF11 la vérité.
 
-> **SF négocié (protocole v1)** : le **rendez-vous d'appairage** (canal 3) se fait en **SF10**
-> (SF11 auparavant) ; SF11 reste la valeur de repli opérationnelle. Le SF **opérationnel** est
-> assigné par le récepteur dans le
+> **SF négocié (protocole v1)** : SF11 reste le SF du **rendez-vous d'appairage** (canal 3) et la
+> valeur de repli. Mais le SF **opérationnel** est désormais assigné par le récepteur dans le
 > `PAIR_RESPONSE` (`op_SF`, 7..12, cf. §4) : c'est un paramètre **réseau**, commun à tous les
 > émetteurs, et il ne peut plus être changé en fonctionnement — il faut refaire un appairage.
 
@@ -90,17 +89,13 @@ radio.setCRC(2); radio.explicitHeader(); radio.invertIQ(false);
 
 ---
 
-## 4. Handshake d'appairage (rendez-vous : canal 3 + SF10)
+## 4. Handshake d'appairage (rendez-vous : canal 3 + SF11)
 
 Manuel côté récepteur (bouton long-press 3 s ou commande série `P`), fenêtre **30 s**
 (`PAIR_LISTEN_TIMEOUT_MS=30000`). Multi-émetteur (jusqu'à **4**).
 
-Le rendez-vous est **fixe : canal 3 + SF10**, quelle que soit la configuration opérationnelle.
+Le rendez-vous est **fixe : canal 3 + SF11**, quelle que soit la configuration opérationnelle.
 C'est ce qui permet à un ZLinky tournant en SF7/canal 7 de revenir se faire entendre.
-
-> ⚠️ **Changement de protocole** : le rendez-vous était en **SF11**. Récepteur et émetteurs
-> doivent utiliser le même SF de rendez-vous : un émetteur resté en SF11 n'est plus entendu, et
-> doit être mis à jour pour pouvoir être appairé.
 
 > **C'est l'appairage qui fixe le SF et le canal opérationnels.** Ce sont des paramètres
 > **réseau**, communs à tous les ZLinky d'un même récepteur, et non des réglages par appareil :
@@ -167,7 +162,7 @@ Exemple ZLinky : `device_id = 81`, `model = "ZLinky_TIC"` → 24 octets → temp
 | 19 | 1 | op_channel (0..7) que l'émetteur doit adopter |
 | **20** | **1** | **op_SF** (7..12) que l'émetteur doit adopter |
 
-Hors plage, l'émetteur retombe sur `PAIR_CHANNEL` (3) / **SF10** (le SF du rendez-vous).
+Hors plage, l'émetteur retombe sur `PAIR_CHANNEL` (3) / **SF11**.
 
 > **Rétrocompat** : un récepteur qui envoie encore l'ancien format **20 octets** (sans `op_SF`)
 > reste accepté — l'émetteur applique SF11 par défaut. Idem pour un ZLinky déjà appairé dont
@@ -516,9 +511,7 @@ Le mode **ne change pas le layout** binaire (les 3 phases sont toujours présent
 ---
 
 ## 11. Incohérences à retenir
-1. SF du **rendez-vous d'appairage** = **SF10** ; SF **opérationnel** par défaut = **SF11**,
-   sauf valeur assignée à l'appairage (`op_SF`). Les bandeaux annonçant « SF10 » partout sont
-   donc faux pour la partie opérationnelle.
+1. **SF10 (commentaires) vs SF11 (code réel)** → utiliser **SF11**.
 2. CCA : commentaire « 100 ms » vs `delay(80)` réel.
 3. « Appairage 30 s au boot » : faux, appairage **manuel** (bouton/commande `P`).
 4. Justification du seuil SNR basée sur SF10 (mais le seuil -25 reste valide en SF11).

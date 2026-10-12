@@ -1,5 +1,36 @@
 # Changelog
 
+## v2.25
+
+### Corrections
+- **Règles Timer avec « Maintien »** (issue #45) : une règle avec un maintien supérieur à 0 ne se déclenchait **jamais**. Les règles étaient rechargées chaque minute juste avant leur évaluation, ce qui remettait le décompte à zéro. Le même défaut rendait inopérants l'**intervalle minimum** et le **max par jour**. L'état des règles est désormais conservé ; une tolérance de 2 s évite qu'un maintien de 60 s n'attende une évaluation de plus
+- **« Pas vu depuis plus de 1 heure » et puissance à 0 dans l'API** (suite de l'issue #42) : l'âge du dernier contact était calculé en comparant deux horloges différentes (heure NTP de la box et horloge système). Un ZLinky qui venait d'émettre pouvait être déclaré muet : ses puissances étaient remises à 0 chaque minute. Les deux dates viennent maintenant de la même horloge
+- Le journal de debug ne signale plus un appareil muet **qu'une fois**, puis « de nouveau vu » à son retour (au lieu d'une ligne par minute)
+- **Graphe « Usage d'électricité » après une coupure** : toute l'énergie consommée pendant la coupure était comptée sur l'heure du retour, d'où un pic énorme. Le lissage se déclenche désormais dès 45 min sans mesure (et plus seulement au-delà de 100 kWh), et répartit l'énergie sur les heures **réellement** concernées, y compris celles de la veille pour une coupure de nuit, sans toucher aux heures déjà enregistrées
+
+### Thermostats
+- Capteur de température jugé « HS » à tort : le délai par défaut passe de **60 min à 3 h** (un capteur sur pile n'émet souvent que lorsque la température varie). Les zones réglées sur l'ancien défaut sont mises à jour automatiquement
+- Un échec d'envoi **vers** le capteur (erreur D4, fréquente sur un capteur qui dort) ne suffit plus à le déclarer HS : seule compte l'absence de trame
+- La **marche forcée** fonctionne même capteur HS (elle était recoupée aussitôt)
+- Une **zone désactivée** affiche « Zone désactivée » (et non « Capteur HS »), et les boutons Marche / Arrêt l'expliquent au lieu de ne rien faire
+- Un capteur HS affiche la raison : capteur introuvable, aucune température lue, ou aucune trame depuis X min
+
+### LoRa 2.4 GHz
+- **Rendez-vous d'appairage de retour en SF11** : le SF10 de la v2.24 empêchait d'appairer les ZLinky LoRa actuels
+- **Préambule de 8 symboles** (au lieu de 16), comme le firmware ZLinky LoRa à jour : une émission de 8 symboles coûte moins d'énergie au ZLinky, ce qui fiabilise l'émission sur les compteurs à faible budget d'alimentation
+- **Identification de l'objet par lecture d'attribut** : après l'appairage, la box lit le `device_id` (cluster Basic `0x0000`, attribut `0xFF00`) puis le `model` (`0x0005`) pour appliquer le bon template, au lieu de supposer un ZLinky. Un ZLinky dont le firmware ne connaît pas encore ces attributs est reconnu comme tel ; les ZLinky déjà appairés ne changent pas
+- À la première ouverture d'une box sans appareil, l'**assistant d'appairage LoRa** est proposé en priorité dès qu'un module LoRa est présent (avec ou sans Zigbee)
+- Outil de test `recepteur/lora_rx_quality` aligné sur le préambule de 8 symboles
+
+### Diagnostic
+- La réponse d'un appareil à une écriture d'attribut (acceptée ou refusée) apparaît dans le log série (`[WriteAttr]`)
+
+### Divers
+- Icônes `icon_1` et `icon_SNZB-01P` ramenées en 128 × 128 (447 Ko → 35 Ko chacune) : le paquet de mise à jour passe de 4,7 à 3,9 Mo et tient sur les box dont l'espace disque est plus chargé
+
+### Mise à jour
+- Flasher le firmware **et** mettre à jour le système de fichiers (icônes `data/web/img/icon_1.png` et `icon_SNZB-01P.png`), puis redémarrer
+
 ## v2.24
 
 ### Corrections

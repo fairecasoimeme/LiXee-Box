@@ -166,6 +166,7 @@ private:
     String substituteVariables(const String& text, const Rule& rule) const;
     void executeAction(const ActionRule& act, const Rule& rule);
     DeviceData* findDeviceByIEEE(const char* IEEE) const;
+    void pruneRuntimeState();   // retire l'état des règles disparues après un rechargement
 
     // Toutes les règles stockées en PSRAM
     std::vector<Rule, PsramAllocator<Rule>> rules_;

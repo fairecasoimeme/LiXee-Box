@@ -7495,8 +7495,11 @@ void handleRoot(AsyncWebServerRequest *request)
     if (devices.size()==0)
     {
       //rediriger vers page jumelage assist
+      // Module LoRa présent (seul OU avec le Zigbee) : on ouvre l'assistant LoRa en priorité,
+      // le premier appareil d'une box LoRa étant typiquement le ZLinky LoRa.
       AsyncWebServerResponse *response = request->beginResponse(303);
-      response->addHeader(F("Location"), F("/assistDevice"));
+      response->addHeader(F("Location"), loraDetected ? F("/assistDevice?type=lora")
+                                                      : F("/assistDevice"));
       request->send(response);
     }else{
       //rediriger vers page energy
@@ -17967,7 +17970,9 @@ void handleAssistDevice(AsyncWebServerRequest *request)
   // Même assistant pour les deux radios : seule l'étape "mise en jumelage" diffère (la
   // commande envoyée à la passerelle et son libellé). La suite est identique car
   // l'appairage LoRa publie la même alerte "appareil trouvé" (code 3) que le Zigbee.
-  bool lora = (request->arg("type") == "lora");
+  // Sans type précisé, assistant Zigbee, sauf sur une box LoRa sans Zigbee.
+  bool lora = (request->arg("type") == "lora") ||
+              (!request->hasArg("type") && loraDetected && !zigbeeDetected);
 
   // Construction String pour garantir Content-Length (compatibilité tunnel)
   String result;
@@ -20838,9 +20843,17 @@ void handleThermostats(AsyncWebServerRequest *request) {
         "var mc=t.heating?(active?'#e74c3c':'#f1948a'):(active?'#2980b9':'#aed6f1');"
         "var mic=active?(t.heating?'#e67e22':'#2980b9'):'#adb5bd';"
         "var icon=t.heating?(\"<svg width='18' height='18' viewBox='0 0 16 16' fill='\"+mic+\"'><path d='M8 16c3.314 0 6-2 6-5.5 0-1.5-.5-4-2.5-6 .25 1.5-1.25 2-1.25 2C11 4 9 .5 6 0c.357 2 .5 4-2 6-1.25 1-2 2.729-2 4.5C2 14 4.686 16 8 16m0-1c-1.657 0-3-1-3-2.75 0-.75.25-2 1.25-3C6.125 10 7 10.5 7 10.5c-.375-1.25.5-3.25 2-3.5-.179 1-.25 2 1 3 .625.5 1 1.364 1 2.25C12 14 10.657 15 8 15'/></svg>\"):(\"<svg width='18' height='18' viewBox='0 0 16 16' fill='\"+mic+\"'><path d='M8 16a.5.5 0 0 1-.5-.5v-1.293l-.646.647a.5.5 0 0 1-.707-.708L7.5 12.793V8.866l-3.4 1.963-.496 1.85a.5.5 0 1 1-.966-.26l.237-.882-1.12.646a.5.5 0 0 1-.5-.866l1.12-.646-.884-.237a.5.5 0 1 1 .26-.966l1.848.495L6.5 8 3.102 6.037l-1.849.495a.5.5 0 0 1-.259-.966l.883-.237-1.12-.646a.5.5 0 1 1 .5-.866l1.12.646-.237-.883a.5.5 0 0 1 .966-.259l.495 1.849L7.5 7.134V3.207L6.147 1.854a.5.5 0 1 1 .707-.708l.646.647V.5a.5.5 0 0 1 1 0v1.293l.647-.647a.5.5 0 1 1 .707.708L8.5 3.207v3.927l3.4-1.963.495-1.849a.5.5 0 1 1 .966.259l-.236.883 1.12-.646a.5.5 0 0 1 .5.866l-1.12.646.883.237a.5.5 0 1 1-.26.966l-1.848-.495L8.866 8l3.398 1.963 1.849-.495a.5.5 0 0 1 .259.966l-.883.237 1.12.646a.5.5 0 0 1-.5.866l-1.12-.646.236.883a.5.5 0 1 1-.966.259l-.495-1.849L8.5 8.866v3.927l1.354 1.353a.5.5 0 0 1-.708.708L8.5 14.207V15.5a.5.5 0 0 1-.5.5z'/></svg>\");"
-        "var stat;if(!t.sensorValid){stat='<span style=\"color:#e74c3c;\">Capteur HS</span>';}"
-        "else if(t.forceMode==1){stat='<span style=\"color:#8e44ad;\">Marche forc&eacute;e</span>';}"
-        "else if(t.forceMode==2){stat='<span style=\"color:#8e44ad;\">Arr&ecirc;t forc&eacute;</span>';}"
+        /* Le forcage s'affiche avant "Capteur HS" : il s'applique meme capteur HS (le masquer
+           faisait croire que les boutons Marche/Arret ne fonctionnaient pas). */
+        "var hs=t.sensorValid?'':' &middot; capteur HS';var stat;"
+        /* Zone desactivee : rien n'est regule ni force. L'afficher en premier (elle apparaissait
+           en "Capteur HS", et les boutons Marche/Arret semblaient ne rien faire). */
+        "if(!t.enabled){stat='<span style=\"color:#999;\">Zone d&eacute;sactiv&eacute;e</span>';}"
+        "else if(t.forceMode==1){stat='<span style=\"color:#8e44ad;\">Marche forc&eacute;e'+hs+'</span>';}"
+        "else if(t.forceMode==2){stat='<span style=\"color:#8e44ad;\">Arr&ecirc;t forc&eacute;'+hs+'</span>';}"
+        /* Raison affichee au survol : capteur introuvable, pas de temperature, ou trop ancien. */
+        "else if(!t.sensorValid){var rs=['','capteur introuvable','aucune temp&eacute;rature lue','aucune trame depuis '+Math.round(t.sensorAge/60)+' min'][t.sensorReason]||'';"
+          "stat='<span style=\"color:#e74c3c;\" title=\"'+rs+'\">Capteur HS'+(rs?' ('+rs+')':'')+'</span>';}"
         "else if(t.windowOpen){stat='<span style=\"color:#e67e22;\">Fen&ecirc;tre ouverte</span>';}"
         "else if(t.hasPresence&&!t.occupied){stat='<span style=\"color:#999;\">Absence</span>';}"
         "else if(!t.schedActive){stat='<span style=\"color:#9b59b6;\">'+(t.operMode==2?('Tarif '+(t.tariffNow||'')):'Hors plage')+'</span>';}"
@@ -20903,7 +20916,10 @@ void handleThermostats(AsyncWebServerRequest *request) {
     "function tSet(id,d){var s=18;for(var i=0;i<tZones.length;i++){if(tZones[i].id===id){s=tZones[i].setpoint;break;}}"
       "var v=Math.round((s+d)*2)/2;if(v<0)v=0;if(v>40)v=40;"
       "tFetch('/setThermostatSetpoint?id='+id+'&value='+v).then(function(){tLoad();});}"
-    "function tForce(id,m){tFetch('/setThermostatForce?id='+id+'&mode='+m).then(function(){tLoad();});}"
+    /* La box refuse le forcage d'une zone desactivee : le dire, au lieu d'un clic sans effet. */
+    "function tForce(id,m){for(var i=0;i<tZones.length;i++){if(tZones[i].id===id&&!tZones[i].enabled){"
+      "alert('Cette zone est d\\u00e9sactiv\\u00e9e : activez-la dans Config \\u2192 Thermostat pour la mettre en marche ou \\u00e0 l\\'arr\\u00eat.');return;}}"
+      "tFetch('/setThermostatForce?id='+id+'&mode='+m).then(function(){tLoad();});}"
     "function tMode(id,h){tFetch('/setThermostatMode?id='+id+'&heat='+h).then(function(){tLoad();});}"
     "function tFrost(id,on){tFetch('/setThermostatFrost?id='+id+'&on='+on).then(function(){tLoad();});}"
     "tLoad();setInterval(tLoad,5000);"
@@ -21177,7 +21193,7 @@ void handleEditThermostat(AsyncWebServerRequest *request) {
   result += F("<div class='form-text mb-3'>Durée minimale d'extinction avant de pouvoir rallumer. Défaut : <b>180 s (3 min)</b>.</div>");
   result += "<label class='form-label'>Délai avant capteur « HS » (minutes)</label>";
   result += "<input class='form-control' type='number' name='sensortimeout' value='" + String(t.sensorTimeoutSec / 60) + "'>";
-  result += F("<div class='form-text'>Si le capteur de température n'a envoyé <b>aucune mesure</b> depuis ce délai, il est considéré « HS » et la zone est coupée par sécurité. Augmentez-le si votre capteur ne remonte une valeur que de temps en temps (sur variation). Défaut : <b>60 min</b>.</div>"
+  result += F("<div class='form-text'>Si le capteur de température n'a envoyé <b>aucune trame</b> (température, humidité, batterie…) depuis ce délai, il est considéré « HS » et la zone est coupée par sécurité (la marche forcée reste possible). Un capteur sur pile n'émet souvent que lorsque la température varie : dans une pièce stable, il peut rester silencieux plus d'une heure. Défaut : <b>180 min</b>.</div>"
               "</details>");
 
   // --- Boutons ---

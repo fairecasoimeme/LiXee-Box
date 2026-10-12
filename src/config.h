@@ -9,7 +9,7 @@
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.24"
+#define VERSION "v2.25"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -105,6 +105,9 @@ struct VirtualThermostat {
     // --- état runtime (NON persisté) ---
     float         currentTemp;   // Dernière température lue (°C)
     bool          sensorValid;   // Capteur joignable et valeur fraîche
+    uint8_t       sensorReason;  // Pourquoi il est HS : 0=OK, 1=introuvable, 2=pas de température,
+                                 // 3=trop ancien (cf. refreshZoneSensors)
+    long          sensorAgeSec;  // Âge de la dernière trame du capteur (s), -1 = inconnu
     bool          occupied;      // Présence détectée (true si pas de capteur présence)
     bool          windowOpen;    // Au moins un capteur d'ouverture ouvert
     bool          schedActive;   // Dans la plage horaire / tarif favorable (true = autorisé)
