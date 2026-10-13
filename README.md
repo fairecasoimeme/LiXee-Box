@@ -13,9 +13,18 @@ Cette application fonctionne avec :
 - **[LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)** (WiFi uniquement)
   - Basé sur ESP32-S3-WROOM-N16R8 (PSRAM : 8MB Flash : 16MB)
   - Équipé d'un module JN5189 exécutant le [firmware ZiGate v2](https://github.com/fairecasoimeme/ZiGatev2)
-- **LiXee-Box équipée du module LoRa 2.4 GHz** (à partir de la v2.22)
+- **[LiXee-ZiWifi32 Lite Duo](https://lixee.fr/produits/49-lixee-ziwifi32-lite-duo-3770014375216.html)**, la LiXee-Box équipée du module LoRa 2.4 GHz (à partir de la v2.22)
   - Même base ESP32-S3, avec en plus un module radio **SX1281** pour recevoir les objets LoRa LiXee (ex. **ZLinky LoRa**)
   - Les modules présents (Zigbee et/ou LoRa) sont **détectés automatiquement** et le menu s'adapte
+  - Proposée avec ou sans Zigbee, antenne externe incluse
+
+La LiXee-Box est aussi vendue en **pack prêt à l'emploi**, avec le module pour le compteur Linky ([tous les packs](https://lixee.fr/19-lixee-box)) :
+
+| Pack | Contenu | Usage |
+|------|---------|-------|
+| [Pack LiXee-Box](https://lixee.fr/produits/44-pack-lixee-box-3770014375193.html) | LiXee-ZiWifi32 Lite + ZLinky_TIC v2 | Compteur proche de la box (Zigbee) |
+| [Pack LiXee-Box LoRa](https://lixee.fr/produits/52-pack-lixee-box-lora.html) | LiXee-ZiWifi32 Lite Duo sans Zigbee + ZLinky_LoRa | Compteur éloigné, sans pilotage d'objets Zigbee |
+| [Pack LiXee-Box Zigbee + LoRa](https://lixee.fr/produits/53-pack-lixee-box-zigbee-lora.html) | LiXee-ZiWifi32 Lite Duo Zigbee + LoRa + ZLinky_LoRa | Compteur éloigné et objets Zigbee |
 
 > **Note** : Vous pouvez également utiliser ce code avec d'autres cartes ESP32S3, selon les connexions de broches de votre carte.
 
@@ -30,6 +39,8 @@ Cette application fonctionne avec :
 
 [![Tutoriel Installation LiXee-Box](https://img.youtube.com/vi/1w0yDo08sk0/0.jpg)](https://youtu.be/1w0yDo08sk0)
 
+Les tutoriels vidéo (installation, tableau de bord, tarifs, Home Assistant, accès distant, application LiXee-Assist…) sont regroupés dans la [playlist YouTube LiXee](https://www.youtube.com/playlist?list=PLcgJfzJQtf64).
+
 ## Cas d'Usage Typiques
 
 - **Relais longue distance** : Linky (ZLinky) ↔ Zigbee ↔ LiXee-Box ↔ WiFi ↔ MQTT ↔ Home-Assistant/Jeedom/Domoticz
@@ -41,6 +52,8 @@ Cette application fonctionne avec :
 -  [🏠 LiXee-Box : Mesurer, analyser, économiser … pour une bonne gestion énergétique](https://faire-ca-soi-meme.fr/domotique/2025/08/18/lixee-box-mesurer-analyser-economiser-pour-une-bonne-gestion-energetique/)
 -  [⚡️ Optimiser la recharge de son véhicule électrique avec la LiXee-Box](https://faire-ca-soi-meme.fr/domotique/2025/11/13/optimiser-la-recharge-de-son-vehicule-electrique-avec-la-lixee-box/)
 -  [📡 Augmenter la portée du ZLinky_TIC v2](https://faire-ca-soi-meme.fr/domotique/2025/03/29/augmenter-la-portee-du-zlinky_tic-v2/)
+-  [📡 Compteur Linky éloigné : répéteur Zigbee, antenne externe ou LoRa](https://lixee-box.fr/guides/compteur-linky-eloigne/)
+-  [📚 Tous les guides LiXee-Box](https://lixee-box.fr/guides/)
 
 ## ✨ Fonctionnalités Principales
 La fonctionnalité principale est de relayer les données des appareils Zigbee vers un site web ou un service MQTT
@@ -363,9 +376,9 @@ Si ce cas arrive, vous aurez sur le graphique de puissance les données d'inject
 
 ## 📡 LoRa 2.4 GHz (à partir de la v2.22)
 
-> Nécessite une LiXee-Box équipée du module LoRa 2.4 GHz.
+> Nécessite une LiXee-Box équipée du module LoRa 2.4 GHz : [Pack LiXee-Box LoRa](https://lixee.fr/produits/52-pack-lixee-box-lora.html), [Pack LiXee-Box Zigbee + LoRa](https://lixee.fr/produits/53-pack-lixee-box-zigbee-lora.html) ou carte [LiXee-ZiWifi32 Lite Duo](https://lixee.fr/produits/49-lixee-ziwifi32-lite-duo-3770014375216.html).
 
-La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier est le **ZLinky LoRa**, qui transmet la téléinformation du compteur Linky sur de longues distances, là où le Zigbee ne passe pas.
+La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier est le **[ZLinky LoRa](https://lixee.fr/produits/48-zlinky-tic-lora-3770014375209.html)**, qui transmet la téléinformation du compteur Linky sur de longues distances, là où le Zigbee ne passe pas : **jusqu'à 125 m en extérieur dégagé**, environ 100 m en milieu semi-urbain (portées indicatives).
 
 ### Fonctionnement
 - Un objet LoRa est un **appareil comme les autres** : ses données utilisent les mêmes clusters que le Zigbee. Pages Énergie, historiques, export CSV, MQTT, règles et tarif du thermostat fonctionnent sans adaptation
