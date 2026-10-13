@@ -37,9 +37,9 @@ La LiXee-Box est aussi vendue en **pack prêt à l'emploi**, avec le module pour
 
 ## Installation
 
-[![Tutoriel Installation LiXee-Box](https://img.youtube.com/vi/1w0yDo08sk0/0.jpg)](https://youtu.be/1w0yDo08sk0)
+[![Installer sa LiXee-Box en 1 minute : ZLinky, Bluetooth et WiFi](https://img.youtube.com/vi/1Wt_6RhI7-U/0.jpg)](https://youtu.be/1Wt_6RhI7-U)
 
-Les tutoriels vidéo (installation, tableau de bord, tarifs, Home Assistant, accès distant, application LiXee-Assist…) sont regroupés dans la [playlist YouTube LiXee](https://www.youtube.com/playlist?list=PLcgJfzJQtf64).
+Les autres tutoriels vidéo (tableau de bord, tarifs, Home Assistant, accès distant, widgets, sous-compteurs, NSPanel Pro…) sont sur la [chaîne YouTube LiXee](https://www.youtube.com/@LiXee-SAS), regroupés dans [cette playlist](https://www.youtube.com/playlist?list=PLcgJfzJQtf64).
 
 ## Cas d'Usage Typiques
 
