@@ -9,6 +9,7 @@
 #include "mqtt.h"
 #include "device.h"
 #include "notificationManager.h"
+#include "delestage.h"
 #include <unordered_map>
 
 extern DeviceList devices;
@@ -16,8 +17,8 @@ extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
 extern ConfigNotification ConfigNotif;
-extern CircularBuffer<Device, 50> *deviceList;
-extern CircularBuffer<Notification, 10> *notifList;
+extern LockedBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Notification, 10> *notifList;
 
 extern NotificationManager notificationManager;
 
@@ -123,30 +124,9 @@ void handleNotification(const String& title, const String& text, int priority = 
     notificationManager.addNotification(title, text, priority, alertType, value, threshold);
 }
 
-// Fonction pour gérer le délestage (éviter duplication)
+// Délestage : voir delestage.cpp (coupure unique, mémorisation de l'état, rallumage).
 void handleDelestage() {
-    config_write("delestage.json", "state", "1");
-    config_write("delestage.json", "dateOn", FormattedDate);
-    
-    String delestage = config_read("configGeneral.json", "delestage");
-    if (delestage.length() > 0 && delestage == "null")  return;
-    
-    char* buf = strdup(delestage.c_str());
-    if (!buf) return;
-    char* pch = strtok(buf, ",");
-    while (pch != NULL) {
-        DeviceData* device = findDevice(String(pch));
-        if (device) {
-            String oldState = device->getValue("0006", "0");
-            if (oldState != "") {
-                config_write("delestage.json", device->getDeviceID(), oldState);
-            }
-            SendOnOffAction(device->getInfo().shortAddr.toInt(),
-                          device->getInfo().endpoint.toInt(), "0");
-        }
-        pch = strtok(NULL, ",");
-    }
-    free(buf);
+    delestageTrigger();
 }
 
 // Gestionnaires spécialisés pour chaque type d'attribut

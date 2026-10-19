@@ -5,6 +5,7 @@
 
 #include "OpenAIAnalyzer.h"
 #include <HTTPClient.h>
+#include "ethernet.h"
 #include <ArduinoJson.h>
 #include <esp_heap_caps.h>
 
@@ -505,7 +506,7 @@ char* OpenAIAnalyzer::buildFullJSONRequest(
 // ========== ENVOI REQUÊTE ==========
 
 bool OpenAIAnalyzer::sendRequest(const char* json_body, size_t json_size, AIAnalysisResult& result) {
-    if (!client_ || WiFi.status() != WL_CONNECTED) {
+    if (!client_ || !netConnected()) {
         Serial.println("[AI] WiFi non connecté");
         return false;
     }
@@ -728,7 +729,7 @@ bool OpenAIAnalyzer::testConnection() {
         return false;
     }
     
-    if (WiFi.status() != WL_CONNECTED) {
+    if (!netConnected()) {
         Serial.println("[TEST] ❌ WiFi non connecté");
         return false;
     }

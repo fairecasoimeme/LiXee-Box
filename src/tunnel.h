@@ -39,6 +39,7 @@
 #include <vector>
 #include <deque>
 #include <WebSocketsClient.h>
+#include "ethernet.h"
 
 static const int MAX_CONCURRENT = 6;
 static const size_t MAX_BODY_SIZE = 300000;  // 300KB max per response
@@ -534,7 +535,7 @@ private:
             data["version"] = VERSION;
             data["chip"] = ESP.getChipModel();
             data["freeHeap"] = ESP.getFreeHeap();
-            data["localIP"] = WiFi.localIP().toString();
+            data["localIP"] = netLocalIP().toString();
             String infoStr;
             serializeJson(info, infoStr);
             _ws.sendTXT(infoStr);

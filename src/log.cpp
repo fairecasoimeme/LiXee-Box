@@ -102,6 +102,9 @@ String logPrint()
     }
     return buff;
   }*/
+  // Corps desactive : la fonction doit quand meme renvoyer une String (ne rien renvoyer
+  // d'une fonction non void est un comportement indefini ; /getLogBuffer coupait la connexion).
+  return String("");
 }
 
 void logClear()

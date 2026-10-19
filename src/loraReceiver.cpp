@@ -1,4 +1,5 @@
 #include "loraReceiver.h"
+#include <esp_task_wdt.h>
 #include "loraModule.h"
 #include "config.h"
 #include "device.h"
@@ -16,7 +17,8 @@
 
 // File d'alertes de l'IHM (définie dans le .ino) : l'assistant d'appairage la sonde via
 // /getAlert. On y publie l'appareil trouvé, comme le fait le Zigbee dans protocol.cpp.
-extern CircularBuffer<Alert, 10> *alertList;
+extern LockedBuffer<Alert, 10> *alertList;
+extern ConfigGeneralStruct ConfigGeneral;
 
 // Le firmware compile avec CORE_DEBUG_LEVEL=0 : log_i/log_w/log_e sont muets.
 // On passe donc par Serial pour que le diagnostic LoRa reste visible.
@@ -66,9 +68,10 @@ static const float CH_FREQ[8] = {2410.0, 2420.0, 2430.0, 2440.0, 2450.0, 2460.0,
 // ATTENTION : l'emetteur doit utiliser le MEME SF pour le rendez-vous, sinon il n'est pas entendu.
 #define LORA_PAIR_SF     11
 
-// Preambule (en symboles), identique en emission et en reception. DOIT etre le meme que celui du
-// ZLinky LoRa (8 depuis son passage de 16 a 8). Seul un downlink a bas SF l'allonge (cf.
-// downlinkPreamble) : un preambule plus long que celui attendu reste compatible.
+// Preambule (en symboles), en emission comme en reception. DOIT etre le meme que celui du
+// ZLinky LoRa (8 depuis son passage de 16 a 8). Seule exception : une requete de lecture
+// d'attribut l'allonge aux SF bas (cf. pollPreamble) -- un preambule plus long que celui attendu
+// reste recu.
 #define LORA_PREAMBLE    8
 
 // Identité d'un ZLinky : device_id nomme le template data/tp/81.json, model en est la clé.
@@ -78,10 +81,12 @@ static const float CH_FREQ[8] = {2410.0, 2420.0, 2430.0, 2440.0, 2450.0, 2460.0,
 #define LORA_ZLINKY_DEVICE_ID "81"
 #define LORA_ZLINKY_MODEL     "ZLinky_TIC"
 
-// Identification par POLL (cluster Basic, PROTOCOLE_LORA.md §8)
+// Identification par POLL (cluster Basic, LORA_PROTOCOL.md §8)
 #define POLL_CLUSTER_BASIC  0x0000
 #define POLL_ATTR_DEVICE_ID 0xFF00   // uint16
 #define POLL_ATTR_MODEL     0x0005   // character string (ModelIdentifier, comme en Zigbee)
+#define POLL_ATTR_FW_VERSION 0xFF01  // uint16, format 0xMMmp
+#define POLL_ATTR_SW_BUILD   0x4000  // character string (SWBuildID), ex. "1.0.0+abc1234"
 #define IDENT_RETRY_MS      300000UL // après 8 essais sans réponse : nouvel essai 5 min plus tard
 
 /* ===================== État ===================== */
@@ -282,7 +287,7 @@ static const char *histoPtecCode(uint8_t tariffCode) {
 }
 
 /* ===================== Mode Linky =====================
- * Cf. PROTOCOLE_LORA.md §6.1 et §10. Le mode conditionne l'existence ET l'unité de la
+ * Cf. LORA_PROTOCOL.md §6.1 et §10. Le mode conditionne l'existence ET l'unité de la
  * plupart des champs : un champ « absent » arrive à 0 dans la trame, et pousser ce 0
  * afficherait une fausse mesure. On ne pousse donc un attribut que s'il a un sens ici.
  */
@@ -585,6 +590,20 @@ static void mapExtended(const String &inifile, const uint8_t *b, int len, LoraEm
       if (dn > 0) pushZStr(inifile, 0xFF66, 1, s);    // DEMAIN (couleur Tempo du lendemain)
       break;
     }
+    case 0x0B: {                                      // HISTO_ALERTS (12 octets, §7.12)
+      // Alertes du mode Historique : preavis EJP, presence des potentiels, depassements par
+      // phase. Memes attributs que le firmware Zigbee (cluster FF66, §8). Sans objet en
+      // Standard, ou ces etiquettes n'existent pas. 0 = pas d'alerte en cours.
+      if (len < 12) return;
+      e.linkyMode = b[3]; e.modeKnown = true;         // auto-descriptif (porte son mode)
+      if (b[3] & 0x01) break;                         // Standard : rien a ranger
+      pushZ(inifile, 0xFF66, 4, b[4], 1);             // PEJP
+      pushZ(inifile, 0xFF66, 3, b[5], 1);             // PPOT
+      pushZ(inifile, 0xFF66, 6, getU16(&b[6]), 2);    // ADIR1
+      pushZ(inifile, 0xFF66, 7, getU16(&b[8]), 2);    // ADIR2
+      pushZ(inifile, 0xFF66, 8, getU16(&b[10]), 2);   // ADIR3
+      break;
+    }
     default:
       LLOG("[LoRa] sous-type EXT 0x%02X non mappe (len=%d)\r\n", b[2], len);
       break;
@@ -842,6 +861,18 @@ static void ensureLoraDevice(const uint8_t *mac, const char *deviceId, const cha
   LLOG("[LoRa] device cree : %s (device_id=%s, model=%s)\r\n", id.c_str(), deviceId, model);
 }
 
+// Modele identifie : un ZLinky devient le compteur Linky de la configuration Energie, comme a
+// l'appairage Zigbee (SpecificTreatment). Le mode Linky (FF66/768) suit avec la trame
+// ESSENTIAL suivante, que handleAttribute768 n'applique qu'au ZLinky configure.
+static void registerLinkyIfZLinky(const uint8_t *mac, const char *model) {
+  if (strcmp(model, LORA_ZLINKY_MODEL) != 0) return;
+  String id = macToHex(mac);
+  if (id == ConfigGeneral.ZLinky) return;
+  strlcpy(ConfigGeneral.ZLinky, id.c_str(), sizeof(ConfigGeneral.ZLinky));
+  config_write("configGeneral.json", "ZLinky", id);
+  LLOG("[LoRa] %s declare comme compteur Linky (config Energie)\r\n", id.c_str());
+}
+
 /* ===================== Appairage ===================== */
 // Demande d'appairage posée par un handler web. La radio ne DOIT PAS être touchée depuis la
 // tâche async (les handlers y tournent), sinon on entre en conflit SPI avec loraReceiverLoop()
@@ -960,6 +991,8 @@ static void handlePairConfirm(const uint8_t *buf, int len) {
   loraEmitters[slot].identNextMs = millis();
   saveLoraConfig();
   ensureLoraDevice(pendingMAC, pendingDeviceId, pendingModel);
+  // Identite deja donnee par le PAIR_REQUEST : le modele est connu des maintenant
+  if (pendingModel[0]) registerLinkyIfZLinky(pendingMAC, pendingModel);
 
   awaitingConfirm = false;
   loraPairingMode = false;
@@ -976,12 +1009,10 @@ static void handlePairConfirm(const uint8_t *buf, int len) {
 }
 
 /* ===================== Réception des données ===================== */
-// Longueur de preambule (en symboles) pour qu'un downlink dure assez longtemps a bas SF.
-// Le device ne detecte le preambule que vers T+40-60 ms apres son uplink (stabilisation de
-// sa fenetre RX) : a SF7 un preambule de 16 symboles (~5 ms) est deja fini a cet instant et
-// n'est jamais vu. On vise ~40 ms de preambule. Tsym = 2^sf / 406250 s ; N = 0.040 * 406250
-// / 2^sf = 16250 >> sf. Un preambule plus long reste compatible avec le recepteur (LORA_PREAMBLE).
-static uint16_t downlinkPreamble(uint8_t sf) {
+// Longueur de preambule (en symboles) d'une requete de lecture, pour qu'elle dure ~40 ms meme a
+// bas SF. Tsym = 2^sf / 406250 s ; N = 0,040 x 406250 / 2^sf = 16250 >> sf. Jamais moins que
+// LORA_PREAMBLE : SF7 -> 126, SF8 -> 63, SF9 -> 31, SF10 -> 15, SF11 et SF12 -> 8.
+static uint16_t pollPreamble(uint8_t sf) {
   uint32_t n = 16250UL >> sf;
   return (n < LORA_PREAMBLE) ? LORA_PREAMBLE : (uint16_t)n;
 }
@@ -1021,11 +1052,15 @@ static void sendPollRequest(LoraEmitter &e) {
   pkt[5] = (uint8_t)(e.pollAttr & 0xFF);
   int total = encryptPacket(pkt, 6, e.key, e.mac);
 
-  uint16_t pre = downlinkPreamble(radioSF);
+  // Preambule ALLONGE aux SF bas. Le ZLinky ouvre sa fenetre RX apres son uplink et ne detecte
+  // un preambule que vers T+40-60 ms (protocole §8) : a SF7, 8 symboles ne durent que ~2,5 ms et
+  // sont deja passes. On vise ~40 ms de preambule. Un preambule plus long que celui attendu par
+  // le recepteur (8) reste recu : seul l'inverse pose probleme. A SF11/SF12 il reste a 8.
+  uint16_t pre = pollPreamble(radioSF);
   radio.clearDio1Action();
-  radio.setPreambleLength(pre);                        // preambule long pour couvrir la fenetre
+  if (pre != LORA_PREAMBLE) radio.setPreambleLength(pre);
   int st = radio.transmit(pkt, total);                 // bloquant (time-on-air)
-  radio.setPreambleLength(LORA_PREAMBLE);              // restaurer le preambule normal
+  if (pre != LORA_PREAMBLE) radio.setPreambleLength(LORA_PREAMBLE);
   radio.setDio1Action(onLoraRx);
   radio.startReceive();                      // re-ecoute : la reponse arrive comme une trame normale
   e.pollRetries++;
@@ -1059,6 +1094,11 @@ static void handleData(uint8_t *buf, int len, float rssi, float snr) {
       loraQueuePoll(i, POLL_CLUSTER_BASIC,
                     e.identStep == 1 ? POLL_ATTR_DEVICE_ID : POLL_ATTR_MODEL);
     }
+    // Version du firmware : apres l'identification, et si rien d'autre n'attend.
+    if (!e.identStep && e.verStep && !e.pollPending && (int32_t)(millis() - e.verNextMs) >= 0) {
+      loraQueuePoll(i, POLL_CLUSTER_BASIC,
+                    e.verStep == 1 ? POLL_ATTR_FW_VERSION : POLL_ATTR_SW_BUILD);
+    }
 
     // Fenetre descendante (§8) : si une lecture d'attribut attend, l'emettre MAINTENANT, avant
     // le mapping (readZigbeeDatas = MQTT + fichiers, plusieurs ms) qui ferait rater les ~20 ms.
@@ -1069,6 +1109,7 @@ static void handleData(uint8_t *buf, int len, float rssi, float snr) {
         // Identification sans réponse : on ne renonce pas (sans identité, pas de template),
         // on réessaiera plus tard plutôt qu'à chaque uplink.
         if (e.identStep && e.pollCluster == POLL_CLUSTER_BASIC) e.identNextMs = millis() + IDENT_RETRY_MS;
+        if (e.verStep   && e.pollCluster == POLL_CLUSTER_BASIC) e.verNextMs   = millis() + IDENT_RETRY_MS;
         LLOG("[LoRa] POLL cluster=0x%04X attr=0x%04X abandonne (pas de reponse apres %d essais)\r\n",
              e.pollCluster, e.pollAttr, e.pollRetries);
       } else {
@@ -1124,6 +1165,63 @@ static void handleIdentResponse(int slot, uint16_t attr, uint8_t status, uint8_t
   LLOG("[LoRa] %s identifie : device_id=%s, model=%s\r\n", macToHex(e.mac).c_str(), e.deviceId, e.model);
   saveLoraConfig();
   ensureLoraDevice(e.mac, e.deviceId, e.model);  // met à jour la fiche et charge le template
+  registerLinkyIfZLinky(e.mac, e.model);
+  e.verStep   = 1;                               // puis la version du firmware
+  e.verNextMs = millis();
+}
+
+// Range la version dans la fiche de l'appareil (champ "Version logicielle", comme en Zigbee).
+static void setLoraDeviceVersion(const uint8_t *mac, const String &ver) {
+  String id = macToHex(mac);
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID() != id) continue;
+    if (devices[i]->getInfo().software_version != ver) {
+      devices[i]->setInfoSoftVersion(ver);
+      devices[i]->saveToFile();
+    }
+    return;
+  }
+}
+
+// Version 0xMMmp en clair : 0x0123 -> "1.2.3".
+static String fwVersionText(uint16_t v) {
+  return String(v >> 8) + "." + String((v >> 4) & 0x0F) + "." + String(v & 0x0F);
+}
+
+// Réponse à la lecture de la version (cluster Basic, 0xFF01 puis 0x4000).
+static void handleVersionResponse(int slot, uint16_t attr, uint8_t status,
+                                  const uint8_t *val, uint8_t vlen) {
+  LoraEmitter &e = loraEmitters[slot];
+  if (attr == POLL_ATTR_FW_VERSION && e.verStep == 1) {
+    if (status == POLL_UNKNOWN_ATTR) {
+      // Firmware anterieur a 1.0.0 : il ne connait ni 0xFF01 ni 0x4000.
+      e.fwKnown = false;
+      e.verStep = 0;
+      setLoraDeviceVersion(e.mac, "< 1.0.0");
+      LLOG("[LoRa] %s : firmware anterieur a 1.0.0 (version non exposee)\r\n", macToHex(e.mac).c_str());
+      return;
+    }
+    if (status != POLL_OK || vlen < 2) { e.verNextMs = millis() + IDENT_RETRY_MS; return; }
+    e.fwVersion = getU16(val);
+    e.fwKnown   = true;
+    e.verStep   = 2;                             // puis le libelle complet
+    e.verNextMs = millis();
+    setLoraDeviceVersion(e.mac, fwVersionText(e.fwVersion));
+    LLOG("[LoRa] %s : firmware %s (0x%04X)\r\n", macToHex(e.mac).c_str(),
+         fwVersionText(e.fwVersion).c_str(), e.fwVersion);
+  } else if (attr == POLL_ATTR_SW_BUILD && e.verStep == 2) {
+    e.verStep = 0;
+    if (status != POLL_OK || vlen == 0) return;  // la version courte reste affichee
+    char b[32];
+    uint8_t n = (vlen < sizeof(b) - 1) ? vlen : sizeof(b) - 1;
+    uint8_t k = 0;
+    for (; k < n && val[k] >= 0x20 && val[k] < 0x7F; k++) b[k] = (char)val[k];
+    b[k] = '\0';
+    if (k > 0) {
+      setLoraDeviceVersion(e.mac, String(b));
+      LLOG("[LoRa] %s : build %s\r\n", macToHex(e.mac).c_str(), b);
+    }
+  }
 }
 
 // Reçoit le POLL_RESPONSE (type 0x0C, chiffré, §8). Valide le MIC via la clé de l'émetteur,
@@ -1162,12 +1260,550 @@ static void handlePollResponse(uint8_t *buf, int len) {
       handleIdentResponse(i, attr, status, ztype, &buf[9], vlen);
       return;
     }
+    if (cluster == POLL_CLUSTER_BASIC && e.verStep
+        && (attr == POLL_ATTR_FW_VERSION || attr == POLL_ATTR_SW_BUILD)) {
+      handleVersionResponse(i, attr, status, &buf[9], vlen);
+      return;
+    }
     if (status == POLL_OK) {
       String inifile = macToHex(e.mac) + ".json";
       injectPollValue(inifile, cluster, attr, ztype, &buf[9], vlen);
     }
     return;
   }
+}
+
+/* ===================== Mise a jour OTA d'un emetteur (doc/LORA_PROTOCOL.md §10) =====================
+ *   OTA_START (version, taille, CRC32, nb de blocs, fenetre W)  -> OTA_ACK (W retenue)
+ *   OTA_BLOCK x N (64 octets, dans l'ordre)                     -> OTA_ACK par FENETRE de W blocs
+ *   OTA_END (CRC32)                                             -> OTA_ACK, puis redemarrage
+ * L'emetteur n'ecoute ces trames qu'en mode "OTA recovery" (bouton maintenu a la mise sous
+ * tension), sur le canal et le SF operationnels : la radio de la box y est deja.
+ *
+ * Acquittement par fenetre : acquitter chaque bloc ferait emettre l'emetteur toutes les ~0,7 s,
+ * ce que l'alimentation TIC ne supporte pas. Il n'emet donc que sur un bloc de fin de fenetre
+ * ((index + 1) % W == 0, ou dernier bloc), et son ACK porte l'index du PROCHAIN bloc attendu.
+ * Un bloc hors sequence est ignore en silence. Si l'emetteur renvoie W = 0 (firmware sans
+ * fenetre), on retombe sur l'ancien mode : un ACK par bloc, qui porte l'index du bloc acquitte.
+ *
+ * Machine a etats NON bloquante, executee dans loraReceiverLoop() : seule l'emission d'une
+ * trame bloque (temps d'antenne). L'attente de l'ACK passe par la reception normale, donc les
+ * autres emetteurs restent recus pendant la mise a jour. La liaison est a l'alternat : la box
+ * n'emet JAMAIS pendant qu'elle attend un ACK.
+ */
+#define T_OTA_START  0x06
+#define T_OTA_BLOCK  0x07
+#define T_OTA_END    0x08
+#define T_OTA_ACK    0x09
+
+#define OTA_BLOCK_SIZE          64        // taille par defaut, et maximum (tampon d'emission)
+#define OTA_ACK_TIMEOUT_MS      5000UL    // attente de l'ACK de START / END / d'un bloc seul
+#define OTA_MAX_RETRIES         10        // essais d'un bloc (mode sans fenetre) ou de OTA_END
+#define OTA_START_TRIES         36        // 36 x 5 s = 3 min pour mettre l'emetteur en mode OTA
+#define OTA_MAX_FILE_SIZE       (1024UL * 1024UL)
+
+#define OTA_WINDOW_DEFAULT      16        // fenetre demandee (recommandee par le protocole)
+#define OTA_WINDOW_MAX          32
+#define OTA_WIN_ACK_TIMEOUT_MS  2000UL    // attente de l'ACK de fin de fenetre
+#define OTA_BLOCK_GAP_MS        100UL     // espacement minimal entre deux blocs d'une fenetre
+#define OTA_WIN_MAX_FAILS       10        // echecs consecutifs sur une meme fenetre
+#define OTA_MAX_RESTARTS        3         // reprises a OTA_START apres un NOT_STARTED
+
+#define OTA_STATUS_OK            0x00
+#define OTA_STATUS_BUSY          0x01
+#define OTA_STATUS_OUT_OF_RANGE  0x04
+#define OTA_STATUS_NOT_STARTED   0x07
+
+enum { OTA_IDLE = 0, OTA_WAITING, OTA_SENDING, OTA_ENDING, OTA_DONE, OTA_FAILED };
+
+static struct {
+  // demande posee par la tache web, consommee dans loop()
+  volatile bool requested;
+  volatile bool cancelRequested;
+  int      reqSlot;
+  uint16_t reqVersion;
+  uint8_t  reqPreamble;      // diagnostic : 0 = LORA_PREAMBLE
+  uint8_t  reqSF;            // diagnostic : 0 = SF operationnel
+  uint8_t  reqBlockSize;     // diagnostic : 0 = OTA_BLOCK_SIZE
+  uint8_t  reqWindow;        // fenetre demandee dans l'OTA_START (1 = un ACK par bloc)
+  uint8_t  blockSize;        // taille de bloc annoncee dans l'OTA_START
+  uint8_t  txPreamble;       // valeurs retenues pour la mise a jour en cours
+  uint8_t  txSF;
+  // etat courant
+  uint8_t  state;
+  int      slot;
+  File     file;
+  uint32_t size;
+  uint32_t crc;
+  uint16_t version;
+  uint16_t totalBlocks;
+  uint16_t block;            // prochain bloc attendu par l'emetteur (tout ce qui precede est acquis)
+  uint16_t txBlock;          // bloc porte par la trame OTA_BLOCK en cours d'emission
+  uint8_t  seq;              // seq de la prochaine trame (entre dans le nonce)
+  uint16_t tries;            // essais de la trame en cours (START, END, bloc seul)
+  uint32_t totalRetries;
+  bool     waitingAck;
+  uint32_t ackDeadline;
+  bool     ackGot;
+  uint16_t ackBlock;
+  uint8_t  ackStatus;
+  uint8_t  ackWindow;        // octet 5 de l'ACK : fenetre retenue par l'emetteur (0 = sans fenetre)
+  // acquittement par fenetre
+  uint8_t  window;           // fenetre en vigueur (1 = un ACK par bloc)
+  uint16_t winEnd;           // dernier bloc de la fenetre en cours
+  uint16_t winNext;          // prochain bloc a emettre dans cette fenetre
+  bool     winWaiting;       // true : fenetre emise, on attend son ACK
+  uint32_t nextTxMs;         // pas d'emission avant cet instant (espacement des blocs)
+  uint8_t  winFails;         // echecs consecutifs sans progression
+  uint8_t  restarts;         // reprises a OTA_START
+  uint32_t startMs;          // debut de l'envoi des blocs (pour le debit / l'estimation)
+  uint32_t endMs;
+  char     msg[112];
+} ota;
+
+static const char *otaStatusText(uint8_t st) {
+  switch (st) {
+    case 0x00: return "OK";
+    case 0x01: return "emetteur occupe";
+    case 0x02: return "bloc corrompu";
+    case 0x03: return "erreur d'ecriture en flash";
+    case 0x04: return "bloc hors sequence";
+    case 0x05: return "firmware trop volumineux";
+    case 0x06: return "CRC du firmware incorrect";
+    case 0x07: return "l'emetteur n'est plus en mise a jour (il a redemarre ?)";
+    default:   return "statut inconnu";
+  }
+}
+
+String loraOtaFilePath(int slot) {
+  if (slot < 0 || slot >= LORA_MAX_EMITTERS || !loraEmitters[slot].valid) return String("");
+  return "/ota/lora_" + macToHex(loraEmitters[slot].mac) + ".ota";
+}
+
+bool loraOtaActive() {
+  return ota.requested || ota.state == OTA_WAITING || ota.state == OTA_SENDING || ota.state == OTA_ENDING;
+}
+
+bool loraOtaStart(int slot, uint16_t version, String &err, uint8_t preamble, uint8_t sf,
+                  uint8_t blockSize, uint8_t window) {
+  if (!radioReady)                 { err = "radio LoRa non prete"; return false; }
+  if (loraOtaActive())             { err = "une mise a jour est deja en cours"; return false; }
+  if (loraPairingMode)             { err = "appairage en cours"; return false; }
+  String path = loraOtaFilePath(slot);
+  if (!path.length())              { err = "emetteur inconnu"; return false; }
+  File f = LittleFS.open(path, "r");
+  if (!f)                          { err = "aucun fichier firmware depose"; return false; }
+  size_t sz = f.size();
+  f.close();
+  if (sz == 0)                     { err = "fichier firmware vide"; return false; }
+  if (sz > OTA_MAX_FILE_SIZE)      { err = "fichier firmware trop volumineux"; return false; }
+  ota.reqSlot         = slot;
+  ota.reqVersion      = version;
+  ota.reqPreamble     = (preamble >= 4 && preamble <= 64) ? preamble : 0;
+  ota.reqSF           = (sf >= 7 && sf <= 12) ? sf : 0;
+  ota.reqBlockSize    = (blockSize >= 8 && blockSize <= OTA_BLOCK_SIZE) ? blockSize : 0;
+  ota.reqWindow       = (window == 0) ? OTA_WINDOW_DEFAULT
+                      : (window > OTA_WINDOW_MAX ? OTA_WINDOW_MAX : window);
+  ota.cancelRequested = false;
+  ota.requested       = true;      // pris en compte au prochain passage de loop()
+  return true;
+}
+
+void loraOtaCancel() {
+  if (loraOtaActive()) ota.cancelRequested = true;
+}
+
+static void otaFinish(uint8_t state, const char *msg) {
+  if (ota.file) ota.file.close();
+  ota.state      = state;
+  ota.waitingAck = false;
+  ota.endMs      = millis();
+  strlcpy(ota.msg, msg, sizeof(ota.msg));
+  LLOG("[LoRa] OTA %s : %s (bloc %u/%u, %lu re-emission(s))\r\n",
+       state == OTA_DONE ? "TERMINEE" : "ECHEC", msg, ota.block, ota.totalBlocks,
+       (unsigned long)ota.totalRetries);
+  if (ota.txSF && ota.txSF != g_sf) setSF(g_sf);    // diagnostic : retour au SF operationnel
+  // Fichier supprime apres un succes ; conserve apres un echec, pour relancer sans le renvoyer.
+  if (state == OTA_DONE) {
+    // L'emetteur redemarre sur le nouveau firmware : sa version sera relue a ses premieres
+    // trames, ce qui permet de verifier que la mise a jour a pris (protocole §10).
+    loraEmitters[ota.slot].verStep   = 1;
+    loraEmitters[ota.slot].verNextMs = millis();
+    String path = loraOtaFilePath(ota.slot);
+    if (path.length()) LittleFS.remove(path);
+  }
+  radio.startReceive();
+}
+
+// Ouvre le fichier, calcule son CRC32 (standard, celui de zlib) et prepare l'OTA_START.
+static void otaBegin() {
+  // L'etat passe a "en attente" AVANT tout le reste : le calcul du CRC qui suit dure un moment,
+  // et l'etat de la tentative PRECEDENTE (souvent un echec) restait visible entre-temps. La page,
+  // qui interroge la box a ce moment-la, affichait cet ancien echec et cessait de suivre.
+  ota.state       = OTA_WAITING;
+  ota.msg[0]      = '\0';
+  ota.block       = 0;
+  ota.totalBlocks = 0;
+  ota.requested   = false;
+  ota.slot        = ota.reqSlot;
+  ota.version     = ota.reqVersion;
+  ota.txBlock = 0; ota.seq = 0; ota.tries = 0; ota.totalRetries = 0;
+  ota.waitingAck = false; ota.ackGot = false;
+  ota.window = 1; ota.winWaiting = false; ota.winFails = 0; ota.restarts = 0;
+  ota.startMs = 0; ota.endMs = 0;
+
+  String path = loraOtaFilePath(ota.slot);
+  ota.file = LittleFS.open(path, "r");
+  if (!ota.file) { ota.state = OTA_FAILED; strlcpy(ota.msg, "fichier firmware illisible", sizeof(ota.msg)); return; }
+  ota.size = ota.file.size();
+  ota.blockSize   = ota.reqBlockSize ? ota.reqBlockSize : OTA_BLOCK_SIZE;
+  ota.totalBlocks = (uint16_t)((ota.size + ota.blockSize - 1) / ota.blockSize);
+
+  uint32_t crc = 0xFFFFFFFFUL;
+  uint8_t  buf[256];
+  int n;
+  while ((n = ota.file.read(buf, sizeof(buf))) > 0) {
+    for (int i = 0; i < n; i++) {
+      crc ^= buf[i];
+      for (int b = 0; b < 8; b++) crc = (crc >> 1) ^ (0xEDB88320UL & (0UL - (crc & 1UL)));
+    }
+    esp_task_wdt_reset();
+  }
+  ota.crc = ~crc;
+
+  ota.txPreamble = ota.reqPreamble ? ota.reqPreamble : LORA_PREAMBLE;
+  ota.txSF       = ota.reqSF ? ota.reqSF : g_sf;
+  if (ota.txSF != g_sf) setSF(ota.txSF);            // diagnostic : toute la mise a jour sur ce SF
+  LLOG("[LoRa] OTA : radio canal %d (%.0f MHz), SF%d, preambule %d symboles\r\n",
+       g_opChannel, CH_FREQ[g_opChannel], ota.txSF, ota.txPreamble);
+  LLOG("[LoRa] OTA : blocs de %d octets, fenetre demandee %d\r\n", ota.blockSize, ota.reqWindow);
+
+  lastRadioRxMs = millis();        // l'emetteur en mode OTA n'emet plus ses trames habituelles
+  LLOG("[LoRa] OTA slot %d : %lu octets, %u blocs, CRC32 0x%08lX, version 0x%04X\r\n",
+       ota.slot, (unsigned long)ota.size, ota.totalBlocks, (unsigned long)ota.crc, ota.version);
+}
+
+// Emet la trame correspondant a l'etat courant (OTA_START, OTA_BLOCK du bloc ota.txBlock,
+// OTA_END) et arme l'attente de l'ACK.
+static void otaSendCurrent() {
+  LoraEmitter &e = loraEmitters[ota.slot];
+  uint8_t pkt[4 + OTA_BLOCK_SIZE + MIC_SIZE];
+  int clearLen = 0;
+
+  if (ota.state == OTA_WAITING) {                    // OTA_START, 15 octets (16 avec la fenetre)
+    pkt[0] = 0x10 | T_OTA_START;
+    pkt[1] = ota.seq;
+    pkt[2] = (uint8_t)(ota.version >> 8);      pkt[3] = (uint8_t)(ota.version & 0xFF);
+    pkt[4] = (uint8_t)(ota.size >> 24);        pkt[5] = (uint8_t)(ota.size >> 16);
+    pkt[6] = (uint8_t)(ota.size >> 8);         pkt[7] = (uint8_t)(ota.size & 0xFF);
+    pkt[8] = (uint8_t)(ota.crc >> 24);         pkt[9] = (uint8_t)(ota.crc >> 16);
+    pkt[10] = (uint8_t)(ota.crc >> 8);         pkt[11] = (uint8_t)(ota.crc & 0xFF);
+    pkt[12] = (uint8_t)(ota.totalBlocks >> 8); pkt[13] = (uint8_t)(ota.totalBlocks & 0xFF);
+    pkt[14] = ota.blockSize;
+    clearLen = 15;
+    if (ota.reqWindow >= 2) { pkt[15] = ota.reqWindow; clearLen = 16; }   // fenetre d'acquittement
+  } else if (ota.state == OTA_SENDING) {             // OTA_BLOCK, 4 + 64 octets en clair
+    pkt[0] = 0x10 | T_OTA_BLOCK;
+    pkt[1] = ota.seq;
+    pkt[2] = (uint8_t)(ota.txBlock >> 8);
+    pkt[3] = (uint8_t)(ota.txBlock & 0xFF);
+    memset(&pkt[4], 0xFF, ota.blockSize);            // dernier bloc complete par des 0xFF
+    ota.file.seek((uint32_t)ota.txBlock * ota.blockSize);
+    ota.file.read(&pkt[4], ota.blockSize);
+    clearLen = 4 + ota.blockSize;
+  } else {                                           // OTA_END, 7 octets en clair
+    pkt[0] = 0x10 | T_OTA_END;
+    pkt[1] = ota.seq;
+    pkt[2] = (uint8_t)(ota.crc >> 24);         pkt[3] = (uint8_t)(ota.crc >> 16);
+    pkt[4] = (uint8_t)(ota.crc >> 8);          pkt[5] = (uint8_t)(ota.crc & 0xFF);
+    pkt[6] = 0x00;
+    clearLen = 7;
+  }
+
+  // Trace de la trame EN CLAIR (avant chiffrement) : a comparer avec ce que l'emetteur attend.
+  bool trace = (ota.state != OTA_SENDING) || (ota.txBlock % 100 == 0) || (ota.tries > 0);
+  char clearHex[2 * 16 + 1] = "";
+  if (trace) {
+    int n = clearLen < 16 ? clearLen : 16;
+    for (int k = 0; k < n; k++) snprintf(&clearHex[k * 2], 3, "%02X", pkt[k]);
+  }
+
+  int total = encryptPacket(pkt, clearLen, e.key, e.mac);
+  // L'emetteur vient peut-etre d'emettre son ACK : lui laisser le temps de repasser en reception.
+  delay(20);
+  radio.clearDio1Action();
+  if (ota.txPreamble != LORA_PREAMBLE) radio.setPreambleLength(ota.txPreamble);
+  uint32_t t0 = millis();
+  int st = radio.transmit(pkt, total);               // bloquant (temps d'antenne)
+  uint32_t airMs = millis() - t0;
+  if (ota.txPreamble != LORA_PREAMBLE) radio.setPreambleLength(LORA_PREAMBLE);
+  if (trace) {
+    const char *nm = (ota.state == OTA_WAITING) ? "OTA_START" : (ota.state == OTA_SENDING) ? "OTA_BLOCK" : "OTA_END";
+    LLOG("[LoRa] OTA : %s emis (essai %u, seq %u, %d octets, %lu ms, tx=%d) clair=%s%s\r\n",
+         nm, ota.tries + 1, ota.seq, total, (unsigned long)airMs, st, clearHex, clearLen > 16 ? "..." : "");
+  }
+  rxFlag = false;
+  radio.setDio1Action(onLoraRx);
+  radio.startReceive();
+  ota.tries++;
+  ota.ackGot      = false;
+  ota.waitingAck  = true;
+  ota.ackDeadline = millis() + OTA_ACK_TIMEOUT_MS;
+  if (st != RADIOLIB_ERR_NONE) LLOG("[LoRa] OTA : emission en echec (%d)\r\n", st);
+}
+
+// OTA_ACK recu (type 0x09, chiffre) : [seq][index(2)][statut][fenetre][reserve]. Appele par la
+// boucle de reception. Un ACK peut arriver a tout moment (ex. NOT_STARTED) : toujours memorise.
+static void handleOtaAck(uint8_t *buf, int len) {
+  if (!loraOtaActive() || ota.requested) return;
+  LoraEmitter &e = loraEmitters[ota.slot];
+  if (!decryptPacket(buf, len, e.key, e.mac)) return;      // pas pour nous / pas de cet emetteur
+  int clearLen = len - MIC_SIZE;
+  if (clearLen < 5) return;
+  ota.ackBlock  = getU16(&buf[2]);
+  ota.ackStatus = buf[4];
+  ota.ackWindow = (clearLen >= 6) ? buf[5] : 0;
+  ota.ackGot    = true;
+  if (ota.state != OTA_SENDING || ota.ackStatus != OTA_STATUS_OK)
+    LLOG("[LoRa] OTA : OTA_ACK recu (index 0x%04X, statut 0x%02X %s, fenetre %u)\r\n",
+         ota.ackBlock, ota.ackStatus, otaStatusText(ota.ackStatus), ota.ackWindow);
+  lastRadioRxMs = millis();
+  e.lastSeenMs  = millis();
+}
+
+// Trame acceptee : nouveau seq, compteur d'essais remis a zero.
+static void otaAdvance() {
+  ota.seq++;
+  ota.tries      = 0;
+  ota.waitingAck = false;
+}
+
+// Essai sans succes de la trame en cours (pas de reponse, ou reponse negative).
+static void otaRetryOrFail(const char *why) {
+  ota.waitingAck = false;
+  uint16_t maxTries = (ota.state == OTA_WAITING) ? OTA_START_TRIES : OTA_MAX_RETRIES;
+  if (ota.tries >= maxTries) {
+    char m[112];
+    if (ota.state == OTA_WAITING)
+      snprintf(m, sizeof(m), "l'emetteur ne repond pas : est-il en mode mise a jour ? (%s)", why);
+    else if (ota.state == OTA_SENDING)
+      snprintf(m, sizeof(m), "bloc %u abandonne apres %u essais (%s)", ota.block, ota.tries, why);
+    else
+      snprintf(m, sizeof(m), "fin de mise a jour refusee (%s)", why);
+    otaFinish(OTA_FAILED, m);
+    return;
+  }
+  if (ota.state != OTA_WAITING) ota.totalRetries++;
+}
+
+// L'emetteur repond NOT_STARTED : il n'est plus en reception (redemarrage en cours de
+// transfert, OTA_START jamais accepte). On reprend a OTA_START, depuis le bloc 0.
+static void otaRestart() {
+  if (++ota.restarts > OTA_MAX_RESTARTS) {
+    otaFinish(OTA_FAILED, "l'emetteur a quitte la mise a jour a plusieurs reprises");
+    return;
+  }
+  LLOG("[LoRa] OTA : l'emetteur n'est plus en reception -> reprise a OTA_START (%u/%u)\r\n",
+       ota.restarts, OTA_MAX_RESTARTS);
+  ota.state = OTA_WAITING;
+  ota.block = 0; ota.txBlock = 0;
+  ota.seq++;
+  ota.tries = 0; ota.waitingAck = false; ota.ackGot = false;
+  ota.window = 1; ota.winWaiting = false; ota.winFails = 0;
+}
+
+// Planifie l'emission de la fenetre qui commence au bloc `next` (prochain attendu par l'emetteur).
+static void otaWindowPlan(uint16_t next) {
+  uint32_t end = ((uint32_t)(next / ota.window) + 1) * ota.window - 1;   // fin de fenetre
+  if (end > (uint32_t)(ota.totalBlocks - 1)) end = ota.totalBlocks - 1;  // ou dernier bloc
+  ota.winEnd     = (uint16_t)end;
+  ota.winNext    = next;
+  ota.winWaiting = false;
+  ota.nextTxMs   = millis() + OTA_BLOCK_GAP_MS;
+}
+
+// Envoi des blocs avec acquittement par fenetre (protocole §10, "Acquittement par fenetre").
+static void otaWindowTick() {
+  // --- un OTA_ACK est arrive (normalement en fin de fenetre, mais possible a tout moment) ---
+  if (ota.ackGot) {
+    ota.ackGot = false;
+    if (ota.ackStatus == OTA_STATUS_NOT_STARTED) { otaRestart(); return; }
+    if (ota.ackStatus == OTA_STATUS_BUSY) {
+      // Emetteur occupe : on patiente puis on resollicite un ACK avec le bloc de fin de fenetre.
+      if (++ota.winFails > OTA_WIN_MAX_FAILS) { otaFinish(OTA_FAILED, "l'emetteur reste occupe"); return; }
+      ota.winNext = ota.winEnd; ota.winWaiting = false; ota.nextTxMs = millis() + 500;
+      return;
+    }
+    if (ota.ackStatus != OTA_STATUS_OK) {
+      char m[112];
+      snprintf(m, sizeof(m), "bloc refuse par l'emetteur : %s", otaStatusText(ota.ackStatus));
+      otaFinish(OTA_FAILED, m);
+      return;
+    }
+    uint16_t next = ota.ackBlock;                    // prochain bloc attendu par l'emetteur
+    if (next > ota.totalBlocks) next = ota.totalBlocks;
+    if (next > ota.block) {                          // progression
+      ota.block    = next;
+      ota.winFails = 0;
+    } else {                                         // aucun bloc de plus : fenetre a refaire
+      ota.totalRetries++;
+      if (++ota.winFails > OTA_WIN_MAX_FAILS) {
+        char m[112];
+        snprintf(m, sizeof(m), "aucune progression au bloc %u apres %u essais", ota.block, ota.winFails - 1);
+        otaFinish(OTA_FAILED, m);
+        return;
+      }
+      LLOG("[LoRa] OTA : fenetre a reprendre au bloc %u (essai %u)\r\n", next, ota.winFails);
+    }
+    if (ota.block >= ota.totalBlocks) {              // tous les blocs sont recus
+      ota.state = OTA_ENDING;
+      ota.tries = 0; ota.waitingAck = false;
+      return;
+    }
+    otaWindowPlan(ota.block);                        // fenetre suivante, ou reprise au bloc perdu
+    return;
+  }
+
+  // --- attente de l'ACK de fin de fenetre : aucune emission pendant ce temps ---
+  if (ota.winWaiting) {
+    if ((int32_t)(millis() - ota.ackDeadline) < 0) return;
+    // Pas d'ACK : l'emetteur a peut-etre tout recu et c'est l'ACK qui s'est perdu. On ne renvoie
+    // QUE le bloc de fin de fenetre, qui sollicite un nouvel ACK.
+    ota.totalRetries++;
+    if (++ota.winFails > OTA_WIN_MAX_FAILS) {
+      char m[112];
+      snprintf(m, sizeof(m), "pas de reponse a la fenetre du bloc %u apres %u essais", ota.block, ota.winFails - 1);
+      otaFinish(OTA_FAILED, m);
+      return;
+    }
+    LLOG("[LoRa] OTA : pas d'ACK pour la fenetre %u..%u -> renvoi du bloc %u (essai %u)\r\n",
+         ota.block, ota.winEnd, ota.winEnd, ota.winFails);
+    ota.winNext    = ota.winEnd;
+    ota.winWaiting = false;
+    ota.nextTxMs   = millis();
+    return;
+  }
+
+  // --- emission des blocs de la fenetre, espaces d'au moins OTA_BLOCK_GAP_MS ---
+  if ((int32_t)(millis() - ota.nextTxMs) < 0) return;
+  ota.txBlock = ota.winNext;
+  ota.tries   = 0;
+  otaSendCurrent();
+  ota.seq++;                                         // un seq par trame emise (nonce)
+  ota.tries      = 0;
+  ota.waitingAck = false;
+  if (ota.winNext >= ota.winEnd) {                   // bloc de fin de fenetre : place a l'ecoute
+    ota.winWaiting  = true;
+    ota.ackDeadline = millis() + OTA_WIN_ACK_TIMEOUT_MS;
+  } else {
+    ota.winNext++;
+    ota.nextTxMs = millis() + OTA_BLOCK_GAP_MS;
+  }
+}
+
+// A appeler a chaque passage de loraReceiverLoop().
+static void loraOtaTick() {
+  if (ota.requested) otaBegin();
+  if (ota.state != OTA_WAITING && ota.state != OTA_SENDING && ota.state != OTA_ENDING) return;
+
+  if (ota.cancelRequested) {
+    ota.cancelRequested = false;
+    otaFinish(OTA_FAILED, "mise a jour annulee");
+    return;
+  }
+
+  if (ota.state == OTA_SENDING && ota.window >= 2) { otaWindowTick(); return; }
+
+  if (!ota.waitingAck) {
+    ota.txBlock = ota.block;                         // mode sans fenetre : un bloc, un ACK
+    otaSendCurrent();
+    return;
+  }
+
+  if (!ota.ackGot) {
+    if ((int32_t)(millis() - ota.ackDeadline) >= 0) otaRetryOrFail("pas de reponse");
+    return;
+  }
+
+  // --- un OTA_ACK est arrive ---
+  ota.ackGot = false;
+  if (ota.state == OTA_WAITING) {
+    if (ota.ackStatus == OTA_STATUS_OK) {
+      otaAdvance();
+      ota.state   = OTA_SENDING;
+      if (!ota.startMs) ota.startMs = millis();
+      // Fenetre RETENUE par l'emetteur (il la borne) : c'est elle qui fait foi. 0 = firmware
+      // qui ignore la fenetre -> un ACK par bloc, portant l'index du bloc acquitte.
+      ota.window = (ota.reqWindow >= 2 && ota.ackWindow >= 2 && ota.ackWindow <= OTA_WINDOW_MAX)
+                   ? ota.ackWindow : 1;
+      ota.winFails = 0;
+      if (ota.window >= 2) otaWindowPlan(0);
+      LLOG("[LoRa] OTA : emetteur pret, envoi de %u blocs, %s (fenetre %u)\r\n", ota.totalBlocks,
+           ota.window >= 2 ? "un ACK par fenetre" : "un ACK par bloc", ota.window);
+    } else {
+      // Refus explicite (firmware trop gros, occupe...) : inutile d'insister.
+      char m[112];
+      snprintf(m, sizeof(m), "mise a jour refusee par l'emetteur : %s", otaStatusText(ota.ackStatus));
+      otaFinish(OTA_FAILED, m);
+    }
+  } else if (ota.state == OTA_SENDING) {             // mode sans fenetre
+    if (ota.ackStatus == OTA_STATUS_NOT_STARTED) { otaRestart(); return; }
+    if (ota.ackStatus == OTA_STATUS_OK && ota.ackBlock == ota.block) {
+      otaAdvance();
+      ota.block++;
+    } else if (ota.ackStatus == OTA_STATUS_OUT_OF_RANGE && ota.ackBlock > ota.block
+               && ota.ackBlock < ota.totalBlocks) {
+      // L'emetteur a deja ce bloc (son ACK s'etait perdu) : on reprend a celui qu'il attend.
+      LLOG("[LoRa] OTA : emetteur en avance (bloc %u attendu, %u envoye)\r\n", ota.ackBlock, ota.block);
+      otaAdvance();
+      ota.block = ota.ackBlock;
+    } else {
+      otaRetryOrFail(otaStatusText(ota.ackStatus));
+      return;
+    }
+    if (ota.block >= ota.totalBlocks) ota.state = OTA_ENDING;
+  } else {                                           // OTA_ENDING
+    if (ota.ackStatus == OTA_STATUS_OK) otaFinish(OTA_DONE, "mise a jour terminee, l'emetteur redemarre");
+    else if (ota.ackStatus == OTA_STATUS_NOT_STARTED) otaRestart();
+    else {
+      char m[112];
+      snprintf(m, sizeof(m), "firmware rejete par l'emetteur : %s", otaStatusText(ota.ackStatus));
+      otaFinish(OTA_FAILED, m);
+    }
+  }
+}
+
+String loraOtaStatusJson(int slot) {
+  static const char *names[] = {"idle", "waiting", "sending", "ending", "done", "error"};
+  uint8_t st = ota.requested ? (uint8_t)OTA_WAITING : ota.state;
+  String j = "{\"state\":\"";
+  j += names[st <= OTA_FAILED ? st : 0];
+  j += "\",\"slot\":" + String(st == OTA_IDLE ? -1 : (ota.requested ? ota.reqSlot : ota.slot));
+  j += ",\"block\":" + String(ota.block);
+  j += ",\"total\":" + String(ota.totalBlocks);
+  j += ",\"pct\":" + String(ota.totalBlocks ? (int)((100UL * ota.block) / ota.totalBlocks) : 0);
+  j += ",\"tries\":" + String(ota.tries);
+  j += ",\"retries\":" + String(ota.totalRetries);
+  j += ",\"window\":" + String(ota.window);
+  uint32_t ref = (st == OTA_DONE || st == OTA_FAILED) ? ota.endMs : millis();
+  uint32_t elapsed = ota.startMs ? (ref - ota.startMs) / 1000 : 0;
+  j += ",\"elapsed\":" + String(elapsed);
+  long eta = -1;
+  if (st == OTA_SENDING && ota.block > 0 && elapsed > 0)
+    eta = (long)(((uint64_t)(ota.totalBlocks - ota.block) * elapsed) / ota.block);
+  j += ",\"eta\":" + String(eta);
+  // Anciennete du resultat (s), pour qu'un "termine" ou un "echec" ne reste pas affiche
+  // indefiniment sur la fiche de l'appareil. -1 tant que la mise a jour n'est pas finie.
+  j += ",\"since\":" + String((st == OTA_DONE || st == OTA_FAILED) ? (long)((millis() - ota.endMs) / 1000) : -1L);
+  String m = ota.msg;
+  m.replace("\\", "/"); m.replace("\"", "'");
+  j += ",\"msg\":\"" + m + "\"";
+  size_t fsz = 0;
+  String path = loraOtaFilePath(slot);
+  if (path.length()) { File f = LittleFS.open(path, "r"); if (f) { fsz = f.size(); f.close(); } }
+  j += ",\"file\":" + String((unsigned long)fsz);
+  j += "}";
+  return j;
 }
 
 /* ===================== API ===================== */
@@ -1198,6 +1834,8 @@ bool loraReceiverBegin() {
       loraEmitters[i].identStep   = (loraEmitters[i].deviceId[0] && loraEmitters[i].model[0]) ? 0
                                   : (loraEmitters[i].deviceId[0] ? 2 : 1);
       loraEmitters[i].identNextMs = millis();
+      loraEmitters[i].verStep     = 1;           // version relue a chaque demarrage
+      loraEmitters[i].verNextMs   = millis();
       ensureLoraDevice(loraEmitters[i].mac, loraEmitters[i].deviceId, loraEmitters[i].model);
     }
 
@@ -1221,6 +1859,7 @@ static uint32_t lastWatchdogRearmMs = 0;
 
 static void rxWatchdog() {
   if (loraPairingMode || awaitingConfirm) return;   // séquences qui pilotent déjà la radio
+  if (loraOtaActive()) return;                      // idem : la mise a jour OTA gere sa reception
   if (loraCountEmitters() == 0) return;             // rien à écouter
   if (lastRadioRxMs == 0) return;                   // aucune trame depuis le boot
 
@@ -1248,8 +1887,13 @@ void loraReceiverLoop() {
   // pourrait ré-armer le canal de données juste après que le web ait armé le canal d'appairage.
   if (loraPairingRequested) {
     loraPairingRequested = false;
-    loraStartPairingNow();
+    if (loraOtaActive()) LLOG("[LoRa] appairage refuse : mise a jour OTA en cours\r\n");
+    else                 loraStartPairingNow();
   }
+
+  // Mise a jour OTA d'un emetteur : emission de la trame suivante / gestion des delais.
+  // Jamais pendant un appairage, qui deplace la radio sur le canal de rendez-vous.
+  if (!loraPairingMode && !awaitingConfirm) loraOtaTick();
 
   rxWatchdog();
 
@@ -1304,6 +1948,7 @@ void loraReceiverLoop() {
     case T_ESSENTIAL:
     case T_EXTENDED:      handleData(buf, len, rssi, snr); radio.startReceive(); break;
     case T_POLL_RESPONSE: handlePollResponse(buf, len); radio.startReceive(); break;
+    case T_OTA_ACK:       handleOtaAck(buf, len); radio.startReceive(); break;
     default:              radio.startReceive(); break;
   }
 }

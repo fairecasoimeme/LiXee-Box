@@ -6,6 +6,7 @@
 #include <AsyncMqttClient.h>
 #include <WiFiClient.h>
 #include "smart_wifi_manager.h"
+#include "ethernet.h"
 
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
@@ -217,9 +218,9 @@ void mqttAutoReconnect() {
         return;
     }
     
-    // Ne rien faire si WiFi non connecté
-    if (!smartWiFi.isConnected()) {
-        log_w("MQTT: WiFi not connected, waiting...");
+    // Ne rien faire sans reseau (WiFi ou Ethernet)
+    if (!netConnected()) {
+        log_w("MQTT: network not connected, waiting...");
         return;
     }
     
@@ -292,6 +293,14 @@ void mqttPublish(String IEEE, String cluster, String attribute, String type, Str
         return;
     }
     
+    // Ligne de template propre a un endpoint : nom lisible "<attribut>_ep<N>" (cf. epAttrLabel)
+    // au lieu de la cle interne. Le message de decouverte Home Assistant utilise le meme nom.
+    {
+        bool digits = attribute.length() > 0;
+        for (size_t k = 0; k < attribute.length() && digits; k++) digits = isDigit(attribute[k]);
+        if (digits) attribute = epAttrLabel((uint32_t)strtoul(attribute.c_str(), nullptr, 10));
+    }
+
     String tmpvalue;
     String topic;
     uint16_t packetId = 0;

@@ -12,6 +12,7 @@
 #include "device.h"
 #include "powerHistory.h"
 #include "notificationManager.h"
+#include "powerStats.h"
 #include <map>
 #include <unordered_map>
 
@@ -23,8 +24,8 @@ extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigNotification ConfigNotif;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 50> *deviceList;
-extern CircularBuffer<Notification, 10> *notifList;
+extern LockedBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Notification, 10> *notifList;
 extern NotificationManager notificationManager;
 
 // Variables globales optimisées
@@ -361,7 +362,17 @@ void updateElectricalDeviceValue(const ElectricalMeasurementData& data) {
         {
             addMeasurement(device->powerHistory, data.attribute, powerValue);
         }
-    }    
+    }
+
+    // Statistiques de puissance (kiosque, /api/power/*) : puissances par phase (injection deja
+    // ramenee a 0) et intensites, qui donnent la charge par phase en Historique triphase
+    if (strcmp(ConfigGeneral.ZLinky, data.deviceId.c_str()) == 0)
+    {
+        if ((data.attribute == 1295) || (data.attribute == 2319) || (data.attribute == 2575))
+            powerStatsOnAttribute(data.attribute, powerValue);
+        else if ((data.attribute == 1288) || (data.attribute == 2312) || (data.attribute == 2568))
+            powerStatsOnAttribute(data.attribute, data.numericValue);
+    }
 }
 
 // Gestion des notifications de puissance pour l'attribut 1295

@@ -10,7 +10,7 @@
 extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Device, 50> *deviceList;
 extern CircularBuffer<Packet, 100> *commandList;
 
 // ============================================================================

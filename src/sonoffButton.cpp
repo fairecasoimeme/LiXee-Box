@@ -10,7 +10,7 @@
 
 extern DeviceList devices;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Device, 50> *deviceList;
 extern RulesManager rulesManager;
 
 // Range une action de bouton (valeur TEXTE) sous cluster/attribut, la publie et rafraichit

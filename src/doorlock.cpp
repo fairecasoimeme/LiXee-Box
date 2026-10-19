@@ -12,7 +12,7 @@ extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Device, 50> *deviceList;
 
 void DoorlockManage(String inifile,int attribute,uint8_t datatype,int len, char* datas)
 {

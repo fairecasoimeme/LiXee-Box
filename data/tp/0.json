@@ -57,5 +57,116 @@
       ],
       "action": []
     }
+  ],
+  "lumi.switch.acn047": [
+    {
+      "status": [
+        {
+          "name": "On/Off L1",
+          "cluster": "0006",
+          "attribut": 0,
+          "mqtt_icon": "power-plug",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "On/Off L2",
+          "cluster": "0006",
+          "attribut": 0,
+          "endpoint": 2,
+          "mqtt_icon": "power-plug",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Puissance",
+          "cluster": "000C",
+          "attribut": 85,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "W",
+          "visible": 1
+        },
+        {
+          "name": "Consommation Totale",
+          "cluster": "0702",
+          "attribut": 0,
+          "mqtt_device_class": "energy",
+          "mqtt_state_class": "total_increasing",
+          "mqtt_icon": "transmission-tower",
+          "type": "numeric",
+          "unit": "Wh",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Tension",
+          "cluster": "0B04",
+          "attribut": 1285,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.01,
+          "unit": "V",
+          "visible": 1,
+          "poll": 1
+        }
+      ],
+      "bind": "6;1794;2820",
+      "report": [
+        {
+          "cluster": "0006",
+          "attribut": 0,
+          "type": 16,
+          "min": 10,
+          "max": 60,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0702",
+          "attribut": 0,
+          "type": 37,
+          "min": 60,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        }
+      ],
+      "action": [
+        {
+          "name": "L1_ON",
+          "command": 146,
+          "endpoint": 1,
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "L1_OFF",
+          "command": 146,
+          "endpoint": 1,
+          "value": 0,
+          "visible": 1
+        },
+        {
+          "name": "L2_ON",
+          "command": 146,
+          "endpoint": 2,
+          "value": 1,
+          "visible": 1
+        },
+        {
+          "name": "L2_OFF",
+          "command": 146,
+          "endpoint": 2,
+          "value": 0,
+          "visible": 1
+        }
+      ]
+    }
   ]
 }

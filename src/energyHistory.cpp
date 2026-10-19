@@ -401,7 +401,8 @@ bool addSubMeterMeasurement(DeviceEnergyHistory &hist,
 // - "value" : la valeur numérique à stocker
 bool addEnergyMeasurement(DeviceEnergyHistory &hist,
                           String section,
-                          long value)
+                          long value,
+                          bool gapSmoothing)
 {
     long attrId = strtol(section.c_str(), nullptr, 10);
     if (attrId < 0) {
@@ -429,7 +430,7 @@ bool addEnergyMeasurement(DeviceEnergyHistory &hist,
             if (hist.hours.last.attributes[attrId] != 0) {
                 long previousLast = hist.hours.last.attributes[attrId];
                 bool hugeJump = (value - previousLast) > MAX_ENERGY_DELTA_WH;
-                if (value > previousLast && (hugeJump || energyGapDetected(hist.lastUpdate))) {
+                if (value > previousLast && (hugeJump || (gapSmoothing && energyGapDetected(hist.lastUpdate)))) {
                     long totalDelta = value - previousLast;
 
                     // Calculer le gap depuis lastUpdate

@@ -12,7 +12,7 @@
  * (0702/0B04/0B01/FF66). Le ZLinky LoRa devient donc un appareil normal : les pages
  * Énergie, les historiques, l'export CSV et MQTT fonctionnent sans code spécifique.
  *
- * Protocole complet : voir recepteur/PROTOCOLE_LORA.md
+ * Protocole complet : voir doc/LORA_PROTOCOL.md
  */
 
 #define LORA_MAX_EMITTERS   4
@@ -31,7 +31,7 @@ struct LoraEmitter {
   // Ainsi un nouvel objet LoRa ne demande aucun code : juste son template.
   char     deviceId[8];
   char     model[24];
-  // Mode Linky (PROTOCOLE_LORA.md §6.1) : champ pivot du protocole. Il n'est porté que par
+  // Mode Linky (LORA_PROTOCOL.md §6.1) : champ pivot du protocole. Il n'est porté que par
   // DATA_ESSENTIAL (dernier octet) et POWER_MAX_CFG ; les autres EXTENDED ne l'ont pas, il
   // faut donc le mémoriser par émetteur pour interpréter leurs champs.
   //   bit0 : 0=Historique, 1=Standard   bit1 : triphasé   bit2 : production
@@ -57,7 +57,7 @@ struct LoraEmitter {
   float    lastSnr;
   uint32_t lastSeenMs;
 
-  // --- Lecture d'attribut a la demande (POLL, PROTOCOLE_LORA.md §8) ------------------------
+  // --- Lecture d'attribut a la demande (POLL, LORA_PROTOCOL.md §8) ------------------------
   // Le ZLinky ouvre une fenetre RX de 300 ms apres CHAQUE uplink. On y depose une requete de
   // lecture (cluster, attribut) : modele ZCL Read Attributes. Une lecture est idempotente,
   // donc ni compteur anti-rejeu ni confirmation ; on rejoue au prochain uplink jusqu'a la
@@ -76,13 +76,22 @@ struct LoraEmitter {
   uint8_t  pollRespLen;      // longueur de la valeur
   uint8_t  pollRespValue[24];// valeur brute (big-endian pour les numeriques)
 
-  // --- Identification de l'objet par POLL (PROTOCOLE_LORA.md §8, cluster Basic 0x0000) ----
+  // --- Identification de l'objet par POLL (LORA_PROTOCOL.md §8, cluster Basic 0x0000) ----
   // Le PAIR_REQUEST (11 octets) ne dit pas quel objet s'appaire : apres l'appairage, la box
   // lit 0x0000/0xFF00 (device_id, nomme data/tp/<device_id>.json) puis 0x0000/0x0005 (model,
   // la cle dans ce fichier). Tant que ce n'est pas fait, deviceId/model sont vides et l'appareil
   // n'a pas de template. RAM seulement : au boot, une identite incomplete relance la lecture.
   uint8_t  identStep;        // 0 = identifie, 1 = attend le device_id, 2 = attend le model
   uint32_t identNextMs;      // prochaine tentative (apres un abandon, on espace les essais)
+
+  // --- Version du firmware de l'emetteur (cluster Basic, PROTOCOLE §8) ----------------------
+  // 0x0000/0xFF01 : version sur 16 bits, format 0xMMmp (1.2.3 -> 0x0123), le meme que le champ
+  // version d'OTA_START. 0x0000/0x4000 : la meme en clair, avec le commit du build. Lue une
+  // fois l'objet identifie, a chaque demarrage de la box, et apres une mise a jour OTA.
+  uint8_t  verStep;          // 0 = rien a lire, 1 = attend 0xFF01, 2 = attend 0x4000
+  uint32_t verNextMs;
+  uint16_t fwVersion;        // valable si fwKnown
+  bool     fwKnown;
 };
 
 extern LoraEmitter loraEmitters[LORA_MAX_EMITTERS];
@@ -110,6 +119,27 @@ bool loraQueuePoll(int slot, uint16_t cluster, uint16_t attr);
 // État de la dernière lecture d'attribut de l'émetteur `slot`, en JSON, pour l'UI :
 //   {"state":"idle|pending|ok|unknown|bad","cluster":..,"attr":..,"type":..,"value":".."}
 String loraPollStatusJson(int slot);
+
+// --- Mise a jour du firmware d'un emetteur par LoRa (OTA, doc/LORA_PROTOCOL.md §10) ------------
+// Le fichier .bin doit etre dans /ota/lora_<MAC>.ota (depose par la page /loraOta). L'emetteur
+// doit etre en mode "OTA recovery" : bouton maintenu pendant la mise sous tension.
+// loraOtaStart() ne touche pas la radio : il pose une demande, traitee dans loraReceiverLoop().
+// Renvoie false et renseigne `err` si la demande est refusee.
+// `preamble` et `sf` : reglages de DIAGNOSTIC, 0 = ceux de la box (preambule 8, SF operationnel).
+// Le mode OTA de l'emetteur peut ecouter avec d'autres parametres que son fonctionnement normal.
+// `blockSize` : octets de firmware par bloc (8..64), 0 = 64. Annonce dans l'OTA_START.
+// `window` : fenetre d'acquittement demandee (protocole §10). 0 = 16 (recommande), 1 = un ACK
+// par bloc, 2..32 sinon. L'emetteur peut la reduire : c'est la valeur de son ACK qui fait foi.
+bool   loraOtaStart(int slot, uint16_t version, String &err, uint8_t preamble = 0, uint8_t sf = 0,
+                    uint8_t blockSize = 0, uint8_t window = 0);
+void   loraOtaCancel();
+bool   loraOtaActive();
+// Etat pour l'UI : {"state":"idle|waiting|sending|ending|done|error","slot":..,"block":..,
+//                   "total":..,"pct":..,"retries":..,"elapsed":..,"eta":..,"msg":"..","file":..}
+// `slot` >= 0 : ajoute la taille du fichier deja depose pour cet emetteur (0 = aucun).
+String loraOtaStatusJson(int slot);
+// Chemin du fichier firmware d'un emetteur ("" si slot invalide).
+String loraOtaFilePath(int slot);
 
 // Définit le canal (0..7) et le SF (7..12) OPÉRATIONNELS assignés aux émetteurs À
 // L'APPAIRAGE (§4). Le récepteur bascule immédiatement sa radio dessus ; les émetteurs déjà

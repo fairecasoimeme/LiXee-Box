@@ -150,6 +150,16 @@ bool SmartWiFiManager::startBLEProvisioning() {
         //DEBUG_PRINTLN("⚠️ BLE provisioning already active");
         return true;
     }
+
+    // Box deja joignable autrement (Ethernet) : pas de BLE. Les tentatives WiFi reprennent
+    // plus tard, au rythme normal, au lieu de basculer en provisioning.
+    if (_provisioningInhibitor && _provisioningInhibitor()) {
+        Serial.println("📱 BLE provisioning évité : Ethernet branché");
+        _connectionAttempts = 0;
+        _lastConnectionAttempt = millis();
+        setState(WIFI_STATE_FAILED);
+        return false;
+    }
     
     //DEBUG_PRINTLN("📱 Starting BLE provisioning...");
     
@@ -509,6 +519,12 @@ void SmartWiFiManager::handleEvents() {
     // Gérer BLE si actif
     if (_bleManager && _currentState == WIFI_STATE_BLE_PROVISIONING) {
         _bleManager->handleEvents();
+    }
+
+    // Box joignable par l'Ethernet : pas de tentative de (re)connexion WiFi. connect() bloque
+    // la boucle principale jusqu'a 30 s ; les tentatives reprennent si le cable est debranche.
+    if (_provisioningInhibitor && _provisioningInhibitor()) {
+        return;
     }
 
     if (_reconnecting && _autoReconnect) {

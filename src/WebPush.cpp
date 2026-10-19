@@ -30,6 +30,13 @@ void WebPush(String IEEE, String cluster, String attribut, String value)
     SpiRamJsonDocument doc(1024);
     doc["IEEE"] = IEEE;
     doc["cluster"] = cluster;
+    // Ligne de template propre a un endpoint : meme nom lisible qu'en MQTT ("0_ep2"), plutot
+    // que la cle interne (cf. epAttrLabel, config.h).
+    {
+        bool digits = attribut.length() > 0;
+        for (size_t k = 0; k < attribut.length() && digits; k++) digits = isDigit(attribut[k]);
+        if (digits) attribut = epAttrLabel((uint32_t)strtoul(attribut.c_str(), nullptr, 10));
+    }
     doc["attribute"] = attribut;
     doc["value"] = value;
 

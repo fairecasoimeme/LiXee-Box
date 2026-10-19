@@ -10,7 +10,7 @@ extern DeviceList devices;
 extern ConfigNotification ConfigNotif;
 extern ConfigGeneralStruct ConfigGeneral;
 extern NotificationManager notificationManager;
-extern CircularBuffer<Notification, 10> *notifList;
+extern LockedBuffer<Notification, 10> *notifList;
 extern LiXeeBoxTunnel* tunnel;
 extern String section[12];
 
@@ -190,9 +190,10 @@ static void checkWaterLeak() {
     auto it = device->energyHistory.days.graph.find(dayKey);
     long todayL = 0;
     if (it != device->energyHistory.days.graph.end()) {
-        auto attrIt = it->second.attributes.find(1);
+        // Attribut 0 (0702/0) : celui qu'alimente l'index du compteur d'eau (graphe, historique)
+        auto attrIt = it->second.attributes.find(0);
         if (attrIt != it->second.attributes.end()) {
-            todayL = attrIt->second;
+            todayL = lround(attrIt->second * ConfigGeneral.coeffWater);
         }
     }
 
@@ -219,9 +220,9 @@ static void checkNightWaterLeak() {
         PsString hourKey(nightHours[i], PsramAllocator<char>());
         auto it = device->energyHistory.hours.graph.find(hourKey);
         if (it != device->energyHistory.hours.graph.end()) {
-            auto attrIt = it->second.attributes.find(1);
+            auto attrIt = it->second.attributes.find(0);
             if (attrIt != it->second.attributes.end()) {
-                nightL += attrIt->second;
+                nightL += lround(attrIt->second * ConfigGeneral.coeffWater);
             }
         }
     }
@@ -326,8 +327,8 @@ static void sendDailyMetrics() {
             long waterL = 0;
             auto it = device->energyHistory.days.graph.find(dayKey);
             if (it != device->energyHistory.days.graph.end()) {
-                auto attrIt = it->second.attributes.find(1);
-                if (attrIt != it->second.attributes.end()) waterL = attrIt->second;
+                auto attrIt = it->second.attributes.find(0);
+                if (attrIt != it->second.attributes.end()) waterL = lround(attrIt->second * ConfigGeneral.coeffWater);
             }
             if (waterL > 0) {
                 float waterEuros = waterL * atof(ConfigGeneral.tarifWater) / 1000.0f;

@@ -455,6 +455,12 @@ void SendAttributeWrite(int shortAddr, int endpoint, int cluster, int attribut, 
 
 void SendAttributeRead(int shortAddr, int endpoint, int cluster, int attribut, uint16_t manufacturerCode = 0)
 {
+    // Ligne de template propre a un endpoint (cle composee, cf. epAttrKey) : la lecture reelle
+    // porte sur l'attribut ZCL, envoyee a CET endpoint. Couvre le poll et la lecture manuelle.
+    if (epAttrEndpoint((uint32_t)attribut)) {
+        endpoint = epAttrEndpoint((uint32_t)attribut);
+        attribut = epAttrId((uint32_t)attribut);
+    }
     Packet trame;
     trame.cmd = 0x0100;
     trame.len = 14;
@@ -2928,7 +2934,8 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
                 {
                   // Conversion de la valeur cluster (hexadécimal) en entier
                   int cluster = strtol(temp[model][0]["status"][i]["cluster"], 0, 16);
-                  int attribut = (int)temp[model][0]["status"][i]["attribut"];
+                  int attribut = (int)epAttrKey((int)temp[model][0]["status"][i]["attribut"],
+                                                temp[model][0]["status"][i]["endpoint"] | 0);
                   int poll = (int)temp[model][0]["status"][i]["poll"];
 
                   // Lecture optionnelle du manufacturer code pour clusters manufacturer-specific
@@ -3034,7 +3041,8 @@ bool getPollingDevice(uint8_t shortAddr[2], int device_id, String model)
               if (temp[model][0]["status"][i]["poll"])
               {
                   cluster = strtol(temp[model][0]["status"][i]["cluster"],0,16);
-                  attribut = (int)temp[model][0]["status"][i]["attribut"];
+                  attribut = (int)epAttrKey((int)temp[model][0]["status"][i]["attribut"],
+                                            temp[model][0]["status"][i]["endpoint"] | 0);
                   poll = (int)temp[model][0]["status"][i]["poll"];
 
                   doc["poll"][j]["cluster"]=cluster;
@@ -3373,6 +3381,28 @@ void readZigbeeDatas(String filename,uint8_t Cluster[2],uint8_t Attribute[2], ui
   
   cluster = Cluster[0]*256+Cluster[1];
   attribute = Attribute[0]*256+Attribute[1];
+
+  // Valeur recue d'un endpoint >= 2 : si le template de l'appareil declare une ligne pour ce
+  // (cluster, attribut) SUR CET ENDPOINT, elle est rangee sous la cle composee de cette ligne
+  // (cf. epAttrKey). Sinon rien ne change : la valeur est traitee comme avant, quel que soit
+  // l'endpoint -- beaucoup d'appareils n'emettent pas depuis l'endpoint 1.
+  if (endpoint >= 2) {
+    int epKey = (int)epAttrKey(attribute, endpoint);
+    String devId = filename.substring(0, 16);
+    for (size_t k = 0; k < devices.size(); k++) {
+      if (devices[k]->getDeviceID() != devId) continue;
+      TemplateData* tpl = devices[k]->getTemplate();
+      if (tpl) {
+        for (int s = 0; s < tpl->StateSize(); s++) {
+          if ((int)tpl->states[s].cluster == cluster && (int)tpl->states[s].attribute == epKey) {
+            attribute = epKey;
+            break;
+          }
+        }
+      }
+      break;
+    }
+  }
   
   switch (cluster) 
   {

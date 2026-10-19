@@ -48,5 +48,9 @@ public:
 
 bool parseDeviceHistory(String IEEE, DeviceEnergyHistory &hist);
 bool saveEnergyHistory(String IEEE,const DeviceEnergyHistory &hist);
-bool addEnergyMeasurement(DeviceEnergyHistory &hist, String section,long value);
+// `gapSmoothing` : lisser le delta sur les heures ecoulees quand aucune mesure n'est arrivee
+// depuis longtemps (coupure). A laisser a true pour un compteur qui emet en continu (Linky) ;
+// a mettre a false pour un compteur a impulsions (eau, gaz), qui reste legitimement silencieux
+// tant que rien n'est consomme.
+bool addEnergyMeasurement(DeviceEnergyHistory &hist, String section,long value, bool gapSmoothing = true);
 bool addSubMeterMeasurement(DeviceEnergyHistory &hist, int tariffAttrId, long totalValue);

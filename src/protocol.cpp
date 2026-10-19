@@ -39,8 +39,8 @@ uint32_t crcErrorCount = 0;
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
 
-extern CircularBuffer<Alert, 10> *alertList;
-extern CircularBuffer<Device, 50> *deviceList;   // mises a jour en direct de la page Appareils
+extern LockedBuffer<Alert, 10> *alertList;
+extern LockedBuffer<Device, 50> *deviceList;   // mises a jour en direct de la page Appareils
 
 
 extern String epochTime;

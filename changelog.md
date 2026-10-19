@@ -1,5 +1,139 @@
 # Changelog
 
+## v2.26
+
+### Appareils à plusieurs canaux (issue #44)
+- **Champ `endpoint` dans les templates** : une ligne d'état peut désigner le canal (endpoint Zigbee) qu'elle lit. Sans ce champ, rien ne change (n'importe quel canal, comme avant). Les modules à plusieurs sorties exposent ainsi un état par canal
+- **Aqara T2 double relais `lumi.switch.acn047`** : L1 et L2 (marche / arrêt et état de chaque canal), puissance, consommation, tension
+- Attributs **flottants** (type ZCL 0x39) décodés, par exemple la puissance des modules Aqara
+- **MQTT et WebPush** : l'attribut d'un canal porte un nom lisible (`0_ep2`) au lieu d'un nombre calculé
+- **Home Assistant** : un interrupteur par canal (L1, L2), relié à l'état de ce canal
+- **Règles** : les conditions sur un canal précis sont proposées et évaluées correctement
+
+### LoRa 2.4 GHz
+- **Mise à jour du firmware du ZLinky LoRa (OTA)** depuis Config → LoRa, comme en Zigbee : bouton de mise à jour sur la fiche de l'appareil, envoi du fichier, puis **barre de progression sur la fiche** (inutile de rester sur la page)
+- **OTA par fenêtre** : les blocs partent par fenêtres de 16, un seul accusé de réception par fenêtre (au lieu d'un par bloc), avec reprise au premier bloc manquant : environ 35 min au lieu de 50 pour un firmware complet (estimation, à confirmer sur le terrain). ⚠️ Nécessite un firmware ZLinky LoRa qui gère les fenêtres (voir `doc/LORA_PROTOCOL.md`)
+- **Version du firmware** du ZLinky LoRa lue à l'appairage (cluster Basic, attribut `0xFF01`) et affichée sur la fiche LoRa et la fiche produit
+- Un **ZLinky appairé en LoRa devient automatiquement le Linky** de la configuration Énergie, comme en Zigbee
+- Aux SF plus rapides que SF11 (réglage par défaut), le préambule des requêtes POLL est allongé pour garder la même durée qu'en SF11 et laisser au ZLinky le temps de les entendre
+- Alertes TIC du mode Historique (trame EXTENDED `0x0B`) prises en compte
+- Protocole radio documenté dans `doc/LORA_PROTOCOL.md`
+
+### Ethernet (W5500)
+- **Port Ethernet filaire** sur les cartes équipées d'un W5500 (SPI : CS GPIO10, SCLK GPIO12, MOSI GPIO11, MISO GPIO13, INT GPIO14, RST GPIO9, 20 MHz, bus SPI3 ; le bus SPI2 reste au module LoRa). Pilote W5500 d'ESP-IDF, déjà présent dans le core : aucune bibliothèque ajoutée
+- **Ethernet prioritaire** : câble branché et adresse obtenue au démarrage, le WiFi n'est pas démarré (environ 40 Ko de mémoire interne économisés). Sans câble au démarrage, la box démarre en WiFi comme avant
+- **Relais WiFi** : si l'Ethernet perd son adresse plus de 30 s (câble débranché, DHCP…), le WiFi est démarré s'il est configuré. L'Ethernet redevient la route par défaut dès son retour. Sans WiFi configuré, la box attend le câble
+- Tant que l'Ethernet a une adresse, le **provisioning BLE** n'est jamais lancé et le WiFi ne fait pas de tentatives de reconnexion (elles bloquaient la boucle jusqu'à 30 s)
+- **Page Config → LAN** (anciennement « WiFi ») : sur une carte avec W5500, choix du **mode de connexion** — *Automatique* (Ethernet prioritaire, WiFi en secours), *Ethernet seul* (le WiFi n'est jamais démarré) ou *WiFi seul* (l'Ethernet n'est pas utilisé). La section que le mode n'utilise pas est grisée, et chaque section indique si elle est active, prioritaire ou de secours. Réglages Ethernet : **DHCP ou IP fixe** (adresse, masque, passerelle, DNS), enregistrés dans `/config/configEthernet.json` puis redémarrage. Sans W5500, la page reste celle du WiFi
+- Le **RAZ par 3 redémarrages rapides** remet aussi le mode Automatique et le DHCP (une IP fixe erronée ou le mode Ethernet seul sans câble rendraient la box injoignable)
+- Page **État réseau** : carte Ethernet (câble, adresse, masque, passerelle, DNS, MAC, débit et duplex du lien, interface active)
+- MQTT, tunnel, NTP, mDNS (`LIXEEBOX-xxxx.local`) et serveur web fonctionnent sur l'une ou l'autre interface
+- Une carte **sans W5500** n'est pas affectée : la puce n'est pas détectée et le firmware fonctionne en WiFi comme avant
+
+### API pour le kiosque LiXee-Assist
+Nouvelles routes en lecture (sauf `/api/delestage/restore`), protégées comme les autres (session ou Basic Auth en accès direct, session seule par le tunnel). Les paramètres se lisent **par nom**, les réponses font quelques Ko et ne contiennent **aucun secret**. Une box plus ancienne répond 404 sur ces routes : l'application peut s'en servir pour garder ses contournements.
+
+- **`GET /api/energy/config`** : la configuration Énergie **sans les mots de passe** (l'application n'a plus besoin de lire `configGeneral.json` en entier par `/readFile`). Prix : `tarifIdx2`…`tarifIdx10` → attributs d'index 256…272, prix nuls ou absents omis. `delestage` : prises délestées
+  ```json
+  {"zlinky":"00158d0001a2b3c4","production":"","gaz":"","water":"00158d0009f8e7d6",
+   "linkyMode":1,
+   "prices":{"256":0.1612,"258":0.2068},
+   "subscription":{"abo":15.65,"cspe":0.0225,"cta":1.2},
+   "gas":{"price":0.12,"coeff":10,"unit":"m3"},
+   "water":{"price":0.004,"coeff":1,"unit":"L"},
+   "subMeters":[{"index":0,"ieee":"a4c138...","alias":"Véhicule","color":"#e74c3c","enabled":true}],
+   "thresholds":{"budget":{"enabled":true,"monthEur":80},
+                 "overPower":{"enabled":false,"w":6000},
+                 "dailyAnomaly":{"enabled":true,"percent":30},
+                 "nightWaterLeak":{"enabled":true,"litres":1},
+                 "waterLeak":{"enabled":false,"litres":5},
+                 "freeze":{"enabled":false,"centiDeg":300,"sensor":""}},
+   "delestage":["a4c1380000000001"]}
+  ```
+- **`GET /api/power/peaks?days=90`** (1 à 90, défaut 90) : **puissance par jour**, conservée 90 jours dans `/hst/powerStats.json` (écrit au plus une fois par heure). Le Linky coupe sur un dépassement qui dure de l'ordre d'**une minute** : un pic isolé ne dit rien du risque de coupure. Chaque jour porte donc trois niveaux, calculés sur la puissance apparente (injection exclue, mesures supérieures à 1,5 × la puissance souscrite écartées) :
+  - `instVA` : pic **instantané** (la plus forte mesure) ;
+  - `va1m` : pic de la **moyenne sur 1 minute** glissante, celle qui fait couper le Linky ;
+  - `va10m` : pic du **plateau sur 10 minutes**, la charge durable qui sert à juger l'abonnement.
+
+  `va` est la valeur de référence du jour : en mode **Standard**, la valeur officielle du compteur, SMAXSN du jour (0B04/1293), la veille étant clôturée par SMAXSN-1 (FF66/530) → `"source":"meter"` ; en mode **Historique** (pas de SMAXSN), `va1m` → `"source":"sampled"`. Un jour Standard sans SMAXSN reçu retombe sur `va1m` et le signale par `"source":"sampled"` dans son entrée.
+  `minutes` : nombre de minutes du jour dont la moyenne a atteint 50, 60, 70, 80, 90 ou 100 % de la puissance souscrite (cumulé : une minute à 92 % compte dans 50…90 ; tranches à 0 omises). `measuredMin` : minutes effectivement mesurées. `subscribedVA` n'apparaît dans un jour que si l'abonnement était différent. Valeurs inconnues : `null`
+  ```json
+  {"subscribedVA":9000,"source":"meter",
+   "peaks":[{"date":"2026-10-12","va":7900,"instVA":8350,"va1m":7710,"va10m":5480,"floorW":310,
+             "measuredMin":1438,"minutes":{"50":95,"60":41,"70":12,"80":4}},
+            {"date":"2026-10-13","va":4200,"instVA":4410,"va1m":4120,"va10m":3050,"floorW":null,
+             "measuredMin":1012,"minutes":{}}]}
+  ```
+- **Triphasé : par phase**. Le Linky coupe sur **chaque** phase : `instVA`, `va1m`, `va10m` et `minutes` sont aussi donnés dans `phases` (une entrée par phase), rapportés à `phaseSubscribedVA` (un tiers de la puissance souscrite). Le niveau du jour (`va`, `instVA`…) porte alors sur le total. Standard : puissance de chaque phase (SINSTS1 à 3 : 0B04/1295, 2319, 2575), total = leur somme, et `meterVA` officiel par phase quand il est connu (SMAXSN-1 : FF66/530 à 532 ; pour le jour en cours, seule la phase 1 est publiée). Historique : puissance totale (PAPP), phases calculées d'après les intensités IINST1 à 3 (200 VA/A, comme le reste du firmware) ; la puissance souscrite d'un compteur historique triphasé vaut 3 × ISOUSC × 200 VA (ISOUSC est l'intensité d'une phase)
+  ```json
+  {"subscribedVA":12000,"triphase":true,"phaseSubscribedVA":4000,"source":"sampled",
+   "peaks":[{"date":"2026-10-12","va":7100,"instVA":7600,"va1m":7020,"va10m":5200,"floorW":420,
+             "measuredMin":1440,"minutes":{"50":30},
+             "phases":[{"phase":1,"meterVA":3650,"instVA":3900,"va1m":3610,"va10m":2900,"minutes":{"50":210,"60":95,"70":40,"80":12,"90":2}},
+                       {"phase":2,"instVA":2100,"va1m":1980,"va10m":1500,"minutes":{"50":3}},
+                       {"phase":3,"instVA":1700,"va1m":1650,"va10m":1200,"minutes":{}}]}]}
+  ```
+- **`GET /api/power/summary`** : de quoi juger l'**abonnement** et le risque de coupure
+  - `worst` : pires `instVA`, `va1m` et `va10m` des 90 derniers jours, avec leur date ;
+  - en triphasé, `worst.phases` donne les pires valeurs de chaque phase, et `months[].phases` le détail mensuel par phase ;
+  - `frequency` (`frequencyBasis` : `total` en monophasé, `phases` en triphasé, où un jour compte dès qu'**une** phase a atteint la tranche de sa propre limite) : pour chaque tranche, jours où la moyenne sur 1 min l'a atteinte sur les 7, 30 et 90 derniers jours mesurés, date du dernier, et `rate` : `daily` (au moins 70 % des jours), `weekly` (au moins 1 jour sur 10), `monthly` (au moins 1 jour sur 40), `rare`, `never`, ou `unknown` (moins de 7 jours observés ; un jour compte comme observé à partir d'1 h de mesures) ;
+  - `months` : vue mois par mois sur **24 mois**, pour voir les périodes de l'année (hiver…) : pics, minutes et jours par tranche
+  ```json
+  {"subscribedVA":9000,"bands":[50,60,70,80,90,100],
+   "worst":{"instVA":{"va":8350,"date":"2026-10-12"},"va1m":{"va":7710,"date":"2026-10-12"},
+            "va10m":{"va":5480,"date":"2026-10-12"}},
+   "frequency":{"50":{"days7":5,"days30":19,"days90":52,"observedDays":88,"last":"2026-10-13","rate":"weekly"},
+                "80":{"days7":1,"days30":2,"days90":3,"observedDays":88,"last":"2026-10-12","rate":"monthly"},
+                "90":{"days7":0,"days30":0,"days90":0,"observedDays":88,"last":null,"rate":"never"}, "...":{}},
+   "months":[{"month":"2026-10","observedDays":13,"subscribedVA":9000,"instVA":8350,"va1m":7710,"va10m":5480,
+              "minutes":{"50":410,"60":150,"70":38,"80":4},"days":{"50":11,"60":6,"70":3,"80":1}}]}
+  ```
+- **`GET /api/power/floor?days=30`** (1 à 90, défaut 30) : **consommation plancher par jour**, c'est-à-dire la plus petite consommation horaire entre 1 h et 5 h, en W, calculée sur les index du compteur. Une heure avec production est ignorée. Calculée à 5 h ; `null` si les index n'ont pas pu être relevés (box redémarrée pendant la nuit…). Également présente dans `/api/power/peaks` (`floorW`)
+  ```json
+  {"floor":[{"date":"2026-10-12","w":310},{"date":"2026-10-13","w":null}]}
+  ```
+- **`GET /api/alerts?since=<id>`** : les **20 dernières alertes**, lisibles **sans être consommées** (la file lue par `/getAlert` se vide à la lecture et prive le téléphone de ses notifications). Chaque alerte a un `id` croissant, conservé au redémarrage (`/hst/alerts.json`) ; `since` ne renvoie que les plus récentes. `level` va de 0 à 3. Une même alerte répétée dans les 10 minutes (dépassement signalé à chaque trame…) n'occupe qu'une place. Le flux existant (file, notifications, push) ne change pas
+  ```json
+  {"alerts":[{"id":42,"ts":"14/10/2026 18:42","type":"over_budget","level":0,
+              "title":"💸🚨Dépassement de budget","message":"...","value":4200,"threshold":4000}],
+   "lastId":42}
+  ```
+- **`GET /api/delestage`** : état du délestage. `devices` liste les prises délestées ; `cut` vaut `true` pour celles coupées par le délestage en cours. `since` / `lastEnd` : début du délestage en cours ou du dernier, fin du dernier (`null` si inconnus). `reason` : `meter` (dépassement signalé par le compteur) ou `anticipation`. `minuteVA` : moyenne de la dernière minute (-1 si inconnue). `minuteLoadPercent` : charge de la dernière minute en % de la limite — total en monophasé, **phase la plus chargée** en triphasé ; c'est sur elle que se décident le délestage anticipé et le rallumage
+  ```json
+  {"active":true,"since":"14/10/2026 18:42","lastEnd":"13/10/2026 07:15","reason":"meter",
+   "restoreMinutes":5,"restorePercent":80,"anticipationPercent":0,
+   "minuteVA":5230,"subscribedVA":9000,
+   "devices":[{"ieee":"a4c1380000000001","name":"Radiateur salon","cut":true}]}
+  ```
+- **`POST /api/delestage/restore`** : rallume les prises coupées (bouton « Rallumer »). La commande part au tour de boucle suivant → `202 {"status":"pending"}` ; relire `/api/delestage` pour l'état
+- **`GET /api/tariff`** : trois champs ajoutés **après** les champs existants, qui ne changent pas
+  - `index` : attribut de l'index en cours (256…272), d'après NTARF en Standard et la période tarifaire en Historique ; `null` si inconnu
+  - `price` : prix du kWh en cours, `null` s'il n'est pas saisi
+  - `nextChange` : prochain changement de tarif `"HH:MM"`, `null` si inconnu. Tempo : 06:00 et 22:00. HC/HP et EJP : d'après les heures de bascule **observées** (la configuration ne contient pas de plages d'heures creuses) — connu après la première journée complète. Base : toujours `null`
+  ```json
+  {"show":true,"tariff":"Heures Pleines","bgColor":"#154360","isTempo":false,
+   "today":{...},"tomorrow":{...},
+   "index":258,"price":0.2068,"nextChange":"22:00"}
+  ```
+
+### Délestage
+- **Rallumage automatique** : les prises coupées sont rallumées quand la puissance (moyenne sur 1 minute, la durée sur laquelle le Linky coupe) est restée **5 minutes sous 80 %** de la puissance souscrite (réglable dans Config → Énergie → Délestage automatique ; 0 minute = jamais). Seules les prises **allumées avant la coupure** sont rallumées, et le fichier `/config/delestage.json` note la fin (`state` à `"0"`, `dateOff`). Avant, rien ne rallumait jamais les prises
+- L'état des prises avant coupure n'est plus écrasé : le compteur signale le dépassement à chaque trame, et chaque trame ré-enregistrait l'état… alors déjà « éteint ». Le fichier n'est plus réécrit qu'au début et à la fin du délestage ; une prise rallumée à la main pendant le délestage est recoupée (au plus une fois par minute)
+- **Délestage anticipé** (option, désactivé par défaut) : couper les prises dès que la moyenne sur 1 minute atteint un pourcentage de la puissance souscrite, avant que le compteur ne coupe. Le seuil est forcé au-dessus du seuil de rallumage, pour éviter de couper et rallumer en boucle
+- Décocher **toutes** les prises du délestage les retire bien de la configuration (la liste n'était jamais vidée)
+
+### Corrections
+- **Serveur web figé** (issue #46 : connexion acceptée, aucune réponse) : les files partagées entre la boucle principale et le serveur web (mises à jour des appareils, notifications, alertes) sont protégées ; deux tâches pouvaient les corrompre en même temps. `/getLinky` et `/readFile` répondent toujours (une erreur au lieu de laisser la requête sans réponse) ; `/getDevices` ne libère plus un verrou qu'il ne détient pas
+- **ZiPulses en compteur d'eau ou de gaz** : les impulsions étaient bien reçues mais rien ne s'affichait sur le tableau de bord ; l'historique est de nouveau alimenté (sans lissage sur le temps : un compteur à impulsions se tait légitimement tant que rien n'est consommé)
+- **Scan des réseaux WiFi** quand la box fonctionne en Ethernet (WiFi éteint) : la liste restait vide ou la page attendait indéfiniment. La radio est allumée le temps du scan puis éteinte
+- **Coefficients gaz et eau décimaux** : relus en entier au démarrage, ils étaient tronqués (0,01 m³/impulsion devenait 0). Ils sont aussi affichés avec toutes leurs décimales (au lieu de 2) dans la page de configuration et les graphes
+- **Unités gaz et eau** : « kWh » était tronqué en « kW » (2 caractères au plus) ; 7 caractères désormais
+- **Seuils des alertes avancées perdus au redémarrage** (puissance, gel, anomalie journalière, fuite d'eau, durées et délais entre alertes) : enregistrés en texte, ils étaient relus comme absents et revenaient à leur valeur par défaut
+- **Alertes de fuite d'eau et bilan quotidien** : la consommation d'eau était lue sur un attribut que rien n'alimente (toujours 0) ; elle est lue sur l'index (0702/0) comme le graphe, coefficient appliqué
+
+### Mise à jour
+- Flasher le firmware **et** mettre à jour le système de fichiers (`data/tp/0.json`, `data/web/js/rules.js.gz`), puis redémarrer
+
 ## v2.25
 
 ### Corrections

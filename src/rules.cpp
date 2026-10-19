@@ -18,7 +18,7 @@
 #include <TimeLib.h>
 
 extern NotificationManager notificationManager;
-extern CircularBuffer<Notification, 10> *notifList;
+extern LockedBuffer<Notification, 10> *notifList;
 
 // Déclaration externe de SendAction (définie dans zigbee.cpp)
 extern void SendAction(int command, int ShortAddr, int endpoint, String tmpValue);

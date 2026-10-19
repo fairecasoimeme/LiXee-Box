@@ -76,6 +76,11 @@ public:
     // === CALLBACKS ===
     void onStateChange(WiFiStateCallback callback) { _stateCallback = callback; }
     void onEvent(WiFiEventCallback callback) { _eventCallback = callback; }
+
+    // Tant que inhibitor() renvoie true (cable Ethernet branche : la box est joignable), pas de
+    // provisioning BLE (~64 Ko de heap) ni de tentative de reconnexion WiFi (connect() bloque
+    // la boucle jusqu'a 30 s). Tout reprend des que inhibitor() renvoie false.
+    void setProvisioningInhibitor(std::function<bool()> inhibitor) { _provisioningInhibitor = inhibitor; }
     
     // === UTILITAIRES ===
     static String generateDeviceName(const String& prefix = "LIXEEGW");
@@ -117,6 +122,7 @@ private:
     // === CALLBACKS ===
     WiFiStateCallback _stateCallback;
     WiFiEventCallback _eventCallback;
+    std::function<bool()> _provisioningInhibitor;
     
     // === MÉTHODES PRIVÉES ===
     // Méthode de reconnexion

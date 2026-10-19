@@ -61,6 +61,10 @@ extern "C" {
 #include "zigate_flasher.h"
 #include "tunnel.h"
 #include "alertChecks.h"
+#include "powerStats.h"
+#include "alertHistory.h"
+#include "delestage.h"
+#include "ethernet.h"
 #include "mbedtls/platform.h"
 
 #define RESET_WINDOW_MS     3000    // Fenêtre de détection
@@ -74,6 +78,7 @@ NotificationManager notificationManager;
 bool oldProdZero = false;
 
 bool wifiServicesStarted = false;
+bool wifiStackStarted = false;   // smartWiFi.begin() appele (pas le cas si l'Ethernet suffit)
 bool zigbeeInitialized = false;
 // Modules détectés au démarrage (peuvent coexister) : le menu web s'y adapte.
 bool zigbeeDetected = false;   // posé par la réponse Get Version (0x8010) de la ZiGate
@@ -256,9 +261,9 @@ RulesManager rulesManager;
 
 CircularBuffer<Packet, 100> *commandList = nullptr;
 CircularBuffer<Packet, 70> *PrioritycommandList = nullptr;
-CircularBuffer<Alert, 10> *alertList = nullptr;
-CircularBuffer<Device, 50> *deviceList = nullptr;
-CircularBuffer<Notification, 10> *notifList = nullptr;
+LockedBuffer<Alert, 10> *alertList = nullptr;
+LockedBuffer<Device, 50> *deviceList = nullptr;
+LockedBuffer<Notification, 10> *notifList = nullptr;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP);
@@ -353,17 +358,17 @@ void initCircularBuffer()
   // File cadencee des actions radio (regles, groupes) : avant toute evaluation de regle.
   actionPacer.begin();
 
-  alertList = (CircularBuffer<Alert,10>*)heap_caps_malloc(sizeof(*alertList), MALLOC_CAP_SPIRAM);
+  alertList = (LockedBuffer<Alert, 10>*)heap_caps_malloc(sizeof(*alertList), MALLOC_CAP_SPIRAM);
   if (!alertList) { log_e("PSRAM alloc failed: alertList"); ESP.restart(); }
-  new(alertList) CircularBuffer<Alert,10>();
+  new(alertList) LockedBuffer<Alert, 10>();
 
-  notifList = (CircularBuffer<Notification,10>*)heap_caps_malloc(sizeof(*notifList), MALLOC_CAP_SPIRAM);
+  notifList = (LockedBuffer<Notification, 10>*)heap_caps_malloc(sizeof(*notifList), MALLOC_CAP_SPIRAM);
   if (!notifList) { log_e("PSRAM alloc failed: notifList"); ESP.restart(); }
-  new(notifList) CircularBuffer<Notification,10>();
+  new(notifList) LockedBuffer<Notification, 10>();
 
-  deviceList = (CircularBuffer<Device,50>*)heap_caps_malloc(sizeof(*deviceList), MALLOC_CAP_SPIRAM);
+  deviceList = (LockedBuffer<Device, 50>*)heap_caps_malloc(sizeof(*deviceList), MALLOC_CAP_SPIRAM);
   if (!deviceList) { log_e("PSRAM alloc failed: deviceList"); ESP.restart(); }
-  new(deviceList) CircularBuffer<Device,50>();
+  new(deviceList) LockedBuffer<Device, 50>();
 
 }
 
@@ -1538,6 +1543,17 @@ bool loadConfigWifi() {
   return true;
 }
 
+// Entier de configGeneral.json, avec valeur par défaut. config_write() enregistre tout en chaîne
+// ("4000") : `doc[k] | 6000` renvoyait alors toujours le défaut (pour ArduinoJson une chaîne
+// n'est pas un entier), et le seuil saisi dans la page était perdu au redémarrage.
+static int cfgInt(JsonVariantConst v, int def) {
+  if (v.isNull()) return def;
+  if (v.is<int>()) return v.as<int>();
+  String s = v.as<String>();
+  s.trim();
+  return s.length() ? s.toInt() : def;
+}
+
 bool loadConfigGeneral() {
   const char * path = "/config/configGeneral.json";
   
@@ -1573,7 +1589,7 @@ bool loadConfigGeneral() {
   {
     ConfigGeneral.coeffGaz=1;
   }else{
-    ConfigGeneral.coeffGaz=doc["coeffGaz"].as<int>();
+    ConfigGeneral.coeffGaz=doc["coeffGaz"].as<float>();   // coefficient decimal (ex. 0.01 m3/impulsion)
   }
 
   strlcpy(ConfigGeneral.Water, doc["Water"] | "", sizeof(ConfigGeneral.Water));
@@ -1583,7 +1599,7 @@ bool loadConfigGeneral() {
   {
     ConfigGeneral.coeffWater=1;
   }else{
-    ConfigGeneral.coeffWater=doc["coeffWater"].as<int>();
+    ConfigGeneral.coeffWater=doc["coeffWater"].as<float>();
   }
 
   ConfigGeneral.LinkyMode = ini_read(String(ConfigGeneral.ZLinky)+".json","FF66", "768").toInt();
@@ -1679,19 +1695,19 @@ bool loadConfigGeneral() {
 
   // Alertes avancées
   ConfigNotif.OverPower = (int)doc["OverPower"];
-  ConfigNotif.OverPowerThreshold = doc["OverPowerThreshold"] | 6000;
-  ConfigNotif.OverPowerDuration = doc["OverPowerDuration"] | 60;
-  ConfigNotif.OverPowerCooldown = doc["OverPowerCooldown"] | 30;
+  ConfigNotif.OverPowerThreshold = cfgInt(doc["OverPowerThreshold"], 6000);
+  ConfigNotif.OverPowerDuration = cfgInt(doc["OverPowerDuration"], 60);
+  ConfigNotif.OverPowerCooldown = cfgInt(doc["OverPowerCooldown"], 30);
   ConfigNotif.Freeze = (int)doc["Freeze"];
-  ConfigNotif.FreezeThreshold = doc["FreezeThreshold"] | 300;
+  ConfigNotif.FreezeThreshold = cfgInt(doc["FreezeThreshold"], 300);
   strlcpy(ConfigNotif.FreezeSensorIEEE, doc["FreezeSensorIEEE"] | "", sizeof(ConfigNotif.FreezeSensorIEEE));
-  ConfigNotif.FreezeCooldown = doc["FreezeCooldown"] | 60;
+  ConfigNotif.FreezeCooldown = cfgInt(doc["FreezeCooldown"], 60);
   ConfigNotif.DailyAnomaly = (int)doc["DailyAnomaly"];
-  ConfigNotif.DailyAnomalyPercent = doc["DailyAnomalyPercent"] | 30;
+  ConfigNotif.DailyAnomalyPercent = cfgInt(doc["DailyAnomalyPercent"], 30);
   ConfigNotif.WaterLeak = (int)doc["WaterLeak"];
-  ConfigNotif.WaterLeakThreshold = doc["WaterLeakThreshold"] | 5;
+  ConfigNotif.WaterLeakThreshold = cfgInt(doc["WaterLeakThreshold"], 5);
   ConfigNotif.NightWaterLeak = (int)doc["NightWaterLeak"];
-  ConfigNotif.NightWaterLeakThreshold = doc["NightWaterLeakThreshold"] | 1;
+  ConfigNotif.NightWaterLeakThreshold = cfgInt(doc["NightWaterLeakThreshold"], 1);
   ConfigNotif.DailyMetrics = (int)doc["DailyMetrics"];
 
   // === SOUS-COMPTEURS ===
@@ -1715,6 +1731,13 @@ bool loadConfigGeneral() {
       }
     }
   }
+
+  // Délestage
+  ConfigGeneral.delestage = doc["delestage"] | "";
+  if (ConfigGeneral.delestage == "null") ConfigGeneral.delestage = "";
+  ConfigGeneral.delestageRestoreMin = cfgInt(doc["delestageRestoreMin"], 5);
+  ConfigGeneral.delestageRestorePct = cfgInt(doc["delestageRestorePct"], 80);
+  ConfigGeneral.delestageAnticipPct = cfgInt(doc["delestageAnticipPct"], 0);
 
   //PRESENCE
   if (doc.containsKey("Presence")) {
@@ -1830,7 +1853,7 @@ static void checkBleMemoryReclaim() {
     if (!smartWiFi.bleWasUsed()) { done = true; return; }   // BLE jamais charge : rien a faire
     if (bleReclaimGuard == BLE_RECLAIM_MAGIC) { done = true; return; }  // deja fait ce cycle
 
-    if (!smartWiFi.isConnected()) { wifiStableSince = 0; return; }
+    if (!netConnected()) { wifiStableSince = 0; return; }   // WiFi ou Ethernet
     if (wifiStableSince == 0) { wifiStableSince = millis(); return; }
     if (millis() - wifiStableSince < BLE_RECLAIM_STABLE_MS) return;
 
@@ -2316,6 +2339,12 @@ void setup(void)
       blinkLed(10, 50);
       // Effacer la config WiFi
       clearWifiConfig();
+      // Config Ethernet : retour en Automatique et DHCP (une IP fixe erronee ou le mode
+      // Ethernet seul sans cable rendraient la box injoignable)
+      if (LittleFS.exists("/config/configEthernet.json")) {
+          LittleFS.remove("/config/configEthernet.json");
+          Serial.println("[RESET] Config Ethernet effacée");
+      }
       // Désactiver la sécurité HTTP (permet de récupérer l'accès si mot de passe oublié)
       config_write("configGeneral.json", "enableSecureHttp", "0");
       Serial.println("[RESET] Securite HTTP desactivee");
@@ -2456,7 +2485,8 @@ void setup(void)
             case WIFI_STATE_CONNECTED:
                 Serial.printf("[WiFi] Connected - Free heap: %u\n", ESP.getFreeHeap());
                 addDebugLog(F("WiFi Connected"));
-                wifiServicesStarted = false; // Trigger initWiFiServices() in loop()
+                // Services deja lances sur l'Ethernet : rien a relancer
+                if (!ethernetHasIP()) wifiServicesStarted = false; // Trigger initWiFiServices() in loop()
                 // MQTT sera reconnecté par initWiFiServices() — pas de double connect ici
                 break;
                 
@@ -2468,6 +2498,7 @@ void setup(void)
             case WIFI_STATE_DISCONNECTED:
                 Serial.println("🌐 ❌ WiFi disconnected");
                 addDebugLog(F("WiFi disconnected"));
+                if (ethernetHasIP()) break;   // l'Ethernet porte le reseau : services maintenus
                 wifiServicesStarted = false;
 
                 if (mqttClient.connected()) {
@@ -2490,7 +2521,30 @@ void setup(void)
         Serial.println("📡 Event: " + event);
     });
 
+    // === ETHERNET (W5500) ===
+    // Prioritaire : cable branche et adresse obtenue, le WiFi n'est pas demarre (heap economise).
+    // Sans W5500 sur la carte, ethernetBegin() echoue proprement et rien ne change.
+    bool ethernetReady = false;
+    if (ethernetBegin(("LIXEEBOX-" + getIDWifi()).c_str())) {
+        ethernetReady = ethernetWaitForIP(3000, 10000);
+    }
+    // Ethernet operationnel : ni provisioning BLE, ni tentatives WiFi bloquantes
+    // (mode Ethernet seul : jamais de WiFi, meme sans cable)
+    smartWiFi.setProvisioningInhibitor([]() {
+        return ethernetHasIP() || (ethernetPresent() && ConfigEthernet.mode == ETH_MODE_ETH_ONLY);
+    });
+
+    if (ethernetReady) {
+        Serial.println("🌐 Ethernet connecté : " + ethernetLocalIP().toString() + " - WiFi non démarré");
+        addDebugLog("Reseau : Ethernet " + ethernetLocalIP().toString());
+    } else if (ethernetPresent() && ConfigEthernet.mode == ETH_MODE_ETH_ONLY) {
+        // Le reseau demarrera au branchement du cable (les services suivent dans loop())
+        Serial.println("🌐 Mode Ethernet seul : WiFi non démarré, en attente du câble / DHCP");
+        addDebugLog(F("Reseau : Ethernet seul, en attente"));
+    } else {
+
     // === DÉMARRAGE INTELLIGENT ===
+    wifiStackStarted = true;
     Serial.println("🔍 Starting Smart WiFi Manager...");
     Serial.println("    → Will check WiFi config automatically");
     Serial.println("    → Will load BLE only if needed");
@@ -2524,11 +2578,18 @@ void setup(void)
         return;
     }
 
+    } // !ethernetReady
+
     Serial.println("📊 Memory after WiFi Manager init:");
     Serial.printf("   Free Heap: %u bytes\n", ESP.getFreeHeap());
     Serial.printf("   Free PSRAM: %u bytes\n", ESP.getFreePsram());
     
     Serial.println("✅ Setup complete - entering main loop");
+
+    // Kiosque LiXee-Assist (v2.26) : historique d'alertes, pics/plancher, délestage
+  alertHistoryBegin();
+  powerStatsBegin();
+  delestageBegin();
 
     // Initialisation du manager de notifications
   if (!notificationManager.begin()) {
@@ -2666,6 +2727,36 @@ void monitorSerialSimple() {
 
 static uint32_t maxLoopTime = 0;
 
+// Relais WiFi : demarre en Ethernet, la box perd son adresse (cable debranche, DHCP...). Apres
+// 30 s, le WiFi est demarre s'il est configure. Sans configuration WiFi, on attend le retour du
+// cable plutot que de lancer le provisioning BLE (~64 Ko de heap). Une fois demarre, le WiFi
+// reste actif ; l'Ethernet redevient la route par defaut des qu'il revient.
+#define NET_FAILOVER_DELAY_MS 30000UL
+static void handleNetworkFailover() {
+  static uint32_t downSince = 0;
+  static bool noConfigLogged = false;
+  if (wifiStackStarted || !ethernetPresent()) return;
+  if (ConfigEthernet.mode == ETH_MODE_ETH_ONLY) return;     // pas de relais WiFi demande
+  if (ethernetHasIP()) { downSince = 0; return; }
+  if (downSince == 0) { downSince = millis(); return; }
+  if (millis() - downSince < NET_FAILOVER_DELAY_MS) return;
+  if (!SmartWiFiManager::isWiFiConfigValid()) {
+    if (!noConfigLogged) {
+      noConfigLogged = true;
+      Serial.println("🌐 Ethernet indisponible et aucun WiFi configuré : attente du câble");
+    }
+    return;
+  }
+  Serial.println("🌐 Ethernet indisponible depuis 30 s : démarrage du WiFi en relais");
+  addDebugLog(F("Ethernet indisponible : relais WiFi"));
+  wifiStackStarted = true;
+  if (smartWiFi.begin()) {
+    smartWiFi.setAutoReconnect(true);
+    smartWiFi.setMaxReconnectAttempts(10);
+    smartWiFi.setReconnectDelay(5000);
+  }
+}
+
 void loop(void)
 {
   unsigned long loopStart = millis();
@@ -2680,15 +2771,29 @@ void loop(void)
 
   smartWiFi.handleEvents();
 
+  ethernetLoop();
+  handleNetworkFailover();
+
   static uint32_t lastStatusPrint = 0;
-  if (smartWiFi.isReconnecting() && (millis() - lastStatusPrint > 5000)) {
+  if (smartWiFi.isReconnecting() && !ethernetHasIP() && (millis() - lastStatusPrint > 5000)) {
       lastStatusPrint = millis();
       addDebugLog("WIFI : Reconnexion en cours ...");
       Serial.printf("🔄 Reconnexion en cours: tentative %d/%d\n", 
                     smartWiFi.getReconnectAttempts(), 10);
   }
 
-  if (smartWiFi.isConnected() && !wifiServicesStarted) {
+  // Perte du reseau (Ethernet sans relais WiFi, ou les deux) : les services repartiront au retour
+  static bool netWasUp = false;
+  bool netUp = netConnected();
+  if (netWasUp && !netUp) {
+      Serial.println("🌐 ❌ Réseau perdu");
+      addDebugLog(F("Reseau perdu"));
+      wifiServicesStarted = false;
+      if (mqttClient.connected()) mqttClient.disconnect();
+  }
+  netWasUp = netUp;
+
+  if (netUp && !wifiServicesStarted) {
       initWiFiServices();
       wifiServicesStarted = true;
   }
@@ -2700,6 +2805,10 @@ void loop(void)
 
   // Vérification des seuils d'alerte
   alertChecksLoop();
+
+  // Statistiques de puissance (pics, plancher) et rallumage après délestage
+  powerStatsLoop();
+  delestageLoop();
 
   // Traitement async de l'activation tunnel
   processTunnelActivation();

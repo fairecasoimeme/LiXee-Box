@@ -54,6 +54,10 @@
 #include "TemplateCache.h"
 #include "tunnel.h"
 #include "ElectricalMeasurement.h"
+#include "powerStats.h"
+#include "alertHistory.h"
+#include "delestage.h"
+#include "ethernet.h"
 
 extern DeviceList devices;
 extern LiXeeBoxTunnel* tunnel;
@@ -69,9 +73,9 @@ extern AsyncMqttClient mqttClient;
 extern unsigned long timeLog;
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
-extern CircularBuffer<Alert, 10> *alertList;
-extern CircularBuffer<Device, 50> *deviceList;
-extern CircularBuffer<Notification, 10> *notifList;
+extern LockedBuffer<Alert, 10> *alertList;
+extern LockedBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Notification, 10> *notifList;
 
 extern RulesManager rulesManager;
 
@@ -321,6 +325,15 @@ static String loginUrlFor(AsyncWebServerRequest *request) {
         target += urlEncodeComponent(p->value());
     }
     return "/login?next=" + urlEncodeComponent(target);
+}
+
+// Coefficient d'impulsion lisible : String(float) n'affiche que 2 decimales, et un coefficient
+// de 0.001 (1 L par impulsion en m3) devenait "0.00" dans la page et dans les graphes.
+static String fmtCoeff(float v) {
+  String s = String(v, 6);
+  while (s.endsWith("0")) s.remove(s.length() - 1);
+  if (s.endsWith(".")) s.remove(s.length() - 1);
+  return s;
 }
 
 bool checkAuth(AsyncWebServerRequest *request) {
@@ -815,11 +828,10 @@ const char HTTP_MENU_NAV[] PROGMEM =
    "</a>"
    "<div class='dropdown-menu'>"
    "<a class='dropdown-item' href='configWiFi'>"
-   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-wifi' viewBox='0 0 16 16'>"
-   "  <path d='M15.384 6.115a.485.485 0 0 0-.047-.736A12.44 12.44 0 0 0 8 3C5.259 3 2.723 3.882.663 5.379a.485.485 0 0 0-.048.736.52.52 0 0 0 .668.05A11.45 11.45 0 0 1 8 4c2.507 0 4.827.802 6.716 2.164.205.148.49.13.668-.049'/>"
-   "  <path d='M13.229 8.271a.482.482 0 0 0-.063-.745A9.46 9.46 0 0 0 8 6c-1.905 0-3.68.56-5.166 1.526a.48.48 0 0 0-.063.745.525.525 0 0 0 .652.065A8.46 8.46 0 0 1 8 7a8.46 8.46 0 0 1 4.576 1.336c.206.132.48.108.653-.065m-2.183 2.183c.226-.226.185-.605-.1-.75A6.5 6.5 0 0 0 8 9c-1.06 0-2.062.254-2.946.704-.285.145-.326.524-.1.75l.015.015c.16.16.407.19.611.09A5.5 5.5 0 0 1 8 10c.868 0 1.69.201 2.42.56.203.1.45.07.61-.091zM9.06 12.44c.196-.196.198-.52-.04-.66A2 2 0 0 0 8 11.5a2 2 0 0 0-1.02.28c-.238.14-.236.464-.04.66l.706.706a.5.5 0 0 0 .707 0l.707-.707z'/>"
+   "<svg xmlns='http://www.w3.org/2000/svg' style='width:16px;' width='16' height='16' fill='currentColor' class='bi bi-diagram-3' viewBox='0 0 16 16'>"
+   "  <path fill-rule='evenodd' d='M6 3.5A1.5 1.5 0 0 1 7.5 2h1A1.5 1.5 0 0 1 10 3.5v1A1.5 1.5 0 0 1 8.5 6v1H14a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0V8h-5v.5a.5.5 0 0 1-1 0V8h-5v.5a.5.5 0 0 1-1 0v-1A.5.5 0 0 1 2 7h5.5V6A1.5 1.5 0 0 1 6 4.5zM8.5 5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5zM0 11.5A1.5 1.5 0 0 1 1.5 10h1A1.5 1.5 0 0 1 4 11.5v1A1.5 1.5 0 0 1 2.5 14h-1A1.5 1.5 0 0 1 0 12.5zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm4.5.5A1.5 1.5 0 0 1 7.5 10h1a1.5 1.5 0 0 1 1.5 1.5v1A1.5 1.5 0 0 1 8.5 14h-1A1.5 1.5 0 0 1 6 12.5zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm4.5.5a1.5 1.5 0 0 1 1.5-1.5h1a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5z'/>"
    "</svg>"
-   " WiFi"
+   " LAN"
    "</a>"
    "<a class='dropdown-item' data-mod='zigbee' href='configDevices'>"
    "<svg fill='currentColor' style='width:16px;' width='16' height='16' viewBox='0 0 24 24' role='img' xmlns='http://www.w3.org/2000/svg'>"
@@ -1597,7 +1609,23 @@ const char HTTP_CONFIG_PARAM_ENERGY[] PROGMEM = R"rawstring(
                 </h5>
                 <div class="collapse" id="delestage" style="display:none;">
                   <h5>Prise(s) connectée(s) :</h5>
-                  {{selectDevicesAction}} 
+                  {{selectDevicesAction}}
+                  <input type="hidden" name="delestageForm" value="1">
+                  <h5 class="mt-3">Rallumage automatique</h5>
+                  <div class="row g-2">
+                    <div class="col-sm-6">
+                      <label for="delestageRestoreMin">Après (minutes, 0 = jamais)</label>
+                      <input class="form-control" id="delestageRestoreMin" type="number" min="0" max="240" name="delestageRestoreMin" value="{{delestageRestoreMin}}">
+                    </div>
+                    <div class="col-sm-6">
+                      <label for="delestageRestorePct">Sous (% de la puissance souscrite)</label>
+                      <input class="form-control" id="delestageRestorePct" type="number" min="10" max="100" name="delestageRestorePct" value="{{delestageRestorePct}}">
+                    </div>
+                  </div>
+                  <small class="text-muted">Seules les prises allumées avant la coupure sont rallumées. La puissance est jugée sur sa moyenne sur 1 minute, la durée sur laquelle le Linky coupe.</small>
+                  <h5 class="mt-3">Délestage anticipé</h5>
+                  <label for="delestageAnticipPct">Couper dès que la moyenne sur 1 minute atteint (% de la puissance souscrite, 0 = seulement sur signal du compteur)</label>
+                  <input class="form-control" id="delestageAnticipPct" type="number" min="0" max="100" name="delestageAnticipPct" value="{{delestageAnticipPct}}">
                 </div>
               </div>
               <div class="d-flex justify-content-end">
@@ -3961,6 +3989,7 @@ const char HTTP_NETWORK[] PROGMEM =
           "</div>"
         "</div>"
       "</div><br>"
+      "{{ethernetCard}}"
       "<div class='row g-4'>"
         "<div class='col'>"
           "<div class='card'>"
@@ -5069,10 +5098,15 @@ const char HTTP_ENERGY_JAVASCRIPT[] PROGMEM =
 
 const char HTTP_CONFIG_WIFI[] PROGMEM = R"(
   <div class="container p-4">
-    <h4 class="card-title mb-4">Config WiFi</h4>
-    <div class="card mx-auto shadow-sm">
+    <h4 class="card-title mb-4">Config LAN</h4>
+    {{lanMode}}
+    <div class="card mx-auto shadow-sm mb-4" id="wifiCard" style="{{wifiCardStyle}}">
+      <div class="card-header d-flex align-items-center">
+        <strong>WiFi</strong><span class="ms-2">{{wifiBadge}}</span>
+      </div>
       <div class="card-body">
         <form method='POST' action='saveWifi'>
+         <fieldset id="wifiSet" {{wifiDisabled}}>
           <!-- SSID -->
           <div class="mb-3">
             <label for="ssid" class="form-label">SSID</label>
@@ -5108,14 +5142,87 @@ const char HTTP_CONFIG_WIFI[] PROGMEM = R"(
           <div class="d-flex justify-content-end">
             <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("reboot").style.display="block";'>Enregistrer</button>
           </div>
+         </fieldset>
         </form>
         <div style='color:red'>{{error}}</div>
         <div style='color:red'>{{ipError}}</div>
         <div id='reboot' style='display:none;'><img src='web/img/wait.gif' /> Redémarrage ...</div>
       </div>
     </div>
+    {{ethernetSection}}
   </div>
   )";
+
+// Choix du mode de connexion, affiche seulement si un W5500 est detecte. Les boutons radio
+// appartiennent au formulaire Ethernet (attribut form) : un seul enregistrement, un redemarrage.
+const char HTTP_CONFIG_LAN_MODE[] PROGMEM = R"html(
+    <div class="card mx-auto shadow-sm mb-4">
+      <div class="card-header"><strong>Connexion</strong></div>
+      <div class="card-body">
+        <p class="mb-3">Interface active : <strong>{{activeIf}}</strong></p>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="radio" name="netMode" id="netMode0" value="0" form="ethForm" {{mode0}} onchange="lanMode(0)">
+          <label class="form-check-label" for="netMode0"><strong>Automatique</strong> : Ethernet prioritaire, WiFi en secours si le câble est débranché</label>
+        </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="radio" name="netMode" id="netMode1" value="1" form="ethForm" {{mode1}} onchange="lanMode(1)">
+          <label class="form-check-label" for="netMode1"><strong>Ethernet seul</strong> : le WiFi n'est jamais démarré</label>
+        </div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="radio" name="netMode" id="netMode2" value="2" form="ethForm" {{mode2}} onchange="lanMode(2)">
+          <label class="form-check-label" for="netMode2"><strong>WiFi seul</strong> : l'Ethernet n'est pas utilisé</label>
+        </div>
+        <small class="text-muted">En cas de box injoignable, 3 redémarrages rapides remettent le mode Automatique (et effacent la configuration WiFi).</small>
+        <div class="d-flex justify-content-end mt-2">
+          <button type="submit" form="ethForm" class="btn btn-warning btn-lg" onclick='document.getElementById("rebootEth").style.display="block";'>Enregistrer</button>
+        </div>
+      </div>
+    </div>
+)html";
+
+const char HTTP_CONFIG_ETHERNET[] PROGMEM = R"html(
+    <div class="card mx-auto shadow-sm mb-4" id="ethCard" style="{{ethCardStyle}}">
+      <div class="card-header d-flex align-items-center">
+        <strong>Ethernet</strong><span class="ms-2">{{ethBadge}}</span>
+      </div>
+      <div class="card-body">
+        <form method='POST' action='saveEthernet' id='ethForm'>
+         <fieldset id="ethSet" {{ethDisabled}}>
+          <input type="hidden" name="ethFields" value="1">
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="ethDhcp" name='ethDhcp' {{ethDhcpChecked}} onClick="toggleDiv('ethStatic');">
+            <label class="form-check-label" for="ethDhcp">DHCP</label>
+          </div>
+          <div id='ethStatic' style='display:{{ethStatic}}'>
+            <div class="mb-3">
+              <label for="ethIp" class="form-label">@IP</label>
+              <input type="text" class="form-control mb-2" id="ethIp" name='ethIp' value='{{ethIp}}'>
+              <label for="ethMask" class="form-label">@Masque</label>
+              <input type="text" class="form-control mb-2" id="ethMask" name='ethMask' value='{{ethMask}}'>
+              <label for="ethGw" class="form-label">@Passerelle</label>
+              <input type="text" class="form-control mb-2" id="ethGw" name='ethGw' value='{{ethGw}}'>
+              <label for="ethDns" class="form-label">DNS (vide = passerelle)</label>
+              <input type="text" class="form-control" id="ethDns" name='ethDns' value='{{ethDns}}'>
+            </div>
+          </div>
+          <div class="d-flex justify-content-end">
+            <button type="submit" class="btn btn-warning btn-lg" onclick='document.getElementById("rebootEth").style.display="block";'>Enregistrer</button>
+          </div>
+         </fieldset>
+        </form>
+        <div style='color:red'>{{ethError}}</div>
+        <div id='rebootEth' style='display:none;'><img src='web/img/wait.gif' /> Redémarrage ...</div>
+      </div>
+    </div>
+    <script>
+      // Grise la section que le mode choisi n'utilise pas (avant meme l'enregistrement)
+      function lanMode(m){
+        var w=document.getElementById('wifiSet'),e=document.getElementById('ethSet');
+        w.disabled=(m==1); document.getElementById('wifiCard').style.opacity=(m==1)?'0.5':'1';
+        e.disabled=(m==2); document.getElementById('ethCard').style.opacity=(m==2)?'0.5':'1';
+      }
+    </script>
+)html";
 
 const char HTTP_CREATE_DEVICE[] PROGMEM =
     "<h4>Create device file</h4>"
@@ -5932,7 +6039,7 @@ bool TemplateExist(int deviceId)
 {
     strlcpy(e.name, v[F("name")], sizeof(e.name));
     e.cluster = (int)strtol(v[F("cluster")], nullptr, 16);
-    e.attribute = v[F("attribut")];
+    e.attribute = (int)epAttrKey((int)(v[F("attribut")] | 0), v[F("endpoint")] | 0);   // cf. config.h
     strlcpy(e.type, v[F("type")] | "", sizeof(e.type));
     strlcpy(e.mqtt_device_class, v[F("mqtt_device_class")] | "null", sizeof(e.mqtt_device_class));
     strlcpy(e.mqtt_state_class, v[F("mqtt_state_class")] | "null", sizeof(e.mqtt_state_class));
@@ -6054,7 +6161,7 @@ Template* GetTemplate(int deviceId, String model)
           tmp = temp[model][0][F("status")][i][F("name")];
           strlcpy(t->e[i].name, tmp, sizeof(t->e[i].name));
           t->e[i].cluster = (int)strtol(temp[model][0][F("status")][i][F("cluster")], 0, 16);
-          t->e[i].attribute = (int)temp[model][0][F("status")][i][F("attribut")];
+          t->e[i].attribute = (int)epAttrKey((int)temp[model][0][F("status")][i][F("attribut")], temp[model][0][F("status")][i][F("endpoint")] | 0);
           if (temp[model][0][F("status")][i][F("type")])
           {
             strlcpy(t->e[i].type, temp[model][0][F("status")][i][F("type")], sizeof(t->e[i].type));
@@ -6173,7 +6280,7 @@ Template* GetTemplate(int deviceId, String model)
           tmp = temp[F("default")][0][F("status")][i][F("name")];
           strlcpy(t->e[i].name, tmp, sizeof(t->e[i].name));
           t->e[i].cluster = (int)strtol(temp[F("default")][0][F("status")][i][F("cluster")], 0, 16);
-          t->e[i].attribute = (int)temp[F("default")][0][F("status")][i][F("attribut")];
+          t->e[i].attribute = (int)epAttrKey((int)temp[F("default")][0][F("status")][i][F("attribut")], temp[F("default")][0][F("status")][i][F("endpoint")] | 0);
           if (temp[F("default")][0][F("status")][i][F("type")])
           {
             strlcpy(t->e[i].type, temp[F("default")][0][F("status")][i][F("type")], sizeof(t->e[i].type));
@@ -6742,13 +6849,13 @@ String createPowerGraph(String IEEE)
     
   }else if (Type=="gaz")
   {
-      JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":"+String(ConfigGeneral.coeffGaz)+",\"price\":" + getTarif(0,"gaz") + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
+      JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":"+fmtCoeff(ConfigGeneral.coeffGaz)+",\"price\":" + getTarif(0,"gaz") + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
       result += "0"; 
       unit = " postUnits: ' "+String(ConfigGeneral.unitGaz)+"',";
 
   }else if (Type=="water")
   {
-    JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":"+String(ConfigGeneral.coeffWater)+",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
+    JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":"+fmtCoeff(ConfigGeneral.coeffWater)+",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
     result += "0";
     unit = " postUnits: ' "+String(ConfigGeneral.unitWater)+"',";
   }else if (Type=="production")
@@ -6892,7 +6999,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   {
     JsonEuros += "\"0\":{";
     JsonEuros += "\"name\":\"Gaz\",";
-    JsonEuros += "\"coeff\":" + String(ConfigGeneral.coeffGaz) + ",";
+    JsonEuros += "\"coeff\":" + fmtCoeff(ConfigGeneral.coeffGaz) + ",";
     JsonEuros += "\"price\":" + String(getTarif(0, "gaz")) + ",";
     JsonEuros += "\"unit\":\"" + String(ConfigGeneral.unitGaz) + "\"}";
     
@@ -6904,7 +7011,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
   {
     JsonEuros += "\"0\":{";
     JsonEuros += "\"name\":\"Eau\",";
-    JsonEuros += "\"coeff\":" + String(ConfigGeneral.coeffWater) + ",";
+    JsonEuros += "\"coeff\":" + fmtCoeff(ConfigGeneral.coeffWater) + ",";
     JsonEuros += "\"price\":" + String(getTarif(0, "water")) + ",";
     JsonEuros += "\"unit\":\"" + String(ConfigGeneral.unitWater) + "\"}";
     
@@ -7914,7 +8021,38 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   result += F("</html>");
   result.replace("{{FormattedDate}}", FormattedDate);
 
-  result.replace("{{enableWifi}}", F("<img src='/web/img/ok.png'>"));
+  // Ethernet (W5500) : carte affichee seulement si la puce est detectee
+  if (ethernetPresent()) {
+    String eth = F("<div class='row g-4'><div class='col'><div class='card'>"
+                   "<div class='card-header'>"
+                   "<svg xmlns='http://www.w3.org/2000/svg' style='width:24px;' width='24' height='24' fill='#000000' class='bi bi-ethernet' viewBox='0 0 16 16'>"
+                   "<path d='M14 13.5v-7a.5.5 0 0 0-.5-.5H12V4.5a.5.5 0 0 0-.5-.5h-1v-.5A.5.5 0 0 0 10 3H6a.5.5 0 0 0-.5.5V4h-1a.5.5 0 0 0-.5.5V6H2.5a.5.5 0 0 0-.5.5v7a.5.5 0 0 0 .5.5h11a.5.5 0 0 0 .5-.5M3.75 11h.5a.25.25 0 0 1 .25.25v1.5a.25.25 0 0 1-.25.25h-.5a.25.25 0 0 1-.25-.25v-1.5a.25.25 0 0 1 .25-.25m2 0h.5a.25.25 0 0 1 .25.25v1.5a.25.25 0 0 1-.25.25h-.5a.25.25 0 0 1-.25-.25v-1.5a.25.25 0 0 1 .25-.25m1.75.25a.25.25 0 0 1 .25-.25h.5a.25.25 0 0 1 .25.25v1.5a.25.25 0 0 1-.25.25h-.5a.25.25 0 0 1-.25-.25zM9.75 11h.5a.25.25 0 0 1 .25.25v1.5a.25.25 0 0 1-.25.25h-.5a.25.25 0 0 1-.25-.25v-1.5a.25.25 0 0 1 .25-.25m1.75.25a.25.25 0 0 1 .25-.25h.5a.25.25 0 0 1 .25.25v1.5a.25.25 0 0 1-.25.25h-.5a.25.25 0 0 1-.25-.25z'/>"
+                   "<path d='M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2zM1 2a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1z'/>"
+                   "</svg> Ethernet</div><div class='card-body'>");
+    eth += F("<strong>Câble branché : </strong>");
+    eth += ethernetLinkUp() ? F("<img src='/web/img/ok.png'>") : F("<img src='/web/img/nok.png'>");
+    eth += F("<br><strong>Connecté : </strong>");
+    eth += ethernetHasIP() ? F("<img src='/web/img/ok.png'>") : F("<img src='/web/img/nok.png'>");
+    if (ethernetLinkUp()) {
+      eth += "<br><strong>Lien : </strong>" + String(ethernetLinkSpeed()) + " Mbit/s " +
+             (ethernetFullDuplex() ? "full duplex" : "half duplex");
+    }
+    eth += "<br><strong>Mode : </strong>" + String(ConfigEthernet.dhcp ? "DHCP" : "Static");
+    eth += "<br><strong>@IP : </strong>" + ethernetLocalIP().toString();
+    eth += "<br><strong>@Masque : </strong>" + ethernetSubnetMask().toString();
+    eth += "<br><strong>@Passerelle : </strong>" + ethernetGatewayIP().toString();
+    eth += "<br><strong>DNS : </strong>" + ethernetDnsIP().toString();
+    eth += "<br><strong>@MAC : </strong>" + ethernetMacAddress();
+    eth += "<br><strong>Interface active : </strong>" + String(netInterfaceName()[0] ? netInterfaceName() : "aucune");
+    eth += F("</div></div></div></div><br>");
+    result.replace("{{ethernetCard}}", eth);
+  } else {
+    result.replace("{{ethernetCard}}", "");
+  }
+
+  // WiFi non demarre quand l'Ethernet suffit (carte W5500, cable branche au demarrage)
+  result.replace("{{enableWifi}}", WiFi.getMode() != WIFI_MODE_NULL ? F("<img src='/web/img/ok.png'>")
+                                                                    : F("<img src='/web/img/nok.png'>"));
   result.replace("{{ssidWifi}}", String(ConfigSettings.ssid));
   if (ConfigSettings.enableDHCP)
   {
@@ -7999,6 +8137,128 @@ void handleStatusNetwork(AsyncWebServerRequest *request)
   "</script>");
 
   request->send(200, "text/html", result.c_str());
+}
+
+// ==================== API kiosque LiXee-Assist (v2.26) ====================
+// Lecture seule, parametres lus par NOM, reponses de quelques Ko, aucun secret.
+
+static long queryLong(AsyncWebServerRequest *request, const char* name, long def) {
+  if (!request->hasParam(name)) return def;
+  String v = request->getParam(name)->value();
+  v.trim();
+  return v.length() ? v.toInt() : def;
+}
+
+// GET /api/energy/config : configuration Energie SANS les mots de passe ni le jeton du tunnel
+// (l'application lisait jusqu'ici configGeneral.json en entier par /readFile).
+void handleAPIEnergyConfig(AsyncWebServerRequest *request)
+{
+  SpiRamJsonDocument doc(8192);
+  doc["zlinky"]     = ConfigGeneral.ZLinky;
+  doc["production"] = ConfigGeneral.Production;
+  doc["gaz"]        = ConfigGeneral.Gaz;
+  doc["water"]      = ConfigGeneral.Water;
+  doc["linkyMode"]  = ConfigGeneral.LinkyMode;
+
+  // tarifIdx2..10 -> attributs d'index 256..272 (cf. getTarif) ; prix nuls ou absents omis
+  const char* idx[] = { ConfigGeneral.tarifIdx2, ConfigGeneral.tarifIdx3, ConfigGeneral.tarifIdx4,
+                        ConfigGeneral.tarifIdx5, ConfigGeneral.tarifIdx6, ConfigGeneral.tarifIdx7,
+                        ConfigGeneral.tarifIdx8, ConfigGeneral.tarifIdx9, ConfigGeneral.tarifIdx10 };
+  JsonObject prices = doc.createNestedObject("prices");
+  for (int i = 0; i < 9; i++) {
+    float v = atof(idx[i]);
+    if (v > 0) prices[String(256 + 2 * i)] = v;
+  }
+
+  JsonObject sub = doc.createNestedObject("subscription");
+  sub["abo"]  = atof(ConfigGeneral.tarifAbo);
+  sub["cspe"] = atof(ConfigGeneral.tarifCSPE);
+  sub["cta"]  = atof(ConfigGeneral.tarifCTA);
+
+  JsonObject gas = doc.createNestedObject("gas");
+  gas["price"] = atof(ConfigGeneral.tarifGaz);
+  gas["coeff"] = ConfigGeneral.coeffGaz;
+  gas["unit"]  = ConfigGeneral.unitGaz;
+
+  JsonObject water = doc.createNestedObject("water");
+  water["price"] = atof(ConfigGeneral.tarifWater);
+  water["coeff"] = ConfigGeneral.coeffWater;
+  water["unit"]  = ConfigGeneral.unitWater;
+
+  JsonArray sm = doc.createNestedArray("subMeters");
+  for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
+    JsonObject o = sm.createNestedObject();
+    o["index"]   = i;
+    o["ieee"]    = ConfigGeneral.subMeters[i].IEEE;
+    o["alias"]   = ConfigGeneral.subMeters[i].alias;
+    o["color"]   = ConfigGeneral.subMeters[i].color;
+    o["enabled"] = ConfigGeneral.subMeters[i].enabled;
+  }
+
+  JsonObject th = doc.createNestedObject("thresholds");
+  JsonObject t;
+  t = th.createNestedObject("budget");
+  t["enabled"] = ConfigNotif.OverBudget;          t["monthEur"] = ConfigNotif.OverBudgetThreshold;
+  t = th.createNestedObject("overPower");
+  t["enabled"] = ConfigNotif.OverPower;           t["w"] = ConfigNotif.OverPowerThreshold;
+  t = th.createNestedObject("dailyAnomaly");
+  t["enabled"] = ConfigNotif.DailyAnomaly;        t["percent"] = ConfigNotif.DailyAnomalyPercent;
+  t = th.createNestedObject("nightWaterLeak");
+  t["enabled"] = ConfigNotif.NightWaterLeak;      t["litres"] = ConfigNotif.NightWaterLeakThreshold;
+  t = th.createNestedObject("waterLeak");
+  t["enabled"] = ConfigNotif.WaterLeak;           t["litres"] = ConfigNotif.WaterLeakThreshold;
+  t = th.createNestedObject("freeze");
+  t["enabled"] = ConfigNotif.Freeze;              t["centiDeg"] = ConfigNotif.FreezeThreshold;
+  t["sensor"]  = ConfigNotif.FreezeSensorIEEE;
+
+  JsonArray del = doc.createNestedArray("delestage");
+  int start = 0;
+  const String& list = ConfigGeneral.delestage;
+  while (start < (int)list.length()) {
+    int comma = list.indexOf(',', start);
+    if (comma < 0) comma = list.length();
+    String id = list.substring(start, comma);
+    id.trim();
+    if (id.length()) del.add(id);
+    start = comma + 1;
+  }
+
+  String json;
+  serializeJson(doc, json);
+  request->send(200, "application/json", json);
+}
+
+void handleAPIPowerPeaks(AsyncWebServerRequest *request)
+{
+  request->send(200, "application/json", powerStatsPeaksJson((int)queryLong(request, "days", 90)));
+}
+
+void handleAPIPowerFloor(AsyncWebServerRequest *request)
+{
+  request->send(200, "application/json", powerStatsFloorJson((int)queryLong(request, "days", 30)));
+}
+
+void handleAPIPowerSummary(AsyncWebServerRequest *request)
+{
+  request->send(200, "application/json", powerStatsSummaryJson());
+}
+
+void handleAPIAlerts(AsyncWebServerRequest *request)
+{
+  long since = queryLong(request, "since", 0);
+  request->send(200, "application/json", alertHistoryJson(since > 0 ? (uint32_t)since : 0));
+}
+
+void handleAPIDelestage(AsyncWebServerRequest *request)
+{
+  request->send(200, "application/json", delestageJson());
+}
+
+// Les commandes Zigbee partent de la boucle principale, pas de la tache web.
+void handleAPIDelestageRestore(AsyncWebServerRequest *request)
+{
+  delestageRequestRestore();
+  request->send(202, "application/json", "{\"status\":\"pending\"}");
 }
 
 void handleAPITariff(AsyncWebServerRequest *request)
@@ -8212,6 +8472,15 @@ void handleAPITariff(AsyncWebServerRequest *request)
   json += "\"label\":\"" + tempoTomorrowLabel + "\",";
   json += "\"icon\":\"" + tempoTomorrowIcon + "\"";
   json += "}";
+
+  // v2.26 (kiosque LiXee-Assist) : index et prix du kWh en cours, prochain changement de tarif.
+  // Ajoutes apres les champs existants, qui ne changent pas.
+  int idxAttr = showCard ? powerStatsCurrentIndexAttr() : 0;
+  float idxPrice = idxAttr ? getTarif(idxAttr, "energy") : 0;
+  String nextChange = showCard ? powerStatsNextChange() : String("");
+  json += ",\"index\":" + (idxAttr ? String(idxAttr) : String("null"));
+  json += ",\"price\":" + (idxPrice > 0 ? String(idxPrice, 4) : String("null"));
+  json += ",\"nextChange\":" + (nextChange.length() ? "\"" + nextChange + "\"" : String("null"));
   json += "}";
 
   request->send(200, "application/json", json);
@@ -10807,8 +11076,7 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
     if (device->getInfo().powerSocket.toInt())
     {
       //on affiche les appareils qui ont le cluster ONOFF
-      String confDelestage = config_read("configGeneral.json","delestage");
-      if (confDelestage.indexOf(device->getDeviceID())!=-1)
+      if (ConfigGeneral.delestage.indexOf(device->getDeviceID())!=-1)
       {
         checked="Checked";
       }else{
@@ -10926,6 +11194,9 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   ListPresence += F("</select>");
 
   result.replace("{{selectDevicesAction}}", listDevicesAction);
+  result.replace("{{delestageRestoreMin}}", String(ConfigGeneral.delestageRestoreMin));
+  result.replace("{{delestageRestorePct}}", String(ConfigGeneral.delestageRestorePct));
+  result.replace("{{delestageAnticipPct}}", String(ConfigGeneral.delestageAnticipPct));
   result.replace("{{selectDevices}}", listLinky);
   result.replace("{{shon}}", String(ConfigGeneral.HouseSurface));
   result.replace("{{tarifAbo}}", String(ConfigGeneral.tarifAbo));
@@ -10947,12 +11218,12 @@ void handleConfigEnergy(AsyncWebServerRequest *request)
   result.replace("{{tarifIdxProd}}", String(ConfigGeneral.tarifIdxProd));
 
   result.replace("{{selectDevicesGaz}}", ListGaz);
-  result.replace("{{coeffGaz}}", String(ConfigGeneral.coeffGaz));
+  result.replace("{{coeffGaz}}", fmtCoeff(ConfigGeneral.coeffGaz));
   result.replace("{{unitGaz}}", String(ConfigGeneral.unitGaz));
   result.replace("{{tarifGaz}}", String(ConfigGeneral.tarifGaz));
 
   result.replace("{{selectDevicesWater}}", ListWater);
-  result.replace("{{coeffWater}}", String(ConfigGeneral.coeffWater));
+  result.replace("{{coeffWater}}", fmtCoeff(ConfigGeneral.coeffWater));
   result.replace("{{unitWater}}", String(ConfigGeneral.unitWater));
   result.replace("{{tarifWater}}", String(ConfigGeneral.tarifWater));
 
@@ -11156,7 +11427,7 @@ void handleConfigGaz(AsyncWebServerRequest *request)
   result.replace("{{selectDevices}}", list);
 
   result.replace("{{tarifGaz}}", String(ConfigGeneral.tarifGaz));
-  result.replace("{{coeffGaz}}", String(ConfigGeneral.coeffGaz));
+  result.replace("{{coeffGaz}}", fmtCoeff(ConfigGeneral.coeffGaz));
   result.replace("{{unitGaz}}", String(ConfigGeneral.unitGaz));
 
   request->send(200, "text/html", result);
@@ -11215,7 +11486,7 @@ void handleConfigWater(AsyncWebServerRequest *request)
   result.replace("{{selectDevices}}", list);
 
   result.replace("{{tarifWater}}", String(ConfigGeneral.tarifWater));
-  result.replace("{{coeffWater}}", String(ConfigGeneral.coeffWater));
+  result.replace("{{coeffWater}}", fmtCoeff(ConfigGeneral.coeffWater));
   result.replace("{{unitWater}}", String(ConfigGeneral.unitWater));
   request->send(200, "text/html", result);
 }
@@ -11650,6 +11921,50 @@ void handleConfigWifi(AsyncWebServerRequest *request)
     result.replace("{{error}}", "");
   }
 
+  // Ethernet et mode de connexion (carte avec W5500 seulement)
+  const String BADGE_ACTIVE = F("<span class='badge bg-success'>Active</span>");
+  const String BADGE_OFF    = F("<span class='badge bg-secondary'>Désactivée</span>");
+  bool onEth  = strcmp(netInterfaceName(), "ethernet") == 0;
+  bool onWifi = strcmp(netInterfaceName(), "wifi") == 0;
+  if (ethernetDetected()) {
+    uint8_t m = ConfigEthernet.mode;
+    result.replace("{{lanMode}}", FPSTR(HTTP_CONFIG_LAN_MODE));
+    result.replace("{{ethernetSection}}", FPSTR(HTTP_CONFIG_ETHERNET));
+    result.replace("{{activeIf}}", onEth ? "Ethernet (" + ethernetLocalIP().toString() + ")" :
+                                   onWifi ? "WiFi (" + WiFi.localIP().toString() + ")" : String("aucune"));
+    result.replace("{{mode0}}", m == ETH_MODE_AUTO ? "checked" : "");
+    result.replace("{{mode1}}", m == ETH_MODE_ETH_ONLY ? "checked" : "");
+    result.replace("{{mode2}}", m == ETH_MODE_WIFI_ONLY ? "checked" : "");
+
+    String wifiBadge, ethBadge;
+    if (m == ETH_MODE_ETH_ONLY) wifiBadge = BADGE_OFF;
+    else wifiBadge = String(m == ETH_MODE_AUTO ? F("<span class='badge bg-info text-dark'>Secours</span> ") : F("")) +
+                     (onWifi ? BADGE_ACTIVE : String(""));
+    if (m == ETH_MODE_WIFI_ONLY) ethBadge = BADGE_OFF;
+    else ethBadge = String(m == ETH_MODE_AUTO ? F("<span class='badge bg-primary'>Prioritaire</span> ") : F("")) +
+                    (onEth ? BADGE_ACTIVE : String(""));
+    result.replace("{{wifiBadge}}", wifiBadge);
+    result.replace("{{ethBadge}}", ethBadge);
+    result.replace("{{wifiDisabled}}", m == ETH_MODE_ETH_ONLY ? "disabled" : "");
+    result.replace("{{wifiCardStyle}}", m == ETH_MODE_ETH_ONLY ? "opacity:0.5" : "");
+    result.replace("{{ethDisabled}}", m == ETH_MODE_WIFI_ONLY ? "disabled" : "");
+    result.replace("{{ethCardStyle}}", m == ETH_MODE_WIFI_ONLY ? "opacity:0.5" : "");
+  } else {
+    result.replace("{{lanMode}}", "");
+    result.replace("{{ethernetSection}}", "");
+    result.replace("{{wifiBadge}}", onWifi ? BADGE_ACTIVE : String(""));
+    result.replace("{{wifiDisabled}}", "");
+    result.replace("{{wifiCardStyle}}", "");
+  }
+  result.replace("{{ethDhcpChecked}}", ConfigEthernet.dhcp ? "checked" : "");
+  result.replace("{{ethStatic}}", ConfigEthernet.dhcp ? "none" : "block");
+  result.replace("{{ethIp}}", ConfigEthernet.ip);
+  result.replace("{{ethMask}}", ConfigEthernet.mask);
+  result.replace("{{ethGw}}", ConfigEthernet.gw);
+  result.replace("{{ethDns}}", ConfigEthernet.dns);
+  result.replace("{{ethError}}", request->arg("ethError").toInt() > 0 ?
+                 "Erreur IP Ethernet : adresse, masque ou passerelle invalide" : "");
+
   if (request->arg("ipError").toInt() >0 )
   {
     result.replace("{{ipError}}", "Erreur IP : Le format de l'adresse IP n'est pas correcte");
@@ -11832,9 +12147,9 @@ void handlePoll(AsyncWebServerRequest * request)
   {
     int i=0;
     result="{ \"notifications\" : [";
-    while (!notifList->isEmpty())
+    Notification n;
+    while (notifList->take(n))
     {
-      Notification n = notifList->shift();
       if (i>0){result+=",";}
       result += F("{\"title\":\"");
       result += n.title;
@@ -12489,7 +12804,9 @@ void handleDoUploadOTA(AsyncWebServerRequest *request, const String& filename, s
     logmessage = "Upload Complete: " + String(deviceId) + ",size: " + String(index + len);
     DEBUG_PRINTLN(logmessage);
     request->_tempFile.close();
-    loadOTAFile(deviceId.c_str());
+    // Firmware d'un emetteur LoRa (id "lora_<MAC>") : .bin brut, envoye par loraOtaStart().
+    // Ce n'est pas un fichier OTA Zigbee : rien a charger cote ZiGate.
+    if (!deviceId.startsWith("lora_")) loadOTAFile(deviceId.c_str());
     
     request->redirect("/configDevices");
   }
@@ -12605,7 +12922,7 @@ void handleOtaFinishResponse(AsyncWebServerRequest *request) {
 
     Serial.printf("[ChunkedOTA] Complete: %u bytes for %s\n", _chunkedOta.received, _chunkedOta.deviceId.c_str());
 
-    loadOTAFile(_chunkedOta.deviceId.c_str());
+    if (!_chunkedOta.deviceId.startsWith("lora_")) loadOTAFile(_chunkedOta.deviceId.c_str());
 
     request->send(200, "application/json", "{\"ok\":true,\"redirect\":\"/configDevices\"}");
 }
@@ -16012,6 +16329,8 @@ void handleReadfile(AsyncWebServerRequest *request)
   if (!file || file.isDirectory())
   {
     file.close();
+    // Toujours repondre : sans cela la requete restait en attente jusqu au delai du client (issue #46).
+    request->send(404, F("text/plain"), F("Fichier introuvable"));
     return;
   }
 
@@ -16048,39 +16367,55 @@ void handleLogBuffer(AsyncWebServerRequest *request)
   request->send(200, F("text/html"), result);
 }
 
+// Scan des reseaux WiFi (page Config LAN), interroge chaque seconde par la page jusqu'au resultat.
+// La box peut fonctionner WiFi eteint (Ethernet) : le scan allume alors la radio le temps du scan
+// et l'eteint ensuite, pour rendre sa memoire. Le nombre de reseaux vient de scanComplete() et non
+// plus de ConfigGeneral.scanNumber, que seul le gestionnaire d'evenements WiFi remplit -- or il
+// n'est pas branche quand le WiFi n'a pas ete demarre : la liste restait vide.
+static bool s_scanStartedRadio = false;
+
 void handleScanNetwork(AsyncWebServerRequest * request)
 {
   String ret = request->arg("ret");
-  String result=""; 
+  String result="";
   if (ret == "-1")
   {
+     s_scanStartedRadio = (WiFi.getMode() == WIFI_MODE_NULL);
      WiFi.scanNetworks(true);
   }
- 
+
   int n = WiFi.scanComplete();
 
+  if (n == WIFI_SCAN_FAILED)
+  {
+    // Scan impossible (radio non demarree...) : on le dit et la page cesse d'interroger
+    if (s_scanStartedRadio) { WiFi.mode(WIFI_OFF); s_scanStartedRadio = false; }
+    result = F("<span style='color:red'>Scan impossible, réessayez.</span>");
+    request->send(200, F("text/html"), "0|" + result);
+    return;
+  }
+
   if (n>=0)
-  { 
-    if (ConfigGeneral.scanNumber == 0) 
+  {
+    if (n == 0)
     {
-      result = " <label for='ssid'>SSID</label>";
-      result += "<input class='form-control' id='ssid' type='text' name='WIFISSID' value='{{ssid}}'> <a onclick='scanNetwork();' class='btn btn-primary mb-2'>Scan</a><div id='networks'></div>";
-    } else if (ConfigGeneral.scanNumber > 0) {
-      
-      result = "<select name='WIFISSID' onChange='updateSSID(this.value);'>";
+      result = F("<span>Aucun réseau trouvé.</span>");
+    } else {
+      result = "<select class='form-select mt-2' name='WIFISSIDlist' onChange='updateSSID(this.value);'>";
       result += "<OPTION value=''>--Choix SSID--</OPTION>";
-      for (int i = 0; i < ConfigGeneral.scanNumber; ++i) {
-            result += "<OPTION value='";
-            result +=WiFi.SSID(i);
-            result +="'>";
-            result +=WiFi.SSID(i)+" ("+WiFi.RSSI(i)+")";
+      for (int i = 0; i < n; ++i) {
+            String ssid = WiFi.SSID(i);
+            ssid.replace("'", "&#39;");
+            result += "<OPTION value='" + ssid + "'>";
+            result += ssid + " (" + String(WiFi.RSSI(i)) + " dBm)";
             result+="</OPTION>";
         }
         result += "</select>";
-    } 
+    }
     ConfigGeneral.scanNumber = -1;
     WiFi.scanDelete();
-  } 
+    if (s_scanStartedRadio) { WiFi.mode(WIFI_OFF); s_scanStartedRadio = false; }
+  }
 
   request->send(200, F("text/html"), String(n)+"|"+result);
 }
@@ -16435,9 +16770,30 @@ void handleSaveConfigLinky(AsyncWebServerRequest *request)
       }
   }
 
-  if (j>0)
+  // Formulaire du délestage présent : on enregistre aussi une liste vide (décocher toutes les
+  // prises ne les retirait jamais de la configuration).
+  if (j>0 || request->hasArg("delestageForm"))
   {
     config_write(path,"delestage", delestageIDs);
+    ConfigGeneral.delestage = delestageIDs;
+  }
+  if (request->hasArg("delestageRestoreMin"))
+  {
+    ConfigGeneral.delestageRestoreMin = constrain(request->arg("delestageRestoreMin").toInt(), 0, 240);
+    config_write(path, "delestageRestoreMin", String(ConfigGeneral.delestageRestoreMin));
+  }
+  if (request->hasArg("delestageRestorePct"))
+  {
+    ConfigGeneral.delestageRestorePct = constrain(request->arg("delestageRestorePct").toInt(), 10, 100);
+    config_write(path, "delestageRestorePct", String(ConfigGeneral.delestageRestorePct));
+  }
+  if (request->hasArg("delestageAnticipPct"))
+  {
+    int v = constrain(request->arg("delestageAnticipPct").toInt(), 0, 100);
+    // Au-dessus du seuil de rallumage, sinon les prises seraient coupees et rallumees en boucle
+    if (v > 0 && v <= ConfigGeneral.delestageRestorePct) v = min(ConfigGeneral.delestageRestorePct + 5, 100);
+    ConfigGeneral.delestageAnticipPct = v;
+    config_write(path, "delestageAnticipPct", String(v));
   }
 
 
@@ -17158,6 +17514,39 @@ void handleSaveWifi(AsyncWebServerRequest *request)
   }
 }
 
+void handleSaveEthernet(AsyncWebServerRequest *request)
+{
+  // Section Ethernet grisee (mode WiFi seul) : ses champs ne sont pas envoyes, on garde la
+  // configuration existante et on n'enregistre que le mode.
+  if (request->hasArg("ethFields")) {
+    bool dhcp = request->arg("ethDhcp") == "on";
+    String ip = request->arg("ethIp"), mask = request->arg("ethMask");
+    String gw = request->arg("ethGw"), dns = request->arg("ethDns");
+    ip.trim(); mask.trim(); gw.trim(); dns.trim();
+    if (!dhcp && (!isValidIP(ip) || !isValidIP(mask) || !isValidIP(gw) ||
+                  (dns.length() && !isValidIP(dns)))) {
+      AsyncWebServerResponse *response = request->beginResponse(303);
+      response->addHeader(F("Location"), F("/configWiFi?ethError=1"));
+      request->send(response);
+      return;
+    }
+    ConfigEthernet.dhcp = dhcp;
+    strlcpy(ConfigEthernet.ip, ip.c_str(), sizeof(ConfigEthernet.ip));
+    strlcpy(ConfigEthernet.mask, mask.c_str(), sizeof(ConfigEthernet.mask));
+    strlcpy(ConfigEthernet.gw, gw.c_str(), sizeof(ConfigEthernet.gw));
+    strlcpy(ConfigEthernet.dns, dns.c_str(), sizeof(ConfigEthernet.dns));
+  }
+  if (request->hasArg("netMode")) {
+    ConfigEthernet.mode = constrain(request->arg("netMode").toInt(), ETH_MODE_AUTO, ETH_MODE_WIFI_ONLY);
+  }
+  ethernetSaveConfig();
+
+  executeReboot = true;   // l'interface est configuree au demarrage
+  AsyncWebServerResponse *response = request->beginResponse(303);
+  response->addHeader(F("Location"), F("/"));
+  request->send(response);
+}
+
 void handleConfigDevices(AsyncWebServerRequest *request)
 {
   if (!checkHeapForPage(request)) return;
@@ -17709,7 +18098,7 @@ void handleConfigDevice(AsyncWebServerRequest *request)
     result += F("</td></tr>");
   }
 
-  // Version logicielle : conservée en LoRa, l'émetteur la remontera plus tard.
+  // Version logicielle : en LoRa, lue sur l'émetteur par POLL (cluster Basic 0xFF01 / 0x4000).
   result += F("<tr><td>Version logicielle</td><td>");
   result += device->getInfo().software_version;
   result += F("</td></tr>");
@@ -18081,7 +18470,11 @@ void handleZigbeeWriteattribut(AsyncWebServerRequest *request)
         endpoint = request->getParam(F("endpoint"))->value().toInt();
     }
     uint16_t cluster = request->getParam(F("cluster"))->value().toInt();
-    uint16_t attribute = request->getParam(F("attr"))->value().toInt();
+    // Ligne de template propre a un endpoint : la cle composee (cf. epAttrKey) designe
+    // l'attribut ZCL de CET endpoint.
+    uint32_t attrKey = (uint32_t)request->getParam(F("attr"))->value().toInt();
+    if (epAttrEndpoint(attrKey)) endpoint = epAttrEndpoint(attrKey);
+    uint16_t attribute = epAttrId(attrKey);
     uint8_t type = request->getParam(F("type"))->value().toInt();
     String valueStr = request->getParam(F("value"))->value();
 
@@ -18124,7 +18517,9 @@ void handleZigbeeReadattribut(AsyncWebServerRequest *request)
   uint16_t shortAddr = request->getParam(F("addr"))->value().toInt();
   uint8_t endpoint = request->getParam(F("endpoint"))->value().toInt();
   uint16_t cluster = request->getParam(F("cluster"))->value().toInt();
-  uint16_t attribute = request->getParam(F("attr"))->value().toInt();
+  // uint32 : une ligne propre a un endpoint porte une cle composee (cf. epAttrKey), que
+  // SendAttributeRead() decompose en (endpoint, attribut).
+  uint32_t attribute = (uint32_t)request->getParam(F("attr"))->value().toInt();
   // Récupérer manufacturer code (optionnel)
   uint16_t mfrCode = 0;
   if (request->hasParam("mfr")) {
@@ -19567,9 +19962,9 @@ void handleGetDeviceValue(AsyncWebServerRequest *request)
   {
     int i=0;
     result="[";
-    while (!deviceList->isEmpty())
+    Device d;
+    while (deviceList->take(d))
     {
-      Device d = deviceList->shift();
       if (i>0){result+=",";}
       result += "\""+String(d.shortAddr)+"_"+String(d.cluster)+"_"+String(d.attribute);
       result += F(";");
@@ -19743,7 +20138,7 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
           datas = FPSTR(HA_discovery_msg);
 
           datas.replace("{{name_prop}}", t->states[i].name);
-          datas.replace("{{unique_id}}", IEEE + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute));
+          datas.replace("{{unique_id}}", IEEE + "_" + String(t->states[i].cluster) + "_" + epAttrLabel(t->states[i].attribute));
 
           if (memcmp(t->states[i].mqtt_device_class, "null", 4) == 0)
           {
@@ -19777,27 +20172,27 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
             datas.replace("{{unit}}", "");
           }
 
-          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT + IEEE + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute));
+          datas.replace("{{state_topic}}", ConfigGeneral.headerMQTT + IEEE + "_" + String(t->states[i].cluster) + "_" + epAttrLabel(t->states[i].attribute));
 
           if ((String(t->states[i].type) == "numeric") || (String(t->states[i].type) == "float"))
           {
             if (t->states[i].coefficient != 1)
             {
-              datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + " | float * " + String(t->states[i].coefficient) + "}}");
+              datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + epAttrLabel(t->states[i].attribute) + " | float * " + String(t->states[i].coefficient) + "}}");
             }
             else
             {
-              datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + "}}");
+              datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + epAttrLabel(t->states[i].attribute) + "}}");
             }
           }
           else
           {
-            datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + "}}");
+            datas.replace("{{value}}", "{{value_json.value_" + String(t->states[i].cluster) + "_" + epAttrLabel(t->states[i].attribute) + "}}");
           }
 
           datas.replace("{{device_name}}", model + "_" + IEEE);
 
-          String topic = ConfigGeneral.headerMQTT + IEEE + "_" + String(t->states[i].cluster) + "_" + String(t->states[i].attribute) + "/config";
+          String topic = ConfigGeneral.headerMQTT + IEEE + "_" + String(t->states[i].cluster) + "_" + epAttrLabel(t->states[i].attribute) + "/config";
 
           if (model == "ZLinky_TIC")
           {
@@ -19907,11 +20302,80 @@ void handleSendMqttDiscover(AsyncWebServerRequest *request)
           Serial.printf("MQTT Discovery: Switch publié pour %s\n", IEEE.c_str());
         }
 
+        // Paires d'actions "<nom>_ON" / "<nom>_OFF" (appareil a plusieurs relais : L1_ON / L1_OFF,
+        // L2_ON / L2_OFF...) : UN interrupteur Home Assistant par paire, lie a l'etat On/Off de
+        // l'ENDPOINT de l'action. Sans cela ces actions n'etaient que des boutons, sans retour
+        // d'etat. La commande reste le nom de l'action, que onMqttMessage() retrouve tel quel.
+        auto pairPrefix = [](const char *name, const char *suffix) -> String {
+          String n(name), s(suffix);
+          if (n.length() > s.length() && n.substring(n.length() - s.length()).equalsIgnoreCase(s))
+            return n.substring(0, n.length() - s.length());
+          return String("");
+        };
+        auto findVisibleAction = [&](const String &name) -> Action * {
+          for (int k = 0; k < t->ActionSize(); k++) {
+            Action *x = t->getAction(k);
+            if (x && x->visible && name.equalsIgnoreCase(x->name)) return x;
+          }
+          return nullptr;
+        };
+        auto isPairedAction = [&](const char *name) -> bool {
+          String pOn = pairPrefix(name, "_ON"), pOff = pairPrefix(name, "_OFF");
+          if (pOn.length())  return findVisibleAction(pOn + "_OFF") != nullptr;
+          if (pOff.length()) return findVisibleAction(pOff + "_ON") != nullptr;
+          return false;
+        };
+
+        for (int i = 0; i < t->ActionSize(); i++)
+        {
+          Action *aOn = t->getAction(i);
+          if (!aOn || !aOn->visible) continue;
+          String prefix = pairPrefix(aOn->name, "_ON");
+          if (!prefix.length()) continue;
+          Action *aOff = findVisibleAction(prefix + "_OFF");
+          if (!aOff) continue;
+
+          // Etat = 0006/0 de l'endpoint de l'action, si le template declare cette ligne
+          // ("endpoint": N) ; sinon l'etat 0006/0 commun.
+          uint32_t stateKey = epAttrKey(0, aOn->endpoint);
+          bool hasEpState = false;
+          for (int k = 0; k < t->StateSize(); k++) {
+            if (t->states[k].cluster == 6 && t->states[k].attribute == stateKey) { hasEpState = true; break; }
+          }
+          String stateLbl = hasEpState ? epAttrLabel(stateKey) : String("0");
+
+          String sw = "{";
+          sw += "\"name\":\"" + model + " " + prefix + "\",";
+          sw += "\"unique_id\":\"" + IEEE + "_switch_" + prefix + "\",";
+          sw += "\"icon\":\"mdi:power-plug\",";
+          sw += "\"state_topic\":\"" + String(ConfigGeneral.headerMQTT) + IEEE + "_6_" + stateLbl + "/state\",";
+          sw += "\"value_template\":\"{{ value_json.value_6_" + stateLbl + " }}\",";
+          sw += "\"command_topic\":\"lixee/cmd/" + IEEE + "/action\",";
+          sw += "\"payload_on\":\"" + String(aOn->name) + "\",";
+          sw += "\"payload_off\":\"" + String(aOff->name) + "\",";
+          sw += "\"state_on\":\"1\",";
+          sw += "\"state_off\":\"0\",";
+          sw += "\"device\": {";
+          sw += "\"name\":\"LiXee-GW_" + model + "_" + IEEE + "\",";
+          sw += "\"sw_version\":\"2.0\",";
+          sw += "\"model\":\"HW V2\",";
+          sw += "\"manufacturer\":\"LiXee\",";
+          sw += "\"identifiers\":[\"LiXee-GW" + model + "_" + IEEE + "\"]";
+          sw += "}}";
+
+          String swTopic = "homeassistant/switch/" + IEEE + "_switch_" + prefix + "/config";
+          mqttClient.publish(swTopic.c_str(), 0, true, sw.c_str());
+          Serial.printf("MQTT Discovery: Switch %s publie pour %s\n", prefix.c_str(), IEEE.c_str());
+        }
+
         // Publier les autres actions comme des boutons
         for (int i = 0; i < t->ActionSize(); i++)
         {
           Action *a = t->getAction(i);
           if (!a || !a->visible) continue;
+
+          // Deja publiee comme interrupteur (paire <nom>_ON / <nom>_OFF)
+          if (isPairedAction(a->name)) continue;
 
           // Skip ON/OFF si déjà traités comme switch
           if (hasOnAction && hasOffAction)
@@ -20279,7 +20743,10 @@ void APIgetDevices(AsyncWebServerRequest *request)
       DEBUG_PRINT(F("Erreur lors de l'ouverture du fichier ini_read "));
       DEBUG_PRINTLN(inifile);
       file.close();
-      xSemaphoreGive(file_Mutex);
+      // (un xSemaphoreGive(file_Mutex) se trouvait ici : ce handler ne prend jamais ce mutex,
+      //  il liberait donc celui d'une autre tache)
+      filedevice = root.openNextFile();
+      continue;
     }
     size_t filesize = file.size();
     if (inifile.substring(3,4)!="_")
@@ -20375,21 +20842,27 @@ void APIgetLinky(AsyncWebServerRequest *request)
     {
       /*Template *t;
       t = GetTemplate(DeviceId, model);*/
-      DeviceData* device;
-      for (size_t i = 0; i < devices.size(); i++) 
+      DeviceData* device = nullptr;
+      for (size_t i = 0; i < devices.size(); i++)
       {
-        device = devices[i];
-        if (device->getDeviceID() == IEEE)
+        if (devices[i]->getDeviceID() == IEEE)
         {
+          device = devices[i];
           break;
         }
       }
-      TemplateData* t = device->getTemplate();  
+      TemplateData* t = device ? device->getTemplate() : nullptr;
 
       if (!t) {
-          // Template introuvable - logger pour debug
-          Serial.printf("WARNING: Template introuvable pour model: %s\n", model.c_str());
-          return; // ou return, selon votre logique
+          // Appareil ou template introuvable. TOUJOURS repondre : un simple `return` laissait
+          // la requete sans reponse jusqu'au delai du client (issue #46 : connexion acceptee,
+          // 0 octet recu), et `device` non initialise etait dereference si l'appareil manquait.
+          Serial.printf("WARNING: /getLinky : %s introuvable pour model: %s\n",
+                        device ? "template" : "appareil", model.c_str());
+          request->send(503, F("application/json"),
+                        device ? F("{\"error\":\"template indisponible\"}")
+                               : F("{\"error\":\"appareil ZLinky introuvable\"}"));
+          return;
       }
       for (int i = 0; i < t->StateSize(); i++)
       {      
@@ -21334,6 +21807,239 @@ void handleLoadLora(AsyncWebServerRequest *request) {
   request->send(200, F("application/json"), j);
 }
 
+// ---------------------------------------------------------------------------------------------
+// Mise a jour du firmware d'un emetteur LoRa (OTA, LORA_PROTOCOL.md §10).
+// Le fichier .bin est depose par les routes d'upload OTA existantes (/doUploadOTA en direct,
+// /otaInit + /otaChunk + /otaFinish a travers le tunnel) sous l'id "lora_<MAC>", puis envoye a
+// l'emetteur par loraOtaStart(). La page suit l'avancement par /loraOtaStatus.
+// ---------------------------------------------------------------------------------------------
+const char HTTP_LORA_OTA[] PROGMEM = R"LORAOTA(
+<div class='container' style='max-width:720px;margin-top:20px;'>
+  <h4>Mise &agrave; jour du firmware &mdash; {{name}}</h4>
+  <p style='color:#6c757d;font-family:Courier New,monospace;'>{{mac}}</p>
+
+  <div class='alert alert-warning'>
+    <b>Avant de lancer</b>, mettez l'appareil en mode mise &agrave; jour :
+    <ol style='margin-bottom:0;'>
+      <li>d&eacute;branchez-le du compteur ;</li>
+      <li>maintenez son bouton appuy&eacute; ;</li>
+      <li>rebranchez-le en gardant le bouton appuy&eacute; environ 3 secondes.</li>
+    </ol>
+    Vous pouvez aussi lancer d'abord : la box attend l'appareil pendant 3 minutes.
+    Apr&egrave;s le lancement, l'avancement s'affiche sur la fiche de l'appareil (R&eacute;seau &rarr; LoRa).
+  </div>
+
+  <div class='mb-3'>
+    <label class='form-label'>Fichier firmware (.bin)</label>
+    <input class='form-control' type='file' id='fw' accept='.bin,.ota'>
+    <div class='form-text' id='fwInfo'></div>
+  </div>
+  <div class='mb-3'>
+    <label class='form-label'>Version du nouveau firmware</label>
+    <input class='form-control' type='text' id='ver' value='' placeholder='1.0.0' style='max-width:160px;'>
+    <div class='form-text'>Au format 1.2.3 (ou en hexad&eacute;cimal : 1.2.3 s'&eacute;crit 0x0123). Version actuelle de l'appareil : <b>{{curver}}</b>.</div>
+  </div>
+
+  <button class='btn btn-warning' id='btnStart' onclick='otaGo()'>Lancer la mise &agrave; jour</button>
+  <button class='btn btn-secondary' id='btnCancel' onclick='otaCancel()' style='display:none;'>Annuler</button>
+  <a class='btn btn-link' href='/configLora'>Retour</a>
+
+  <div style='margin-top:20px;'>
+    <div id='otaMsg' style='font-weight:500;'></div>
+    <div style='background:#e9ecef;border-radius:6px;height:22px;margin-top:8px;overflow:hidden;'>
+      <div id='otaBar' style='background:#0d6efd;height:100%;width:0%;transition:width .4s;'></div>
+    </div>
+    <div id='otaDetail' style='color:#6c757d;font-size:13px;margin-top:6px;'></div>
+  </div>
+</div>
+
+<script>
+var SLOT = {{slot}}, OTA_ID = 'lora_{{mac}}';
+var otaTimer = null;
+var otaLaunchedAt = 0;   // instant du dernier lancement depuis cette page
+
+function $id(x) { return document.getElementById(x); }
+function setMsg(t, color) { $id('otaMsg').innerHTML = t; $id('otaMsg').style.color = color || ''; }
+function setBar(p, color) { $id('otaBar').style.width = p + '%'; if (color) $id('otaBar').style.background = color; }
+function fmtTime(s) { if (s < 0) return '?'; var m = Math.floor(s / 60); return (m ? m + ' min ' : '') + (s % 60) + ' s'; }
+function isTunnel() { return window.location.hostname.indexOf('lixee-box.fr') >= 0; }
+
+function blobToBase64(blob) {
+  return new Promise(function(resolve, reject) {
+    var r = new FileReader();
+    r.onloadend = function() { resolve(r.result.split(',')[1]); };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+// Depot du fichier sur la box : par morceaux a travers le tunnel, en un envoi sinon.
+async function uploadFw(file) {
+  setMsg('Envoi du fichier &agrave; la box...');
+  if (isTunnel()) {
+    var CHUNK = 8192, n = Math.ceil(file.size / CHUNK);
+    var r = await fetch('/otaInit?id=' + OTA_ID, { method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                  body: JSON.stringify({totalSize: file.size}) });
+    if (!r.ok) throw new Error('initialisation refus\u00e9e (' + r.status + ')');
+    for (var i = 0; i < n; i++) {
+      var b64 = await blobToBase64(file.slice(i * CHUNK, Math.min((i + 1) * CHUNK, file.size)));
+      r = await fetch('/otaChunk?n=' + i, { method: 'POST', headers: {'Content-Type': 'text/plain'}, body: b64 });
+      if (!r.ok) throw new Error('morceau ' + i + ' refus\u00e9 (' + r.status + ')');
+      setBar(Math.round(100 * (i + 1) / n));
+    }
+    r = await fetch('/otaFinish', { method: 'POST' });
+    if (!r.ok) throw new Error('finalisation refus\u00e9e (' + r.status + ')');
+    return;
+  }
+  await new Promise(function(resolve, reject) {
+    var fd = new FormData();
+    fd.append('update', file, file.name);
+    var x = new XMLHttpRequest();
+    x.open('POST', '/doUploadOTA?id=' + OTA_ID, true);
+    x.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+    x.upload.onprogress = function(e) { if (e.lengthComputable) setBar(Math.round(100 * e.loaded / e.total)); };
+    x.onload = function() { (x.status >= 200 && x.status < 400) ? resolve() : reject(new Error('envoi refus\u00e9 (' + x.status + ')')); };
+    x.onerror = function() { reject(new Error('connexion interrompue')); };
+    x.send(fd);
+  });
+}
+
+async function otaGo() {
+  var file = $id('fw').files[0];
+  // Version : "1.2.3" (majeur 0-255, mineur et correctif 0-15) ou nombre (0x0123).
+  var vt = $id('ver').value.trim(), ver = NaN;
+  var vm = /^(\d+)\.(\d+)\.(\d+)$/.exec(vt);
+  if (vm) {
+    if (+vm[1] <= 255 && +vm[2] <= 15 && +vm[3] <= 15) ver = (+vm[1] << 8) | (+vm[2] << 4) | (+vm[3]);
+  } else if (/^(0x[0-9a-fA-F]+|\d+)$/.test(vt)) {
+    ver = parseInt(vt);
+  }
+  if (isNaN(ver) || ver < 0 || ver > 65535) { setMsg('Version invalide : attendu 1.2.3 ou 0x0123.', '#c0392b'); return; }
+  $id('btnStart').disabled = true;
+  setBar(0, '#0d6efd');
+  $id('otaDetail').innerHTML = '';
+  try {
+    if (file) { await uploadFw(file); }
+    var r = await fetch('/loraOtaStart?slot=' + SLOT + '&version=' + ver);
+    var d = await r.json();
+    if (!d.ok) throw new Error(d.error || 'd\u00e9marrage refus\u00e9');
+    setBar(0);
+    setMsg('Mise \u00e0 jour lanc\u00e9e. L\'avancement s\'affiche sur la fiche de l\'appareil...');
+    otaLaunchedAt = Date.now();
+    // Comme pour le Zigbee : on revient a la liste, ou la fiche de l'appareil montre la barre.
+    setTimeout(function() { window.location.href = '/configLora'; }, 2500);
+  } catch (e) {
+    setMsg('Erreur : ' + e.message, '#c0392b');
+    $id('btnStart').disabled = false;
+  }
+}
+
+function otaCancel() {
+  if (!confirm('Annuler la mise \u00e0 jour en cours ?')) return;
+  fetch('/loraOtaCancel');
+}
+
+function otaShow(d) {
+  var mine = (d.slot === SLOT);
+  var running = (d.state === 'waiting' || d.state === 'sending' || d.state === 'ending');
+  $id('btnCancel').style.display = (running && mine) ? '' : 'none';
+  $id('btnStart').disabled = running;
+  if (d.file > 0 && !$id('fw').files.length)
+    $id('fwInfo').innerHTML = 'Un fichier de ' + d.file + ' octets est d&eacute;j&agrave; sur la box : vous pouvez lancer sans le renvoyer.';
+  if (running && !mine) { setMsg('Une mise &agrave; jour est en cours sur un autre appareil.', '#c0392b'); return running; }
+  if (!mine) return running;
+  if (d.state === 'waiting') {
+    setMsg('En attente de l\'appareil en mode mise &agrave; jour... (essai ' + d.tries + ')');
+  } else if (d.state === 'sending') {
+    setBar(d.pct);
+    setMsg('Envoi du firmware : ' + d.pct + ' %');
+    $id('otaDetail').innerHTML = 'Bloc ' + d.block + ' / ' + d.total + ' &middot; ' + d.retries + ' r&eacute;&eacute;mission(s) &middot; '
+      + '&eacute;coul&eacute; ' + fmtTime(d.elapsed) + ' &middot; reste environ ' + fmtTime(d.eta);
+  } else if (d.state === 'ending') {
+    setBar(100); setMsg('V&eacute;rification du firmware par l\'appareil...');
+  } else if (d.state === 'done') {
+    setBar(100, '#27ae60'); setMsg('Mise &agrave; jour termin&eacute;e : l\'appareil red&eacute;marre sur le nouveau firmware.', '#27ae60');
+    $id('otaDetail').innerHTML = d.total + ' blocs en ' + fmtTime(d.elapsed) + ' &middot; ' + d.retries + ' r&eacute;&eacute;mission(s)';
+  } else if (d.state === 'error') {
+    setBar(d.pct, '#c0392b'); setMsg('&Eacute;chec : ' + d.msg, '#c0392b');
+    $id('otaDetail').innerHTML = 'L\'ancien firmware reste actif. Remettez l\'appareil en mode mise &agrave; jour puis relancez.';
+  }
+  return running;
+}
+
+function otaPoll() {
+  if (otaTimer) { clearTimeout(otaTimer); otaTimer = null; }
+  fetch('/loraOtaStatus?slot=' + SLOT).then(function(r) { return r.json(); }).then(function(d) {
+    // Juste apres un lancement, un etat "termine" ou "echec" ne peut etre que celui d'une
+    // tentative precedente : on ne l'affiche pas et on continue d'interroger la box.
+    var fresh = otaLaunchedAt && (Date.now() - otaLaunchedAt < 8000);
+    if (fresh && (d.state === 'error' || d.state === 'done' || d.state === 'idle')) {
+      otaTimer = setTimeout(otaPoll, 1000);
+      return;
+    }
+    if (otaShow(d)) otaTimer = setTimeout(otaPoll, 1500);
+  }).catch(function() { otaTimer = setTimeout(otaPoll, 3000); });
+}
+otaPoll();   // reprend l'affichage si une mise a jour tourne deja
+</script>
+)LORAOTA";
+
+void handleLoraOta(AsyncWebServerRequest *request)
+{
+  if (!checkHeapForPage(request)) return;
+  int slot = request->hasParam("slot") ? request->getParam("slot")->value().toInt() : -1;
+  if (slot < 0 || slot >= LORA_MAX_EMITTERS || !loraEmitters[slot].valid) {
+    request->redirect("/configLora");
+    return;
+  }
+  char mac[17];
+  for (int k = 0; k < 8; k++) snprintf(&mac[k * 2], 3, "%02X", loraEmitters[slot].mac[k]);
+  String name = mac;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID().equalsIgnoreCase(mac)) {
+      if (devices[i]->getInfo().alias.length() > 0) name = devices[i]->getInfo().alias;
+      else if (devices[i]->getInfo().model.length() > 0) name = devices[i]->getInfo().model;
+      break;
+    }
+  }
+  String result;
+  result.reserve(12000);
+  result += F("<!DOCTYPE html><html>");
+  result += FPSTR(HTTP_HEADER);
+  result += FPSTR(HTTP_MENU);
+  result += FPSTR(HTTP_LORA_OTA);
+  result += F("</html>");
+  result.replace("{{FormattedDate}}", FormattedDate);
+  result.replace("{{slot}}", String(slot));
+  result.replace("{{mac}}", mac);
+  result.replace("{{name}}", htmlAttrEscape(name));
+  String curver;
+  for (size_t i = 0; i < devices.size(); i++) {
+    if (devices[i]->getDeviceID().equalsIgnoreCase(mac)) { curver = devices[i]->getInfo().software_version; break; }
+  }
+  result.replace("{{curver}}", curver.length() ? htmlAttrEscape(curver) : String("inconnue"));
+  request->send(200, "text/html", result);
+}
+
+void handleLoraOtaStart(AsyncWebServerRequest *request)
+{
+  int slot = request->hasParam("slot") ? request->getParam("slot")->value().toInt() : -1;
+  long ver = request->hasParam("version") ? request->getParam("version")->value().toInt() : 1;
+  if (ver < 0 || ver > 65535) ver = 1;
+  // Reglages de diagnostic, non proposes dans la page : /loraOtaStart?slot=0&version=1&pre=16&sf=11
+  int pre = request->hasParam("pre") ? request->getParam("pre")->value().toInt() : 0;
+  int sf  = request->hasParam("sf")  ? request->getParam("sf")->value().toInt()  : 0;
+  int bs  = request->hasParam("bs")  ? request->getParam("bs")->value().toInt()  : 0;   // taille de bloc
+  // Fenetre d'acquittement : 0 = 16 (defaut), 1 = un ACK par bloc.
+  int win = request->hasParam("win") ? request->getParam("win")->value().toInt() : 0;
+  String err;
+  if (loraOtaStart(slot, (uint16_t)ver, err, (uint8_t)pre, (uint8_t)sf, (uint8_t)bs, (uint8_t)win)) {
+    request->send(200, F("application/json"), F("{\"ok\":true}"));
+  } else {
+    request->send(200, F("application/json"), "{\"ok\":false,\"error\":\"" + err + "\"}");
+  }
+}
+
 void handleLoraPair(AsyncWebServerRequest *request) {
   loraStartPairing();
   request->send(200, "text/plain", "pairing");
@@ -21425,7 +22131,7 @@ void handleConfigLoraSettings(AsyncWebServerRequest *request) {
     }
     result += "</select></div>";
     // Cluster + attribut en hexa (saisie manuelle). Les identifiants sont les memes que le
-    // firmware Zigbee LiXee (cf. PROTOCOLE_LORA.md §8) : ex FF66/0300 = mode Linky.
+    // firmware Zigbee LiXee (cf. LORA_PROTOCOL.md §8) : ex FF66/0300 = mode Linky.
     result += F("<div><label style='font-size:12px;color:#6c757d;'>Cluster (hex)</label><br>"
                 "<input id='clHex' class='form-control' style='width:110px;' placeholder='FF66'></div>"
                 "<div><label style='font-size:12px;color:#6c757d;'>Attribut (hex)</label><br>"
@@ -21590,6 +22296,11 @@ void handleConfigLora(AsyncWebServerRequest *request) {
     long age = em.lastSeenMs ? (long)((millis() - em.lastSeenMs) / 1000) : -1;
     String ageTxt = (age < 0) ? String("jamais") : (age < 90 ? String(age) + " s" : String(age / 60) + " min");
 
+    // Version du firmware de l'emetteur, lue par POLL (cluster Basic). Vide tant qu'elle n'a pas
+    // ete lue ; "< 1.0.0" pour un firmware qui ne l'expose pas encore.
+    response->print(F("<tr><td style='color:#6c757d;font-weight:500;'>Firmware</td><td style='font-family:Courier New,monospace;text-align:right;'>"));
+    response->print(device->getInfo().software_version.length() ? htmlAttrEscape(device->getInfo().software_version) : String("&hellip;"));
+    response->print(F("</td></tr>"));
     response->print(F("<tr class='lora-sep'><td colspan='2'>Lien LoRa</td></tr>"));
     response->printf("<tr><td style='color:#6c757d;font-weight:500;'>RSSI</td><td style='font-family:Courier New,monospace;text-align:right;'>%.0f dBm</td></tr>", em.lastRssi);
     response->printf("<tr><td style='color:#6c757d;font-weight:500;'>SNR</td><td style='font-family:Courier New,monospace;text-align:right;'>%.0f dB</td></tr>", em.lastSnr);
@@ -21605,8 +22316,12 @@ void handleConfigLora(AsyncWebServerRequest *request) {
                      (age < 0 || age > 300) ? "#c0392b" : "#27ae60", ageTxt.c_str());
     response->print(F("</table>"));
 
-    // Boutons : ni OTA ni Refresh, qui supposent une requete Zigbee vers l'appareil. La lecture
-    // d'attribut a la demande (POLL) est proposee par ligne sur la fiche de l'appareil.
+    // Avancement d'une mise a jour OTA de cet appareil (rempli par loraOtaBar(), plus bas).
+    response->printf("<div id='loraOta%d' class='lora-ota' style='display:none;margin-top:10px;font-size:12px;'></div>", slot);
+
+    // Boutons : pas de Refresh, qui suppose une requete Zigbee vers l'appareil. La lecture
+    // d'attribut a la demande (POLL) est proposee par ligne sur la fiche de l'appareil. La mise
+    // a jour du firmware (OTA) a sa propre page, /loraOta.
     response->print(F("<div class='btn-actions'>"));
 
     response->print(F("<a href='/configDevice?id="));
@@ -21625,6 +22340,13 @@ void handleConfigLora(AsyncWebServerRequest *request) {
         "<path d='M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663 -0.544 1.195 -1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91 -1.242 -2.046 -2.65 -3.158 -3.762C19.588 2.11 18.122 0.987 16.714 0.005Z'/>"
         "</svg></button>"));
     }
+
+    // Mise a jour du firmware par LoRa (OTA) : meme bouton que sur la page Zigbee.
+    response->printf("<a href='/loraOta?slot=%d' class='btn btn-warning' title='Mise &agrave; jour du firmware (OTA)'>", slot);
+    response->print(F("<svg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 16 16'>"
+      "<path fill-rule='evenodd' d='M7.646 10.854a.5.5 0 0 0 .708 0l2-2a.5.5 0 0 0-.708-.708L8.5 9.293V5.5a.5.5 0 0 0-1 0v3.793L6.354 8.146a.5.5 0 1 0-.708.708z'/>"
+      "<path d='M4.406 3.342A5.53 5.53 0 0 1 8 2c2.69 0 4.923 2 5.166 4.579C14.758 6.804 16 8.137 16 9.773 16 11.569 14.502 13 12.687 13H3.781C1.708 13 0 11.366 0 9.318c0-1.763 1.266-3.223 2.942-3.593.143-.863.698-1.723 1.464-2.383'/>"
+      "</svg></a>"));
 
     response->printf("<button onclick=\"deleteLoraDevice('%s',%d);\" class='btn btn-danger' title='Supprimer'>",
       device->getDeviceID().c_str(), slot);
@@ -21658,6 +22380,45 @@ void handleConfigLora(AsyncWebServerRequest *request) {
     "xhr.open('GET','loraRemove?slot='+slot,true);"
     "xhr.send();}}"
     "</script>"));
+
+  // Suivi d'une mise a jour OTA sur la fiche de l'appareil concerne, comme la barre de la page
+  // Zigbee. Une seule interrogation de /loraOtaStatus pour toute la page.
+  response->print(F(R"LORABAR(<script>
+function loraOtaTime(s){ if (s < 0) return '?'; var m = Math.floor(s / 60); return (m ? m + ' min ' : '') + (s % 60) + ' s'; }
+function loraOtaBar(){
+  fetch('/loraOtaStatus').then(function(r){ return r.json(); }).then(function(d){
+    var all = document.querySelectorAll('.lora-ota');
+    for (var i = 0; i < all.length; i++) all[i].style.display = 'none';
+    var running = (d.state === 'waiting' || d.state === 'sending' || d.state === 'ending');
+    var el = document.getElementById('loraOta' + d.slot);
+    // Un resultat (termine / echec) reste affiche 10 minutes, pas au-dela.
+    var show = running || ((d.state === 'done' || d.state === 'error') && d.since >= 0 && d.since < 600);
+    if (el && show) {
+      var h = '';
+      if (d.state === 'waiting') {
+        h = "<div align='center'>Mise &agrave; jour : en attente de l'appareil en mode mise &agrave; jour...</div>"
+          + "<progress max='100' style='width:100%'></progress>";
+      } else if (d.state === 'sending') {
+        h = "<div align='center'>Mise &agrave; jour en cours : " + d.pct + " % &middot; reste environ " + loraOtaTime(d.eta) + "</div>"
+          + "<progress value='" + d.pct + "' max='100' style='width:100%'>" + d.pct + "%</progress>"
+          + "<div align='center' style='color:#6c757d;'>bloc " + d.block + " / " + d.total + " &middot; " + d.retries + " r&eacute;&eacute;mission(s)</div>";
+      } else if (d.state === 'ending') {
+        h = "<div align='center'>Mise &agrave; jour : v&eacute;rification du firmware par l'appareil...</div>"
+          + "<progress value='100' max='100' style='width:100%'></progress>";
+      } else if (d.state === 'done') {
+        h = "<div align='center' style='color:#27ae60;font-weight:500;'>Mise &agrave; jour termin&eacute;e, l'appareil red&eacute;marre.</div>";
+      } else {
+        h = "<div align='center' style='color:#c0392b;font-weight:500;'>Mise &agrave; jour en &eacute;chec : " + d.msg + "</div>"
+          + "<div align='center'><a href='/loraOta?slot=" + d.slot + "'>Relancer</a></div>";
+      }
+      el.innerHTML = h;
+      el.style.display = '';
+    }
+    setTimeout(loraOtaBar, running ? 3000 : 15000);
+  }).catch(function(){ setTimeout(loraOtaBar, 15000); });
+}
+loraOtaBar();
+</script>)LORABAR"));
 
   // === 5. Fermeture + footer ===
   response->print(F("</div></div>"));
@@ -22086,6 +22847,29 @@ void initWebServer()
     request->send(ok ? 200 : 400, F("text/plain"), ok ? F("queued") : F("slot invalide"));
   });
   // Etat de la derniere lecture d'attribut d'un emetteur (JSON), pour le suivi cote page.
+  // Mise a jour du firmware d'un emetteur LoRa (OTA)
+  serverWeb.on("/loraOta", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleLoraOta(request);
+  });
+  serverWeb.on("/loraOtaStart", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleLoraOtaStart(request);
+  });
+  serverWeb.on("/loraOtaStatus", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    int slot = request->hasParam("slot") ? request->getParam("slot")->value().toInt() : -1;
+    request->send(200, F("application/json"), loraOtaStatusJson(slot));
+  });
+  serverWeb.on("/loraOtaCancel", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    loraOtaCancel();
+    request->send(200, F("application/json"), F("{\"ok\":true}"));
+  });
   serverWeb.on("/loraPollStatus", HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
@@ -22249,6 +23033,43 @@ void initWebServer()
   {
     if (!checkAuth(request)) return;
     handleAPITariff(request);
+  });
+
+  // Kiosque LiXee-Assist (v2.26)
+  serverWeb.on("/api/energy/config", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPIEnergyConfig(request);
+  });
+  serverWeb.on("/api/power/peaks", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPIPowerPeaks(request);
+  });
+  serverWeb.on("/api/power/floor", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPIPowerFloor(request);
+  });
+  serverWeb.on("/api/power/summary", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPIPowerSummary(request);
+  });
+  serverWeb.on("/api/alerts", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPIAlerts(request);
+  });
+  serverWeb.on("/api/delestage/restore", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPIDelestageRestore(request);
+  });
+  serverWeb.on("/api/delestage", HTTP_GET, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleAPIDelestage(request);
   });
 
 
@@ -22743,6 +23564,11 @@ void initWebServer()
     handleSaveConfigNotifications(request);
   });
 
+  serverWeb.on("/saveEthernet", HTTP_POST, [](AsyncWebServerRequest *request)
+  {
+    if (!checkAuth(request)) return;
+    handleSaveEthernet(request);
+  });
   serverWeb.on("/saveWifi", HTTP_POST, [](AsyncWebServerRequest *request)
   { 
     if (!checkAuth(request)) return;

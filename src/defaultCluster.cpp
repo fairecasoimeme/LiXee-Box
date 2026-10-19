@@ -12,7 +12,7 @@ extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Device, 50> *deviceList;
 
 void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t datatype,int len, char* datas)
 {
@@ -30,6 +30,25 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
         {
           snprintf(value, sizeof(value), "%02X",datas[i]);
           tmp+=value;
+        }
+        // Nombre flottant ZCL simple precision (type 0x39) : ex. la puissance des relais Aqara
+        // (Analog Input 000C/0055). Les valeurs sont stockees en hexa et relues comme des
+        // ENTIERS : les 4 octets IEEE 754 donnaient un nombre absurde (100,0 -> 1120403456).
+        // On stocke donc la valeur x 100, en entier signe 32 bits -- meme convention que les
+        // attributs signes (cf. zclHexToSigned, config.h). Dans le template :
+        //   "type": "float", "coefficient": 0.01
+        if (datatype == 0x39 && len == 4)
+        {
+          uint32_t raw = ((uint32_t)(uint8_t)datas[0] << 24) | ((uint32_t)(uint8_t)datas[1] << 16)
+                       | ((uint32_t)(uint8_t)datas[2] << 8)  |  (uint32_t)(uint8_t)datas[3];
+          float f;
+          memcpy(&f, &raw, sizeof(f));
+          if (isnan(f) || isinf(f)) f = 0.0f;
+          if (f >  20000000.0f) f =  20000000.0f;     // borne : x100 doit tenir sur 32 bits
+          if (f < -20000000.0f) f = -20000000.0f;
+          char fx[9];
+          snprintf(fx, sizeof(fx), "%08X", (unsigned int)(uint32_t)(int32_t)lroundf(f * 100.0f));
+          tmp = fx;
         }
         char clusterHex[5];
         snprintf(clusterHex,5,"%04X",cluster);
@@ -83,7 +102,7 @@ void defaultClusterManage(String inifile,int cluster, int attribute,uint8_t data
 
             if (!deviceList->isFull())
             {
-              float adjustedValue = strtol(tmp.c_str(), NULL, 16) * device->GetAttributeCoefficient(cluster,attribute);
+              float adjustedValue = zclHexToSigned(tmp.c_str()) * device->GetAttributeCoefficient(cluster,attribute);
               deviceList->push(Device{device->getInfo().shortAddr.toInt(),cluster,attribute,String(adjustedValue)});
             }
 

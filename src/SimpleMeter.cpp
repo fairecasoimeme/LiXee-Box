@@ -17,7 +17,7 @@ extern DeviceList devices;
 extern AsyncMqttClient mqttClient;
 extern ConfigGeneralStruct ConfigGeneral;
 extern ConfigSettingsStruct ConfigSettings;
-extern CircularBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Device, 50> *deviceList;
 
 // Cache pour éviter les recherches répétées
 static PsUnorderedMap<DeviceData*> simpleMeterDeviceCache;
@@ -153,6 +153,9 @@ void publishSimpleMeterData(const SimpleMeterData& data, const String& inifile) 
 }
 
 // Fonction pour récupérer l'attribut ID correspondant à la période tarifaire actuelle
+// Attribut d'index (256, 258...) correspondant a un libelle de periode tarifaire (PTEC ou LTARF).
+int tariffAttrFromPtec(String ptec);
+
 int getCurrentTariffAttributeId() {
     // Récupérer le device ZLinky
     DeviceData* zlinkyDevice = findSimpleMeterDevice(ConfigGeneral.ZLinky);
@@ -161,7 +164,10 @@ int getCurrentTariffAttributeId() {
     }
     
     // Récupérer la période tarifaire (cluster FF66, attribut 16 = 0x0010)
-    String ptec = zlinkyDevice->getValue("FF66", "16");
+    return tariffAttrFromPtec(zlinkyDevice->getValue("FF66", "16"));
+}
+
+int tariffAttrFromPtec(String ptec) {
     if (ptec.length() == 0) {
         return 256;  // Par défaut
     }
@@ -279,6 +285,15 @@ void updateSimpleMeterDeviceValue(const SimpleMeterData& data) {
             //float coef = device->GetAttributeCoefficient(0x0702, data.attribute);
             //long correctedValue = (long)(data.numericValue * coef);
             addSubMeterMeasurement(device->energyHistory, tariffAttrId,  data.numericValue);
+        }
+        else {
+            // Tout autre compteur (eau, gaz, ZiPulses, prise non declaree en sous-compteur...) :
+            // son index alimente son propre historique, sous l'attribut 0. Ce cas avait disparu
+            // avec la gestion des sous-compteurs : l'index etait bien recu et affiche, mais
+            // l'historique restait a zero -- aucun graphe sur le tableau de bord.
+            // Pas de lissage sur le temps : un compteur a impulsions se tait tant que rien n'est
+            // consomme, ce n'est pas une coupure.
+            addEnergyMeasurement(device->energyHistory, data.attributeStr, data.numericValue, false);
         }
     }
     

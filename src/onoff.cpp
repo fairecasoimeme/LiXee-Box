@@ -15,7 +15,7 @@ extern ConfigSettingsStruct ConfigSettings;
 
 extern CircularBuffer<Packet, 100> *commandList;
 extern CircularBuffer<Packet, 70> *PrioritycommandList;
-extern CircularBuffer<Device, 50> *deviceList;
+extern LockedBuffer<Device, 50> *deviceList;
 
 void SendOnOffAction(int shortaddr, int endpoint, String value)
 {

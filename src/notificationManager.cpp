@@ -1,5 +1,6 @@
 #include "NotificationManager.h"
 #include "SPIFFS_ini.h"
+#include "alertHistory.h"
 #include <time.h>
 
 NotificationManager::NotificationManager(const char* filePath, size_t maxSize) 
@@ -52,6 +53,9 @@ bool NotificationManager::addNotification(const String& title, const String& mes
   
   // Sauvegarde automatique
   saveToFile();
+
+  // Historique non destructif pour le kiosque (/api/alerts) : en plus du flux existant
+  alertHistoryAdd(title, message, type, alertType, value, threshold);
 
   // Push mobile via tunnel (si callback configuré)
   if (_pushCallback) {

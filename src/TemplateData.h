@@ -134,7 +134,9 @@ public:
                 }
                 
                 // Attribut (avec 't' pas 'te')
-                s.attribute = stateObj["attribut"] | 0;
+                // Avec un "endpoint" >= 2, la ligne porte la cle composee (attribut, endpoint) :
+                // cf. epAttrKey(), config.h.
+                s.attribute = epAttrKey(stateObj["attribut"] | 0, stateObj["endpoint"] | 0);
 
                 // ManufacturerSpecific: peut être string hex "0x128B" ou int 4747
                 if (stateObj.containsKey("manufacturerSpecific")) {

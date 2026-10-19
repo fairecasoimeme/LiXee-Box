@@ -6,10 +6,45 @@
 #include <Arduino.h>
 //#define CIRCULAR_BUFFER_INT_SAFE
 #include <CircularBuffer.hpp>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
+
+/* File circulaire PARTAGEE entre taches (issue #46).
+ * deviceList, notifList et alertList sont remplies par la boucle principale (a chaque trame
+ * recue) et videes par les handlers web, qui tournent dans la tache async_tcp. CircularBuffer
+ * n'est pas prevu pour cela : push() et shift() modifient le meme compteur et les memes cases,
+ * dont les elements contiennent des String. Deux taches qui s'y croisent -- typiquement une page
+ * ouverte dans le navigateur pendant que des trames arrivent -- corrompent le compteur ou le
+ * heap. Chaque operation est donc protegee par un mutex ; les appels existants ne changent pas.
+ */
+template <typename T, size_t S>
+class LockedBuffer : public CircularBuffer<T, S> {
+    SemaphoreHandle_t m_;
+    struct Guard {
+        SemaphoreHandle_t m;
+        explicit Guard(SemaphoreHandle_t x) : m(x) { if (m) xSemaphoreTake(m, portMAX_DELAY); }
+        ~Guard() { if (m) xSemaphoreGive(m); }
+    };
+public:
+    LockedBuffer() : m_(xSemaphoreCreateMutex()) {}
+    bool push(T value) { Guard g(m_); return CircularBuffer<T, S>::push(value); }
+    T    shift()       { Guard g(m_); return CircularBuffer<T, S>::shift(); }
+    bool isEmpty()     { Guard g(m_); return CircularBuffer<T, S>::isEmpty(); }
+    bool isFull()      { Guard g(m_); return CircularBuffer<T, S>::isFull(); }
+    void clear()       { Guard g(m_); CircularBuffer<T, S>::clear(); }
+    // Retire un element s'il y en a un : test et retrait en une seule operation, pour les
+    // boucles de vidage ("tant que non vide, retirer") executees par une autre tache.
+    bool take(T &out) {
+        Guard g(m_);
+        if (CircularBuffer<T, S>::isEmpty()) return false;
+        out = CircularBuffer<T, S>::shift();
+        return true;
+    }
+};
 #include <ArduinoJson.h>
 #include <malloc.h>
 
-#define VERSION "v2.25"
+#define VERSION "v2.26"
 
 // hardware config64
 #define RESET_ZIGATE 40//4
@@ -43,6 +78,35 @@ static inline bool zclTypeIsSigned(uint8_t t) { return (t >= 0x28 && t <= 0x2F);
 static inline long zclHexToSigned(const char *hex) {
     return (long)(int32_t)strtoul(hex, nullptr, 16);
 }
+/* --- Attribut propre a un endpoint (champ "endpoint" d'une ligne "status" de template) -------
+ * Les valeurs sont rangees par (cluster, attribut), sans l'endpoint. Un appareil a plusieurs
+ * relais (Aqara T2 : L1 sur l'endpoint 1, L2 sur l'endpoint 2) remonte DEUX fois 0006/0 : la
+ * seconde valeur ecrasait la premiere (issue #44).
+ *
+ * Dans le template, une ligne peut preciser son endpoint :
+ *     { "name": "On/Off L2", "cluster": "0006", "attribut": 0, "endpoint": 2 }
+ *   - champ ABSENT (ou 0 / 1) : comportement historique, la valeur est acceptee quel que soit
+ *     l'endpoint qui l'envoie. Indispensable : beaucoup d'appareils n'ont pas leurs donnees sur
+ *     l'endpoint 1 (11, 8, 21...), leurs templates continuent de fonctionner tels quels.
+ *   - champ >= 2 : la ligne ne recoit que les valeurs de CET endpoint.
+ *
+ * En interne, une telle ligne porte une cle composee : attribut | (endpoint << 16). Un
+ * identifiant d'attribut ZCL tient sur 16 bits : aucune collision possible, quel que soit le
+ * cluster. Tout le reste (stockage, MQTT, regles, affichage) manipule cette cle comme un
+ * attribut ordinaire, sans rien savoir des endpoints.
+ */
+static inline uint32_t epAttrKey(uint32_t attribut, uint32_t endpoint) {
+    return (endpoint >= 2 && endpoint <= 240) ? ((attribut & 0xFFFF) | (endpoint << 16)) : attribut;
+}
+static inline uint8_t  epAttrEndpoint(uint32_t key) { return (uint8_t)(key >> 16); }   // 0 = aucun
+static inline uint16_t epAttrId(uint32_t key)       { return (uint16_t)(key & 0xFFFF); }
+// Nom lisible de la cle, pour ce qui sort de la box (sujets et champs MQTT) : "0" pour une
+// ligne sans endpoint, "0_ep2" pour l'attribut 0 de l'endpoint 2 -- plutot que 131072.
+static inline String epAttrLabel(uint32_t key) {
+    if (!epAttrEndpoint(key)) return String(key);
+    return String(epAttrId(key)) + "_ep" + String(epAttrEndpoint(key));
+}
+
 // Détection des modules présents (le Zigbee et le LoRa peuvent coexister).
 // zigbeeDetected passe à true dès que la ZiGate répond au Get Version (trame 0x8010).
 extern bool zigbeeDetected;
@@ -267,8 +331,8 @@ struct ConfigGeneralStruct {
   float coeffGaz;
   float coeffWater;
   float coeffProduction;
-  char unitGaz[3];
-  char unitWater[3];
+  char unitGaz[8];     // "kWh" etait tronque a 2 caracteres avec [3]
+  char unitWater[8];
   char tarifGaz[10];
   char tarifWater[10];
   int scanNumber;
@@ -277,6 +341,12 @@ struct ConfigGeneralStruct {
   int subMeterCount;  
   char Presence[20] = "";          // IEEE du capteur de présence
   bool enablePresenceGraph = true; // Afficher sur le graphique
+
+  // Délestage (v2.26)
+  String delestage;                 // IEEE des prises délestées, séparés par des virgules
+  int  delestageRestoreMin = 5;     // rallumage après N minutes sous le seuil (0 = jamais)
+  int  delestageRestorePct = 80;    // seuil de rallumage, en % de la puissance souscrite
+  int  delestageAnticipPct = 0;     // délestage anticipé : moyenne 1 min >= N % (0 = non)
 
   // Tunnel (reverse proxy)
   bool enableTunnel = false;
