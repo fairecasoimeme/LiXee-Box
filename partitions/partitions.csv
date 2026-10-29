@@ -1,11 +1,11 @@
 # Name,   Type, SubType, Offset,  Size,    Flags
-# Matter necessite un NVS large pour le commissioning et les fabrics
-# LittleFS pour stocker les templates devices, configs, et fichiers web
-nvs,      data, nvs,     0x9000,  0x8000,
-otadata,  data, ota,     0x11000, 0x2000,
-phy_init, data, phy,     0x13000, 0x1000,
-ota_0,    app,  ota_0,   0x20000, 0x400000,
-ota_1,    app,  ota_1,   0x420000, 0x400000,
-nvs_keys, data, nvs_keys,0x820000, 0x1000,
-fctry,    data, nvs,     0x821000, 0x6000,
-littlefs, data, spiffs,  0x827000, 0x1D9000,
+# Table identique a celle de la LiXee-Box v2.x (large_spiffs_16MB.csv
+# d'arduino-esp32) : une box neuve en v3 et une box migree depuis la v2.x ont
+# la meme organisation. "spiffs" contient un systeme LittleFS (comme en v2.x).
+# NVS de 20 Ko : appairage Matter compris, ~45 % occupes sur une box migree.
+nvs,      data, nvs,     0x9000,  0x5000,
+otadata,  data, ota,     0xe000,  0x2000,
+app0,     app,  ota_0,   0x10000, 0x480000,
+app1,     app,  ota_1,   0x490000,0x480000,
+spiffs,   data, spiffs,  0x910000,0x6E0000,
+coredump, data, coredump,0xFF0000,0x10000,

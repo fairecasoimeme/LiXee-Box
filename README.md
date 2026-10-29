@@ -242,20 +242,20 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 Voici les fichiers à sélectionner avec les adresses correspondantes (v3) :
 * bootloader.bin @ 0x0
 * partitions.bin @ 0x8000
-* ota_data_initial.bin @ 0x11000
-* firmware.bin @ 0x20000
-* littlefs.bin @ 0x827000
+* ota_data_initial.bin @ 0xe000
+* firmware.bin @ 0x10000
+* littlefs.bin @ 0x910000
 
 Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START 
 
-> Les captures d'écran montrent les adresses de la v2.x : utilisez celles de la liste ci-dessus.
+> Mêmes adresses qu'en v2.x (même table des partitions) ; seul `boot_app0.bin` est remplacé par `ota_data_initial.bin`.
 
 #### En mode console
 
 1. Ouvrir une console ou powershell et se placer dans le répertoire où se trouvent les fichiers
 2. Taper la commande suivante :
 
-   ```esptool.exe --chip esp32s3 --port "COMXX" --baud 460800 write_flash -z --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0x11000 ota_data_initial.bin 0x20000 firmware.bin 0x827000 littlefs.bin```
+   ```esptool.exe --chip esp32s3 --port "COMXX" --baud 460800 write_flash -z --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin```
 
 ## 🔗 Pont Matter (à partir de la v3.0)
 
@@ -1684,9 +1684,9 @@ esptool.py.exe --chip esp32s3 --port "COMXX" \
 	 --flash_mode dio --flash_freq 80m --flash_size 16MB \
 	 0x0 bootloader.bin \
 	 0x8000 partitions.bin \
-	 0x11000 ota_data_initial.bin \
-	 0x20000 firmware.bin \
-	 0x827000 littlefs.bin
+	 0xe000 ota_data_initial.bin \
+	 0x10000 firmware.bin \
+	 0x910000 littlefs.bin
 ```
 ### Linux
 
@@ -1702,9 +1702,9 @@ write-flash -z \
 --flash-size 16MB \
 0x0 bootloader.bin \
 0x8000 partitions.bin \
-0x11000 ota_data_initial.bin \
-0x20000 firmware.bin \
-0x827000 littlefs.bin
+0xe000 ota_data_initial.bin \
+0x10000 firmware.bin \
+0x910000 littlefs.bin
 ```
 
 ### Compiler le firmware (v3)

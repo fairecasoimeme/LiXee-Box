@@ -19,6 +19,7 @@
 - Une LiXee-Box Arduino passe en v3 par sa mise à jour habituelle (`update.tar`, manuelle ou automatique)
 - Au premier démarrage, la v3 reprend les appareils de la v2.x, remet les adresses IEEE en majuscules dans les fichiers de configuration, et convertit les historiques de puissance
 - La v3 refuse une mise à jour vers un firmware Arduino (retour en v2.x par ordinateur uniquement)
+- **Table des partitions identique à la v2.x** : une box neuve en v3 et une box migrée ont la même organisation (application 4,5 Mo, LittleFS 7 Mo)
 
 ### Réseau
 - **Ethernet prioritaire, WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté et relancé si le câble reste débranché 30 s

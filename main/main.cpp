@@ -1149,10 +1149,12 @@ static void import_box_devices(void)
 
 static esp_err_t init_littlefs(void)
 {
-    // Table du pont : "littlefs". LiXee-Box Arduino mise a jour vers ce
-    // firmware : "spiffs", en LittleFS, avec la configuration, les appareils et
-    // les historiques de la Box, relus tels quels. Ce systeme-la n'est formate
-    // qu'en dernier recours (sinon le pont ne demarrerait pas du tout).
+    // Table de la LiXee-Box (v2.x et v3) : "spiffs", en LittleFS, avec la
+    // configuration, les appareils et les historiques, relus tels quels. Ce
+    // systeme-la n'est formate qu'en dernier recours (sinon la box ne
+    // demarrerait pas du tout). "littlefs" : ancienne table du pont, gardee
+    // par les cartes de test flashees avant l'alignement (l'OTA ne change pas
+    // la table des partitions).
     const char *label = maintenance_fs_label();
     bool box_layout = strcmp(label, "littlefs") != 0;
     esp_vfs_littlefs_conf_t conf = {

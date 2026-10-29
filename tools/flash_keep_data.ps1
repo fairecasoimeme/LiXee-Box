@@ -5,15 +5,19 @@
 # La carte doit etre en mode telechargement (BOOT maintenu, RESET, relacher BOOT).
 # Apres "FLASH OK", appuyer sur RESET pour demarrer.
 #
-# Adresse et taille de LittleFS : lues dans partitions/partitions.csv.
+# Adresses de LittleFS, de l'application et d'otadata : lues dans
+# partitions/partitions.csv (table de la LiXee-Box v2.x : LittleFS dans la
+# partition "spiffs").
 #
 # Usage : powershell -ExecutionPolicy Bypass -File tools\flash_keep_data.ps1 [-Port COM4]
 #
 # Changement de table des partitions (migration) : relire les donnees a leur
 # ANCIENNE adresse, ecrire la nouvelle table et remettre a zero la table de
 # demarrage OTA (demarrage sur ota_0, ou l'application est ecrite) :
-#   ... flash_keep_data.ps1 -FromOffset 0x627000 -PartitionTable
-# La NVS (0x9000 : appairage Matter, WiFi) n'est jamais ecrite.
+#   ... flash_keep_data.ps1 -FromOffset 0x827000 -PartitionTable
+# (0x827000 : LittleFS de l'ancienne table du pont). La NVS (0x9000 :
+# appairage Matter, WiFi) n'est jamais ecrite ; mais la table v2.x la reduit
+# de 32 a 20 Ko : ce qui etait au-dela peut etre perdu (Matter a reappairer).
 param(
     [string]$Port = "COM4",
     [string]$FromOffset = "",       # adresse actuelle de LittleFS sur la carte (defaut : celle du CSV)
@@ -34,11 +38,16 @@ $lfs   = "$proj\build\littlefs_py_venv\Scripts\littlefs-python.exe"
 $work  = "$proj\build\flash_work"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 
-# Partition LittleFS de la table du projet
-$row = Get-Content "$proj\partitions\partitions.csv" | Where-Object { $_ -match '^\s*littlefs\s*,' } | Select-Object -First 1
-if (-not $row) { throw "partition littlefs absente de partitions/partitions.csv" }
-$cols = $row.Split(',') | ForEach-Object { $_.Trim() }
-$lfsOff = $cols[3]; $lfsSize = $cols[4]
+# Partitions de la table du projet : colonnes (offset, taille) d'une ligne
+function Get-Partition([string]$pattern, [string]$what) {
+    $row = Get-Content "$proj\partitions\partitions.csv" | Where-Object { $_ -match $pattern } | Select-Object -First 1
+    if (-not $row) { throw "partition $what absente de partitions/partitions.csv" }
+    $cols = $row.Split(',') | ForEach-Object { $_.Trim() }
+    return @($cols[3], $cols[4])
+}
+$lfsOff, $lfsSize = Get-Partition '^\s*(spiffs|littlefs)\s*,' "LittleFS"
+$appOff = (Get-Partition '^\s*\w+\s*,\s*app\s*,\s*ota_0\s*,' "ota_0")[0]
+$otaOff = (Get-Partition '^\s*otadata\s*,' "otadata")[0]
 $readOff = if ($FromOffset) { $FromOffset } else { $lfsOff }
 "LittleFS : lecture a $readOff, ecriture a $lfsOff ($lfsSize octets)"
 
@@ -76,9 +85,9 @@ if (-not ($listing -match "zigbee_devices")) { throw "base Zigbee absente de la 
 $images = @()
 if ($PartitionTable) {
     $images += @("0x8000", "$proj\build\partition_table\partition-table.bin",
-                 "0x11000", "$proj\build\ota_data_initial.bin")
+                 $otaOff, "$proj\build\ota_data_initial.bin")
 }
-$images += @("0x20000", "$proj\build\lixee_matter_bridge.bin", $lfsOff, "$work\new.bin")
+$images += @($appOff, "$proj\build\lixee_matter_bridge.bin", $lfsOff, "$work\new.bin")
 python -m esptool --chip esp32s3 -p $Port -b 921600 --before no_reset --after hard_reset write_flash --flash_mode dio --flash_freq 80m --flash_size 16MB @images
 if ($LASTEXITCODE -ne 0) { throw "write_flash a echoue" }
 "FLASH OK - appuyer sur RESET"

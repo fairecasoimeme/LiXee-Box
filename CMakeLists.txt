@@ -44,6 +44,6 @@ add_custom_target(web_gz
     VERBATIM)
 
 # Créer l'image LittleFS à partir du dossier data/
-# Les fichiers seront flashés dans la partition "littlefs"
+# Les fichiers seront flashés dans la partition "spiffs" (nom de la table v2.x)
 # Structure attendue par web_server.cpp : /littlefs/web/index.html(.gz), /littlefs/web/css/, etc.
-littlefs_create_partition_image(littlefs ${CMAKE_CURRENT_LIST_DIR}/data FLASH_IN_PROJECT DEPENDS web_gz)
+littlefs_create_partition_image(spiffs ${CMAKE_CURRENT_LIST_DIR}/data FLASH_IN_PROJECT DEPENDS web_gz)

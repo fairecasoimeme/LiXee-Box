@@ -59,9 +59,10 @@ extern "C" {
 void maintenance_early_init(void);
 
 /**
- * Partition du systeme de fichiers : "littlefs" (table du pont) ou "spiffs"
- * (table de la LiXee-Box Arduino, mise a jour vers ce firmware par son tar :
- * meme format LittleFS, donnees de la Box reprises telles quelles).
+ * Partition du systeme de fichiers : "spiffs" (table de la LiXee-Box, v2.x et
+ * v3 : LittleFS, donnees d'une Box migree reprises telles quelles) ou
+ * "littlefs" (ancienne table du pont, cartes de test flashees avant
+ * l'alignement sur la table v2.x).
  */
 const char *maintenance_fs_label(void);
 
