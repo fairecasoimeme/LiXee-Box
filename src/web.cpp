@@ -58,6 +58,7 @@
 #include "alertHistory.h"
 #include "delestage.h"
 #include "ethernet.h"
+int getCurrentTariffAttributeId();  // SimpleMeter.cpp : index tarifaire en cours
 
 extern DeviceList devices;
 extern LiXeeBoxTunnel* tunnel;
@@ -325,6 +326,18 @@ static String loginUrlFor(AsyncWebServerRequest *request) {
         target += urlEncodeComponent(p->value());
     }
     return "/login?next=" + urlEncodeComponent(target);
+}
+
+// Identifiant d'appareil des routes API : `ieee` (nom commun depuis la v2.26), ou les anciens
+// noms `IEEE` et `id`, toujours acceptes.
+static bool apiHasIeee(AsyncWebServerRequest *r) {
+  return r->hasArg("ieee") || r->hasArg("IEEE") || r->hasArg("id");
+}
+static String apiIeee(AsyncWebServerRequest *r) {
+  if (r->hasArg("ieee")) return r->arg("ieee");
+  if (r->hasArg("IEEE")) return r->arg("IEEE");
+  if (r->hasArg("id"))   return r->arg("id");
+  return String();
 }
 
 // Coefficient d'impulsion lisible : String(float) n'affiche que 2 decimales, et un coefficient
@@ -6835,7 +6848,7 @@ String createPowerGraph(String IEEE)
       }
       if (section[cntsection]!="1") // on exclut EAIT
       {
-        JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{\"name\":\"" + zlinkyIndexName(String(section[cntsection]).toInt()) + "\",\"coeff\":1,\"price\":" + getTarif(String(section[cntsection]).toInt(),"energy") +",\"abo\":"+ConfigGeneral.tarifAbo+",\"taxe\":"+ConfigGeneral.tarifCSPE+",\"unit\":\"Wh\"}";
+        JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{\"name\":\"" + zlinkyIndexName(String(section[cntsection]).toInt()) + "\",\"coeff\":1,\"price\":" + String(getTarif(String(section[cntsection]).toInt(),"energy"), 6) +",\"abo\":"+ConfigGeneral.tarifAbo+",\"taxe\":"+ConfigGeneral.tarifCSPE+",\"unit\":\"Wh\"}";
       } 
       result += sep + String(section[cntsection]);
       i++;
@@ -6843,24 +6856,24 @@ String createPowerGraph(String IEEE)
     }
     if (strcmp(ConfigGeneral.Production,"")!=0)
     {
-      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
+      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + String(getTarif(1,"production"), 6) + ",\"unit\":\"Wh\"}";
     }  
     unit = F(" postUnits: ' Wh',");
     
   }else if (Type=="gaz")
   {
-      JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":"+fmtCoeff(ConfigGeneral.coeffGaz)+",\"price\":" + getTarif(0,"gaz") + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
+      JsonEuros += "\"0\":{\"name\":\"Gaz\",\"coeff\":"+fmtCoeff(ConfigGeneral.coeffGaz)+",\"price\":" + String(getTarif(0,"gaz"), 6) + ",\"unit\":\""+String(ConfigGeneral.unitGaz)+"\"}";
       result += "0"; 
       unit = " postUnits: ' "+String(ConfigGeneral.unitGaz)+"',";
 
   }else if (Type=="water")
   {
-    JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":"+fmtCoeff(ConfigGeneral.coeffWater)+",\"price\":" + getTarif(0,"water") + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
+    JsonEuros += sep + "\"0\":{\"name\":\"Water\",\"coeff\":"+fmtCoeff(ConfigGeneral.coeffWater)+",\"price\":" + String(getTarif(0,"water"), 6) + ",\"unit\":\""+String(ConfigGeneral.unitWater)+"\"}";
     result += "0";
     unit = " postUnits: ' "+String(ConfigGeneral.unitWater)+"',";
   }else if (Type=="production")
   {
-    JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + getTarif(1,"production") + ",\"unit\":\"Wh\"}";
+    JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + String(getTarif(1,"production"), 6) + ",\"unit\":\"Wh\"}";
     result += "1";
     unit = F(" postUnits: ' Wh',");
   }
@@ -6949,7 +6962,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
         JsonEuros += sep + "\"" + String(section[cntsection]) + "\":{";
         JsonEuros += "\"name\":\"" + sectionName + "\",";
         JsonEuros += "\"coeff\":1,";
-        JsonEuros += "\"price\":" + String(getTarif(sectionInt, "energy")) + ",";
+        JsonEuros += "\"price\":" + String(getTarif(sectionInt, "energy"), 6) + ",";
         JsonEuros += "\"abo\":" + String(ConfigGeneral.tarifAbo) + ",";
         JsonEuros += "\"taxe\":" + String(ConfigGeneral.tarifCSPE) + ",";
         JsonEuros += "\"taxe2\":" + String(ConfigGeneral.tarifCTA) + ",";
@@ -6965,7 +6978,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
     if (strcmp(ConfigGeneral.Production, "") != 0)
     {
       sep = (i > 0) ? "," : "";
-      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + String(getTarif(1, "production")) + ",\"unit\":\"Wh\"}";
+      JsonEuros += sep + "\"1\":{\"name\":\"Production\",\"coeff\":1,\"price\":" + String(getTarif(1, "production"), 6) + ",\"unit\":\"Wh\"}";
       ykeys += sep + "'1'";
       labels += sep + "'Production'";
       i++;
@@ -6980,11 +6993,13 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
       sep = (i > 0) ? "," : "";
       String subKey = "sub_" + String(sm);
       
-      // Utiliser le tarif moyen (256 = BASE/HC)
+      // Prix par defaut : tarif en cours. Le graphe envoie pour chaque tranche le prix moyen
+      // reellement paye cote Linky (_psub), que l'infobulle utilise en priorite.
       JsonEuros += sep + "\"" + subKey + "\":{";
       JsonEuros += "\"name\":\"" + String(ConfigGeneral.subMeters[sm].alias) + "\",";
       JsonEuros += "\"coeff\":1,";
-      JsonEuros += "\"price\":" + String(getTarif(256, "energy")) + ",";
+      JsonEuros += "\"price\":" + String(getTarif(getCurrentTariffAttributeId(), "energy"), 6) + ",";
+      JsonEuros += "\"taxe\":" + String(ConfigGeneral.tarifCSPE) + ",";
       JsonEuros += "\"color\":\"" + String(ConfigGeneral.subMeters[sm].color) + "\",";
       JsonEuros += "\"unit\":\"Wh\"}";
       
@@ -7000,7 +7015,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
     JsonEuros += "\"0\":{";
     JsonEuros += "\"name\":\"Gaz\",";
     JsonEuros += "\"coeff\":" + fmtCoeff(ConfigGeneral.coeffGaz) + ",";
-    JsonEuros += "\"price\":" + String(getTarif(0, "gaz")) + ",";
+    JsonEuros += "\"price\":" + String(getTarif(0, "gaz"), 6) + ",";
     JsonEuros += "\"unit\":\"" + String(ConfigGeneral.unitGaz) + "\"}";
     
     ykeys += "'0'";
@@ -7012,7 +7027,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
     JsonEuros += "\"0\":{";
     JsonEuros += "\"name\":\"Eau\",";
     JsonEuros += "\"coeff\":" + fmtCoeff(ConfigGeneral.coeffWater) + ",";
-    JsonEuros += "\"price\":" + String(getTarif(0, "water")) + ",";
+    JsonEuros += "\"price\":" + String(getTarif(0, "water"), 6) + ",";
     JsonEuros += "\"unit\":\"" + String(ConfigGeneral.unitWater) + "\"}";
     
     ykeys += "'0'";
@@ -7024,7 +7039,7 @@ String createEnergyGraph(String IEEE, String Type, String barColor, int budget)
     JsonEuros += "\"1\":{";
     JsonEuros += "\"name\":\"Production\",";
     JsonEuros += "\"coeff\":1,";
-    JsonEuros += "\"price\":" + String(getTarif(1, "production")) + ",";
+    JsonEuros += "\"price\":" + String(getTarif(1, "production"), 6) + ",";
     JsonEuros += "\"unit\":\"Wh\"}";
     
     ykeys += "'1'";
@@ -18715,6 +18730,15 @@ String getTariffColor(int attrId) {
     }
 }
 
+int getCurrentTariffAttributeId();  // SimpleMeter.cpp
+
+// Conso des sous-compteurs pour un point temporel (graphe et repartition)
+struct SubMeterValues {
+  std::map<int, long> byAttr;  // attrId -> valeur
+  std::map<int, long> total;   // subMeterIndex -> total
+};
+SubMeterValues getSubMeterValuesForKey(const String& time, const String& keyStr);
+
 void handleLoadDistribChart(AsyncWebServerRequest *request)
 {
   String type = "";
@@ -18752,32 +18776,57 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
   int arrayLength = sizeof(section) / sizeof(section[0]);
 
   // ============================================
-  // 1. INDEX TARIFAIRES ZLINKY (bruts)
+  // 1. INDEX TARIFAIRES ZLINKY, nets des sous-compteurs
   // ============================================
+  // Tranche par tranche, la conso des sous-compteurs (deja comptee par le Linky, en amont) est
+  // retiree au prorata des index de la tranche -- et non plus de l'index sous lequel le
+  // sous-compteur l'a rangee, qui pouvait etre faux (double comptage pendant les HP).
+  // Le prix moyen du kWh de chaque tranche sert aussi a chiffrer les sous-compteurs.
   std::map<int, long> indexSums;
+  std::map<String, double> slotPricePerWh;   // tranche -> prix moyen (EUR/Wh)
 
   for (auto &kv : pdZLinky->graph) {
     ValueMap &vm = kv.second;
+    String key(kv.first.c_str());
+    SubMeterValues sv = getSubMeterValuesForKey(time, key);
+    long subTotal = 0;
+    for (auto &t : sv.total) subTotal += t.second;
+
+    long linkyTotal = 0;
+    double euros = 0;
+    for (size_t i = 2; i < arrayLength; ++i) {
+      int attrId = section[i].toInt();
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end() && itv->second > 0) {
+        linkyTotal += itv->second;
+        euros += itv->second * getTarif(attrId, "energy") / 1000.0;
+      }
+    }
+    if (linkyTotal > 0) slotPricePerWh[key] = euros / linkyTotal;
+    double keep = (linkyTotal > 0 && subTotal > 0)
+                ? (double)max(0L, linkyTotal - subTotal) / (double)linkyTotal : 1.0;
+
     for (size_t i = 2; i < arrayLength; ++i) {
       int attrId = section[i].toInt();
       auto itv = vm.attributes.find(attrId);
       if (itv != vm.attributes.end()) {
-        indexSums[attrId] += itv->second;
+        long v = itv->second;
+        indexSums[attrId] += (v > 0) ? lround(v * keep) : v;
       }
     }
   }
 
   // ============================================
-  // 2. SOUS-COMPTEURS - Calculer d'abord pour soustraire
+  // 2. SOUS-COMPTEURS
   // ============================================
   struct SubMeterResult {
     String alias;
     String color;
     long totalWh;
     float totalEuros;
-    std::map<int, long> perTariff;  // Répartition par index tarifaire
   };
   std::vector<SubMeterResult> subMeters;
+  double defaultPricePerWh = getTarif(getCurrentTariffAttributeId(), "energy") / 1000.0;
 
   for (int i = 0; i < ConfigGeneral.subMeterCount; i++) {
     if (!ConfigGeneral.subMeters[i].enabled) continue;
@@ -18816,29 +18865,19 @@ void handleLoadDistribChart(AsyncWebServerRequest *request)
 
     for (auto &kv : pdSub->graph) {
       ValueMap &vm = kv.second;
+      long slotWh = 0;
       for (size_t j = 2; j < arrayLength; ++j) {
         int attrId = section[j].toInt();
         auto itv = vm.attributes.find(attrId);
-        if (itv != vm.attributes.end()) {
-          long correctedValue = (long)(itv->second * coef);
-          result.totalWh += correctedValue;
-          result.totalEuros += correctedValue * getTarif(attrId, "energy") / 1000;
-          result.perTariff[attrId] += correctedValue;
-        }
+        if (itv != vm.attributes.end()) slotWh += (long)(itv->second * coef);
       }
+      result.totalWh += slotWh;
+      // Cout au prix moyen de la tranche cote Linky (HC / HP reellement consommes a ce moment-la)
+      auto itp = slotPricePerWh.find(String(kv.first.c_str()));
+      result.totalEuros += slotWh * (itp != slotPricePerWh.end() ? itp->second : defaultPricePerWh);
     }
 
-    if (result.totalWh > 0) {
-      subMeters.push_back(result);
-
-      // *** SOUSTRACTION DES SOUS-COMPTEURS DES INDEX TARIFAIRES ***
-      for (auto &pt : result.perTariff) {
-        if (indexSums.find(pt.first) != indexSums.end()) {
-          indexSums[pt.first] -= pt.second;
-          if (indexSums[pt.first] < 0) indexSums[pt.first] = 0;
-        }
-      }
-    }
+    if (result.totalWh > 0) subMeters.push_back(result);
   }
 
   // ============================================
@@ -19278,10 +19317,6 @@ void handleLoadPowerChart(AsyncWebServerRequest *request)
 
 // Helper pour ajouter les données des sous-compteurs au response stream
 // Structure pour stocker les données des sous-compteurs par attribut
-struct SubMeterValues {
-  std::map<int, long> byAttr;  // attrId -> valeur
-  std::map<int, long> total;   // subMeterIndex -> total
-};
 
 // Calcule les valeurs des sous-compteurs pour un point temporel donné
 SubMeterValues getSubMeterValuesForKey(const String& time, const String& keyStr) {
@@ -19355,21 +19390,45 @@ void writeEnergyDataWithSubMeters(String& out,
   SubMeterValues subValues = getSubMeterValuesForKey(time, keyStr);
 
   // 2. Écrire les données ZLinky (avec soustraction des sous-compteurs)
+  // Les sous-compteurs sont en aval du Linky : leur consommation est DEJA dans ses index. Elle est
+  // retiree de la tranche au prorata des index tarifaires de cette tranche, quel que soit l'index
+  // sous lequel le sous-compteur l'a rangee : le rangement pouvait etre faux (en Standard avant la
+  // v2.26, tout en HC), et la conso des radiateurs etait alors comptee deux fois pendant les HP.
   PsString psKey(keyStr.c_str(), PsramAllocator<char>());
   auto it = pdZLinky->graph.find(psKey);
   if (it != pdZLinky->graph.end()) {
     ValueMap& vm = it->second;
+    long subTotal = 0;
+    for (auto& t : subValues.total) subTotal += t.second;
+    long linkyTotal = 0;
+    for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
+      int attrId = atoi(section[cntsection].c_str());
+      if (attrId == 1) continue;
+      auto itv = vm.attributes.find(attrId);
+      if (itv != vm.attributes.end() && itv->second > 0) linkyTotal += itv->second;
+    }
+    double keep = (linkyTotal > 0 && subTotal > 0)
+                ? (double)max(0L, linkyTotal - subTotal) / (double)linkyTotal : 1.0;
+    // Prix moyen du kWh de la tranche, au prorata des index (HC, HP...) : les sous-compteurs
+    // ont consomme au meme tarif que le Linky a ce moment-la
+    if (linkyTotal > 0 && subTotal > 0) {
+      double euros = 0;
+      for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
+        int attrId = atoi(section[cntsection].c_str());
+        if (attrId == 1) continue;
+        auto itv = vm.attributes.find(attrId);
+        if (itv != vm.attributes.end() && itv->second > 0) euros += itv->second * getTarif(attrId, "energy");
+      }
+      out += ",\"_psub\":";
+      out += String(euros / linkyTotal, 6);
+    }
     for (int cntsection = 0; cntsection < arrayLength; cntsection++) {
       int attrId = atoi(section[cntsection].c_str());
       if (attrId == 1) continue;
       auto itv = vm.attributes.find(attrId);
       if (itv != vm.attributes.end() && itv->second != 0) {
         long value = itv->second;
-        auto itSub = subValues.byAttr.find(attrId);
-        if (itSub != subValues.byAttr.end()) {
-          value -= itSub->second;
-          if (value < 0) value = 0;
-        }
+        if (value > 0) value = lround(value * keep);
         if (value != 0) {
           out += ",\"";
           out += section[cntsection];
@@ -19533,8 +19592,8 @@ String buildEnergyChartJson(PeriodData* pd, const String& time) {
 }
 
 void handleLoadEnergyChart(AsyncWebServerRequest* request) {
-  String IEEE = request->arg(static_cast<size_t>(0));
-  String time = request->arg(static_cast<size_t>(1));
+  String IEEE = apiHasIeee(request) ? apiIeee(request) : request->arg(static_cast<size_t>(0));
+  String time = request->hasArg("time") ? request->arg("time") : request->arg(static_cast<size_t>(1));
 
   DeviceData* dev = nullptr;
   for (auto* d : devices) {
@@ -19697,8 +19756,8 @@ void handleExportPowerChart(AsyncWebServerRequest* request) {
 
 // Export CSV du graphe "Usage d'électricité" (réutilise buildEnergyChartJson)
 void handleExportEnergyChart(AsyncWebServerRequest* request) {
-  String IEEE = request->arg(static_cast<size_t>(0));
-  String time = request->arg(static_cast<size_t>(1));
+  String IEEE = apiHasIeee(request) ? apiIeee(request) : request->arg(static_cast<size_t>(0));
+  String time = request->hasArg("time") ? request->arg("time") : request->arg(static_cast<size_t>(1));
 
   DeviceData* dev = nullptr;
   for (auto* d : devices) {
@@ -19758,7 +19817,7 @@ void handleExportEnergyChart(AsyncWebServerRequest* request) {
   double cspe = atof(ConfigGeneral.tarifCSPE);
   double cta  = atof(ConfigGeneral.tarifCTA);
   double abo  = atof(ConfigGeneral.tarifAbo);
-  double prixSection256 = getTarif(256, "energy");  // tarif des sous-compteurs (comme le tooltip)
+  double prixSubDefaut = getTarif(getCurrentTariffAttributeId(), "energy");  // comme l'infobulle
   double prixProd = getTarif(1, "production");
   double aboFactor;  // proratisation de l'abonnement/CTA selon la période
   if      (time == "hour")  aboFactor = 1.0 / (30.0 * 24.0);
@@ -19793,12 +19852,13 @@ void handleExportEnergyChart(AsyncWebServerRequest* request) {
     // Agrégats du tooltip : coût de consommation décomposé + production + net
     long totalConso = 0, totalProd = 0;
     double consoEnergy = 0, consoTax = 0, prodEnergy = 0;
+    double prixSub = row["_psub"] | prixSubDefaut;   // prix moyen de la tranche cote Linky
     for (size_t c = 0; c < cols.size(); c++) {
       if (!row.containsKey(cols[c].first.c_str())) continue;
       long v = row[cols[c].first.c_str()] | 0L;
       const String& key = cols[c].first;
       if (key.startsWith("sub_")) {
-        if (v > 0) { totalConso += v; consoEnergy += v / 1000.0 * prixSection256; }
+        if (v > 0) { totalConso += v; consoEnergy += v / 1000.0 * prixSub; consoTax += v / 1000.0 * cspe; }
       } else if (key == "1") {
         long a = (v < 0) ? -v : v;
         totalProd += a;
@@ -20670,10 +20730,21 @@ void APIgetSystem(AsyncWebServerRequest *request)
    "       \"enable\" : {{wifienable}},"
    "       \"connected\" : {{wificonnected}},"
    "       \"mode\" : {{wifimode}},"
+   "       \"dhcp\" : {{wifidhcp}},"
    "       \"ip\" : \"{{wifiip}}\","
    "       \"netmask\" : \"{{wifimask}}\","
    "       \"gateway\" : \"{{wifigateway}}\""
-   "     }"
+   "     },"
+   "     \"ethernet\":"
+   "     {"
+   "       \"present\" : {{ethpresent}},"
+   "       \"connected\" : {{ethconnected}},"
+   "       \"dhcp\" : {{ethdhcp}},"
+   "       \"ip\" : \"{{ethip}}\","
+   "       \"netmask\" : \"{{ethmask}}\","
+   "       \"gateway\" : \"{{ethgateway}}\""
+   "     },"
+   "     \"active\" : \"{{netactive}}\""
   "    },"
   "    \"system\" :"
   "    {"
@@ -20704,10 +20775,32 @@ void APIgetSystem(AsyncWebServerRequest *request)
   result.replace("{{wifienable}}",String(ConfigSettings.enableWiFi));
   result.replace("{{wificonnected}}",String(ConfigSettings.connectedWifiSta));
   result.replace("{{wifimode}}",String(ConfigSettings.dhcp));
-  result.replace("{{wifiip}}",ConfigSettings.ipAddressWiFi);
-  result.replace("{{wifimask}}",ConfigSettings.ipMaskWiFi);
-  result.replace("{{wifigateway}}",ConfigSettings.ipGWWiFi);
+  // Adresses reellement utilisees quand le WiFi est connecte (en DHCP, l'IP fixe saisie dans la
+  // configuration n'a aucun sens) ; sinon l'IP fixe configuree, ou rien en DHCP.
+  result.replace("{{wifidhcp}}", ConfigSettings.enableDHCP ? "1" : "0");
+  if (WiFi.isConnected()) {
+    result.replace("{{wifiip}}", WiFi.localIP().toString());
+    result.replace("{{wifimask}}", WiFi.subnetMask().toString());
+    result.replace("{{wifigateway}}", WiFi.gatewayIP().toString());
+  } else if (!ConfigSettings.enableDHCP) {
+    result.replace("{{wifiip}}",ConfigSettings.ipAddressWiFi);
+    result.replace("{{wifimask}}",ConfigSettings.ipMaskWiFi);
+    result.replace("{{wifigateway}}",ConfigSettings.ipGWWiFi);
+  } else {
+    result.replace("{{wifiip}}", "");
+    result.replace("{{wifimask}}", "");
+    result.replace("{{wifigateway}}", "");
+  }
   
+  // Ethernet (v2.26) et interface utilisee : cles ajoutees, les champs wifi ne changent pas
+  result.replace("{{ethpresent}}", ethernetPresent() ? "1" : "0");
+  result.replace("{{ethconnected}}", ethernetHasIP() ? "1" : "0");
+  result.replace("{{ethdhcp}}", ConfigEthernet.dhcp ? "1" : "0");
+  result.replace("{{ethip}}", ethernetLocalIP().toString());
+  result.replace("{{ethmask}}", ethernetSubnetMask().toString());
+  result.replace("{{ethgateway}}", ethernetGatewayIP().toString());
+  result.replace("{{netactive}}", netInterfaceName());
+
   result.replace("{{mqttenable}}",String(ConfigSettings.enableMqtt));
   result.replace("{{mqttconected}}",String(mqttClient.connected()));
   result.replace("{{mqtturl}}",ConfigGeneral.servMQTT);
@@ -20797,9 +20890,9 @@ void APIgetDevice(AsyncWebServerRequest *request)
   String IEEE;
   int args = request->args();
   String result;
-  if (args > 0 && (request->hasArg("IEEE") || request->hasArg("id")))
+  if (args > 0 && apiHasIeee(request))
   {
-    IEEE = request->hasArg("IEEE") ? request->arg("IEEE") : request->arg("id");
+    IEEE = apiIeee(request);
   
     result = "{";
     String inifile = IEEE+".json";
@@ -20924,9 +21017,9 @@ void APIgetEnergyDevice(AsyncWebServerRequest *request)
   String IEEE;
   int args = request->args();
   String result;
-  if (args > 0 && (request->hasArg("IEEE") || request->hasArg("id")))
+  if (args > 0 && apiHasIeee(request))
   {
-    IEEE = request->hasArg("IEEE") ? request->arg("IEEE") : request->arg("id");
+    IEEE = apiIeee(request);
     result = "{";
     String inifile = "nrg_"+IEEE+".json";
     File file = LittleFS.open("/db/" + inifile, FILE_READ);
@@ -20959,9 +21052,9 @@ void APIgetPowerDevice(AsyncWebServerRequest *request)
   String IEEE;
   int args = request->args();
   String result;
-  if (args > 0 && (request->hasArg("IEEE") || request->hasArg("id")))
+  if (args > 0 && apiHasIeee(request))
   {
-    IEEE = request->hasArg("IEEE") ? request->arg("IEEE") : request->arg("id");
+    IEEE = apiIeee(request);
 
     result = "{";
     String inifile = "pwr_"+IEEE+".json";
@@ -22894,7 +22987,7 @@ void initWebServer()
   });*/
 
   // ==================== Tunnel API ====================
-  serverWeb.on("/api/tunnelStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
+  serverWeb.on(AsyncURIMatcher::exact("/api/tunnel/status"), HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
     bool connected = (tunnel != nullptr && tunnel->isConnected());
     String json = "{\"enabled\":";
@@ -22913,7 +23006,7 @@ void initWebServer()
     request->send(200, "application/json", json);
   });
 
-  serverWeb.on("/api/tunnelActivate", HTTP_GET, [](AsyncWebServerRequest *request) {
+  serverWeb.on(AsyncURIMatcher::exact("/api/tunnel/activate"), HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
 
     if (!tunnelSecurityOk()) {
@@ -22939,7 +23032,7 @@ void initWebServer()
     request->send(200, "application/json", "{\"status\":\"pending\"}");
   });
 
-  serverWeb.on("/api/tunnelActivateStatus", HTTP_GET, [](AsyncWebServerRequest *request) {
+  serverWeb.on(AsyncURIMatcher::exact("/api/tunnel/activate/status"), HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
     if (tunnelActivation.done) {
       String json = "{\"status\":\"done\",\"success\":";
@@ -22960,7 +23053,7 @@ void initWebServer()
   });
 
   // GET /api/tunnel/credentials — retourne clientId + token en clair
-  serverWeb.on("/api/tunnel/credentials", HTTP_GET, [](AsyncWebServerRequest *request) {
+  serverWeb.on(AsyncURIMatcher::exact("/api/tunnel/credentials"), HTTP_GET, [](AsyncWebServerRequest *request) {
     if (!checkAuth(request)) return;
     SpiRamJsonDocument doc(256);
     doc["tunnelClientId"] = ConfigGeneral.tunnelClientId;
@@ -22971,7 +23064,7 @@ void initWebServer()
   });
 
   // POST /api/tunnel/credentials — met à jour clientId et/ou token
-  serverWeb.on("/api/tunnel/credentials", HTTP_POST,
+  serverWeb.on(AsyncURIMatcher::exact("/api/tunnel/credentials"), HTTP_POST,
     [](AsyncWebServerRequest *request){},
     NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
@@ -23029,44 +23122,44 @@ void initWebServer()
     }
   );
 
-  serverWeb.on("/api/tariff", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/energy/tariff"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPITariff(request);
   });
 
   // Kiosque LiXee-Assist (v2.26)
-  serverWeb.on("/api/energy/config", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/energy/config"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPIEnergyConfig(request);
   });
-  serverWeb.on("/api/power/peaks", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/power/peaks"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPIPowerPeaks(request);
   });
-  serverWeb.on("/api/power/floor", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/power/floor"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPIPowerFloor(request);
   });
-  serverWeb.on("/api/power/summary", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/power/summary"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPIPowerSummary(request);
   });
-  serverWeb.on("/api/alerts", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/alerts"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPIAlerts(request);
   });
-  serverWeb.on("/api/delestage/restore", HTTP_POST, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/delestage/restore"), HTTP_POST, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPIDelestageRestore(request);
   });
-  serverWeb.on("/api/delestage", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/delestage"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleAPIDelestage(request);
@@ -23251,7 +23344,7 @@ void initWebServer()
   );
 
   // Dans initWebServer(), ajouter :
-  serverWeb.on("/getSubMeters", HTTP_GET, [](AsyncWebServerRequest *request) {
+  serverWeb.on(AsyncURIMatcher::exact("/api/energy/submeters"), HTTP_GET, [](AsyncWebServerRequest *request) {
       if (!checkAuth(request)) return;
       APIgetSubMeters(request);
   });
@@ -23576,7 +23669,7 @@ void initWebServer()
   });
 
   // API: Obtenir les notifications (avec pagination)
-  serverWeb.on("/api/notifications", HTTP_GET, [](AsyncWebServerRequest *request){
+  serverWeb.on(AsyncURIMatcher::exact("/api/notifications"), HTTP_GET, [](AsyncWebServerRequest *request){
     if (!checkAuth(request)) return;
     int page = request->hasParam("page") ? request->getParam("page")->value().toInt() : 1;
     int limit = request->hasParam("limit") ? request->getParam("limit")->value().toInt() : 10;
@@ -23593,7 +23686,7 @@ void initWebServer()
   });
   
   // API: Ajouter une notification
-  serverWeb.on("/api/notifications", HTTP_POST, [](AsyncWebServerRequest *request){
+  serverWeb.on(AsyncURIMatcher::exact("/api/notifications"), HTTP_POST, [](AsyncWebServerRequest *request){
     if (!checkAuth(request)) return;
   }, NULL,
     [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
@@ -23682,14 +23775,14 @@ void initWebServer()
   });
   
   // API: Statistiques
-  serverWeb.on("/api/stats", HTTP_GET, [](AsyncWebServerRequest *request){
+  serverWeb.on(AsyncURIMatcher::exact("/api/notifications/stats"), HTTP_GET, [](AsyncWebServerRequest *request){
     if (!checkAuth(request)) return;
     String json = notificationManager.getStatsJson();
     request->send(200, "application/json", json);
   });
   
   // API: Debug - Lister les notifications avec leurs index
-  serverWeb.on("/api/debug", HTTP_GET, [](AsyncWebServerRequest *request){
+  serverWeb.on(AsyncURIMatcher::exact("/api/notifications/debug"), HTTP_GET, [](AsyncWebServerRequest *request){
     if (!checkAuth(request)) return;
     SpiRamJsonDocument doc(2048);
     JsonArray array = doc.createNestedArray("notifications");
@@ -24161,7 +24254,7 @@ void initWebServer()
     if (!checkAuth(request)) return;
     handleLoadPowerChart(request); 
   });
-  serverWeb.on("/loadEnergyChart", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/energy/chart"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleLoadEnergyChart(request);
@@ -24172,7 +24265,7 @@ void initWebServer()
     if (!checkAuth(request)) return;
     handleExportPowerChart(request);
   });
-  serverWeb.on("/exportEnergyChart", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/energy/chart/export"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     handleExportEnergyChart(request);
@@ -24274,13 +24367,13 @@ void initWebServer()
   });
 
 
-  serverWeb.on("/getSystem", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/system"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     APIgetSystem(request); 
     
   });
-  serverWeb.on("/api/wifiSignal", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/network/wifi-signal"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     char buf[96];
@@ -24321,39 +24414,39 @@ void initWebServer()
     
   });
 
-  serverWeb.on("/getDevices", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/devices"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     APIgetDevices(request); 
     
   });
-  serverWeb.on("/getDevice", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/device"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     APIgetDevice(request); 
     
   });
-  serverWeb.on("/getEnergyDevice", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/device/energy"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     APIgetEnergyDevice(request); 
     
   });
-  serverWeb.on("/getPowerDevice", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/device/power"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     APIgetPowerDevice(request); 
     
   });
   
-  serverWeb.on("/getLinky", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/energy/linky"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     APIgetLinky(request); 
     
   });
 
-  serverWeb.on("/getTemplates", HTTP_GET, [](AsyncWebServerRequest *request)
+  serverWeb.on(AsyncURIMatcher::exact("/api/templates"), HTTP_GET, [](AsyncWebServerRequest *request)
   {
     if (!checkAuth(request)) return;
     APIgetTemplates(request); 
@@ -24503,6 +24596,28 @@ void initWebServer()
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
 
+  // ===== Compatibilite de l'API (v2.26) =====
+  // Les routes publiques suivent desormais /api/<groupe>/<ressource>. Les anciens noms restent
+  // servis par reecriture d'URL : meme gestionnaire, memes parametres, meme reponse.
+  // La reecriture compare l'URL exacte (sans les parametres) et ne touche a rien d'autre.
+  serverWeb.rewrite("/getSystem", "/api/system");
+  serverWeb.rewrite("/api/wifiSignal", "/api/network/wifi-signal");
+  serverWeb.rewrite("/getDevices", "/api/devices");
+  serverWeb.rewrite("/getDevice", "/api/device");
+  serverWeb.rewrite("/getEnergyDevice", "/api/device/energy");
+  serverWeb.rewrite("/getPowerDevice", "/api/device/power");
+  serverWeb.rewrite("/getTemplates", "/api/templates");
+  serverWeb.rewrite("/getLinky", "/api/energy/linky");
+  serverWeb.rewrite("/api/tariff", "/api/energy/tariff");
+  serverWeb.rewrite("/getSubMeters", "/api/energy/submeters");
+  serverWeb.rewrite("/loadEnergyChart", "/api/energy/chart");
+  serverWeb.rewrite("/exportEnergyChart", "/api/energy/chart/export");
+  serverWeb.rewrite("/api/stats", "/api/notifications/stats");
+  serverWeb.rewrite("/api/debug", "/api/notifications/debug");
+  serverWeb.rewrite("/api/tunnelStatus", "/api/tunnel/status");
+  serverWeb.rewrite("/api/tunnelActivate", "/api/tunnel/activate");
+  serverWeb.rewrite("/api/tunnelActivateStatus", "/api/tunnel/activate/status");
+
   serverWeb.begin();
 
   /*templateCache.indexTemplates();

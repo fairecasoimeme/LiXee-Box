@@ -416,8 +416,13 @@ bool SmartWiFiManager::connect(uint32_t timeoutMs) {
     }
     Serial.printf("SSID : %s\n",ConfigSettings.ssid);
     //Serial.printf("pass : %s\n",ConfigSettings.password);
-    Serial.printf("ip : %s\n",ConfigSettings.ipAddressWiFi);
-    Serial.printf("gw : %s\n",ConfigSettings.ipGWWiFi);
+    // L'IP fixe n'est appliquee (configureStaticIP) qu'en mode statique : en DHCP, afficher
+    // l'IP saisie dans la configuration laissait croire qu'elle etait utilisee.
+    if (ConfigSettings.enableDHCP) {
+        Serial.println("mode : DHCP");
+    } else {
+        Serial.printf("mode : IP fixe %s, passerelle %s\n", ConfigSettings.ipAddressWiFi, ConfigSettings.ipGWWiFi);
+    }
     // Démarrer connexion
     WiFi.begin(ConfigSettings.ssid, ConfigSettings.password);
     

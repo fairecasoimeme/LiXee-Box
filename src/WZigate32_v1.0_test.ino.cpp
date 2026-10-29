@@ -2521,6 +2521,11 @@ void setup(void)
         Serial.println("📡 Event: " + event);
     });
 
+    // Configuration WiFi lue dans tous les cas. Elle ne l'etait qu'au demarrage du WiFi : une box
+    // demarree en Ethernet gardait une config WiFi vide en memoire (DHCP a "non", SSID et mot de
+    // passe vides), que la page Config LAN affichait en IP fixe puis reenregistrait telle quelle.
+    smartWiFi.loadConfig();
+
     // === ETHERNET (W5500) ===
     // Prioritaire : cable branche et adresse obtenue, le WiFi n'est pas demarre (heap economise).
     // Sans W5500 sur la carte, ethernetBegin() echoue proprement et rien ne change.

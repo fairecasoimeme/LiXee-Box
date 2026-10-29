@@ -129,6 +129,32 @@ static void onEthEvent(void*, esp_event_base_t base, int32_t id, void* data) {
 
 // ---------------------------------------------------------------- demarrage
 
+// Detection du W5500. Le pilote d'ESP-IDF 4.4 ne la fait PAS : il lit le registre de version
+// et se contente de l'afficher, si bien que son installation reussit aussi sur une carte sans
+// W5500 ("W5500 detecte" a tort). VERSIONR (0x0039, bloc commun) vaut toujours 0x04 sur un
+// W5500 ; une ligne MISO en l'air donne 0x00 ou 0xFF.
+static bool w5500Probe() {
+  gpio_num_t rst = (gpio_num_t)ETH_W5500_RST;
+  gpio_reset_pin(rst);
+  gpio_set_direction(rst, GPIO_MODE_OUTPUT);
+  gpio_set_level(rst, 0);
+  delay(2);                       // RSTn bas au moins 500 us
+  gpio_set_level(rst, 1);
+  delay(50);                      // verrouillage de la PLL interne
+  for (int i = 0; i < 3; i++) {
+    spi_transaction_t t = {};
+    t.cmd = 0x0039;               // phase d'adresse : VERSIONR
+    t.addr = 0x00;                // phase de controle : bloc commun, lecture, longueur variable
+    t.length = 8;
+    t.rxlength = 8;
+    t.flags = SPI_TRANS_USE_RXDATA;
+    if (spi_device_polling_transmit(s_spi, &t) == ESP_OK && t.rx_data[0] == 0x04) return true;
+    delay(5);
+  }
+  gpio_reset_pin(rst);            // carte sans W5500 : on ne laisse pas la broche pilotee
+  return false;
+}
+
 static void releaseSpi() {
   if (s_spi) { spi_bus_remove_device(s_spi); s_spi = nullptr; }
   spi_bus_free(SPI3_HOST);
@@ -161,6 +187,12 @@ bool ethernetBegin(const char* hostname) {
   dev.queue_size = 20;
   if (spi_bus_add_device(SPI3_HOST, &dev, &s_spi) != ESP_OK) {
     Serial.println("[ETH] ajout du W5500 sur le bus SPI impossible");
+    releaseSpi();
+    return false;
+  }
+
+  if (!w5500Probe()) {
+    Serial.println("[ETH] aucun W5500 sur cette carte : fonctionnement en WiFi");
     releaseSpi();
     return false;
   }

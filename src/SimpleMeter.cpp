@@ -163,8 +163,22 @@ int getCurrentTariffAttributeId() {
         return 256;  // Par défaut, attribut BASE/HC
     }
     
-    // Récupérer la période tarifaire (cluster FF66, attribut 16 = 0x0010)
-    return tariffAttrFromPtec(zlinkyDevice->getValue("FF66", "16"));
+    // Standard : NTARF (FF66/513) donne directement le numero de l'index en cours. Le libelle
+    // (FF66/16, LTARF) depend du fournisseur ("HEURE PLEINE", "HP", "HEURES PLEINES"...) et
+    // n'etait pas toujours reconnu : tout retombait alors sur l'index 1 (HC), et la conso des
+    // sous-compteurs pendant les heures pleines etait rangee en heures creuses.
+    int mode = ConfigGeneral.LinkyMode;
+    if (mode == 1 || mode == 3 || mode == 5 || mode == 7) {
+        String n = zlinkyDevice->getValue("FF66", "513");
+        long ntarf = n.length() ? strtol(n.c_str(), nullptr, 16) : 0;
+        if (ntarf >= 1 && ntarf <= 9) return 256 + 2 * (int)(ntarf - 1);
+    }
+
+    // Récupérer la période tarifaire (cluster FF66, attribut 16 = 0x0010), à défaut LTARF (512)
+    String ptec = zlinkyDevice->getValue("FF66", "16");
+    ptec.trim();
+    if (ptec.length() == 0) ptec = zlinkyDevice->getValue("FF66", "512");
+    return tariffAttrFromPtec(ptec);
 }
 
 int tariffAttrFromPtec(String ptec) {

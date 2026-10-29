@@ -834,6 +834,7 @@ function loadEnergyChart(IEEE, time, type) {
             
             // LE SERVEUR RETOURNE DIRECTEMENT LE TABLEAU
             var datas = JSON.parse(xhr.responseText);
+            window[type + 'Points'] = datas;   // points bruts (prix par tranche _psub)
            
             var tarifInfo = window[type + 'TarifInfo'] || {};
             var keys = window[type + 'Keys'] || [];
@@ -1083,6 +1084,18 @@ function calculateDetailedCost(kwh, info, period, isProduction) {
     return result;
 }
 
+// Prix du kWh d'une serie a un point donne. Les sous-compteurs (sub_N) consomment au tarif en
+// cours cote Linky : le serveur envoie pour chaque tranche ce prix moyen (_psub), qui remplace
+// le prix fixe de la serie (auparavant toujours le tarif HC).
+function seriesPrice(type, keyStr, info, dataIndex) {
+    if (keyStr && keyStr.indexOf('sub_') === 0) {
+        var pts = window[type + 'Points'];
+        var p = pts && pts[dataIndex];
+        if (p && p._psub > 0) return parseFloat(p._psub);
+    }
+    return (info.price && info.price > 0) ? parseFloat(info.price) : 0;
+}
+
 // Fonction pour le tooltip personnalisé
 function getEnergyTooltipLabel(context, type) {
     var tarifInfo = window[type + 'TarifInfo'] || {};
@@ -1118,8 +1131,9 @@ function getEnergyTooltipLabel(context, type) {
     var label = datasetLabel + ': ' + absValue.toLocaleString('fr-FR') + ' ' + unit;
     
     // Calculer SEULEMENT énergie (+ taxes pour consommation)
-    if (info.price && info.price > 0) {
-        var cost = valueInKwh * parseFloat(info.price);
+    var price = seriesPrice(type, keyStr, info, context.dataIndex);
+    if (price > 0) {
+        var cost = valueInKwh * price;
         
         // Ajouter les taxes uniquement pour la consommation
         if (!isProduction && info.taxe && info.taxe > 0) {
@@ -1194,8 +1208,9 @@ function getEnergyTooltipFooter(tooltipItems, type) {
             totalConsommation += absValue;
             
             // Énergie
-            if (info.price && info.price > 0) {
-                consoEnergy += valueInKwh * parseFloat(info.price);
+            var price = seriesPrice(type, keyStr, info, item.dataIndex);
+            if (price > 0) {
+                consoEnergy += valueInKwh * price;
             }
             
             // Taxes (par kWh, donc additionnées)
