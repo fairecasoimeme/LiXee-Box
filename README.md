@@ -1,0 +1,1794 @@
+# LiXee-Box
+
+## Description
+
+**LiXee-Box** est une passerelle multi-protocole pour appareils **Zigbee** et **LoRa 2.4 GHz**, conçue pour être un hub central de **gestion de l'énergie** et de domotique. Cette application transforme votre LiXee-ZiWifi32 en une passerelle complète capable de gérer vos appareils Zigbee, votre Linky, compteur de production, gaz, eau, et d'intégrer le tout dans votre système domotique.
+
+**Pour avoir plus d'informations (moins techniques) vous pouvez parcourir (https://lixee-box.fr)**
+
+## 🆕 Version 3 : la LiXee-Box parle Matter
+
+La **v3.0** est une réécriture complète du firmware sous **ESP-IDF 5.5** (le framework officiel d'Espressif), à la place d'Arduino. Elle garde toutes les fonctions de la LiXee-Box et ajoute un **pont Matter** : vos appareils **Zigbee**, **LoRa**, vos **thermostats virtuels** et vos **groupes d'actions** apparaissent dans **Home Assistant**, **Apple Maison** et les autres contrôleurs Matter, sans MQTT.
+
+- Une LiXee-Box en v2.x passe en v3 par une **mise à jour habituelle** (manuelle ou automatique) : appareils, configuration et historiques sont repris → [Migrer vers la v3](#-migrer-une-lixee-box-vers-la-v3)
+- Tout sur le pont Matter → [Pont Matter](#-pont-matter-à-partir-de-la-v30)
+- Les changements depuis la v2.27 → [changelog.md](changelog.md)
+
+> La v3 est en **phase de test**. Le firmware Arduino (v2.x) reste disponible sur la branche [`master`](https://github.com/fairecasoimeme/LiXee-Box/tree/master) et les branches `lixee-box_v2.xx`.
+
+## Matériel Compatible
+
+Cette application fonctionne avec :
+
+- **[LiXee-ZiWifi32 Lite](https://lixee.fr/produits/41-lixee-ziwifi32-3770014375162.html)** (WiFi uniquement)
+  - Basé sur ESP32-S3-WROOM-N16R8 (PSRAM : 8MB Flash : 16MB)
+  - Équipé d'un module JN5189 exécutant le [firmware ZiGate v2](https://github.com/fairecasoimeme/ZiGatev2)
+- **[LiXee-ZiWifi32 Lite Duo](https://lixee.fr/produits/49-lixee-ziwifi32-lite-duo-3770014375216.html)**, la LiXee-Box équipée du module LoRa 2.4 GHz (à partir de la v2.22)
+  - Même base ESP32-S3, avec en plus un module radio **SX1281** pour recevoir les objets LoRa LiXee (ex. **ZLinky LoRa**)
+  - Les modules présents (Zigbee et/ou LoRa) sont **détectés automatiquement** et le menu s'adapte
+  - Proposée avec ou sans Zigbee, antenne externe incluse
+
+La LiXee-Box est aussi vendue en **pack prêt à l'emploi**, avec le module pour le compteur Linky ([tous les packs](https://lixee.fr/19-lixee-box)) :
+
+| Pack | Contenu | Usage |
+|------|---------|-------|
+| [Pack LiXee-Box](https://lixee.fr/produits/44-pack-lixee-box-3770014375193.html) | LiXee-ZiWifi32 Lite + ZLinky_TIC v2 | Compteur proche de la box (Zigbee) |
+| [Pack LiXee-Box LoRa](https://lixee.fr/produits/52-pack-lixee-box-lora.html) | LiXee-ZiWifi32 Lite Duo sans Zigbee + ZLinky_LoRa | Compteur éloigné, sans pilotage d'objets Zigbee |
+| [Pack LiXee-Box Zigbee + LoRa](https://lixee.fr/produits/53-pack-lixee-box-zigbee-lora.html) | LiXee-ZiWifi32 Lite Duo Zigbee + LoRa + ZLinky_LoRa | Compteur éloigné et objets Zigbee |
+
+> **Note** : Vous pouvez également utiliser ce code avec d'autres cartes ESP32S3, selon les connexions de broches de votre carte.
+
+<table><tr><td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_face.png" width="480"></td>
+<td><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee_ZiWiFi32_pile.png" width="480">  </td></tr></table>
+      
+## Schéma de fonctionnement
+
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee-Box_Schema.png" width="1024">  
+
+## Installation
+
+[![Installer sa LiXee-Box en 1 minute : ZLinky, Bluetooth et WiFi](https://img.youtube.com/vi/1Wt_6RhI7-U/0.jpg)](https://youtu.be/1Wt_6RhI7-U)
+
+Les autres tutoriels vidéo (tableau de bord, tarifs, Home Assistant, accès distant, widgets, sous-compteurs, NSPanel Pro…) sont sur la [chaîne YouTube LiXee](https://www.youtube.com/@LiXee-SAS), regroupés dans [cette playlist](https://www.youtube.com/playlist?list=PLcgJfzJQtf64).
+
+## Cas d'Usage Typiques
+
+- **Relais longue distance** : Linky (ZLinky) ↔ Zigbee ↔ LiXee-Box ↔ WiFi ↔ MQTT ↔ Home-Assistant/Jeedom/Domoticz
+- **Accès distant** : Accédez à votre LiXee-Box depuis Internet via un tunnel sécurisé, sans ouverture de ports
+- **Passerelle cloud** : Relayer les données des appareils Zigbee vers des services web via API
+- **Gestion énergétique avancée** : Surveillance, délestage de charge, routage énergétique
+
+### Pour aller plus loin
+-  [🏠 LiXee-Box : Mesurer, analyser, économiser … pour une bonne gestion énergétique](https://faire-ca-soi-meme.fr/domotique/2025/08/18/lixee-box-mesurer-analyser-economiser-pour-une-bonne-gestion-energetique/)
+-  [⚡️ Optimiser la recharge de son véhicule électrique avec la LiXee-Box](https://faire-ca-soi-meme.fr/domotique/2025/11/13/optimiser-la-recharge-de-son-vehicule-electrique-avec-la-lixee-box/)
+-  [📡 Augmenter la portée du ZLinky_TIC v2](https://faire-ca-soi-meme.fr/domotique/2025/03/29/augmenter-la-portee-du-zlinky_tic-v2/)
+-  [📡 Compteur Linky éloigné : répéteur Zigbee, antenne externe ou LoRa](https://lixee-box.fr/guides/compteur-linky-eloigne/)
+-  [📚 Tous les guides LiXee-Box](https://lixee-box.fr/guides/)
+
+## ✨ Fonctionnalités Principales
+La fonctionnalité principale est de relayer les données des appareils Zigbee vers un site web ou un service MQTT
+
+L'appareil peut être configuré via un site web local
+
+### 🔧 Gestion des Appareils Zigbee
+- Création et gestion d'objets Zigbee
+- Modèles personnalisables pour différents types d'appareils
+- Gestion des états et actions
+- **Groupes d'actions** : un bouton pour déclencher plusieurs actions sur des appareils différents (à partir de la v2.23)
+- **Volets roulants** : position 0–100 % par curseur, avec retour d'état en temps réel (à partir de la v2.23)
+- **État radio** : icône signalant un appareil injoignable (à partir de la v2.23)
+- Historique des données pour les appareils de puissance et d'énergie
+- Mises à jour OTA (Over-The-Air) automatiques et manuelles
+
+### 📡 Objets LoRa 2.4 GHz (à partir de la v2.22)
+- Réception d'objets **LoRa 2.4 GHz** en plus du Zigbee, le premier étant le **ZLinky LoRa**
+- Un objet LoRa est traité comme un appareil Zigbee : pages Énergie, historiques, export CSV, MQTT et règles fonctionnent à l'identique
+- Appairage chiffré **AES-128**, jusqu'à 4 émetteurs
+- Page **Réseau → LoRa** avec la qualité de réception (**RSSI / SNR / PDR**)
+
+### 🔗 Pont Matter (à partir de la v3.0)
+- La LiXee-Box devient un **pont Matter** (« bridge ») : jusqu'à **32 appareils** publiés
+- Appareils **Zigbee**, **LoRa** (ZLinky LoRa), **thermostats virtuels** et **groupes d'actions**
+- Compatible **Home Assistant**, **Apple Maison** et les contrôleurs Matter qui acceptent les appareils non certifiés
+- Code d'appairage **propre à chaque box**, choix des appareils publiés appareil par appareil
+
+### 📊 Surveillance et Tableau de Bord
+- Tableau de bord énergétique avec jauges et graphiques
+- Surveillance de la consommation en temps réel
+- Graphiques de tendance et historiques
+- Données Linky intégrées
+
+### 🌐 Connectivité
+- **Ethernet** (W5500) prioritaire, **WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté, et relancé si le câble reste débranché 30 s (à partir de la v3.0)
+- **Matter** : voir [Pont Matter](#-pont-matter-à-partir-de-la-v30) (à partir de la v3.0)
+- **MQTT** : Serveur/port/utilisateur/mot de passe personnalisables
+- **MQTT Discovery** compatible avec Home Assistant
+- **WebPush API** : URL/utilisateur/mot de passe
+- **Tunnel d'accès distant** : Accès sécurisé à la LiXee-Box depuis Internet sans ouverture de ports (reverse proxy WebSocket)
+
+### ⚡ Gestion de l'Énergie
+- Règles automatisées pour le délestage de charge et le routage énergétique
+- Seuils configurables avec actions automatiques
+- Gestion de la production et distribution d'énergie
+- Gestion tarifaire pour l'énergie, la production, le gaz et l'eau
+
+### 🌡️ Thermostat virtuel
+- Régulation multi-zone : capteur de température et actionneur **dissociés** (la box joue le thermostat)
+- Pilotage de prises on/off, **climatiseurs réversibles** (HEAT/COOL/OFF) et radiateurs **fil pilote** — plusieurs prises par zone
+- Régulation **TPI** (modulation par le temps) ou **hystérésis** selon l'actionneur
+- Maîtrise de l'énergie : **présence**, **ouverture** de fenêtre, **plages horaires**, **tarif Linky**
+- Hors-gel, forçage manuel, cadran temps réel — guide détaillé : [THERMOSTATS.md](THERMOSTATS.md)
+
+### 🔒 Sécurité
+- Authentification par sessions (token 32 caractères, durée 24h, max 4 sessions simultanées)
+- Page de connexion dédiée avec redirection automatique, et retour sur la page demandée après connexion
+- Compatibilité Basic Auth pour les clients API
+- Tunnel d'accès distant autorisé uniquement si l'accès sécurisé est activé **avec un identifiant et un mot de passe** (à partir de la v2.23)
+- Masquage des mots de passe et tokens dans l'interface
+- Protection contre le path traversal
+
+### 🔄 Mises à Jour et Maintenance
+
+- Mise à jour **automatique** depuis les releases GitHub de la LiXee-Box (source fixe, non modifiable), sans le mode développeur (à partir de la v3.0)
+- Mise à jour **manuelle** par fichier `update.tar` (firmware + pages web)
+- Contrôle de l'image avant installation : un firmware qui n'est pas celui de la LiXee-Box v3 est refusé (à partir de la v3.0)
+- Sauvegarde/restauration de configuration
+- Mode développeur pour le débogage
+
+## 🚀 Installation et Configuration
+
+### Configuration Initiale
+
+#### À partir de la v2.2a
+
+avec **LiXee-Assist** https://github.com/fairecasoimeme/LiXee-Assist  
+Veuillez télécharger l'application pour procéder 
+<table><tr><td><a target="_blank" href="https://play.google.com/store/apps/details?id=com.lixee.assist" style="display: inline-block;">
+  <img width="150px" src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
+       alt="Get it on Google Play" 
+      />
+</a></td><td>
+    <a target="_blank" href="https://apps.apple.com/us/app/lixee-assist/id6747671219?itscg=30200&itsct=apps_box_badge&mttnsubad=6747671219" style="display: inline-block;">
+    <img src="https://toolbox.marketingtools.apple.com/api/v2/badges/download-on-the-app-store/black/fr-fr?releaseDate=1751500800" alt="Download on the App Store" style="width: 150px; vertical-align: middle; object-fit: contain;" />
+    </a></td></tr></table>
+
+Scannez simplement l'appareil (avec BLE) et complétez l'appairage avec vos identifiants WiFi locaux
+
+#### **⚠️(OBSOLETE)** Avant la v2.2a 
+Avec un navigateur web
+1. **Alimentation** : Branchez l'appareil sur une alimentation USB
+2. **WiFi** : Scannez les réseaux WiFi disponibles avec votre mobile/ordinateur
+3. **Connexion** : Connectez-vous au SSID `LIXEEGW-XXXX` (XXXX = partie de l'adresse MAC)
+4. **Authentification** : Mot de passe par défaut `adminXXXX` (XXXX = suffixe du SSID)
+5. **Configuration** : Ouvrez `http://lixee-gw` dans votre navigateur
+6. **WiFi Principal** : Configurez votre réseau WiFi principal
+7. **Redémarrage** : L'appareil redémarre et se connecte à votre réseau
+
+## Remise à zéro (à partir de v2.13)
+
+Pour repasser la LiXee-Box en mode bluetooth pour association avec **LiXee-Assist** :
+
+1. Brancher la **LiXee-Box**
+2. Attendre 3 secondes
+3. Débrancher **la LiXee-Box**
+
+Répéter l'opération 3 fois et la LiXee-Box sera réinitialisée
+
+> **Note (v2.19+)** : La remise à zéro désactive également la sécurité HTTP, ce qui permet de récupérer l'accès à l'interface si le mot de passe est oublié.
+
+> **Note (v3.0+)** : elle remet aussi l'**Ethernet** en automatique (DHCP), utile après une IP fixe erronée. Les appareils, la configuration et l'appairage Matter sont conservés.
+
+## 🔄 Migrer une LiXee-Box vers la v3
+
+Une LiXee-Box en **v2.x** (Arduino) passe en v3 **sans ordinateur**, par sa page de mise à jour.
+
+### Avant de commencer
+Faites une **sauvegarde** : **A propos → Sauvegarde**. Elle sert si vous voulez un jour revenir en v2.x.
+
+### Mise à jour
+- **Manuelle** : téléchargez le fichier `update.tar` de la [release v3](https://github.com/fairecasoimeme/LiXee-Box/releases), puis **A propos → Mise à jour** et envoyez-le
+- **Automatique** : la box propose la v3 dès qu'elle est publiée comme dernière version
+
+La box redémarre sur la v3. Le premier démarrage dure un peu plus longtemps : il convertit les données. Ne la débranchez pas pendant ce temps.
+
+### Ce qui est repris
+- **Réseau** : WiFi et Ethernet
+- **Appareils Zigbee** (la ZiGate garde son réseau : rien à réappairer), leurs noms, templates et états
+- **Appareils LoRa** appairés
+- **Configuration** : énergie, tarifs, sous-compteurs, MQTT, WebPush, tunnel, délestage, règles, groupes d'actions, thermostats virtuels, notifications, sécurité
+- **Historiques** d'énergie et de puissance
+- Les adresses IEEE des fichiers de configuration sont remises en **majuscules** (forme utilisée par la v3), sans action de votre part
+
+### Ce qui change
+- La page **Passerelle → Matter** apparaît (Matter est désactivé par défaut)
+- La **source des mises à jour automatiques** n'est plus modifiable : c'est toujours la release officielle de la LiXee-Box
+- Les **notifications par e-mail**, le **client UDP** et l'**émulation Shelly** ne sont pas repris en v3
+- Une mise à jour vers un firmware **v2.x** (Arduino) est **refusée** par la v3
+
+### Revenir en v2.x
+Uniquement **par ordinateur** : flashez la v2.x complète (voir la [procédure de la v2.x](https://github.com/fairecasoimeme/LiXee-Box/tree/master#avec-un-ordinateur)), puis restaurez la sauvegarde faite avant la migration.
+
+## Mise à Jour du Firmware
+
+### A partir de l'interface Web
+
+Cliquer sur "A propos" puis "Mise à jour"
+
+![Mise à Jour du Firmware](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Update.png)
+
+L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour avec les dernières fonctionnalités.
+
+⚠️ **Si la mise à jour ne fonctionne pas, veuillez passer avec la méthode suivante (avec un ordinateur)**
+
+### Avec un ordinateur
+
+> ⚠️ **Le flash par ordinateur efface la configuration** (appareils, réglages, historiques) : faites une sauvegarde avant, et préférez la mise à jour par l'interface web pour une box déjà installée.
+
+1. Tout d'abord il faut sortir la carte électronique du boitier. Dévisser les 2 vis.
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/devisser_boitier.jpg" width="480"/>
+2. Brancher la carte sur le port USB d'un ordinateur en appuyant sur le bouton flash.
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg" width="480" />
+4. Télécharger les fichiers de la v3 dans la section release : `bootloader.bin`, `partitions.bin`, `ota_data_initial.bin`, `firmware.bin` et `littlefs.bin`
+   
+
+#### En mode GUI
+
+6. Télécharger l'utilitaire de flash : https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32s3/production_stage/tools/flash_download_tool.html
+7. Décompresser et lancer l'exéctutable : flash_download_tool_x.x.x.exe
+8. Suivez les mêmes paramètres que les captures d'écran (⚠️ **ne pas cliquer sur le bouton ERASE**)
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash tools.png"/>
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware.png"/>
+
+Voici les fichiers à sélectionner avec les adresses correspondantes (v3) :
+* bootloader.bin @ 0x0
+* partitions.bin @ 0x8000
+* ota_data_initial.bin @ 0x11000
+* firmware.bin @ 0x20000
+* littlefs.bin @ 0x827000
+
+Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START 
+
+> Les captures d'écran montrent les adresses de la v2.x : utilisez celles de la liste ci-dessus.
+
+#### En mode console
+
+1. Ouvrir une console ou powershell et se placer dans le répertoire où se trouvent les fichiers
+2. Taper la commande suivante :
+
+   ```esptool.exe --chip esp32s3 --port "COMXX" --baud 460800 write_flash -z --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0x11000 ota_data_initial.bin 0x20000 firmware.bin 0x827000 littlefs.bin```
+
+## 🔗 Pont Matter (à partir de la v3.0)
+
+[Matter](https://csa-iot.org/all-solutions/matter/) est le standard commun de la maison connectée (Apple, Google, Amazon, Home Assistant…). En v3, la LiXee-Box est un **pont Matter** : elle se présente au contrôleur comme un seul appareil, qui contient vos appareils Zigbee, LoRa et virtuels.
+
+- Tout se passe **en local**, sur votre réseau (WiFi ou Ethernet) : pas de cloud
+- Vos appareils restent appairés à la LiXee-Box : **règles, tableau de bord, MQTT et tunnel continuent de fonctionner**, Matter s'ajoute à côté
+- Une commande donnée depuis le contrôleur (allumer, ouvrir un volet, changer une consigne…) passe par les **actions du template** de l'appareil, comme depuis l'interface de la box
+
+### Activer Matter
+1. Menu **Passerelle → Matter**, activez **Activation Matter**
+2. Redémarrez la box
+3. La page affiche le **code d'appairage manuel** et le contenu du **QR code** (bouton **Afficher le QR code**)
+
+Le code d'appairage est **propre à chaque box** : il est tiré au hasard au premier démarrage de Matter, puis conservé.
+
+### Appairer la box
+
+#### Home Assistant
+1. Installez l'intégration **Matter** (avec le serveur Matter)
+2. Dans les options du serveur Matter, activez **Test DCL** (la box utilise un certificat de développement, voir [Limites](#limites))
+3. Depuis l'application mobile : **Paramètres → Appareils et services → Ajouter une intégration → Matter**, puis scannez le QR code ou saisissez le code manuel
+
+La box étant déjà sur le réseau, l'appairage se fait par IP : le Bluetooth du téléphone n'est pas nécessaire.
+
+#### Apple Maison
+**Ajouter un accessoire**, scannez le QR code ou saisissez le code. iOS signale un **accessoire non certifié** : choisissez **Ajouter quand même**.
+
+#### Plusieurs contrôleurs
+Une box déjà appairée peut être ajoutée à un deuxième contrôleur : sur la page Matter, cliquez **Ouvrir la fenêtre d'appairage (15 min)** puis saisissez le même code, ou partagez l'appareil depuis le premier contrôleur.
+
+### Appareils publiés
+Tous les appareils sont publiés par défaut, dans la limite de **32**. Dans **Passerelle → Matter → Appareils pontés**, décochez **Dans Matter** pour retirer un appareil (il disparaît du contrôleur) ; recochez-le pour le remettre, il revient sur le même numéro.
+
+Chaque appareil Matter est construit à partir des états de son template :
+
+| Appareil | Dans Matter |
+|---|---|
+| Capteurs température / humidité (SNZB-02D, 770, STPH…) | température, humidité, batterie |
+| Détecteurs de fuite d'eau | détecteur de fuite, batterie |
+| Détecteurs de présence (SNZB-06P, Aqara, radars Tuya) | occupation (+ luminosité pour les radars) |
+| Capteurs d'ouverture | contact, batterie |
+| Prises, relais, contacteurs | marche/arrêt, puissance, tension, courant, énergie selon le template |
+| Compteurs d'énergie (Tuya TS0601, SEM-4…) | puissance, tension, courant, énergie |
+| **ZLinky** (Zigbee et LoRa) | compteur : index, puissance apparente, tension et courant (phase 1) |
+| Volets roulants (TS130F…) | volet : monter, descendre, stop, position |
+| Têtes thermostatiques (TRVZB, Tuya) | thermostat chauffage, batterie |
+| Climatiseurs (AC201A, IRB-4) | thermostat chaud/froid, ventilation |
+| Boutons (SNZB-01P, Aqara) | bouton : appui simple, multiple, long ; batterie |
+| **Thermostats virtuels** | thermostat |
+| **Groupes d'actions** publiés dans Matter | interrupteur virtuel |
+
+### Limites
+- **Certificat de développement** : la box utilise le certificat de test d'Espressif, pas une certification de la CSA. Home Assistant (avec Test DCL) et Apple Maison l'acceptent ; **Google Home et Amazon Alexa n'acceptent que les appareils certifiés**
+- **Apple Maison** n'affiche pas les compteurs et mesures d'énergie (ZLinky, puissance des prises)
+- **Appareils à plusieurs voies** : une seule voie est publiée
+- **Triphasé** : les phases 2 et 3 ne sont pas publiées
+- **Sans équivalent Matter** : énergie injectée, modes fil pilote, vanne d'arrosage, champs TIC propres au Linky
+- Après un changement de template, le contrôleur peut devoir **réinterroger** l'appareil pour afficher les nouvelles entités
+- **Factory Reset Matter** (page Matter) retire la box de tous les contrôleurs ; il faut ensuite la réappairer
+
+## 📱 Interface Utilisateur
+
+### Jumelage d'Appareils
+à partir de l'interface, aller dans le menu : Réseau --> Zigbee puis Appuyer sur le bouton "Ajouter"  
+
+![Appairage d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p1.png)
+![Appairage LiXee-Box](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p2.png)
+![Recherche d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p3.png)
+
+Le processus d'appairage est simplifié avec un assistant pas à pas pour connecter vos appareils Zigbee.
+
+### Gestion des Appareils
+
+Interface complète pour configurer et surveiller tous vos appareils Zigbee connectés.  
+
+![Configuration des Appareils Zigbee](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_devices_v2.12.png)
+![État des Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_StatusDevices_complete_v2.12.png)
+![Propriété d'un appareil](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_zigbee_device.png)
+
+#### Volets roulants : position 0–100 % (à partir de la v2.23)
+Les volets dont le template propose l'action **Position** affichent un **curseur** sur les pages Appareils, fiche appareil et tableau de bord. La position est envoyée au relâchement, et le curseur suit la position réelle du volet en direct.
+
+![Curseur de position d'un volet](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Volet_Position.png)
+
+#### État radio des appareils (à partir de la v2.23)
+Quand le dernier envoi vers un appareil a échoué, une **icône discrète** apparaît dans **Réseau → Zigbee** et sur la page **Appareils**. Survolez-la pour voir la cause et la date du dernier contact :
+- **D4** : appareil injoignable, souvent dû à une route cassée (appareil éteint, déplacé ou hors de portée)
+- **E9** : l'appareil n'a pas accusé réception
+- autre code : échec de transmission
+
+L'icône disparaît d'elle-même dès que l'appareil accuse réception d'une commande.
+
+> **v3.0** : les échecs des requêtes réseau que la ZiGate envoie d'elle-même (tables de voisinage) vers un **appareil sur pile** sont ignorés : il dort, l'échec est normal. Pour un appareil sur secteur, ils restent signalés.
+
+![État radio d'un appareil](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Etat_Radio.png)
+
+
+
+### Tableau de Bord Énergétique
+![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/tariff_complet_BASE.png)
+![Interface Mobile](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Mobile_energy.png)
+
+Tableau de bord complet avec visualisation en temps réel de votre consommation énergétique, graphiques historiques et interface mobile responsive.
+
+#### Tarif et couleurs
+Selon votre abonnement, vous verrez apparaître en première ligne le tarif en cours de votre abonnement mais aussi la couleur du jour ou la couleur du lendemain si vous avez un abonnement Tempo
+![Tarif et couleur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/tariff_tempo_1.png)
+
+#### Sous-compteurs
+
+##### Présentation
+Les sous-compteurs permettent de suivre en détail la consommation énergétique de vos équipements spécifiques au sein de votre habitat. En associant une prise ou un module connecté Zigbee disposant de la fonction de mesure de consommation (cluster 0x0702), vous pouvez isoler et analyser la consommation de certains postes de dépense énergétique.  
+
+##### Cas d'usage
+
+* **Véhicule électrique** : Suivez précisément la consommation liée à la recharge de votre véhicule et calculez le coût réel de vos trajets.  
+* **Électroménager énergivore** : Identifiez la consommation de votre sèche-linge, lave-linge, four ou réfrigérateur.  
+* **Chauffage d'appoint** : Mesurez l'impact d'un radiateur électrique ou d'une pompe à chaleur sur votre facture.  
+* **Bureau / Informatique** : Évaluez la consommation de votre poste de travail, serveur NAS ou équipement réseau.  
+* **Piscine / Spa** : Suivez la consommation de la pompe de filtration ou du chauffage.  
+  
+##### Fonctionnalités   
+###### Attribution tarifaire automatique
+Les sous-compteurs héritent automatiquement de la période tarifaire en cours (HP/HC, Tempo Bleu/Blanc/Rouge, EJP...) détectée par le ZLinky. Ainsi, la consommation est ventilée selon les mêmes index tarifaires que votre compteur principal, permettant un calcul précis du coût réel.
+###### Visualisation intégrée
+
+**Donut de répartition** : Les sous-compteurs apparaissent dans le graphique de répartition énergétique avec leur couleur personnalisée, aux côtés des index tarifaires du ZLinky.  
+**Graphique d'usage** : Les barres de consommation des sous-compteurs sont affichées et automatiquement soustraites des index tarifaires correspondants pour éviter le double comptage.  
+**Légende détaillée** : Chaque sous-compteur affiche sa consommation en kWh et son équivalent en euros.  
+  
+![sous comptage](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box-sous-compteurs.jpg)
+
+###### Coefficient de conversion
+Chaque sous-compteur peut avoir un coefficient de conversion personnalisé (défini dans le template du device). Cela permet d'adapter l'affichage selon l'unité de mesure du capteur (ex: conversion Wh vers kWh, ou ajustement d'un facteur de calibration).
+
+###### Configuration
+
+* Accédez à la page **Config** --> **Énergie**
+* Dans la section **Sous-compteurs**, cliquez sur **Ajouter**
+* Sélectionnez le device Zigbee disposant de la mesure de consommation
+* Définissez un alias (nom) pour identifier facilement le sous-compteur
+* Choisissez une couleur pour la visualisation dans les graphiques
+* Activez le sous-compteur
+
+###### Données et historique
+Les données des sous-compteurs sont stockées avec le même niveau de granularité que le ZLinky :
+
+* **Horaire** : Consommation heure par heure
+* **Journalier** : Consommation jour par jour sur 30 jours glissants
+* **Mensuel** : Consommation mois par mois sur 12 mois
+* **Annuel** : Historique sur plusieurs années
+
+Les données sont persistées et restaurées automatiquement après un redémarrage.  
+
+###### Compatibilité
+Tout device Zigbee reportant le cluster **Simple Metering (0x0702)** avec l'attribut **Current Summation Delivered (0x0000)** est compatible.
+
+#### Gestion de présence
+
+##### Présentation
+
+La gestion de présence permet de corréler votre consommation énergétique avec les périodes d'occupation de votre habitat. En intégrant des capteurs de présence, vous pouvez visualiser l'impact de votre présence sur votre consommation et identifier des anomalies (consommation excessive en votre absence, par exemple).
+
+##### Cas d'usage
+
+* **Analyse comportementale** : Comprenez comment votre présence influence votre consommation énergétique et identifiez des pistes d'économies.  
+* **Détection d'anomalies** : Repérez une consommation anormale pendant vos absences (appareil resté allumé, fuite, dysfonctionnement).  
+* **Optimisation du chauffage** : Corréllez la consommation de chauffage avec les périodes d'occupation pour ajuster vos programmations.  
+* **Suivi des habitudes** : Visualisez vos routines quotidiennes et leur impact énergétique.  
+* **Maison secondaire** : Surveillez la consommation en votre absence et détectez toute activité inattendue.  
+
+##### Fonctionnalités
+
+###### Overlay de présence sur les graphiques
+
+Les périodes de présence sont affichées sous forme de zones colorées superposées aux graphiques de consommation énergétique. D'un coup d'œil, vous pouvez identifier :
+
+* Les périodes où le logement est occupé (zone colorée)  
+* Les périodes d'absence (zone transparente)  
+
+###### Historique de présence
+
+L'historique de présence est conservé avec la même granularité que les données énergétiques :
+
+* **Horaire** : État de présence heure par heure  
+* **Journalier** : Taux d'occupation par jour  
+* **Mensuel** : Statistiques d'occupation mensuelles  
+
+##### Configuration
+
+1. Accédez à la page **Config** --> **Énergie**
+2. Dans l'onglet **Présence**,
+3. Sélectionnez le capteur Zigbee à utiliser pour la détection
+4. Activez la fonctionnalité
+
+##### Visualisation
+
+###### Graphique d'énergie avec overlay
+
+Les zones de présence sont affichées en transparence sur le graphique de consommation :
+![présence](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box-Presence.png)
+
+##### Compatibilité
+Tout device Zigbee reportant le cluster **Occupancy (0x0406)** avec l'attribut **0x0000** est compatible.
+
+### Production d'énergie et Injection
+
+#### Mode Producteur
+
+La **LiXee-Box** permet de récupérer la production d'énergie.  
+Au travers du ZLinky, il est possible de récupérer les données d'injection et l'index de production dans les cas suivant :
+* Le Linky est en mode standard
+* vous avez un contrat avec EDF OA
+Ces conditions sont nécessaires pour que votre Linky soit en mode **Producteur**
+
+![Graphe producteur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Lixee-box_producteur.PNG)
+![Jauge_producteur](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Lixee-box_puissance_electricite.PNG)
+
+Il suffit donc de paramétrer dans **Config** --> **Energie** puis sélectionner dans l'onglet **Production** le ZLinky qui est mode production.  
+  
+PS : Dans certaines configurations, il y a 2x Linky dont 1x Linky dédié à la production. Il faudra alors brancher et jumeler un autre ZLinky que celui dédié à la consommation
+
+#### Mode Autoconsommation
+Si vous possédez des panneaux photovoltaïques sans contrat, le Linky ne pourra pas être paramétrer en mode Producteur par votre fournisseur d'énergie.  
+Cependant, il sera possible de détecter une sur production lorsque votre production sera supérieure à votre consommation. Dans ce cas, la **LiXee-Box** pourra déterminer la puissance d'injection sur le réseau et agir en conséquence.
+En effet, cette information vous permettra de lancer des machines, enclencher votre chauffe-eau ou encore recharger votre véhicule électrique.
+
+Voici les conditions permettant de détecter une surproduction sur votre Linky :
+* **PAPP négatif** : le Linky reporte directement une puissance apparente négative (détection immédiate)
+* **PAPP = 0 VA avec intensité > 0 A** : la LiXee-Box attend la synchronisation des données URMS/IRMS puis calcule la puissance d'injection (V × I)
+
+> **Note (v2.19+)** : La détection utilise une synchronisation par timestamps entre PAPP et URMS/IRMS pour éviter les faux positifs lors des transitions consommation/injection. Les jauges de puissance soutirée et injectée se mettent à jour automatiquement lors des changements d'état.
+
+Si ce cas arrive, vous aurez sur le graphique de puissance les données d'injection.
+
+![Injection](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/Injection_autoconsommation.PNG)
+
+## 📡 LoRa 2.4 GHz (à partir de la v2.22)
+
+> Nécessite une LiXee-Box équipée du module LoRa 2.4 GHz : [Pack LiXee-Box LoRa](https://lixee.fr/produits/52-pack-lixee-box-lora.html), [Pack LiXee-Box Zigbee + LoRa](https://lixee.fr/produits/53-pack-lixee-box-zigbee-lora.html) ou carte [LiXee-ZiWifi32 Lite Duo](https://lixee.fr/produits/49-lixee-ziwifi32-lite-duo-3770014375216.html).
+
+La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier est le **[ZLinky LoRa](https://lixee.fr/produits/48-zlinky-tic-lora-3770014375209.html)**, qui transmet la téléinformation du compteur Linky sur de longues distances, là où le Zigbee ne passe pas : **jusqu'à 125 m en extérieur dégagé**, environ 100 m en milieu semi-urbain (portées indicatives).
+
+### Fonctionnement
+- Un objet LoRa est un **appareil comme les autres** : ses données utilisent les mêmes clusters que le Zigbee. Pages Énergie, historiques, export CSV, MQTT, règles et tarif du thermostat fonctionnent sans adaptation
+- Un nouvel objet LoRa ne demande qu'un **template** dans `data/tp/` : son type est annoncé à l'appairage
+- Trames **chiffrées AES-128** avec contrôle d'intégrité, jusqu'à **4 émetteurs**
+
+### Appairage
+1. Allez dans **Réseau → LoRa** et lancez l'assistant d'appairage
+2. Aucune manipulation particulière n'est nécessaire sur le ZLinky LoRa
+3. Le spreading factor et le canal sont négociés automatiquement ; ils restent réglables dans **Config → LoRa**
+
+### Suivi
+- Fiche de chaque appareil avec la qualité de réception : **RSSI**, **SNR** et taux de réception (**PDR**)
+- **Lecture d'attribut à la demande** avec le bouton ⟳ de chaque ligne, sans attendre le cycle périodique (~3 min 40)
+
+![Fiche d'un appareil LoRa](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_LoRa_Reseau.png)
+
+> **Documentation technique** : le protocole radio est décrit dans [recepteur/PROTOCOLE_LORA.md](recepteur/PROTOCOLE_LORA.md).
+
+---
+
+## 🌍 Tunnel d'accès distant (à partir de la v2.17)
+
+Le tunnel permet d'accéder à votre LiXee-Box depuis Internet, sans avoir besoin d'ouvrir de ports sur votre box Internet. La connexion passe par un reverse proxy WebSocket sécurisé.
+
+### Fonctionnement
+
+La LiXee-Box établit une connexion WebSocket sortante vers le serveur [`remote.lixee-box.fr`](https://remote.lixee-box.fr). Ce serveur relaye les requêtes HTTP entrantes vers votre LiXee-Box, qui les traite localement et renvoie les réponses. Votre box Internet n'a besoin d'aucune configuration particulière (pas de NAT, pas de port forwarding).
+
+### Activation
+
+> **Prérequis (à partir de la v2.23)** : l'accès sécurisé doit être activé **avec un identifiant et un mot de passe** (**Config** → **Securité**). Sans cela, le tunnel ne peut pas être activé ; s'il l'était déjà, il reste **suspendu** jusqu'à ce que l'accès sécurisé soit configuré. Une box dont l'accès sécurisé était activé sans identifiant ni mot de passe le voit désactivé automatiquement au démarrage.
+
+1. Accédez à la page **Config** → **Tunnel**
+2. Entrez le code d'activation à 6 chiffres fourni par LiXee
+3. Cliquez sur **Activer**
+4. Lorsque le statut passe à **Connecté**, l'URL d'accès distant s'affiche automatiquement
+
+Une section **Configuration avancée** repliable permet également une connexion manuelle avec vos propres identifiants (subdomain, token).
+
+### Caractéristiques
+
+* Jusqu'à **6 requêtes HTTP simultanées** grâce à une architecture non-bloquante à machine d'état
+* **Heartbeat** automatique (15s) pour maintenir la connexion active avec reconnexion rapide (3s)
+* **Hot-reload** : le tunnel redémarre automatiquement après modification de la configuration
+* **Mise à jour via tunnel** : upload OTA des devices et mise à jour firmware/restore de la LiXee-Box à distance (upload chunké en base64)
+* **Notifications push** : les alertes sont relayées via le tunnel vers l'application LiXee-Assist
+* **Watchdog mémoire** : le tunnel est automatiquement arrêté si le heap descend sous 80KB et relancé quand il remonte au-dessus de 120KB
+* L'URL d'accès distant est de la forme `https://<votre-id>.lixee-box.fr`
+* La désactivation du tunnel est protégée lorsqu'on y accède depuis l'accès distant (pour éviter de se couper l'accès)
+
+---
+
+## 🌡️ Thermostat virtuel (à partir de la v2.21)
+
+Le **thermostat virtuel** transforme la LiXee-Box en régulateur de température. Il **découple la mesure de l'action** : un capteur de température Zigbee quelconque sert de sonde, et la box pilote un **actionneur** distinct (prise/relais, climatiseur réversible, radiateur fil pilote…) pour maintenir une **consigne**, tout en maîtrisant l'énergie.
+
+- **Multi-zone** (jusqu'à 8 zones indépendantes)
+- **Actionneurs** : prise on/off, clim HVAC (HEAT/COOL/OFF), fil pilote — et **plusieurs prises** par zone
+- **Clim réversible** : choix Chaud / Froid directement sur la vignette
+- Régulation **TPI** (modulation par le temps) pour le tout-ou-rien, **hystérésis** pour les appareils pilotés par action
+- **Maîtrise de l'énergie** : capteur de présence, capteurs d'ouverture (porte/fenêtre), plages horaires, ou **tarif Linky** (Base / HC-HP / EJP / Tempo)
+- **Hors-gel**, forçage manuel marche/arrêt, anti-court-cycle, sécurité capteur HS
+- Vignettes **cadran circulaire** temps réel (consigne, écart visualisé, état de l'actionneur)
+
+Configuration dans **Config → Thermostat**, visuel temps réel dans **Mesures → Thermostat**.
+
+![Cadran thermostat — climatisation](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_climatisation.jpg)
+![Cadran thermostat — chauffage](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_chauffage.jpg)
+
+> **Documentation complète** : voir [THERMOSTATS.md](THERMOSTATS.md) pour le guide détaillé (modes de régulation, capteurs, actionneurs, algorithmes TPI/hystérésis, paramètres avancés, cadran, priorités, cas d'usage, dépannage).
+
+## 🎛️ Groupes d'actions (à partir de la v2.23)
+
+Un **groupe d'actions** est un bouton qui déclenche **plusieurs actions sur des appareils différents** en un seul clic : « Fermeture des volets », « Absence », « Nuit »…
+
+### Utilisation
+- Les groupes s'affichent en **tête de la page Appareils** : un clic lance toutes leurs actions
+- Ils peuvent aussi être déclenchés par une **règle** : action de type « Groupe d'actions », en « alors » comme en « sinon »
+
+![Groupes d'actions sur la page Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Groupes_Actions_Barre.png)
+
+### Création
+Allez dans **Config** → **Groupes d'actions**, puis :
+1. Cliquez sur **Ajouter un groupe**
+2. Donnez-lui un **nom** et choisissez une **icône** avec le bouton placé à côté du nom : 56 icônes domotiques en 9 thèmes (volets, température, éclairage, sécurité…)
+3. Ajoutez les **actions** : un appareil et l'une de ses actions (ex. volet → DOWN, prise → OFF, volet → Position 30 %)
+4. Enregistrez, puis vérifiez le groupe avec le bouton **Tester**
+
+![Liste des groupes d'actions](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Groupes_Actions_Edition.png)
+
+### Bon à savoir
+- Jusqu'à **8 groupes**, de **10 actions** chacun
+- Les actions sont liées à l'**adresse IEEE** des appareils : un changement d'adresse réseau Zigbee ne casse pas le groupe
+- Une règle désigne un groupe par son **nom** : supprimer ou réordonner un autre groupe ne change rien
+- Les groupes sont enregistrés dans `/config/actiongroups.json`
+
+---
+
+## Les règles (automatismes)
+
+> **Documentation complète** : voir [RULES.md](RULES.md) pour le guide détaillé de toutes les fonctionnalités (9 types de conditions, 4 types d'actions, exemples, variables de notification, etc.)
+
+Pour accéder à toutes les règles, il faut suivre **Config** --> **Règles**
+La page permet de suivre la liste des règles avec leur état et la date de dernière exécution.
+Vous pourrez **créer**, **modifier** ou **supprimer** une règle.
+
+![Liste des règles](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Rules_status.png)
+
+### Comment créer des règles
+
+* Les règles sont stockées dans un fichier JSON (`/config/rules.json`).
+* Une règle peut être déclenchée :
+  * **Timer** : évaluée toutes les ~30 secondes automatiquement
+  * **Événement** : évaluée dès qu'un attribut Zigbee spécifique est mis à jour
+* Une règle peut contenir une ou plusieurs **conditions** combinées en ET / OU.
+* **9 types de conditions** : appareil Zigbee, comparaison de 2 appareils, heure, plage horaire, jour de semaine, date, date+heure, jour du mois, mois.
+* **4 types d'actions** : commande appareil, valeur dynamique (calcul linéaire), groupe d'actions, notification.
+* **Actions SINON** : exécutées quand les conditions redeviennent fausses.
+* **Options d'évaluation** : durée de maintien, mode une fois / répété, intervalle minimum, limite par jour.
+
+### Structure
+
+```
+├── Rule
+│   ├── name
+│   ├── enabled
+│   ├── duration              // Durée de maintien en secondes (0 = immédiat)
+│   ├── repeat                // true = exécuter à chaque évaluation
+│   ├── cooldown              // Secondes min entre 2 exécutions (0 = pas de limite)
+│   ├── maxExecPerDay         // Max exécutions par jour (0 = illimité)
+│   ├── trigger
+│   │   ├── mode              // "timer" ou "event"
+│   │   ├── IEEE              // (event) Adresse MAC du device déclencheur
+│   │   ├── cluster           // (event) Cluster à surveiller
+│   │   └── attribute         // (event) Attribut à surveiller
+│   ├── conditions[...]
+│   │   ├── type              // "device", "device_compare", "time", "time_range",
+│   │   │                     //  "weekday", "date", "datetime", "day", "month"
+│   │   ├── IEEE              // (device, device_compare)
+│   │   ├── cluster           // (device, device_compare)
+│   │   ├── attribute         // (device, device_compare)
+│   │   ├── operator
+│   │   ├── value
+│   │   ├── value2            // (time_range) endTime
+│   │   ├── logic             // "AND" ou "OR"
+│   │   ├── IEEE2             // (device_compare) 2e appareil
+│   │   ├── cluster2          // (device_compare) 2e cluster
+│   │   └── attribute2        // (device_compare) 2e attribut
+│   ├── actions[...]
+│   │   ├── type              // "device", "dynamic", "actiongroup", "notification"
+│   │   ├── IEEE              // (device, dynamic) Appareil cible
+│   │   ├── actionName        // (device, dynamic) Nom de l'action template, (actiongroup) nom du groupe
+│   │   ├── endpoint          // (device, dynamic) Endpoint Zigbee
+│   │   ├── value             // (device) Position 0-100 pour l'action Position d'un volet
+│   │   ├── sourceIEEE        // (dynamic) Appareil source
+│   │   ├── sourceCluster     // (dynamic) Cluster source
+│   │   ├── sourceAttribute   // (dynamic) Attribut source
+│   │   ├── coefficient       // (dynamic) Multiplicateur (défaut 1.0)
+│   │   ├── offset            // (dynamic) Valeur ajoutée (défaut 0)
+│   │   ├── title             // (notification) Titre
+│   │   └── message           // (notification) Message (supporte les variables)
+│   └── elseActions[...]      // Même structure que actions
+```
+
+### Paramètres du trigger
+
+Par défaut : `mode = "timer"`
+
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|:-----------:|------|--------|-------------|
+| `mode` | ✓ | String | `"timer"` ou `"event"` | |
+| `IEEE` | event | String | Adresse MAC sans ':' ni '-' | Requis si mode = event |
+| `cluster` | event | Decimal | ID du cluster en décimal | Requis si mode = event |
+| `attribute` | event | Decimal | Numéro d'attribut | Requis si mode = event |
+
+### Paramètres de condition
+
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|:-----------:|------|--------|-------------|
+| `type` | ✓ | String | `"device"` `"device_compare"` `"time"` `"time_range"` `"weekday"` `"date"` `"datetime"` `"day"` `"month"` | |
+| `IEEE` | device | String | Adresse MAC | Pour `device` et `device_compare` |
+| `cluster` | device | Decimal | ID du cluster | Pour `device` et `device_compare` |
+| `attribute` | device | Decimal | Numéro d'attribut | Pour `device` et `device_compare` |
+| `operator` | ✓ | String | `<` `>` `==` `!=` `>=` `<=` `in` `not_in` | `in`/`not_in` pour `time_range` et `weekday` |
+| `value` | ✓ | String | Valeur de comparaison | Heure `"08:00"`, date `"25/12"`, offset pour `device_compare` |
+| `value2` | time_range | String | Heure de fin `"HH:MM"` | Uniquement pour `time_range` |
+| `logic` | | String | `"AND"` ou `"OR"` | Logique avec la condition suivante |
+| `IEEE2` | device_compare | String | Adresse MAC du 2e appareil | |
+| `cluster2` | device_compare | Decimal | Cluster du 2e appareil | |
+| `attribute2` | device_compare | Decimal | Attribut du 2e appareil | |
+
+### Paramètres d'action
+
+| Paramètre | Obligatoire | Type | Valeur | Commentaire |
+|-----------|:-----------:|------|--------|-------------|
+| `type` | ✓ | String | `"device"` `"dynamic"` `"actiongroup"` `"notification"` | |
+| `IEEE` | device/dynamic | String | Adresse MAC cible | |
+| `actionName` | device/dynamic/actiongroup | String | Nom de l'action template, ou nom du groupe d'actions | ex : `"ON"`, `"OFF"`, `"SetPoint"`, `"Fermeture des volets"` |
+| `endpoint` | device/dynamic | Decimal | Endpoint Zigbee | Défaut : 1 |
+| `command` | | Decimal | Override commande | -1 = utiliser le template |
+| `value` | | String | Valeur envoyée | Position 0-100 pour l'action Position d'un volet (sans position, rien n'est envoyé) |
+| `sourceIEEE` | dynamic | String | Adresse MAC source | |
+| `sourceCluster` | dynamic | Decimal | Cluster source | |
+| `sourceAttribute` | dynamic | Decimal | Attribut source | |
+| `coefficient` | dynamic | Double | Multiplicateur | Défaut : 1.0 |
+| `offset` | dynamic | Double | Valeur ajoutée | Défaut : 0 |
+| `title` | notification | String | Titre de la notification | Supporte les variables `{rule}` `{value}` etc. |
+| `message` | notification | String | Corps du message | Supporte les variables `{rule}` `{date}` `{value}` `{device}` `{threshold}` `{value_N}` `{device_N}` |
+
+### Exemple JSON
+
+```json
+{
+  "rules": [
+    {
+      "name": "Délestage puissance",
+      "enabled": true,
+      "duration": 300,
+      "repeat": false,
+      "cooldown": 600,
+      "maxExecPerDay": 5,
+      "trigger": {
+        "mode": "event",
+        "IEEE": "00158d0006204fcf",
+        "cluster": 2820,
+        "attribute": 1295
+      },
+      "conditions": [
+        {
+          "type": "device",
+          "IEEE": "00158d0006204fcf",
+          "cluster": 2820,
+          "attribute": 1295,
+          "operator": ">",
+          "value": "3000",
+          "logic": "AND"
+        },
+        {
+          "type": "time_range",
+          "operator": "in",
+          "value": "06:00",
+          "value2": "22:00",
+          "logic": "AND"
+        },
+        {
+          "type": "weekday",
+          "operator": "in",
+          "value": "1,2,3,4,5",
+          "logic": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "type": "device",
+          "IEEE": "a4c138bb23185d2c",
+          "actionName": "OFF",
+          "endpoint": 1
+        },
+        {
+          "type": "notification",
+          "title": "Délestage activé",
+          "message": "Puissance {value} dépasse le seuil de {threshold}. Prise coupée le {date}."
+        }
+      ],
+      "elseActions": [
+        {
+          "type": "device",
+          "IEEE": "a4c138bb23185d2c",
+          "actionName": "ON",
+          "endpoint": 1
+        }
+      ]
+    },
+    {
+      "name": "Régulation solaire",
+      "enabled": true,
+      "duration": 0,
+      "repeat": true,
+      "cooldown": 300,
+      "maxExecPerDay": 0,
+      "trigger": { "mode": "timer" },
+      "conditions": [
+        {
+          "type": "device",
+          "IEEE": "00158d0006204fcf",
+          "cluster": 2820,
+          "attribute": 1295,
+          "operator": ">",
+          "value": "500",
+          "logic": "AND"
+        }
+      ],
+      "actions": [
+        {
+          "type": "dynamic",
+          "IEEE": "b4e3f9d012345678",
+          "actionName": "SetLevel",
+          "endpoint": 1,
+          "sourceIEEE": "00158d0006204fcf",
+          "sourceCluster": 2820,
+          "sourceAttribute": 1295,
+          "coefficient": 0.033,
+          "offset": 0
+        }
+      ],
+      "elseActions": [
+        {
+          "type": "device",
+          "IEEE": "b4e3f9d012345678",
+          "actionName": "OFF",
+          "endpoint": 1
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Notifications
+
+Les notifications permettent d'être informé ou alerté des évènements de votre habitat selon vos besoins
+
+#### Exemple configuration
+![Configuration notifications](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_ConfigNotifications.png)
+
+#### Exemple d'évènements
+![Evènements](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Notifications.png)
+
+## 📦 Appareils Compatibles (à partir de la v2.12)
+
+La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâce à sa prise en charge des clusters standards. Les appareils marqués **📋 Template** disposent d'un template dédié intégré au firmware pour une compatibilité optimale. Les autres fonctionnent via les clusters Zigbee standards.
+
+### Clusters Zigbee Supportés
+
+| Cluster | Nom | Description |
+|---------|-----|-------------|
+| 0x0000 | Basic | Informations de base de l'appareil |
+| 0x0001 | Power Configuration | Gestion batterie |
+| 0x0006 | On/Off | Commandes marche/arrêt |
+| 0x0012 | Multistate Input | Entrées multi-états (boutons) |
+| 0x0102 | Window Covering | Contrôle volets/stores (montée, descente, stop, position) |
+| 0x0201 | Thermostat | Contrôle thermostatique |
+| 0x0202 | Fan Control | Contrôle ventilation |
+| 0x0402 | Temperature Measurement | Mesure de température |
+| 0x0405 | Relative Humidity | Mesure d'humidité |
+| 0x0406 | Occupancy Sensing | Détection de présence |
+| 0x0500 | IAS Zone | Alarmes (fuite d'eau, ouverture, etc.) |
+| 0x0702 | Simple Metering | Comptage d'énergie |
+| 0x0B04 | Electrical Measurement | Mesures électriques |
+| 0xEF00 | Tuya | Cluster propriétaire Tuya |
+| 0xFC00 | NodOn Heating | Cluster propriétaire NodOn (fil pilote) |
+| 0xFC11 | Sonoff/Xiaomi Custom | Cluster propriétaire Sonoff/Xiaomi |
+| 0xFC12 | Sonoff Button | Cluster propriétaire Sonoff (actions du bouton SNZB-01M) |
+| 0xFC41 | Legrand | Cluster propriétaire Legrand |
+| 0xFCC0 | Aqara Presence | Cluster propriétaire Aqara (présence) |
+| 0xFF66 | LiXee | Cluster propriétaire LiXee |
+
+---
+
+### ⚡ Appareils LiXee (Compatibilité Complète)
+
+| Appareil | Device Type | Description | Template | Testé |
+|----------|-------------|-------------|:--------:|:-----:|
+| **ZLinky_TIC** | 0x0051, 0x0061, 0x0101 | Téléinformation Linky (70+ attributs TIC) | 📋 | ✅ |
+| **ZiPulses** | 0x0107 | Compteur d'impulsions (eau, gaz), batterie, température | 📋 | ✅ |
+| **ZLinky LoRa** | LoRa 2.4 GHz | Téléinformation Linky en LoRa longue portée (nécessite le module LoRa) | 📋 | ✅ |
+
+---
+
+### 📊 Compteurs d'énergie DIN (Tuya)
+**Cluster Tuya propriétaire (0xEF00) — Modèle TS0601**
+
+| Marque | Modèles | Mesures | Notes | Template | Testé |
+|--------|---------|---------|-------|:--------:|:-----:|
+| **Hiking / TOMZN** | DDS238-2 | Tension, courant, puissance, énergie | Compteur monophasé DIN rail 65A, énergie bidirectionnelle | 📋 | ✅ |
+
+---
+
+### 📏 Modules de mesure d'énergie
+
+| Marque | Modèles | Mesures | Notes | Template | Testé |
+|--------|---------|---------|-------|:--------:|:-----:|
+| **NodOn** | SEM-4-1-00 | Tension, intensité, puissances, facteur de puissance | Module de mesure | 📋 | |
+
+---
+
+### 🔌 Prises Connectées
+**Device Type : 0x0010, 0x0051, 0x0061, 0x0101, 0x0107, 0x0302**
+
+| Marque | Modèles | Mesure énergie | Notes | Template | Testé |
+|--------|---------|:--------------:|-------|:--------:|:-----:|
+| **Aqara** | lumi.plug.maeu01 | ❌ | On/Off simple, prise EU | 📋 | ✅ |
+| **Aqara** | SP-EUC01, ZNCZ12LM | ✅ | 10A max, capteur température intégré | | ✅ |
+| **Xiaomi** | lumi.plug | ❌ | On/Off simple | 📋 | ✅ |
+| **Innr** | S60ZBTPF | ✅ | Puissance, tension, courant, consommation | 📋 | ✅ |
+| **Innr** | SP 120, SP 220, SP 222 | ✅ | Compatible Hue | | |
+| **Third Reality** | 3RSPE01044BZ | ✅ | Puissance, tension, courant, consommation | 📋 | ✅ |
+| **Sonoff** | S31 Lite ZB, S40 Lite | ✅ | 15-16A, bon rapport qualité/prix | | |
+| **Osram** | Smart+ | ✅ | | | ✅ |
+| **Philips** | LOM001 | ✅ | | | ✅ |
+| **IKEA** | TRÅDFRI, Grillplats | ❌ | Répéteur Zigbee | | |
+| **Tuya/Moes** | Diverses prises Smart Life | ✅ | 16A, économique | | |
+| **Neo Coolcam** | Plug-007SPB2 | ✅ | Basé Tuya | | |
+| **Nous** | Smart Zigbee Socket A1Z | ✅ | Version EU | | ✅ |
+| **Lidl** | SilverCrest Smart Plug | ✅ | Basé Tuya | | ✅ |
+| **BlitzWolf** | BW-SHP13 | ✅ | 16A, bon routeur Zigbee | | |
+
+#### Autres prises compatibles (clusters standards)
+Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement Electrical Measurement (0x0B04) ou Simple Metering (0x0702) devrait fonctionner.
+
+---
+
+### 🏠 Contacteur / Relais de puissance
+
+| Marque | Modèles | Mesure énergie | Notes | Template | Testé |
+|--------|---------|:--------------:|-------|:--------:|:-----:|
+| **Legrand** | Contacteur (DIN) | ✅ | Puissance, tension, courant, conso. Modes : Auto / Force ON / Force OFF | 📋 | ✅ |
+| **NodOn** | SIN-4-1-20 | ❌ | Module multifonction 16A, contact sec, On/Off simple | 📋 | ✅ |
+
+---
+
+### 🔥 Fil Pilote / Chauffage
+**Cluster propriétaire NodOn (0xFC00)**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **NodOn** | SIN-4-FP-21 | Module fil pilote 6 ordres : Confort, Éco, Hors-Gel, Confort -1, Confort -2, Arrêt. Mesure consommation | 📋 | ✅ |
+
+---
+
+### ❄️ Climatisation / Thermostat IR
+**Clusters : Thermostat (0x0201), Fan Control (0x0202)**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Saswell/Tuya** | AC201A | Contrôle climatiseur : chaud, froid, ventilo, déshumidification. Consignes prédéfinies (18-26 °C) | 📋 |  |
+| **NodOn** | IRB-4-1-00 | Blaster IR pour climatiseur : chaud, froid, ventilo, auto, déshumidification. Consignes, vitesse ventilateur, position volet | 📋 | ✅ |
+
+---
+
+### 🪟 Volets Roulants / Stores
+**Device Type : 0x0202, 0xFFF0**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Tuya/Moes** | TS130F | Position 0–100 % (curseur), calibration, inversion moteur | 📋 | ✅ |
+| **Sonoff** | MINI-ZBRBS | Module encastrable pour volet roulant : montée, descente, stop et position 0–100 % (curseur), via le template générique des volets | | ✅ |
+| **Tuya/Moes** | Curtain Switch, Roller Shutter Module | Nombreux modèles disponibles | | ✅ |
+| **NodOn** | SIN-4-RS-20 | Module encastrable, auto-calibration | | ✅ |
+| **LoraTap** | SC500ZB, divers modèles | Compatible Zigbee2MQTT | | |
+| **Legrand** | Céliane/Mosaic Zigbee | Volet roulant connecté | | |
+| **Aqara** | Curtain Driver E1 | Moteur pour rideaux | | |
+| **Zemismart** | Roller Shade Motor | Moteur tubulaire | | |
+
+#### Autres volets compatibles (clusters standards)
+Tout appareil utilisant le cluster Window Covering (0x0102) avec les commandes Up/Down/Stop, et *Go To Lift Percentage* pour la position (voir [Position de volet](#position-de-volet-à-partir-de-la-v223)).
+
+---
+
+### 🌡️ Capteurs Température / Humidité
+**Device Type : 0x0302**
+
+| Marque | Modèles | Pression | Écran | Notes | Template | Testé |
+|--------|---------|:--------:|:-----:|-------|:--------:|:-----:|
+| **Sonoff** | SNZB-02D | ❌ | ✅ | Écran LCD, calibration, plages de confort | 📋 | ✅ |
+| **NodOn** | STPH-4-1-00 | ❌ | ❌ | Température, humidité, batterie | 📋 | |
+| **Sonoff** | SNZB-02, SNZB-02P | ❌ | ❌ | Économique | | ✅ |
+| **Aqara** | WSDCGQ11LM, T1 (TH-S02D) | ✅ | ❌ | Capteur Sensirion, très précis | | |
+| **IKEA** | VINDSTYRKA, Timmerflotte | ❌ | ✅ | Qualité de l'air sur VINDSTYRKA | | |
+| **iHorn** | 113D | ❌ | ✅ | | | ✅ |
+| **Tuya/Moes** | ZSS-ZK-THL, TS0201, divers | Variable | Variable | Large choix de modèles | | |
+| **Nous** | E5 | ❌ | ❌ | Compact | | |
+| **OWON** | THS317-ET | ❌ | ❌ | Sonde externe sur câble | | |
+| **Xiaomi/Mijia** | WSDCGQ01LM | ❌ | ❌ | ⚠️ Non Zigbee 3.0 | | |
+
+#### Autres capteurs compatibles (clusters standards)
+Tout appareil utilisant les clusters Temperature Measurement (0x0402) et/ou Relative Humidity (0x0405).
+
+---
+
+### 👁️ Capteurs de Présence / Mouvement
+**Device Type : 0x0107, 0xC1A4**
+
+| Marque | Modèles | Luminosité | Type | Notes | Template | Testé |
+|--------|---------|:----------:|------|-------|:--------:|:-----:|
+| **Sonoff** | SNZB-06P | ✅ | Radar 5.8GHz | Présence statique, sensibilité et timeout configurables | 📋 | ✅ |
+| **Aqara** | FP1 (lumi.motion.ac01) | ❌ | mmWave | Détection présence statique, délais configurables | 📋 | ✅ |
+| **Aqara** | FP2 | ✅ | mmWave | Zones, présence statique | | |
+| **Aqara** | RTCGQ11LM, P1 | ✅ | PIR | Délai 60-90s | | |
+| **Sonoff** | SNZB-03 | ❌ | PIR | Délai 60s | | |
+| **Philips Hue** | Indoor/Outdoor Motion | ✅ | PIR | Température intégrée | | |
+| **IKEA** | TRÅDFRI E1745, Myggspray | ❌ | PIR | IP44 (extérieur) | | |
+| **Tuya/Moes** | ZY-M100 (_TZE204_qasjif9e) | ✅ | Radar 5.8GHz | Présence, distance cible, luminosité, sensibilité configurable. Cluster Tuya 0xEF00, device_id 0x0051 | 📋 | ✅ |
+| **Tuya/Moes** | MTG075-ZB et autres | Variable | mmWave | Présence statique | | |
+
+#### Autres capteurs compatibles (clusters standards)
+Tout appareil utilisant le cluster Occupancy Sensing (0x0406).
+
+---
+
+### 💧 Capteurs de Fuite d'Eau
+**Cluster : IAS Zone (0x0500)**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Tuya** | TS0207 (_TYZB01_o63ssaah) | Détection fuite d'eau, batterie. Device type 0x0402 | 📋 | ✅ |
+
+#### Autres capteurs compatibles (clusters standards)
+Tout appareil utilisant le cluster IAS Zone (0x0500) avec Zone Type Water Sensor.
+
+---
+
+### 🌿 Vannes d'Irrigation
+**Cluster Tuya propriétaire (0xEF00) — Modèle TS0601**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **QOTO** | QT-05M (_TZE200_arge1ptm) | Contrôle vanne 0-100%, timer auto-fermeture, débit eau, temps restant, batterie. Device type 0x0051 | 📋 | ✅ |
+
+---
+
+### 🔥 Vannes Thermostatiques (TRV)
+**Clusters : Thermostat (0x0201), Tuya (0xEF00)**
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Sonoff** | TRVZB | Consigne, calibration, protection gel, détection fenêtre, vanne %, verrouillage enfant | 📋 | ✅ |
+| **Moes/Tuya** | BRT-100, TV01, TRV601 | Programmable, détection fenêtre ouverte | 📋 | ✅ |
+| **Danfoss** | Ally | Haute qualité | | |
+| **Eurotronic** | Spirit Zigbee | | | |
+| **Popp** | POPZ701721 | | | |
+
+> ⚠️ **Note** : Les TRV Tuya utilisent souvent le cluster propriétaire (0xEF00 / TS0601). La compatibilité peut varier selon les modèles.
+
+---
+
+### 🔘 Boutons / Interrupteurs sans fil
+
+| Marque | Modèles | Notes | Template | Testé |
+|--------|---------|-------|:--------:|:-----:|
+| **Xiaomi/Aqara** | lumi.sensor_switch.aq2 (WXKG11LM) | Bouton simple clic, multi-clic | 📋 | ✅ |
+| **Sonoff** | SNZB-01M (Orb 4-in-1) | 4 boutons : simple, double, long et triple appui (`single_button_1` … `triple_button_4`), utilisables dans les règles et en MQTT. Batterie | 📋 | ✅ |
+| **IKEA** | TRÅDFRI Shortcut Button | Compatible clusters standards | | |
+| **Tuya/Moes** | Boutons scène, télécommandes | Via cluster 0x0006 ou 0x0012 | | |
+
+---
+
+### 💡 Ampoules et Éclairage
+**Compatibilité via cluster On/Off (0x0006)**
+
+| Marque | Notes | Testé |
+|--------|-------|:-----:|
+| **IKEA** | TRÅDFRI / Kajplats - On/Off et dimming | |
+| **Philips Hue** | Compatible clusters standards | |
+| **Innr** | Compatible Hue et Zigbee standards | |
+| **Tuya/Moes** | Nombreux modèles | |
+
+> ℹ️ La LiXee-Box supporte le cluster On/Off (0x0006). Le contrôle des couleurs (cluster 0x0300) n'est pas encore implémenté.
+
+---
+
+### ❓ Vérifier la Compatibilité
+
+Pour vérifier si un appareil Zigbee est compatible :
+
+1. **Identifiez le Device Type** de votre appareil (disponible dans la documentation)
+2. **Vérifiez les clusters** utilisés par l'appareil
+3. Un appareil est compatible si :
+   - Son Device Type correspond à ceux listés ci-dessus
+   - Il utilise les clusters standards supportés
+4. Les appareils avec **📋 Template** ont un template dédié intégré au firmware et sont donc immédiatement fonctionnels sans configuration supplémentaire
+
+## 📝 Créer un Template Personnalisé
+
+Si votre appareil n'est pas reconnu automatiquement, vous pouvez créer un template personnalisé. 
+
+Un fichier modèle est une structure JSON qui définit les états et actions d'un type d'appareil. Le nom du fichier modèle correspond à l'identification de l'appareil (en décimal).
+Lorsqu'un appareil Zigbee rejoint le réseau, **LiXee-Box** crée un objet suivant le modèle correspondant avec les états et actions, effectue les liaisons et configure les rapports si nécessaire.
+
+### Structure du Modèle
+Voici la structure :
+
+    ├── Modèle d'appareil ou 'default'    
+    │   ├── status   
+    │   │   ├── name   
+    │   │   ├── cluster  
+    │   │   ├── attribut  
+    │   │   ├── type   
+    │   │   ├── unit  
+    │   │   ├── coefficient   
+    │   │   ├── visible  
+    │   │   ├── jauge     
+    │   │   ├── min  
+    │   │   ├── max  
+    │   │   ├── poll  
+    │   │   ├── mqtt_device_class  
+    │   │   ├── mqtt_state_class  
+    │   │   ├── mqtt_icon 
+    │   ├── action   
+    │   │   ├── name   
+    │   │   ├── command  
+    │   │   ├── endpoint  
+    │   │   ├── value    
+    │   │   ├── visible   
+    │   ├── bind  
+    │   ├── report  
+    │   │   ├── cluster   
+    │   │   ├── attribut  
+    │   │   ├── type  
+    │   │   ├── min   
+    │   │   ├── max  
+    │   │   ├── timeout   
+    │   │   ├── change  
+
+Vous pouvez trouver des exemples de modèles dans le répertoire `data/tp`  
+Exemple de fichier 24321.json pour l'appareil id (5F01 Hex) :
+```json
+{
+	"lumi.sensor_switch.aq2" : [
+	{
+		"status" : [
+			{
+				"name" : "Clic",
+				"cluster" : "0006",
+				"attribut" : 0
+			},
+			{
+				"name" : "MultiClic",
+				"cluster" : "0000",
+				"attribut" : 32768
+			}
+		]
+	}
+       ],
+        "default" : [
+	{
+		"status" : [
+			{
+				"name" : "Clic",
+				"cluster" : "0012",
+				"attribut" : 85
+			},
+			{
+				"name" : "MultiClic",
+				"cluster" : "0012",
+				"attribut" : 1293
+			}
+		]
+	}
+	]
+}
+```
+
+### Paramètres de Status
+
+| Paramètre | Obligatoire | Type | Description |
+|-----------|-------------|------|-------------|
+| `name` | ✓ | String | Nom d'affichage |
+| `cluster` | ✓ | String | ID du cluster (hex) |
+| `attribut` | ✓ | Decimal | Numéro d'attribut |
+| `type` | | String | "numeric", "float" |
+| `unit` | | String | Unité de mesure |
+| `coefficient` | | Float | Coefficient multiplicateur |
+| `jauge` | | String | "Gauge", "Battery", "text" |
+| `visible` | | Decimal | 1 (visible) ou 0 (masqué) |
+| `poll` | | Decimal | Intervalle d'interrogation (sec) |
+| `mqtt_device_class` | | String | Classe de périphérique MQTT pour HA |
+| `mqtt_state_class` | | String | Classe d'état MQTT pour HA |
+| `mqtt_icon` | | String | Icône MQTT pour HA |
+
+### Action
+### Paramètres d'Action
+
+| Paramètre | Obligatoire | Type | Description |
+|-----------|-------------|------|-------------|
+| `name` | ✓ | String | Nom de l'action |
+| `command` | ✓ | Decimal | ID de commande |
+| `endpoint` | ✓ | Decimal | Numéro de point de terminaison |
+| `value` | ✓ | Decimal | Valeur à envoyer |
+| `visible` | | Decimal | 1 (visible) ou 0 (masqué) |
+
+#### Position de volet (à partir de la v2.23)
+Deux codes de commande positionnent un volet de 0 à 100 % (commande ZCL *Go To Lift Percentage*). L'action s'affiche alors sous forme de **curseur** :
+
+| `command` | Usage |
+|-----------|-------|
+| `251` | Appareil conforme ZCL |
+| `252` | Appareil dont le sens est inversé (ex. TS130F, SONOFF MINI-ZBRBS) |
+
+Si 100 % ferme le volet au lieu de l'ouvrir, utilisez l'autre code.
+
+Exemple : `{ "name": "Position", "command": 252, "endpoint": 1, "value": 0, "visible": 1 }`
+
+### Bind
+Liste des clusters (en numérique) qui seront liés
+exemple : `bind : "1026;1029;1794"`
+
+### Report
+
+| Commande | Obligatoire | Type | Valeur | Commentaire |
+|----------|-------------|------|--------|-------------|			
+| `cluster` | ✓ | String | | ID du cluster en hexadécimal |  
+| `attribut` | ✓ | Decimal | | Numéro d'attribut en décimal |  
+| `type` | ✓ | Decimal | | Correspond au type numérique de l'attribut | 
+| `min` | ✓ | Decimal | | Temps minimum (en secondes) pour envoyer un rapport | 
+| `max` | ✓ | Decimal | | Temps maximum (en secondes) pour envoyer un rapport | 
+| `timeout` | | Decimal | | En millisecondes | 
+| `change` | | Decimal | | Valeur de changement pour envoyer un rapport | 
+
+## 🔌 API WEB
+Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, ou au travers du tunnel d'accès distant.
+
+### Conventions (à partir de la v2.27)
+- Toutes les routes sont sous **`/api/<groupe>/<ressource>`**, en minuscules (mots séparés par `-`)
+- **GET** pour lire, **POST** pour agir ou modifier (PUT / DELETE pour les notifications)
+- Paramètres **par leur nom** ; un appareil se désigne par **`ieee`** (les anciens noms `IEEE` et `id` restent acceptés)
+- Réponses en JSON ; une valeur inconnue vaut `null`
+- Authentification : celle de l'interface web — identifiant et mot de passe (Basic Auth) en accès direct, session de connexion au travers du tunnel. Une requête POST en accès direct doit porter un en-tête `Origin` ou `Referer` du même hôte (protection CSRF)
+- **Compatibilité** : les noms `/api/...` de la colonne de gauche existent à partir de la v2.27. Les anciens noms (colonne de droite) restent servis par réécriture d'URL, avec la même réponse ; une box antérieure à la v2.27 ne connaît qu'eux. Les routes marquées « v2.26 » n'existent pas avant cette version (réponse 404)
+
+### Liste des routes
+
+| Route | Méthode | Rôle | Ancien nom (toujours accepté) |
+|-------|---------|------|-------------------------------|
+| **Système et réseau** | | | |
+| [`/api/system`](#apisystem) | GET | État du réseau (WiFi, Ethernet), de MQTT et de WebPush, température | `/getSystem` |
+| `/api/network/wifi-signal` | GET | Signal WiFi : `{"rssi":-61,"quality":78,"txPower":19.5}` | `/api/wifiSignal` |
+| **Appareils** | | | |
+| [`/api/devices`](#apidevices) | GET | Tous les appareils et leurs attributs | `/getDevices` |
+| [`/api/device?ieee=`](#apidevice) | GET | Un appareil | `/getDevice?id=` |
+| `/api/device/energy?ieee=` | GET | Historique d'énergie d'un appareil | `/getEnergyDevice` |
+| `/api/device/power?ieee=` | GET | Historique de puissance d'un appareil | `/getPowerDevice` |
+| [`/api/templates`](#apitemplates) | GET | Templates des appareils | `/getTemplates` |
+| **Énergie** | | | |
+| [`/api/energy/linky`](#apienergylinky) | GET | Données du ZLinky configuré | `/getLinky` |
+| [`/api/energy/config`](#apienergyconfig) | GET | Configuration Énergie, **sans les mots de passe** | v2.26 |
+| [`/api/energy/tariff`](#apienergytariff) | GET | Tarif en cours, prix du kWh, prochain changement | `/api/tariff` |
+| `/api/energy/submeters` | GET | Sous-compteurs | `/getSubMeters` |
+| `/api/energy/chart?ieee=&time=` | GET | Données du graphe d'énergie (`time` : `hour`, `day`, `month`, `year`) | `/loadEnergyChart` |
+| `/api/energy/chart/export?ieee=&time=` | GET | Même chose en CSV | `/exportEnergyChart` |
+| **Puissance** (v2.26) | | | |
+| [`/api/power/peaks?days=90`](#apipowerpeaks) | GET | Puissance par jour : pic instantané, sur 1 min, plateau sur 10 min, temps passé près de la coupure | v2.26 |
+| [`/api/power/floor?days=30`](#apipowerfloor) | GET | Consommation plancher de la nuit | v2.26 |
+| [`/api/power/summary`](#apipowersummary) | GET | Bilan pour juger l'abonnement et le risque de coupure | v2.26 |
+| **Délestage** (v2.26) | | | |
+| [`/api/delestage`](#apidelestage) | GET | État du délestage | v2.26 |
+| `/api/delestage/restore` | POST | Rallumer les prises coupées | v2.26 |
+| **Alertes et notifications** | | | |
+| [`/api/alerts?since=`](#apialerts) | GET | 20 dernières alertes, lisibles sans être consommées | v2.26 |
+| `/api/notifications?page=&limit=` | GET | Notifications enregistrées (100 au plus), paginées | |
+| `/api/notifications` | POST | Créer une notification (corps JSON : `title`, `message`, `type`) | |
+| `/api/notifications/read?id=` | PUT | Marquer une notification comme lue | |
+| `/api/notifications/read-all` | PUT | Tout marquer comme lu | |
+| `/api/notifications/delete?id=` | DELETE | Supprimer une notification | |
+| `/api/notifications/clear` | DELETE | Tout supprimer | |
+| `/api/notifications/stats` | GET | Nombre de notifications : total, lues, non lues | `/api/stats` |
+| **Tunnel d'accès distant** | | | |
+| `/api/tunnel/status` | GET | Tunnel activé, connecté, adresse publique | `/api/tunnelStatus` |
+| `/api/tunnel/activate` | GET | Lancer l'activation par code | `/api/tunnelActivate` |
+| `/api/tunnel/activate/status` | GET | Avancement de l'activation | `/api/tunnelActivateStatus` |
+| `/api/tunnel/credentials` | GET / POST | Identifiants du tunnel | |
+| **Règles et groupes d'actions** | | | |
+| `/api/rules/add`, `/edit`, `/delete`, `/toggle` | POST | Gérer les règles | |
+| `/api/actiongroups/list`, `/devices` | GET | Groupes d'actions et appareils utilisables | |
+| `/api/actiongroups/run`, `/save`, `/delete` | POST | Lancer, enregistrer, supprimer un groupe | |
+| **Matter** (v3.0) | | | |
+| `/api/matter/status` | GET | Activation, appairage, codes d'appairage, nombre d'appareils publiés | v3.0 |
+| `/api/matter/config` | POST | Activer ou désactiver Matter (`{"enabled":true}`, redémarrage nécessaire) | v3.0 |
+| `/api/matter/excluded` | GET | Appareils retirés de Matter | v3.0 |
+| `/api/matter/expose` | POST | Publier ou retirer un appareil (`{"ieee":"...","expose":true}`) | v3.0 |
+| `/api/matter/open-window` | POST | Ouvrir la fenêtre d'appairage (`{"seconds":900}`) | v3.0 |
+| `/api/matter/factory_reset` | POST | Supprimer tous les appairages Matter | v3.0 |
+
+### Méthodes
+
+#### api/system
+`ethernet` (W5500) et `active` (`ethernet`, `wifi` ou vide) à partir de la v2.27.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/system'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "network": {
+    "wifi": {
+      "enable": 1,
+      "connected": 1,
+      "mode": 0,
+      "ip": "192.168.0.144",
+      "netmask": "255.255.255.0",
+      "gateway": "192.168.0.254"
+    },
+    "ethernet": {
+      "present": 1,
+      "connected": 1,
+      "dhcp": 1,
+      "ip": "192.168.0.145",
+      "netmask": "255.255.255.0",
+      "gateway": "192.168.0.254"
+    },
+    "active": "ethernet"
+  },
+  "system": {
+    "mqtt": {
+      "enable": 1,
+      "connected": 1,
+      "url": "192.168.0.21",
+      "port": 1883
+    },
+    "webpush": {
+      "enable": 0,
+      "auth": 0,
+      "url": ""
+    },
+    "infos": {
+      "t": 48.1
+    }
+  }
+}
+```
+#### api/devices
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/devices'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "00158d0006203a63": {
+    "1": {
+      "IN": "0,1,3,1026,1794",
+      "OUT": "4,3,1794"
+    },
+    "INFO": {
+      "shortAddr": "38694",
+      "LQI": "66",
+      "device_id": "263",
+      "lastSeen": "2025-03-14 14:40",
+      "Status": "00",
+      "manufacturer": "LiXee",
+      "model": "ZiPulses",
+      "software_version": "4000-0008"
+    },
+    "0702": {
+      "0": "000000000036"
+    },
+    "0402": {
+      "0": "09F8"
+    },
+    "0001": {
+      "32": "23",
+      "33": "C8"
+    }
+  }
+}
+```
+#### api/device
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/device?ieee=04cf8cdf3c79ce2b'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "04cf8cdf3c79ce2b": {
+    "1": {
+      "IN": "0,2,3,4,5,6,9,1794,2820",
+      "OUT": "10,25"
+    },
+    "242": {
+      "IN": "",
+      "OUT": "33"
+    },
+    "INFO": {
+      "shortAddr": "5561",
+      "LQI": "5C",
+      "device_id": "97",
+      "lastSeen": "2025-03-13 19:30",
+      "Status": "00",
+      "manufacturer": "LUMI",
+      "model": "lumi.plug.maeu01",
+      "software_version": "22"
+    }
+  }
+}
+```
+
+#### api/energy/linky
+
+Renvoie `503` avec `{"error":"..."}` si aucun ZLinky n'est configuré ou si son template est indisponible.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/energy/linky'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "65382_768": 0,
+  "1794_0": 28870881,
+  "1794_256": 28870881,
+  "1794_258": 0,
+  "1794_260": 0,
+  "1794_262": 0,
+  "1794_264": 0,
+  "1794_266": 0,
+  "2820_1295": 1560,
+  "2820_1293": 0,
+  "1794_32": "TH..",
+  "1794_776": "022161823588",
+  "2817_13": 45,
+  "2817_14": 0,
+  "2820_1288": 6,
+  "2820_1290": 90,
+  "65382_0": "BASE",
+  "65382_1": "",
+  "65382_2": "00",
+  "65382_3": 0,
+  "65382_4": 0,
+  "65382_5": 0
+}
+```
+#### api/templates
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/templates'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "24321.json": {
+    "lumi.sensor_switch.aq2": [
+      {
+        "status": [
+          {
+            "name": "Clic",
+            "cluster": "0006",
+            "attribut": 0
+          },
+          {
+            "name": "MultiClic",
+            "cluster": "0000",
+            "attribut": 32768
+          }
+        ]
+      }
+    ],
+    "default": [
+      {
+        "status": [
+          {
+            "name": "Clic",
+            "cluster": "0012",
+            "attribut": 85
+          },
+          {
+            "name": "MultiClic",
+            "cluster": "0012",
+            "attribut": 1293
+          }
+        ]
+      }
+    ]
+  },.........
+}
+```
+
+#### api/energy/config
+Configuration Énergie **sans aucun secret** (mots de passe, jeton du tunnel). `prices` : prix du kWh par attribut d'index (`256` = index 1 … `272` = index 9), prix nuls omis. `linkyMode` : 0 historique mono, 2 historique tri, 1 / 5 standard mono, 3 / 7 standard tri (5 et 7 : producteur).
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/energy/config'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "zlinky": "00158d0001a2b3c4", "production": "", "gaz": "", "water": "00158d0009f8e7d6",
+  "linkyMode": 1,
+  "prices": {"256": 0.1612, "258": 0.2068},
+  "subscription": {"abo": 15.65, "cspe": 0.0225, "cta": 1.2},
+  "gas": {"price": 0.12, "coeff": 10, "unit": "m3"},
+  "water": {"price": 0.004, "coeff": 1, "unit": "L"},
+  "subMeters": [{"index": 0, "ieee": "a4c1380000000002", "alias": "Véhicule", "color": "#e74c3c", "enabled": true}],
+  "thresholds": {
+    "budget": {"enabled": true, "monthEur": 80},
+    "overPower": {"enabled": false, "w": 6000},
+    "dailyAnomaly": {"enabled": true, "percent": 30},
+    "nightWaterLeak": {"enabled": true, "litres": 1},
+    "waterLeak": {"enabled": false, "litres": 5},
+    "freeze": {"enabled": false, "centiDeg": 300, "sensor": ""}
+  },
+  "delestage": ["a4c1380000000001"]
+}
+```
+
+#### api/power/peaks
+Puissance apparente par jour, conservée 90 jours (`days` : 1 à 90, défaut 90). Le Linky coupe sur un dépassement qui dure de l'ordre d'une minute, et en triphasé sur chaque phase : un pic isolé ne dit rien du risque de coupure. Chaque jour porte donc trois niveaux (injection exclue) :
+
+| Champ | Signification |
+|-------|---------------|
+| `instVA` | pic instantané (la plus forte mesure) |
+| `va1m` | pic de la moyenne sur 1 minute glissante : le risque de coupure |
+| `va10m` | pic du plateau sur 10 minutes : la charge durable, pour juger l'abonnement |
+| `minutes` | minutes dont la moyenne sur 1 min a atteint 50, 60, 70, 80, 90 ou 100 % de la limite (cumulé, tranches vides omises) |
+| `va` | valeur de référence : SMAXSN officiel en Standard monophasé (`source` = `meter`), sinon `va1m` (`sampled`) |
+| `floorW` | plancher nocturne (voir `/api/power/floor`) |
+| `measuredMin` | minutes réellement mesurées dans la journée (1440 = complète) |
+
+En **triphasé**, ces champs portent sur le total et `phases` donne le détail par phase, rapporté à `phaseSubscribedVA` (un tiers de la puissance souscrite) ; `meterVA` est le SMAXSN officiel de la phase quand il est connu.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/power/peaks?days=90'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "subscribedVA": 9000, "triphase": false, "source": "meter",
+  "peaks": [
+    {"date": "2026-10-12", "va": 7900, "instVA": 8350, "va1m": 7710, "va10m": 5480, "floorW": 310,
+     "measuredMin": 1438, "minutes": {"50": 95, "60": 41, "70": 12, "80": 4}}
+  ]
+}
+```
+##### Réponse (triphasé)
+```json
+{
+  "subscribedVA": 12000, "triphase": true, "phaseSubscribedVA": 4000, "source": "sampled",
+  "peaks": [
+    {"date": "2026-10-12", "va": 7020, "instVA": 7600, "va1m": 7020, "va10m": 5200, "floorW": 420,
+     "measuredMin": 1440, "minutes": {"50": 30},
+     "phases": [
+       {"phase": 1, "meterVA": 3650, "instVA": 3900, "va1m": 3610, "va10m": 2900, "minutes": {"50": 210, "80": 12, "90": 2}},
+       {"phase": 2, "instVA": 2100, "va1m": 1980, "va10m": 1500, "minutes": {"50": 3}},
+       {"phase": 3, "instVA": 1700, "va1m": 1650, "va10m": 1200, "minutes": {}}
+     ]}
+  ]
+}
+```
+
+#### api/power/floor
+Consommation plancher par jour (`days` : 1 à 90, défaut 30) : la plus petite consommation horaire entre 1 h et 5 h, en W, calculée sur les index du compteur. Les heures avec production sont ignorées. Disponible à partir de 5 h ; `null` si la box a redémarré dans la nuit.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/power/floor?days=30'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{"floor": [{"date": "2026-10-12", "w": 310}, {"date": "2026-10-13", "w": null}]}
+```
+
+#### api/power/summary
+Bilan pour juger l'abonnement et le risque de coupure :
+- `worst` : pires `instVA`, `va1m` et `va10m` des 90 derniers jours, avec leur date (et par phase en triphasé, dans `worst.phases`) ;
+- `frequency` : pour chaque tranche de `bands`, jours où la moyenne sur 1 min l'a atteinte sur les 7, 30 et 90 derniers jours mesurés, et `rate` : `daily` (au moins 70 % des jours), `weekly` (au moins 1 jour sur 10), `monthly` (au moins 1 jour sur 40), `rare`, `never` ou `unknown` (moins de 7 jours observés). En triphasé (`frequencyBasis` = `phases`), un jour compte dès qu'une phase a atteint la tranche de sa propre limite ;
+- `months` : vue mois par mois sur 24 mois (pics, minutes et jours par tranche), et par phase en triphasé.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/power/summary'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "subscribedVA": 9000, "triphase": false, "bands": [50, 60, 70, 80, 90, 100],
+  "worst": {
+    "instVA": {"va": 8350, "date": "2026-10-12"},
+    "va1m": {"va": 7710, "date": "2026-10-12"},
+    "va10m": {"va": 5480, "date": "2026-10-12"}
+  },
+  "frequencyBasis": "total",
+  "frequency": {
+    "80": {"days7": 1, "days30": 2, "days90": 3, "observedDays": 88, "last": "2026-10-12", "rate": "monthly"},
+    "90": {"days7": 0, "days30": 0, "days90": 0, "observedDays": 88, "last": null, "rate": "never"}
+  },
+  "months": [
+    {"month": "2026-10", "observedDays": 13, "subscribedVA": 9000, "instVA": 8350, "va1m": 7710, "va10m": 5480,
+     "minutes": {"50": 410, "60": 150, "70": 38, "80": 4}, "days": {"50": 11, "60": 6, "70": 3, "80": 1}}
+  ]
+}
+```
+
+#### api/alerts
+Les 20 dernières alertes, **sans les consommer** (contrairement à `/getAlert`, utilisé par l'interface web, qui vide la file). Chaque alerte a un `id` croissant, conservé au redémarrage : interroger avec `since` = dernier id connu pour n'obtenir que les nouvelles. `level` va de 0 à 3. Une même alerte répétée dans les 10 minutes n'occupe qu'une place.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/alerts?since=41'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "alerts": [
+    {"id": 42, "ts": "14/10/2026 18:42", "type": "over_budget", "level": 0,
+     "title": "💸🚨Dépassement de budget", "message": "...", "value": 4200, "threshold": 4000}
+  ],
+  "lastId": 42
+}
+```
+
+#### api/delestage
+État du délestage. `cut` vaut `true` pour une prise coupée par le délestage en cours. `reason` : `meter` (dépassement signalé par le compteur) ou `anticipation`. `minuteLoadPercent` : charge de la dernière minute en % de la limite (total en monophasé, phase la plus chargée en triphasé ; -1 si inconnue), sur laquelle se décident le délestage anticipé et le rallumage automatique.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/delestage'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "active": true, "since": "14/10/2026 18:42", "lastEnd": "13/10/2026 07:15", "reason": "meter",
+  "restoreMinutes": 5, "restorePercent": 80, "anticipationPercent": 0,
+  "minuteVA": 5230, "minuteLoadPercent": 58, "subscribedVA": 9000,
+  "devices": [{"ieee": "a4c1380000000001", "name": "Radiateur salon", "cut": true}]
+}
+```
+Pour rallumer les prises coupées (seules celles qui étaient allumées avant la coupure) :
+```bash
+curl -X POST 'https://<HOST>/api/delestage/restore'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+Réponse `202 {"status":"pending"}` : la commande part au tour de boucle suivant, relire `/api/delestage` pour l'état. En accès direct, la requête POST doit porter un en-tête `Origin` ou `Referer` du même hôte (protection CSRF).
+
+#### api/energy/tariff
+Tarif en cours (bandeau de la page Énergie). Depuis la v2.26 : `index` (attribut de l'index en cours, 256…272), `price` (prix du kWh en cours, `null` s'il n'est pas saisi) et `nextChange` (prochain changement `HH:MM` : 06:00 / 22:00 en Tempo, heures de bascule observées en HC/HP et EJP, `null` en Base ou tant qu'une journée complète n'a pas été observée).
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/energy/tariff'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "show": true, "tariff": "Heures Pleines", "bgColor": "#154360", "isTempo": false,
+  "today": {"class": "tempo-undef", "label": "Non défini", "icon": "?"},
+  "tomorrow": {"class": "tempo-undef", "label": "Non défini", "icon": "-"},
+  "index": 258, "price": 0.2068, "nextChange": "22:00"
+}
+```
+
+## 📦 Installation du Firmware
+Installez simplement esptools et exécutez cette commande (v3). ⚠️ Elle **efface la configuration** de la box : pour une box déjà installée, passez par la [mise à jour web](#mise-à-jour-du-firmware).
+
+### Windows
+
+```bash
+esptool.py.exe --chip esp32s3 --port "COMXX" \
+	 --baud 460800 \
+	 --before default_reset --after hard_reset write_flash -z \
+	 --flash_mode dio --flash_freq 80m --flash_size 16MB \
+	 0x0 bootloader.bin \
+	 0x8000 partitions.bin \
+	 0x11000 ota_data_initial.bin \
+	 0x20000 firmware.bin \
+	 0x827000 littlefs.bin
+```
+### Linux
+
+```bash
+esptool.py --chip esp32s3 \
+--port /dev/ttyUSB0 \
+--baud 460800 \
+--before default-reset \
+--after hard-reset \
+write-flash -z \
+--flash-mode dio \
+--flash-freq 80m \
+--flash-size 16MB \
+0x0 bootloader.bin \
+0x8000 partitions.bin \
+0x11000 ota_data_initial.bin \
+0x20000 firmware.bin \
+0x827000 littlefs.bin
+```
+
+### Compiler le firmware (v3)
+Le firmware se compile avec **ESP-IDF 5.5.2** ([installation](https://docs.espressif.com/projects/esp-idf/fr/v5.5.2/esp32s3/get-started/)) :
+
+```bash
+idf.py set-target esp32s3
+idf.py build
+```
+
+Les composants (esp-matter, LittleFS, mDNS) sont téléchargés automatiquement à la première compilation. Les pages web se modifient dans `web_src/` ; `tools/build_web.py` les compresse dans `data/web/` (lancé automatiquement par la compilation de l'image LittleFS). Sous Windows, `build.ps1` charge l'environnement ESP-IDF et compile.
+
+## 🏠 Intégration Home Assistant
+
+Deux façons d'intégrer la LiXee-Box, utilisables ensemble :
+- **Matter** (à partir de la v3.0) : sans broker MQTT, voir [Pont Matter](#-pont-matter-à-partir-de-la-v30)
+- **MQTT Discovery**, décrit ci-dessous : expose tous les états des templates, y compris ceux sans équivalent Matter (champs TIC, énergie injectée, phases 2 et 3…)
+
+**LiXee-Box** est compatible avec la découverte MQTT de Home Assistant.
+
+Allez simplement dans le menu **Passerelle** --> **MQTT** et activez la fonctionnalité
+
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_config_MQTT.png" width="800">  
+
+Remplissez le formulaire :
+  * Serveur MQTT
+  * Port MQTT
+  * Nom d'utilisateur MQTT
+  * Mot de passe MQTT
+
+Puis cliquez sur **Home-Assistant** et **Sauvegarder**  
+Attendez un moment et si tout est correct, l'icône de connexion deviendra verte.
+
+Ensuite, allez dans le menu **Réseau** --> **Zigbee**
+
+Pour chaque appareil Zigbee, un nouveau bouton **MQTT Discover** apparaît. Veuillez cliquer dessus pour créer un nouveau périphérique sur HA. Et voilà.
+<div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_Devices_mqtt_discover.png" width="320">  </div>
+
+Attendez un moment et allez dans vos périphériques MQTT HA :
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_Create_MQTT_device.png" width="1024">  
+
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/HA_MQTT_device_entities.png" width="800">
+
+## DEBUG
+
+Il est possible de débugger l'application en branchant le matériel sur le port USB d'un ordinateur
+**Utilisez putty.exe**
+<img width="452" height="442" alt="image" src="https://github.com/user-attachments/assets/2b7fef49-60f3-4f9d-b3b0-39c3b53dff40" />
+* Entrer le port "Serial line" : COMXX
+* Entrer la vitesse "Speed" : 115200
+* Sélectionner "Serial"
+* Appuyer sur "Open"
+
+## Crédits
+
+Merci à tous les auteurs des bibliothèques tierces utilisées dans ce projet :
+
+Version 3 (ESP-IDF) :
+
+* [espressif / esp-idf](https://github.com/espressif/esp-idf)
+* [espressif / esp-matter](https://github.com/espressif/esp-matter) et [project-chip / connectedhomeip](https://github.com/project-chip/connectedhomeip)
+* [joltwallet / esp_littlefs](https://github.com/joltwallet/esp_littlefs)
+* [espressif / mdns](https://github.com/espressif/esp-protocols)
+* [DaveGamble / cJSON](https://github.com/DaveGamble/cJSON)
+
+Version 2.x (Arduino) :
+
+* [espressif / arduino-esp32](https://github.com/espressif/arduino-esp32)
+* [rlogiacco/CircularBuffer](https://github.com/rlogiacco/CircularBuffer)
+* [bblanchon/ArduinoJson](https://github.com/bblanchon/ArduinoJson)
+* [paulstoffregen/Time](https://github.com/PaulStoffregen/Time)
+* [marvinroger/AsyncMqttClient](https://github.com/marvinroger/async-mqtt-client)
+* [arkhipenko/TaskScheduler](https://github.com/arkhipenko/TaskScheduler)
+* [ESP32Async/AsyncTCP](https://github.com/ESP32Async/AsyncTCP)
+* [ESP32Async/ESPAsyncWebServer](https://github.com/ESP32Async/ESPAsyncWebServer)
+* [Links2004/WebSockets](https://github.com/Links2004/arduinoWebSockets)
+* [jgromes/RadioLib](https://github.com/jgromes/RadioLib)
+* [bblanchon/StreamUtils](https://github.com/bblanchon/ArduinoStreamUtils)
+
+Merci à [ZigStar](https://github.com/mercenaruss) pour la mise à jour OTA
+
+Icônes des groupes d'actions : [Material Design Icons](https://pictogrammers.com/library/mdi/) par Pictogrammers (licence Apache 2.0)
+
+
+
+### V1.0a
+* Source init
