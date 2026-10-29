@@ -1090,24 +1090,70 @@ exemple : `bind : "1026;1029;1794"`
 | `change` | | Decimal | | Valeur de changement pour envoyer un rapport | 
 
 ## 🔌 API WEB
-Pour accéder aux commandes de l'API, allez sur http://<HOST>/<commande>
+Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, ou au travers du tunnel d'accès distant.
 
-### Liste des Commandes
+### Conventions (à partir de la v2.27)
+- Toutes les routes sont sous **`/api/<groupe>/<ressource>`**, en minuscules (mots séparés par `-`)
+- **GET** pour lire, **POST** pour agir ou modifier (PUT / DELETE pour les notifications)
+- Paramètres **par leur nom** ; un appareil se désigne par **`ieee`** (les anciens noms `IEEE` et `id` restent acceptés)
+- Réponses en JSON ; une valeur inconnue vaut `null`
+- Authentification : celle de l'interface web — identifiant et mot de passe (Basic Auth) en accès direct, session de connexion au travers du tunnel. Une requête POST en accès direct doit porter un en-tête `Origin` ou `Referer` du même hôte (protection CSRF)
+- **Compatibilité** : les noms `/api/...` de la colonne de gauche existent à partir de la v2.27. Les anciens noms (colonne de droite) restent servis par réécriture d'URL, avec la même réponse ; une box antérieure à la v2.27 ne connaît qu'eux. Les routes marquées « v2.26 » n'existent pas avant cette version (réponse 404)
 
-* [getSystem](#getSystem)
-* [getDevices](#getDevices)
-* [getDevice?id=IEEE](#getDevice)
-* [getLinky](#getLinky)
-* [getTemplates](#getTemplates)
+### Liste des routes
 
+| Route | Méthode | Rôle | Ancien nom (toujours accepté) |
+|-------|---------|------|-------------------------------|
+| **Système et réseau** | | | |
+| [`/api/system`](#apisystem) | GET | État du réseau (WiFi, Ethernet), de MQTT et de WebPush, température | `/getSystem` |
+| `/api/network/wifi-signal` | GET | Signal WiFi : `{"rssi":-61,"quality":78,"txPower":19.5}` | `/api/wifiSignal` |
+| **Appareils** | | | |
+| [`/api/devices`](#apidevices) | GET | Tous les appareils et leurs attributs | `/getDevices` |
+| [`/api/device?ieee=`](#apidevice) | GET | Un appareil | `/getDevice?id=` |
+| `/api/device/energy?ieee=` | GET | Historique d'énergie d'un appareil | `/getEnergyDevice` |
+| `/api/device/power?ieee=` | GET | Historique de puissance d'un appareil | `/getPowerDevice` |
+| [`/api/templates`](#apitemplates) | GET | Templates des appareils | `/getTemplates` |
+| **Énergie** | | | |
+| [`/api/energy/linky`](#apienergylinky) | GET | Données du ZLinky configuré | `/getLinky` |
+| [`/api/energy/config`](#apienergyconfig) | GET | Configuration Énergie, **sans les mots de passe** | v2.26 |
+| [`/api/energy/tariff`](#apienergytariff) | GET | Tarif en cours, prix du kWh, prochain changement | `/api/tariff` |
+| `/api/energy/submeters` | GET | Sous-compteurs | `/getSubMeters` |
+| `/api/energy/chart?ieee=&time=` | GET | Données du graphe d'énergie (`time` : `hour`, `day`, `month`, `year`) | `/loadEnergyChart` |
+| `/api/energy/chart/export?ieee=&time=` | GET | Même chose en CSV | `/exportEnergyChart` |
+| **Puissance** (v2.26) | | | |
+| [`/api/power/peaks?days=90`](#apipowerpeaks) | GET | Puissance par jour : pic instantané, sur 1 min, plateau sur 10 min, temps passé près de la coupure | v2.26 |
+| [`/api/power/floor?days=30`](#apipowerfloor) | GET | Consommation plancher de la nuit | v2.26 |
+| [`/api/power/summary`](#apipowersummary) | GET | Bilan pour juger l'abonnement et le risque de coupure | v2.26 |
+| **Délestage** (v2.26) | | | |
+| [`/api/delestage`](#apidelestage) | GET | État du délestage | v2.26 |
+| `/api/delestage/restore` | POST | Rallumer les prises coupées | v2.26 |
+| **Alertes et notifications** | | | |
+| [`/api/alerts?since=`](#apialerts) | GET | 20 dernières alertes, lisibles sans être consommées | v2.26 |
+| `/api/notifications?page=&limit=` | GET | Notifications enregistrées (100 au plus), paginées | |
+| `/api/notifications` | POST | Créer une notification (corps JSON : `title`, `message`, `type`) | |
+| `/api/notifications/read?id=` | PUT | Marquer une notification comme lue | |
+| `/api/notifications/read-all` | PUT | Tout marquer comme lu | |
+| `/api/notifications/delete?id=` | DELETE | Supprimer une notification | |
+| `/api/notifications/clear` | DELETE | Tout supprimer | |
+| `/api/notifications/stats` | GET | Nombre de notifications : total, lues, non lues | `/api/stats` |
+| **Tunnel d'accès distant** | | | |
+| `/api/tunnel/status` | GET | Tunnel activé, connecté, adresse publique | `/api/tunnelStatus` |
+| `/api/tunnel/activate` | GET | Lancer l'activation par code | `/api/tunnelActivate` |
+| `/api/tunnel/activate/status` | GET | Avancement de l'activation | `/api/tunnelActivateStatus` |
+| `/api/tunnel/credentials` | GET / POST | Identifiants du tunnel | |
+| **Règles et groupes d'actions** | | | |
+| `/api/rules/add`, `/edit`, `/delete`, `/toggle` | POST | Gérer les règles | |
+| `/api/actiongroups/list`, `/devices` | GET | Groupes d'actions et appareils utilisables | |
+| `/api/actiongroups/run`, `/save`, `/delete` | POST | Lancer, enregistrer, supprimer un groupe | |
 
 ### Méthodes
 
-#### getSystem
+#### api/system
+`ethernet` (W5500) et `active` (`ethernet`, `wifi` ou vide) à partir de la v2.27.
 
 ##### Requête
 ```bash
-curl -X GET 'https://<HOST>/getSystem'\
+curl -X GET 'https://<HOST>/api/system'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
@@ -1122,7 +1168,16 @@ curl -X GET 'https://<HOST>/getSystem'\
       "ip": "192.168.0.144",
       "netmask": "255.255.255.0",
       "gateway": "192.168.0.254"
-    }
+    },
+    "ethernet": {
+      "present": 1,
+      "connected": 1,
+      "dhcp": 1,
+      "ip": "192.168.0.145",
+      "netmask": "255.255.255.0",
+      "gateway": "192.168.0.254"
+    },
+    "active": "ethernet"
   },
   "system": {
     "mqtt": {
@@ -1136,22 +1191,17 @@ curl -X GET 'https://<HOST>/getSystem'\
       "auth": 0,
       "url": ""
     },
-    "marstek": {
-      "enable": 1,
-      "connected": 0,
-      "ip": ""
-    },
     "infos": {
       "t": 48.1
     }
   }
 }
 ```
-#### getDevices
+#### api/devices
 
 ##### Requête
 ```bash
-curl -X GET 'https://<HOST>/getDevices'\
+curl -X GET 'https://<HOST>/api/devices'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
@@ -1186,11 +1236,11 @@ curl -X GET 'https://<HOST>/getDevices'\
   }
 }
 ```
-#### getDevice
+#### api/device
 
 ##### Requête
 ```bash
-curl -X GET 'https://<HOST>/getDevice?id=04cf8cdf3c79ce2b'\
+curl -X GET 'https://<HOST>/api/device?ieee=04cf8cdf3c79ce2b'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
@@ -1220,11 +1270,13 @@ curl -X GET 'https://<HOST>/getDevice?id=04cf8cdf3c79ce2b'\
 }
 ```
 
-#### getLinky
+#### api/energy/linky
+
+Renvoie `503` avec `{"error":"..."}` si aucun ZLinky n'est configuré ou si son template est indisponible.
 
 ##### Requête
 ```bash
-curl -X GET 'https://<HOST>/getLinky'\
+curl -X GET 'https://<HOST>/api/energy/linky'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
@@ -1255,11 +1307,11 @@ curl -X GET 'https://<HOST>/getLinky'\
   "65382_5": 0
 }
 ```
-#### getTemplates
+#### api/templates
 
 ##### Requête
 ```bash
-curl -X GET 'https://<HOST>/getTemplates'\
+curl -X GET 'https://<HOST>/api/templates'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
@@ -1300,6 +1352,196 @@ curl -X GET 'https://<HOST>/getTemplates'\
       }
     ]
   },.........
+}
+```
+
+#### api/energy/config
+Configuration Énergie **sans aucun secret** (mots de passe, jeton du tunnel). `prices` : prix du kWh par attribut d'index (`256` = index 1 … `272` = index 9), prix nuls omis. `linkyMode` : 0 historique mono, 2 historique tri, 1 / 5 standard mono, 3 / 7 standard tri (5 et 7 : producteur).
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/energy/config'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "zlinky": "00158d0001a2b3c4", "production": "", "gaz": "", "water": "00158d0009f8e7d6",
+  "linkyMode": 1,
+  "prices": {"256": 0.1612, "258": 0.2068},
+  "subscription": {"abo": 15.65, "cspe": 0.0225, "cta": 1.2},
+  "gas": {"price": 0.12, "coeff": 10, "unit": "m3"},
+  "water": {"price": 0.004, "coeff": 1, "unit": "L"},
+  "subMeters": [{"index": 0, "ieee": "a4c1380000000002", "alias": "Véhicule", "color": "#e74c3c", "enabled": true}],
+  "thresholds": {
+    "budget": {"enabled": true, "monthEur": 80},
+    "overPower": {"enabled": false, "w": 6000},
+    "dailyAnomaly": {"enabled": true, "percent": 30},
+    "nightWaterLeak": {"enabled": true, "litres": 1},
+    "waterLeak": {"enabled": false, "litres": 5},
+    "freeze": {"enabled": false, "centiDeg": 300, "sensor": ""}
+  },
+  "delestage": ["a4c1380000000001"]
+}
+```
+
+#### api/power/peaks
+Puissance apparente par jour, conservée 90 jours (`days` : 1 à 90, défaut 90). Le Linky coupe sur un dépassement qui dure de l'ordre d'une minute, et en triphasé sur chaque phase : un pic isolé ne dit rien du risque de coupure. Chaque jour porte donc trois niveaux (injection exclue) :
+
+| Champ | Signification |
+|-------|---------------|
+| `instVA` | pic instantané (la plus forte mesure) |
+| `va1m` | pic de la moyenne sur 1 minute glissante : le risque de coupure |
+| `va10m` | pic du plateau sur 10 minutes : la charge durable, pour juger l'abonnement |
+| `minutes` | minutes dont la moyenne sur 1 min a atteint 50, 60, 70, 80, 90 ou 100 % de la limite (cumulé, tranches vides omises) |
+| `va` | valeur de référence : SMAXSN officiel en Standard monophasé (`source` = `meter`), sinon `va1m` (`sampled`) |
+| `floorW` | plancher nocturne (voir `/api/power/floor`) |
+| `measuredMin` | minutes réellement mesurées dans la journée (1440 = complète) |
+
+En **triphasé**, ces champs portent sur le total et `phases` donne le détail par phase, rapporté à `phaseSubscribedVA` (un tiers de la puissance souscrite) ; `meterVA` est le SMAXSN officiel de la phase quand il est connu.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/power/peaks?days=90'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "subscribedVA": 9000, "triphase": false, "source": "meter",
+  "peaks": [
+    {"date": "2026-10-12", "va": 7900, "instVA": 8350, "va1m": 7710, "va10m": 5480, "floorW": 310,
+     "measuredMin": 1438, "minutes": {"50": 95, "60": 41, "70": 12, "80": 4}}
+  ]
+}
+```
+##### Réponse (triphasé)
+```json
+{
+  "subscribedVA": 12000, "triphase": true, "phaseSubscribedVA": 4000, "source": "sampled",
+  "peaks": [
+    {"date": "2026-10-12", "va": 7020, "instVA": 7600, "va1m": 7020, "va10m": 5200, "floorW": 420,
+     "measuredMin": 1440, "minutes": {"50": 30},
+     "phases": [
+       {"phase": 1, "meterVA": 3650, "instVA": 3900, "va1m": 3610, "va10m": 2900, "minutes": {"50": 210, "80": 12, "90": 2}},
+       {"phase": 2, "instVA": 2100, "va1m": 1980, "va10m": 1500, "minutes": {"50": 3}},
+       {"phase": 3, "instVA": 1700, "va1m": 1650, "va10m": 1200, "minutes": {}}
+     ]}
+  ]
+}
+```
+
+#### api/power/floor
+Consommation plancher par jour (`days` : 1 à 90, défaut 30) : la plus petite consommation horaire entre 1 h et 5 h, en W, calculée sur les index du compteur. Les heures avec production sont ignorées. Disponible à partir de 5 h ; `null` si la box a redémarré dans la nuit.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/power/floor?days=30'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{"floor": [{"date": "2026-10-12", "w": 310}, {"date": "2026-10-13", "w": null}]}
+```
+
+#### api/power/summary
+Bilan pour juger l'abonnement et le risque de coupure :
+- `worst` : pires `instVA`, `va1m` et `va10m` des 90 derniers jours, avec leur date (et par phase en triphasé, dans `worst.phases`) ;
+- `frequency` : pour chaque tranche de `bands`, jours où la moyenne sur 1 min l'a atteinte sur les 7, 30 et 90 derniers jours mesurés, et `rate` : `daily` (au moins 70 % des jours), `weekly` (au moins 1 jour sur 10), `monthly` (au moins 1 jour sur 40), `rare`, `never` ou `unknown` (moins de 7 jours observés). En triphasé (`frequencyBasis` = `phases`), un jour compte dès qu'une phase a atteint la tranche de sa propre limite ;
+- `months` : vue mois par mois sur 24 mois (pics, minutes et jours par tranche), et par phase en triphasé.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/power/summary'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "subscribedVA": 9000, "triphase": false, "bands": [50, 60, 70, 80, 90, 100],
+  "worst": {
+    "instVA": {"va": 8350, "date": "2026-10-12"},
+    "va1m": {"va": 7710, "date": "2026-10-12"},
+    "va10m": {"va": 5480, "date": "2026-10-12"}
+  },
+  "frequencyBasis": "total",
+  "frequency": {
+    "80": {"days7": 1, "days30": 2, "days90": 3, "observedDays": 88, "last": "2026-10-12", "rate": "monthly"},
+    "90": {"days7": 0, "days30": 0, "days90": 0, "observedDays": 88, "last": null, "rate": "never"}
+  },
+  "months": [
+    {"month": "2026-10", "observedDays": 13, "subscribedVA": 9000, "instVA": 8350, "va1m": 7710, "va10m": 5480,
+     "minutes": {"50": 410, "60": 150, "70": 38, "80": 4}, "days": {"50": 11, "60": 6, "70": 3, "80": 1}}
+  ]
+}
+```
+
+#### api/alerts
+Les 20 dernières alertes, **sans les consommer** (contrairement à `/getAlert`, utilisé par l'interface web, qui vide la file). Chaque alerte a un `id` croissant, conservé au redémarrage : interroger avec `since` = dernier id connu pour n'obtenir que les nouvelles. `level` va de 0 à 3. Une même alerte répétée dans les 10 minutes n'occupe qu'une place.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/alerts?since=41'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "alerts": [
+    {"id": 42, "ts": "14/10/2026 18:42", "type": "over_budget", "level": 0,
+     "title": "💸🚨Dépassement de budget", "message": "...", "value": 4200, "threshold": 4000}
+  ],
+  "lastId": 42
+}
+```
+
+#### api/delestage
+État du délestage. `cut` vaut `true` pour une prise coupée par le délestage en cours. `reason` : `meter` (dépassement signalé par le compteur) ou `anticipation`. `minuteLoadPercent` : charge de la dernière minute en % de la limite (total en monophasé, phase la plus chargée en triphasé ; -1 si inconnue), sur laquelle se décident le délestage anticipé et le rallumage automatique.
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/delestage'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "active": true, "since": "14/10/2026 18:42", "lastEnd": "13/10/2026 07:15", "reason": "meter",
+  "restoreMinutes": 5, "restorePercent": 80, "anticipationPercent": 0,
+  "minuteVA": 5230, "minuteLoadPercent": 58, "subscribedVA": 9000,
+  "devices": [{"ieee": "a4c1380000000001", "name": "Radiateur salon", "cut": true}]
+}
+```
+Pour rallumer les prises coupées (seules celles qui étaient allumées avant la coupure) :
+```bash
+curl -X POST 'https://<HOST>/api/delestage/restore'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+Réponse `202 {"status":"pending"}` : la commande part au tour de boucle suivant, relire `/api/delestage` pour l'état. En accès direct, la requête POST doit porter un en-tête `Origin` ou `Referer` du même hôte (protection CSRF).
+
+#### api/energy/tariff
+Tarif en cours (bandeau de la page Énergie). Depuis la v2.26 : `index` (attribut de l'index en cours, 256…272), `price` (prix du kWh en cours, `null` s'il n'est pas saisi) et `nextChange` (prochain changement `HH:MM` : 06:00 / 22:00 en Tempo, heures de bascule observées en HC/HP et EJP, `null` en Base ou tant qu'une journée complète n'a pas été observée).
+
+##### Requête
+```bash
+curl -X GET 'https://<HOST>/api/energy/tariff'\
+    -u <username>:<password> \
+    -H 'Content-Type: application/json' \
+```
+##### Réponse
+```json
+{
+  "show": true, "tariff": "Heures Pleines", "bgColor": "#154360", "isTempo": false,
+  "today": {"class": "tempo-undef", "label": "Non défini", "icon": "?"},
+  "tomorrow": {"class": "tempo-undef", "label": "Non défini", "icon": "-"},
+  "index": 258, "price": 0.2068, "nextChange": "22:00"
 }
 ```
 
