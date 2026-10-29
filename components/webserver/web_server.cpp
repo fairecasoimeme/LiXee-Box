@@ -407,7 +407,7 @@ static const char LOGIN_HTML[] =
     "        </div>\n"
     "        <button type='submit' class='btn btn-warning w-100 btn-lg'>Se connecter</button>\n"
     "      </form>\n"
-    "      <div class='text-center text-muted mt-3' style='font-size:0.8rem;'>%s</div>\n"
+    "      <div class='text-center text-muted mt-3' style='font-size:0.8rem;'>v%s</div>\n"
     "    </div>\n"
     "  </div>\n"
     "  <script>\n"
