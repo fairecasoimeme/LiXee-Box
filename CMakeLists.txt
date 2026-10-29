@@ -26,6 +26,16 @@ idf_build_set_property(COMPILE_DEFINITIONS "CJSON_NESTING_LIMIT=32" APPEND)
 set(PROJECT_VER "3.0")
 project(lixee_matter_bridge)
 
+# esp-matter 1.4.2 : closure-control-cluster-logic.cpp ne compile pas avec
+# GCC 14 en C++23 (operator== de Nullable<T>, regles de reecriture C++20).
+# Cluster inutilise par le pont : le fichier est retire de la compilation ici,
+# managed_components/ etant retelecharge (et non versionne).
+idf_component_get_property(_matter_dir espressif__esp_matter COMPONENT_DIR)
+set_source_files_properties(
+    "${_matter_dir}/connectedhomeip/connectedhomeip/src/app/clusters/closure-control-server/closure-control-cluster-logic.cpp"
+    DIRECTORY "${_matter_dir}"
+    PROPERTIES HEADER_FILE_ONLY TRUE)
+
 # Fichiers web : sources editables dans web_src/, compressees (gzip) vers
 # data/web/*.gz avant chaque image LittleFS. Le serveur sert la version .gz.
 add_custom_target(web_gz
