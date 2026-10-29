@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.27a
+
+### Tableau de bord Énergie : sous-compteurs
+- **Sous-compteurs comptés deux fois** dans « Usage d'électricité » et « Répartition » : un sous-compteur (radiateur, prise…) est en aval du Linky, sa consommation est donc déjà dans les index du Linky et doit en être retirée. Elle n'était retirée que de l'index tarifaire sous lequel le sous-compteur l'avait rangée ; or en mode Standard, l'index en cours était lu dans le libellé du tarif, propre à chaque fournisseur, et retombait souvent sur l'index 1 (HC). Pendant les heures pleines, rien n'était retiré : l'heure affichait Linky + radiateurs. L'index en cours vient désormais de NTARF (FF66/513), et la soustraction se fait au prorata des index de chaque tranche, ce qui corrige aussi l'affichage de l'historique déjà enregistré
+- **Coût des sous-compteurs** (infobulle d'« Usage d'électricité », « Répartition », export CSV) : il était toujours calculé au prix HC, et, dans l'infobulle et l'export CSV, sans la taxe par kWh appliquée aux index. Il suit désormais le tarif réellement en cours à chaque tranche (prix moyen des index du Linky sur la tranche), avec la même taxe que les index
+- **Prix arrondis à 2 décimales** dans les graphes : un prix de 0,2068 €/kWh était compté 0,21, et un prix d'eau de 0,004 €/L tombait à 0. Les prix sont transmis avec 6 décimales
+
+### Réseau (Config LAN)
+- **W5500 détecté à tort sur une carte qui n'en a pas** : le pilote d'ESP-IDF 4.4 ne vérifie pas la puce (il lit son registre de version sans le contrôler), son installation réussissait donc même sans W5500. La box vérifie désormais la puce elle-même (registre VERSIONR = 0x04 après une impulsion de reset) ; sans W5500, la broche de reset est relâchée et la box fonctionne en WiFi comme avant
+- Journal de connexion WiFi : il affichait l'IP fixe de la configuration même en DHCP, ce qui laissait croire qu'elle était utilisée. Il indique maintenant `mode : DHCP` ou `mode : IP fixe ...`
+- **Configuration WiFi vide quand la box démarre en Ethernet** : elle n'était lue qu'au démarrage du WiFi, qui n'a pas lieu quand l'Ethernet suffit. La page Config LAN affichait alors le WiFi en IP fixe au lieu de DHCP, et l'enregistrer basculait le WiFi en IP fixe avec un mot de passe vide. La configuration WiFi est désormais lue au démarrage dans tous les cas
+- `/api/system` : `network.wifi.ip`, `netmask` et `gateway` donnent les adresses réellement utilisées quand le WiFi est connecté (en DHCP, c'était l'IP fixe saisie dans la configuration) ; nouveau champ `network.wifi.dhcp` (le champ `mode` existant valait toujours 0)
+
+### API : noms uniformisés
+- Les routes publiques suivent désormais **`/api/<groupe>/<ressource>`**, en minuscules ; un appareil se désigne par le paramètre **`ieee`** (`IEEE` et `id` restent acceptés) ; les graphes d'énergie lisent `ieee` et `time` par leur nom (et toujours par position pour les anciens appels)
+- **Les anciens noms restent servis** par réécriture d'URL, avec la même réponse : aucun client existant (application, widgets, Home Assistant, scripts) n'est à modifier
+- Correspondances : `/getSystem` → `/api/system`, `/api/wifiSignal` → `/api/network/wifi-signal`, `/getDevices` → `/api/devices`, `/getDevice` → `/api/device`, `/getEnergyDevice` → `/api/device/energy`, `/getPowerDevice` → `/api/device/power`, `/getTemplates` → `/api/templates`, `/getLinky` → `/api/energy/linky`, `/api/tariff` → `/api/energy/tariff`, `/getSubMeters` → `/api/energy/submeters`, `/loadEnergyChart` → `/api/energy/chart`, `/exportEnergyChart` → `/api/energy/chart/export`, `/api/stats` → `/api/notifications/stats`, `/api/debug` → `/api/notifications/debug`, `/api/tunnelStatus` → `/api/tunnel/status`, `/api/tunnelActivate` → `/api/tunnel/activate`, `/api/tunnelActivateStatus` → `/api/tunnel/activate/status`
+- Les routes de l'API répondent à leur **nom exact** : une route ne capture plus celles qui la prolongent (`/api/notifications` captait `/api/notifications/stats`)
+- `/api/system` donne aussi l'état de l'**Ethernet** (`network.ethernet`) et l'interface utilisée (`network.active`) ; les champs existants ne changent pas
+- Section API du README réécrite : conventions, table de toutes les routes avec leur ancien nom, exemples
+
+### Mise à jour
+- Flasher le firmware **et** mettre à jour le système de fichiers (`data/web/js/functions.min.js.gz`), puis redémarrer (le script est versionné : pas besoin de vider le cache du navigateur)
+
 ## v2.26
 
 ### Appareils à plusieurs canaux (issue #44)
