@@ -400,6 +400,20 @@
           "endpoint": 1,
           "value": 8,
           "visible": 1
+        },
+        {
+          "name": "Consigne chaud",
+          "command": 315,
+          "endpoint": 1,
+          "value": 2100,
+          "visible": 1
+        },
+        {
+          "name": "Consigne froid",
+          "command": 314,
+          "endpoint": 1,
+          "value": 2500,
+          "visible": 1
         }
       ]
     }

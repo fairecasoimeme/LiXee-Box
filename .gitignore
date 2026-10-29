@@ -1,35 +1,36 @@
-# Prerequisites
-*.d
+# ESP-IDF build artifacts
+build/
+sdkconfig.old
+# sdkconfig et dependencies.lock sont versionnes : ils figent la configuration
+# (PSRAM, partitions, Matter...) et les versions des composants (esp-matter...)
 
-# Compiled Object files
-*.slo
-*.lo
-*.o
-*.obj
+# IDF Component Manager - telecharge automatiquement
+managed_components/
 
-# Precompiled Headers
-*.gch
-*.pch
+# VSCode (garder settings.json, exclure le reste)
+.vscode/*
+!.vscode/settings.json
 
-# Compiled Dynamic libraries
-*.so
-*.dylib
+# Restes de la branche Arduino (PlatformIO, outils locaux)
+.pio/
 *.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
 *.lib
 
-# Executables
-*.exe
-*.out
-*.app
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
 
-# PlatformIO : build et bibliotheques telechargees, regeneres a chaque compilation
-.pio/
+# IDE
+*.swp
+*.swo
+*~
+.idea/
+
+# Compilation
+*.o
+*.d
+*.map
+*.bin
+*.elf
+__pycache__/

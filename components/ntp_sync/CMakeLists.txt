@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "ntp_sync.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+        config_manager
+    PRIV_REQUIRES
+        lwip
+)

@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LiXee Box</title>
+  <script type="text/javascript" src="js/jquery-min.js"></script>
+  <script type="text/javascript" src="js/masonry.pkgd.min.js"></script>
+  <script type="text/javascript" src="js/bootstrap.min.js"></script>
+  <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css" />
+  <link href="css/style.css" rel="stylesheet" type="text/css" />
+  <link href="css/energy.css" rel="stylesheet" type="text/css" />
+  <style>
+    body {
+      background-color: #f7f9fc;
+      font-family: 'Inter', sans-serif;
+    }
+    .card {
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .hi{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:1.5px solid currentColor;border-radius:50%;font-size:14px;font-weight:bold;cursor:pointer;}
+  </style>
+</head>
+<body>
+<!-- ============== NAVBAR ============== -->
+<nav class="navbar navbar-expand-md rounded">
+  <div class="container-fluid">
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+      <div class="AlertNotif" style="display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;"></div>
+      <div class="AboutMaj" style="display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;"></div>
+    </button>
+    <!-- Logo, puis date et heure dessous (comme la LiXee-Box) -->
+    <a class="navbar-brand p-0 me-0 me-lg-2" href="#energy" style="margin-right:0px;text-decoration:none;">
+      <div style="display:flex;align-items:center;">
+        <img width="70px" src="img/logo.png">
+        <span style="font-size:16px;font-weight:bold;padding-left:10px;padding-top:15px;"> Box</span>
+      </div>
+      <div style="width:13px;font-size:11px;color:#6c757d;text-align:center;margin-top:10px;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" fill="currentColor" viewBox="0 0 16 16" style="width:11px;">
+          <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"/>
+          <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"/>
+        </svg>
+        <span id="FormattedDate">--</span>
+      </div>
+    </a>
+    <div id="navbarNavDropdown" class="collapse navbar-collapse justify-content-center">
+      <ul class="navbar-nav mc-auto mb-2 mb-lg-0">
+
+        <!-- ===== MESURES ===== -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMesures" role="button" data-bs-toggle="dropdown">
+            <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-home">
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <polyline points="9 22 9 12 15 12 15 22"></polyline>
+            </svg>
+            Mesures
+          </a>
+          <div class="dropdown-menu">
+            <a class="dropdown-item" href="#energy">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-lightning-charge" viewBox="0 0 16 16">
+                <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
+              </svg>
+              Energie
+            </a>
+            <a class="dropdown-item" data-mod="zigbee" href="#thermostats">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-thermometer-half" viewBox="0 0 16 16">
+                <path d="M9.5 12.5a1.5 1.5 0 1 1-2-1.415V6.5a.5.5 0 0 1 1 0v4.585a1.5 1.5 0 0 1 1 1.415"/>
+                <path d="M5.5 2.5a2.5 2.5 0 0 1 5 0v7.55a3.5 3.5 0 1 1-5 0zM8 1a1.5 1.5 0 0 0-1.5 1.5v7.987l-.167.15a2.5 2.5 0 1 0 3.333 0l-.166-.15V2.5A1.5 1.5 0 0 0 8 1"/>
+              </svg>
+              Thermostats
+            </a>
+            <a class="dropdown-item" data-mod="zigbee,lora" href="#devices">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-app-indicator" viewBox="0 0 16 16">
+                <path d="M5.5 2A3.5 3.5 0 0 0 2 5.5v5A3.5 3.5 0 0 0 5.5 14h5a3.5 3.5 0 0 0 3.5-3.5V8a.5.5 0 0 1 1 0v2.5a4.5 4.5 0 0 1-4.5 4.5h-5A4.5 4.5 0 0 1 1 10.5v-5A4.5 4.5 0 0 1 5.5 1H8a.5.5 0 0 1 0 1z"/>
+                <path d="M16 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0"/>
+              </svg>
+              Appareils
+            </a>
+          </div>
+        </li>
+
+        <!-- ===== RESEAU ===== -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownReseau" role="button" data-bs-toggle="dropdown">
+            <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-router" viewBox="0 0 16 16">
+              <path d="M5.525 3.025a3.5 3.5 0 0 1 4.95 0 .5.5 0 1 0 .707-.707 4.5 4.5 0 0 0-6.364 0 .5.5 0 0 0 .707.707"/>
+              <path d="M6.94 4.44a1.5 1.5 0 0 1 2.12 0 .5.5 0 0 0 .708-.708 2.5 2.5 0 0 0-3.536 0 .5.5 0 0 0 .707.707ZM2.5 11a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1m4.5-.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0m2.5.5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1m1.5-.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0m2 0a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0"/>
+              <path d="M2.974 2.342a.5.5 0 1 0-.948.316L3.806 8H1.5A1.5 1.5 0 0 0 0 9.5v2A1.5 1.5 0 0 0 1.5 13H2a.5.5 0 0 0 .5.5h2A.5.5 0 0 0 5 13h6a.5.5 0 0 0 .5.5h2a.5.5 0 0 0 .5-.5h.5a1.5 1.5 0 0 0 1.5-1.5v-2A1.5 1.5 0 0 0 14.5 8h-2.306l1.78-5.342a.5.5 0 1 0-.948-.316L11.14 8H4.86zM14.5 9a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5v-2a.5.5 0 0 1 .5-.5z"/>
+              <path d="M8.5 5.5a.5.5 0 1 1-1 0 .5.5 0 0 1 1 0"/>
+            </svg>
+            R&eacute;seau
+          </a>
+          <div class="dropdown-menu">
+            <a class="dropdown-item" href="#network">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-diagram-3" viewBox="0 0 16 16">  <path fill-rule="evenodd" d="M6 3.5A1.5 1.5 0 0 1 7.5 2h1A1.5 1.5 0 0 1 10 3.5v1A1.5 1.5 0 0 1 8.5 6v1H14a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-1 0V8h-5v.5a.5.5 0 0 1-1 0V8h-5v.5a.5.5 0 0 1-1 0v-1A.5.5 0 0 1 2 7h5.5V6A1.5 1.5 0 0 1 6 4.5zM8.5 5a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5h-1a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5zM0 11.5A1.5 1.5 0 0 1 1.5 10h1A1.5 1.5 0 0 1 4 11.5v1A1.5 1.5 0 0 1 2.5 14h-1A1.5 1.5 0 0 1 0 12.5zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm4.5.5A1.5 1.5 0 0 1 7.5 10h1a1.5 1.5 0 0 1 1.5 1.5v1A1.5 1.5 0 0 1 8.5 14h-1A1.5 1.5 0 0 1 6 12.5zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5zm4.5.5a1.5 1.5 0 0 1 1.5-1.5h1a1.5 1.5 0 0 1 1.5 1.5v1a1.5 1.5 0 0 1-1.5 1.5h-1a1.5 1.5 0 0 1-1.5-1.5zm1.5-.5a.5.5 0 0 0-.5.5v1a.5.5 0 0 0 .5.5h1a.5.5 0 0 0 .5-.5v-1a.5.5 0 0 0-.5-.5z"/></svg>
+              LAN
+            </a>
+            <a class="dropdown-item" data-mod="zigbee" href="#zigbee">
+              <svg fill="currentColor" style="width:16px;" width="16" height="16" viewBox="0 0 24 24" role="img" xmlns="http://www.w3.org/2000/svg">
+                <path d="M11.988 0a11.85 11.85 0 00-8.617 3.696c7.02-.875 11.401-.583 13.289-.34 3.752.583 3.558 3.404 3.558 3.404L8.237 19.112c2.299.22 6.897.366 13.796-.631a11.86 11.86 0 001.912-6.469C23.945 5.374 18.595 0 11.988 0zm.232 4.31c-2.451-.014-5.772.146-9.963.723C.854 7.003.055 9.41.055 12.012.055 18.626 5.38 24 11.988 24c3.63 0 6.85-1.63 9.053-4.182-7.286.948-11.813.631-13.75.388-3.775-.56-3.557-3.404-3.557-3.404L15.691 4.474a38.635 38.635 0 00-3.471-.163Z"/>
+              </svg>
+              Zigbee
+            </a>
+            <a class="dropdown-item" data-mod="lora" href="#configLora">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" style="width:16px;height:16px;" width="16" height="16" viewBox="1 44 302 517"><path d="M223.5 237.4a84 84 0 0 1 24.7 61c.1 24.9-4 47.5-21.9 66.3L224 367l-2 2.1c-16.4 15.6-40.8 23.2-63 23.9l-3.1.1c-26.2.5-51.4-5.3-71.9-22.1l-3-2.4A81 81 0 0 1 56 319c-.9-16.6-1.7-34.2 4-50l1.3-3.7a84 84 0 0 1 46.2-45.9c36.4-14.8 87-9.7 116 18m-102.8 26.2a65 65 0 0 0-11.2 49.5c2.2 14 7.5 24.3 18.4 33.5 9.6 6.7 22 7.6 33.2 6A39 39 0 0 0 187 336a82 82 0 0 0 5.4-56 47 47 0 0 0-20.8-25.3 44 44 0 0 0-50.9 8.9"/><path d="M22 483q5.5 2.1 10.6 5.2c22.4 13 47 21.4 72.2 26.6l2.9.6q22.5 4.2 45.4 4h2.4q20.4 0 40.5-3.4l2.8-.5A243 243 0 0 0 279 485q11.1 10.6 19 24c-30.3 21.2-67.7 32.4-104 38l-2.2.3c-65 10-130.8-6-186.8-39.3 0-3.6.8-4.5 3-7.3l1.8-2.6 2-2.6 2-2.6c5.2-7 5.2-7 8.2-9.9M197 58l3 .5A282 282 0 0 1 284 88l2 1c11.8 6.4 11.8 6.4 13 10-1.1 2-1.1 2-2.9 4.3l-3.9 5.2-2 2.6-5.2 6.9c-.7 1-.7 1-1.5 1.8-1.5 1.2-1.5 1.2-3.5 1q-2.9-1.2-5.6-2.8l-2-1.2-2.3-1.3A248 248 0 0 0 176 86l-3.3-.4c-47.8-4.7-96 5.7-138.2 28.5l-2.8 1.5-2.5 1.3q-3 1.4-6.2 2.1l-6.8-8.7-2-2.5-1.8-2.5-1.8-2.2L9 101l-1.8-2L6 97c1.2-3.6 2-3.8 5.2-5.6l2.6-1.5 3-1.5 3-1.6A282 282 0 0 1 197 58"/><path d="M52 443q4.5 1.7 8.8 4A195 195 0 0 0 206 464q19.3-5.4 36.7-15l2.3-1.2 2-1.1c2.5-.9 3.6-.7 6 .3 1.6 1.7 1.6 1.7 3 3.8l1.6 2.3 1.6 2.5 1.7 2.4 4.1 6c-3 3.4-6.5 5.6-10.5 7.8l-2 1a221 221 0 0 1-168.4 12A230 230 0 0 1 40 464c0-4.2.3-4.9 2.6-8.1l1.7-2.3 1.7-2.4 1.7-2.4zm200.7-308.7 3 1.6 2.9 1.5 2.5 1.3c1.9 1.3 1.9 1.3 2.9 4.3q-2.2 3.6-4.7 7l-1.4 1.8-5.7 7.6-1.2 1.6a56 56 0 0 1-12.2-5.3 180 180 0 0 0-89-22h-2.2c-29.9.1-58.8 6.6-85.4 20.6q-5.3 3-11.2 4.7l-6.6-8.8-1.9-2.5-1.8-2.5-1.6-2.2-1.1-2c1.7-5 6.5-6.3 11-8.6l3.1-1.6a217 217 0 0 1 58.2-19.3c48.1-10 99.3.7 142.4 22.8M81 404l1.5.7c37.4 18.1 75.8 25.7 116.3 12.2q12.3-4.5 24.2-9.9l6.4 8.8c3.6 5 3.6 5 3.6 7.2a163 163 0 0 1-80.8 20.4A154 154 0 0 1 71 421c.6-4.3 3.1-7.4 5.6-10.7z"/><path d="M233 184a60 60 0 0 1-6.1 9.8l-2.2 3c-.9 1-.9 1-1.7 2.2q-6.4-2-12.4-5.1a138 138 0 0 0-124.1 1.5c-3.5 1.6-3.5 1.6-5.5 1a25 25 0 0 1-6.2-6.8l-2.2-3C71 184 71 184 71 181c50.8-25.7 112.8-29.3 162 3"/></svg>
+              LoRa
+            </a>
+          </div>
+        </li>
+
+        <!-- ===== PASSERELLE ===== -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownPasserelle" role="button" data-bs-toggle="dropdown">
+            <svg style="width:24px;" width="24" height="24" viewBox="0 0 16 16" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+              <path fill="#000000" fill-rule="evenodd" d="M13.75.5a2.25 2.25 0 00-1.847 3.536l-.933.934a.752.752 0 00-.11.14c-.19-.071-.396-.11-.61-.11h-2.5A1.75 1.75 0 006 6.75v.5H4.372a2.25 2.25 0 100 1.5H6v.5c0 .966.784 1.75 1.75 1.75h2.5c.214 0 .42-.039.61-.11.03.05.067.097.11.14l.933.934a2.25 2.25 0 101.24-.881L12.03 9.97a.75.75 0 00-.14-.11c.071-.19.11-.396.11-.61v-2.5c0-.214-.039-.42-.11-.61a.75.75 0 00.14-.11l1.113-1.113A2.252 2.252 0 0016 2.75 2.25 2.25 0 0013.75.5zM13 2.75a.75.75 0 111.5 0 .75.75 0 01-1.5 0zM7.75 6.5a.25.25 0 00-.25.25v2.5c0 .138.112.25.25.25h2.5a.25.25 0 00.25-.25v-2.5a.25.25 0 00-.25-.25h-2.5zm6 6a.75.75 0 100 1.5.75.75 0 000-1.5zM1.5 8A.75.75 0 113 8a.75.75 0 01-1.5 0z" clip-rule="evenodd"/>
+            </svg>
+            Passerelle
+          </a>
+          <div class="dropdown-menu">
+            <a class="dropdown-item" href="#mqtt">
+              <svg role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style="width:16px;" height="16" width="16">
+                <path d="M10.657 23.994h-9.45A1.212 1.212 0 0 1 0 22.788v-9.18h0.071c5.784 0 10.504 4.65 10.586 10.386Zm7.606 0h-4.045C14.135 16.246 7.795 9.977 0 9.942V6.038h0.071c9.983 0 18.121 8.044 18.192 17.956Zm4.53 0h-0.97C21.754 12.071 11.995 2.407 0 2.372v-1.16C0 0.55 0.544 0.006 1.207 0.006h7.64C15.733 2.49 21.257 7.789 24 14.508v8.291c0 0.663-0.544 1.195-1.207 1.195ZM16.713 0.006h6.092A1.19 1.19 0 0 1 24 1.2v5.914c-0.91-1.242-2.046-2.65-3.158-3.762C19.588 2.11 18.122 0.987 16.714 0.005Z" fill="currentColor" stroke-width="1"></path>
+              </svg>
+              MQTT
+            </a>
+            <a class="dropdown-item" href="#webpush">
+              <svg style="width:16px;" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">  <path fill-rule="evenodd" clip-rule="evenodd" d="M9.83824 18.4467C10.0103 18.7692 10.1826 19.0598 10.3473 19.3173C8.59745 18.9238 7.07906 17.9187 6.02838 16.5383C6.72181 16.1478 7.60995 15.743 8.67766 15.4468C8.98112 16.637 9.40924 17.6423 9.83824 18.4467ZM11.1618 17.7408C10.7891 17.0421 10.4156 16.1695 10.1465 15.1356C10.7258 15.0496 11.3442 15 12.0001 15C12.6559 15 13.2743 15.0496 13.8535 15.1355C13.5844 16.1695 13.2109 17.0421 12.8382 17.7408C12.5394 18.3011 12.2417 18.7484 12 19.0757C11.7583 18.7484 11.4606 18.3011 11.1618 17.7408ZM9.75 12C9.75 12.5841 9.7893 13.1385 9.8586 13.6619C10.5269 13.5594 11.2414 13.5 12.0001 13.5C12.7587 13.5 13.4732 13.5593 14.1414 13.6619C14.2107 13.1384 14.25 12.5841 14.25 12C14.25 11.4159 14.2107 10.8616 14.1414 10.3381C13.4732 10.4406 12.7587 10.5 12.0001 10.5C11.2414 10.5 10.5269 10.4406 9.8586 10.3381C9.7893 10.8615 9.75 11.4159 9.75 12ZM8.38688 10.0288C8.29977 10.6478 8.25 11.3054 8.25 12C8.25 12.6946 8.29977 13.3522 8.38688 13.9712C7.11338 14.3131 6.05882 14.7952 5.24324 15.2591C4.76698 14.2736 4.5 13.168 4.5 12C4.5 10.832 4.76698 9.72644 5.24323 8.74088C6.05872 9.20472 7.1133 9.68686 8.38688 10.0288ZM10.1465 8.86445C10.7258 8.95042 11.3442 9 12.0001 9C12.6559 9 13.2743 8.95043 13.8535 8.86447C13.5844 7.83055 13.2109 6.95793 12.8382 6.2592C12.5394 5.69894 12.2417 5.25156 12 4.92432C11.7583 5.25156 11.4606 5.69894 11.1618 6.25918C10.7891 6.95791 10.4156 7.83053 10.1465 8.86445ZM15.6131 10.0289C15.7002 10.6479 15.75 11.3055 15.75 12C15.75 12.6946 15.7002 13.3521 15.6131 13.9711C16.8866 14.3131 17.9412 14.7952 18.7568 15.2591C19.233 14.2735 19.5 13.1679 19.5 12C19.5 10.8321 19.233 9.72647 18.7568 8.74093C17.9413 9.20477 16.8867 9.6869 15.6131 10.0289ZM17.9716 7.46178C17.2781 7.85231 16.39 8.25705 15.3224 8.55328C15.0189 7.36304 14.5908 6.35769 14.1618 5.55332C13.9897 5.23077 13.8174 4.94025 13.6527 4.6827C15.4026 5.07623 16.921 6.08136 17.9716 7.46178ZM8.67765 8.55325C7.61001 8.25701 6.7219 7.85227 6.02839 7.46173C7.07906 6.08134 8.59745 5.07623 10.3472 4.6827C10.1826 4.94025 10.0103 5.23076 9.83823 5.5533C9.40924 6.35767 8.98112 7.36301 8.67765 8.55325ZM15.3224 15.4467C15.0189 16.637 14.5908 17.6423 14.1618 18.4467C13.9897 18.7692 13.8174 19.0598 13.6527 19.3173C15.4026 18.9238 16.921 17.9186 17.9717 16.5382C17.2782 16.1477 16.3901 15.743 15.3224 15.4467ZM12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" fill="currentColor"/></svg>
+              WebPush
+            </a>
+            <!-- === MATTER : logo Matter (trois branches a 120 degres) === -->
+            <a class="dropdown-item" href="#matter">
+              <svg style="width:16px;" width="16" height="16" viewBox="-30 -25 610 610" fill="none" stroke="currentColor" stroke-width="58" xmlns="http://www.w3.org/2000/svg">
+                <path d="M277 8V233M101 131A215 215 0 0 0 453 131"/>
+                <path transform="rotate(120 277 322)" d="M277 8V233M101 131A215 215 0 0 0 453 131"/>
+                <path transform="rotate(240 277 322)" d="M277 8V233M101 131A215 215 0 0 0 453 131"/>
+              </svg>
+              Matter
+            </a>
+          </div>
+        </li>
+
+        <!-- ===== CONFIG ===== -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownConfig" role="button" data-bs-toggle="dropdown">
+            <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-settings">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            Config
+          </a>
+          <div class="dropdown-menu">
+            <a class="dropdown-item" href="#configGeneral">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-settings">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              G&eacute;n&eacute;ral
+            </a>
+            <a class="dropdown-item" href="#configEnergy">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-lightning-charge" viewBox="0 0 16 16">
+                <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/>
+              </svg>
+              Energie
+            </a>
+            <a class="dropdown-item" data-mod="zigbee" href="#configThermostats">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-thermometer-half" viewBox="0 0 16 16">
+                <path d="M9.5 12.5a1.5 1.5 0 1 1-2-1.415V6.5a.5.5 0 0 1 1 0v4.585a1.5 1.5 0 0 1 1 1.415"/>
+                <path d="M5.5 2.5a2.5 2.5 0 0 1 5 0v7.55a3.5 3.5 0 1 1-5 0zM8 1a1.5 1.5 0 0 0-1.5 1.5v7.987l-.167.15a2.5 2.5 0 1 0 3.333 0l-.166-.15V2.5A1.5 1.5 0 0 0 8 1"/>
+              </svg>
+              Thermostat
+            </a>
+            <a class="dropdown-item" href="#configNotifications">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" style="width:16px;" class="bi bi-bell" viewBox="0 0 16 16">  <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/></svg>
+              Notifications
+            </a>
+            <a class="dropdown-item" href="#configRules">
+              <svg style="width:16px;" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-file-ruled" viewBox="0 0 16 16">  <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2zm2-1a1 1 0 0 0-1 1v4h10V2a1 1 0 0 0-1-1zm9 6H6v2h7zm0 3H6v2h7zm0 3H6v2h6a1 1 0 0 0 1-1zm-8 2v-2H3v1a1 1 0 0 0 1 1zm-2-3h2v-2H3zm0-3h2V7H3z"/></svg>
+              R&egrave;gles
+            </a>
+            <a class="dropdown-item" data-mod="zigbee" href="#configActionGroups">
+              <svg style="width:16px;" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-lightning-charge" viewBox="0 0 16 16">  <path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09zM4.157 8.5H7a.5.5 0 0 1 .478.647L6.11 13.59l5.732-6.09H9a.5.5 0 0 1-.478-.647L9.89 2.41z"/></svg>
+              Groupe d'actions
+            </a>
+            <a class="dropdown-item" href="#configHorloge">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" style="width:16px;" class="bi bi-clock" viewBox="0 0 16 16">
+                <path d="M8 3.5a.5.5 0 0 0-1 0V9a.5.5 0 0 0 .252.434l3.5 2a.5.5 0 0 0 .496-.868L8 8.71z"></path>
+                <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16m7-8A7 7 0 1 1 1 8a7 7 0 0 1 14 0"></path>
+              </svg>
+              Horloge
+            </a>
+            <a class="dropdown-item" href="#configHTTP">
+              <svg style="width:16px;" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 16C2 13.1716 2 11.7574 2.87868 10.8787C3.75736 10 5.17157 10 8 10H16C18.8284 10 20.2426 10 21.1213 10.8787C22 11.7574 22 13.1716 22 16C22 18.8284 22 20.2426 21.1213 21.1213C20.2426 22 18.8284 22 16 22H8C5.17157 22 3.75736 22 2.87868 21.1213C2 20.2426 2 18.8284 2 16Z" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M6 10V8C6 4.68629 8.68629 2 12 2C15.3137 2 18 4.68629 18 8V10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              S&eacute;curit&eacute;
+            </a>
+            <a class="dropdown-item" href="#configTunnel">
+              <svg style="width:16px;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">  <path d="M12 2L2 7l10 5 10-5-10-5z"/>  <path d="M2 17l10 5 10-5"/>  <path d="M2 12l10 5 10-5"/></svg>
+              Tunnel
+            </a>
+          </div>
+        </li>
+
+        <!-- ===== OUTILS ===== -->
+        <li class="nav-item" id="Tools" style="display:none;">
+          <a class="nav-link" href="#tools">
+            <svg viewBox="0 0 24 24" style="width:24px;" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
+            </svg>
+            Outils
+          </a>
+        </li>
+
+        <!-- ===== NOTIFICATIONS ===== -->
+        <li class="nav-item">
+          <a class="nav-link" href="#notifications">
+            <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-bell" viewBox="0 0 16 16">
+              <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/>
+            </svg>
+            Notifications
+            <span class="AlertNotif" style="display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;"></span>
+          </a>
+        </li>
+
+        <!-- ===== A PROPOS ===== -->
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownAbout" role="button" data-bs-toggle="dropdown">
+            <svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" fill="currentColor" class="bi bi-question-circle" viewBox="0 0 16 16">
+              <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+              <path d="M5.255 5.786a.237.237 0 0 0 .241.247h.825c.138 0 .248-.113.266-.25.09-.656.54-1.134 1.342-1.134.686 0 1.314.343 1.314 1.168 0 .635-.374.927-.965 1.371-.673.489-1.206 1.06-1.168 1.987l.003.217a.25.25 0 0 0 .25.246h.811a.25.25 0 0 0 .25-.25v-.105c0-.718.273-.927 1.01-1.486.609-.463 1.244-.977 1.244-2.056 0-1.511-1.276-2.241-2.673-2.241-1.267 0-2.655.59-2.75 2.286m1.557 5.763c0 .533.425.927 1.01.927.609 0 1.028-.394 1.028-.927 0-.552-.42-.94-1.029-.94-.584 0-1.009.388-1.009.94"/>
+            </svg>
+            A propos
+            <div class="AboutMaj" style="display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;"></div>
+          </a>
+          <div class="dropdown-menu">
+            <a class="dropdown-item" href="#help">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-info-circle" viewBox="0 0 16 16">
+                <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14m0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16"/>
+                <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.07.352.176.288.469l-.738 3.468c-.194.897.105 1.319.808 1.319.545 0 1.178-.252 1.465-.598l.088-.416c-.2.176-.492.246-.686.246-.275 0-.375-.193-.304-.533zM9 4.5a1 1 0 1 1-2 0 1 1 0 0 1 2 0"/>
+              </svg>
+              Infos
+            </a>
+            <a class="dropdown-item" href="#system">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-cpu" viewBox="0 0 16 16">
+                <path d="M5 0a.5.5 0 0 1 .5.5V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2h1V.5a.5.5 0 0 1 1 0V2A2.5 2.5 0 0 1 14 4.5h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14v1h1.5a.5.5 0 0 1 0 1H14A2.5 2.5 0 0 1 11.5 14v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14h-1v1.5a.5.5 0 0 1-1 0V14A2.5 2.5 0 0 1 2 11.5H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2v-1H.5a.5.5 0 0 1 0-1H2A2.5 2.5 0 0 1 4.5 2V.5A.5.5 0 0 1 5 0m-.5 3A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13h7a1.5 1.5 0 0 0 1.5-1.5v-7A1.5 1.5 0 0 0 11.5 3zM5 6.5A1.5 1.5 0 0 1 6.5 5h3A1.5 1.5 0 0 1 11 6.5v3A1.5 1.5 0 0 1 9.5 11h-3A1.5 1.5 0 0 1 5 9.5zM6.5 6a.5.5 0 0 0-.5.5v3a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5v-3a.5.5 0 0 0-.5-.5z"/>
+              </svg>
+              Syst&egrave;me
+            </a>
+            <a class="dropdown-item" href="#update">
+              <svg style="width:16px;" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-download" viewBox="0 0 16 16">  <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5"/>  <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z"/></svg>
+              Mise &agrave; jour
+              <div class="AboutMaj" style="display:none; width: 8px;height: 8px; background-color: red; margin-left: 4px; vertical-align: middle;border-radius: 50%;"></div>
+            </a>
+            <div class="dropdown-divider nav-logout" style="display:none;"></div>
+            <a class="dropdown-item nav-logout" href="/logout" style="display:none;">
+              <svg xmlns="http://www.w3.org/2000/svg" style="width:16px;" width="16" height="16" fill="currentColor" class="bi bi-box-arrow-right" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M10 12.5a.5.5 0 0 1-.5.5h-8a.5.5 0 0 1-.5-.5v-9a.5.5 0 0 1 .5-.5h8a.5.5 0 0 1 .5.5v2a.5.5 0 0 0 1 0v-2A1.5 1.5 0 0 0 9.5 2h-8A1.5 1.5 0 0 0 0 3.5v9A1.5 1.5 0 0 0 1.5 14h8a1.5 1.5 0 0 0 1.5-1.5v-2a.5.5 0 0 0-1 0z"/>
+                <path fill-rule="evenodd" d="M15.854 8.354a.5.5 0 0 0 0-.708l-3-3a.5.5 0 0 0-.708.708L14.293 7.5H5.5a.5.5 0 0 0 0 1h8.793l-2.147 2.146a.5.5 0 0 0 .708.708z"/>
+              </svg>
+              D&eacute;connexion
+            </a>
+          </div>
+        </li>
+
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<!-- Alert banner -->
+<div id="alert" style="display:none;" class="alert alert-success" role="alert"></div>
+
+<!-- ============== CONTENU DYNAMIQUE ============== -->
+<div id="page-content">
+  <!-- Le contenu des pages est charge dynamiquement par app.js -->
+</div>
+
+<!-- ============== FOOTER ============== -->
+<br><hr>
+<div align="center" style="font-size:12px;">
+  Copyright : LiXee 2025 - version : <span id="app-version">--</span>
+</div>
+
+<script type="text/javascript" src="js/app.js"></script>
+<script type="text/javascript" src="js/page_maint.js"></script>
+<script type="text/javascript" src="js/page_tunnel.js"></script>
+<script type="text/javascript" src="js/page_lora.js"></script>
+<script type="text/javascript" src="js/page_notif.js"></script>
+<script type="text/javascript" src="js/page_zigbee.js"></script>
+<script type="text/javascript" src="js/page_rules.js"></script>
+<script type="text/javascript" src="js/page_thermostat.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "maintenance.cpp"
+        "maint_ota.cpp"
+        "maint_restore.cpp"
+        "maint_backup.cpp"
+        "maint_auto.cpp"
+    INCLUDE_DIRS
+        "include"
+    PRIV_REQUIRES
+        wifi_manager
+        app_update
+        bootloader_support
+        esp_app_format
+        esp_partition
+        esp_http_client
+        esp-tls
+        mbedtls
+        esp_timer
+        json
+        vfs
+        log
+        config_manager
+        joltwallet__littlefs
+)

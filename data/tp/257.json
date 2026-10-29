@@ -188,6 +188,18 @@
           "mode": "3;7"
         },
         {
+          "name": "SINSTS (total)",
+          "cluster": "0B04",
+          "attribut": 774,
+          "mqtt_device_class": "apparent_power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "unit": "VA",
+          "visible": 1,
+          "mode": "3;7"
+        },
+        {
           "name": "URMS1",
           "cluster": "0B04",
           "attribut": 1285,
@@ -806,6 +818,16 @@
           "max": 20,
           "timeout": 0,
           "change": 200
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 774,
+          "type": 35,
+          "min": 1,
+          "max": 20,
+          "timeout": 0,
+          "change": 200,
+          "mode": "3;7"
         },
         {
           "cluster": "0B04",

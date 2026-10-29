@@ -1,0 +1,21 @@
+idf_component_register(
+    SRCS
+        "zigate_driver.cpp"
+        "zigate_protocol.cpp"
+        "zigate_devices.cpp"
+        "zigate_console.cpp"
+        "zigate_actions.cpp"
+        "zigate_ota.cpp"
+        "zigate_ir.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        driver
+        esp_event
+        log
+    PRIV_REQUIRES
+        json
+        vfs
+        esp_timer
+        mbedtls
+)

@@ -1,0 +1,19 @@
+idf_component_register(
+    SRCS
+        "thermostat.cpp"
+        "presence.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        json
+    PRIV_REQUIRES
+        log
+        vfs
+        esp_timer
+        zigate
+        device_data
+        energy_service
+        ntp_sync
+        matter_bridge
+        config_manager
+)

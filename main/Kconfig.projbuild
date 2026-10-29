@@ -1,0 +1,61 @@
+menu "LiXee MatterBridge Configuration"
+
+    config LIXEE_VERSION
+        string "Firmware version"
+        default "0.1.0"
+        help
+            Version string affichee dans l'interface web et les logs.
+
+    menu "ZiGate+ GPIO Configuration"
+
+        config ZIGATE_UART_RXD
+            int "UART RX GPIO (from ZiGate TX)"
+            default 17
+            help
+                GPIO connecte au TX de la ZiGate+ (reception ESP32).
+
+        config ZIGATE_UART_TXD
+            int "UART TX GPIO (to ZiGate RX)"
+            default 18
+            help
+                GPIO connecte au RX de la ZiGate+ (emission ESP32).
+
+        config ZIGATE_RESET_GPIO
+            int "ZiGate RESET GPIO"
+            default 19
+            help
+                GPIO pour le reset hardware de la ZiGate+.
+                Active LOW.
+
+        config ZIGATE_FLASH_GPIO
+            int "ZiGate FLASH GPIO"
+            default 40
+            help
+                GPIO pour le mode flash de la ZiGate+.
+                HIGH = normal, LOW = flash mode.
+
+    endmenu
+
+    menu "LED Status"
+
+        config LED_STATUS_GPIO
+            int "LED status GPIO"
+            default 3
+            help
+                GPIO de la LED d'etat du bridge.
+
+    endmenu
+
+    menu "Matter Bridge"
+
+        config MATTER_BRIDGE_MAX_DEVICES
+            int "Maximum Zigbee devices"
+            default 32
+            range 1 64
+            help
+                Nombre maximum de devices Zigbee exposes via Matter.
+                Chaque device consomme un endpoint Matter.
+
+    endmenu
+
+endmenu

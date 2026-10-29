@@ -1,0 +1,19 @@
+idf_component_register(
+    SRCS
+        "tunnel.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+    PRIV_REQUIRES
+        config_manager
+        tcp_transport
+        esp-tls
+        esp_http_client
+        mbedtls
+        json
+        lwip
+        esp_netif
+        esp_timer
+        esp_app_format
+)

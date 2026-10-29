@@ -1,0 +1,18 @@
+idf_component_register(
+    SRCS
+        "matter_bridge.cpp"
+        "matter_device_manager.cpp"
+        "matter_profile.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        zigate
+        device_data
+        esp_event
+        log
+    PRIV_REQUIRES
+        nvs_flash
+        config_manager
+        json
+        esp_matter
+)

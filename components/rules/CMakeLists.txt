@@ -1,0 +1,20 @@
+idf_component_register(
+    SRCS
+        "rules.cpp"
+        "rules_exec.cpp"
+        "rules_json.cpp"
+        "action_groups.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+    PRIV_REQUIRES
+        json
+        vfs
+        esp_timer
+        device_data
+        zigate
+        energy_service
+        config_manager
+        ntp_sync
+)

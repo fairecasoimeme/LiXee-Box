@@ -1,0 +1,22 @@
+idf_component_register(
+    SRCS
+        "lora.cpp"
+        "lora_radio.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+    PRIV_REQUIRES
+        esp_driver_spi
+        esp_driver_gpio
+        esp_timer
+        mbedtls
+        json
+        vfs
+        config_manager
+        device_data
+        cluster_handlers
+        energy_history
+        mqtt_manager
+        zigate
+)

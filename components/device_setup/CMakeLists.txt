@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "device_setup.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+        zigate
+        device_data
+        poll_engine
+        config_manager
+)

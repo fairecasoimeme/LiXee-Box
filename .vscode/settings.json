@@ -1,6 +1,53 @@
 {
-    "C_Cpp.errorSquiggles": "disabled",
+    // ESP-IDF Extension settings pour LiXee MatterBridge
+    // Extension requise : espressif.esp-idf-extension
+
+    // Chemins ESP-IDF
+    "idf.espIdfPath": "C:\\esp\\v5.5.2\\esp-idf",
+    "idf.toolsPath": "C:\\Users\\akila\\.espressif",
+    "idf.pythonBinPath": "C:\\Users\\akila\\.espressif\\python_env\\idf5.5_py3.13_env\\Scripts\\python.exe",
+
+    // Cible par defaut
+    "idf.adapterTargetName": "esp32s3",
+
+    // Port serie (adapter selon votre PC)
+    "idf.port": "COM4",
+
+    // Vitesse du moniteur serie
+    "idf.monitorBaudRate": "115200",
+
+    // Flash method
+    "idf.flashType": "UART",
+
+    // OpenOCD config pour ESP32-S3
+    "idf.openOcdConfigs": [
+        "board/esp32s3-builtin.cfg"
+    ],
+
+    // C/C++ IntelliSense - genere par l'extension ESP-IDF
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/compile_commands.json",
+
+    // Exclure les dossiers de build de la recherche
+    "files.exclude": {
+        "**/build": true,
+        "**/managed_components": true,
+        "**/.cache": true,
+        "**/sdkconfig.old": true
+    },
+
+    "search.exclude": {
+        "**/build": true,
+        "**/managed_components": true
+    },
+
+    // Associer les fichiers Kconfig
     "files.associations": {
-        "*.tpp": "cpp"
-    }
+        "sdkconfig": "properties",
+        "sdkconfig.defaults": "properties",
+        "Kconfig": "kconfig",
+        "Kconfig.projbuild": "kconfig",
+        "*.csv": "csv"
+    },
+    "idf.currentSetup": "C:\\esp\\v5.5.2\\esp-idf",
+    "idf.portWin": "COM4"
 }

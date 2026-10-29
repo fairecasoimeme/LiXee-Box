@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "cluster_handlers.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+        device_data
+        config_manager
+    PRIV_REQUIRES
+        notifications
+)

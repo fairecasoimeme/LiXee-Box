@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "poll_engine.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+        device_data
+        zigate
+        esp_timer
+)

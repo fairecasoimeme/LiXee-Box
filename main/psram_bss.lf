@@ -1,0 +1,126 @@
+# Variables statiques non initialisees (.bss / COMMON) placees en PSRAM.
+#
+# La RAM interne (DIRAM) est la ressource rare du pont : piles des taches qui
+# touchent la flash, tampons DMA, WiFi, pile TCP/IP. Le schema extram_bss
+# (defini par esp_wifi, utilise par lwip/net80211/wpa_supplicant) envoie le
+# .bss d'une bibliotheque entiere dans extern_ram ; les .data (valeurs
+# initialisees) restent en interne.
+#
+# Conditions verifiees pour chaque bibliotheque listee :
+#  - aucune pile ni TCB de tache en statique (interdits en PSRAM) ;
+#  - aucune variable lue par une interruption IRAM ou pendant une operation
+#    flash (cache coupe) : l'ISR LoRa (DIO1) est enregistree sans
+#    ESP_INTR_FLAG_IRAM, le SPI LoRa est en polling sans DMA ;
+#  - aucun tampon DMA statique (ceux du W5500 sont alloues par le pilote).
+# Les objets FreeRTOS statiques (StaticSemaphore_t de CHIP) sont admis en PSRAM.
+#
+# Exclus : mdns (TCB statique de sa tache), libbtdm_app (impose en interne par
+# l'IDF), wifi_manager / eth_manager (configuration passee aux pilotes).
+
+[mapping:psram_bss_esp_matter]
+archive: libespressif__esp_matter.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_main]
+archive: libmain.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_matter_bridge]
+archive: libmatter_bridge.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_config_manager]
+archive: libconfig_manager.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_zigate]
+archive: libzigate.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_lora]
+archive: liblora.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_notifications]
+archive: libnotifications.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_tunnel]
+archive: libtunnel.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_maintenance]
+archive: libmaintenance.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_webserver]
+archive: libwebserver.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_rules]
+archive: librules.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_device_data]
+archive: libdevice_data.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_energy_service]
+archive: libenergy_service.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_energy_history]
+archive: libenergy_history.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_mqtt_manager]
+archive: libmqtt_manager.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_poll_engine]
+archive: libpoll_engine.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_cluster_handlers]
+archive: libcluster_handlers.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)
+
+[mapping:psram_bss_device_setup]
+archive: libdevice_setup.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        * (extram_bss)

@@ -1,0 +1,22 @@
+idf_component_register(
+    SRCS
+        "notif_store.cpp"
+        "notif_alerts.cpp"
+        "notif_send.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+    PRIV_REQUIRES
+        config_manager
+        device_data
+        energy_history
+        energy_service
+        ntp_sync
+        json
+        vfs
+        esp_timer
+        esp-tls
+        esp_http_client
+        mbedtls
+)

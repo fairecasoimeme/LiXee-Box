@@ -1,0 +1,12 @@
+idf_component_register(
+    SRCS
+        "energy_history.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+        ntp_sync
+    PRIV_REQUIRES
+        json
+        vfs
+)

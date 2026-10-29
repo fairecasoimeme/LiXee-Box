@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "device_data.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+    PRIV_REQUIRES
+        json
+        vfs
+)

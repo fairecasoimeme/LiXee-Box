@@ -1,0 +1,16 @@
+idf_component_register(
+    SRCS
+        "mqtt_manager.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+        config_manager
+        device_data
+        ntp_sync
+    PRIV_REQUIRES
+        json
+        mqtt
+        esp_timer
+        zigate
+)

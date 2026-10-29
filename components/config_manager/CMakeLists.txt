@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "config_manager.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+    PRIV_REQUIRES
+        json
+        vfs
+)

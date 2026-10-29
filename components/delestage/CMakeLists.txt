@@ -1,0 +1,18 @@
+idf_component_register(
+    SRCS
+        "delestage.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        esp_common
+    PRIV_REQUIRES
+        log
+        json
+        vfs
+        esp_timer
+        zigate
+        device_data
+        energy_service
+        config_manager
+        notifications
+)

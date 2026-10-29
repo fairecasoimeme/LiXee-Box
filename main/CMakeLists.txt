@@ -1,0 +1,38 @@
+idf_component_register(
+    SRCS
+        "main.cpp"
+        "group_matter.cpp"
+    INCLUDE_DIRS
+        "."
+    # .bss de Matter et des composants du pont en PSRAM (voir le fichier)
+    LDFRAGMENTS
+        "psram_bss.lf"
+    PRIV_REQUIRES
+        json
+        rules
+        notifications
+        lora
+        tunnel
+        maintenance
+        config_manager
+        device_data
+        cluster_handlers
+        poll_engine
+        device_setup
+        ntp_sync
+        mqtt_manager
+        energy_history
+        energy_service
+        thermostat
+        delestage
+        zigate
+        matter_bridge
+        webserver
+        wifi_manager
+        eth_manager
+        nvs_flash
+        esp_wifi
+        esp_netif
+        esp_event
+        driver
+)
