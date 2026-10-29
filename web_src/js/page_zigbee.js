@@ -693,16 +693,13 @@
   }
 
   // Console des trames ZiGate (/logs + /getLogBuffer de la LiXee-Box) :
-  // lignes nouvelles toutes les 2 s, mode brut et effacement
+  // lignes nouvelles toutes les 2 s, pause et effacement
   function consoleTab() {
     $('#zb-tab').html(
       '<h4>Console ZiGate</h4>' +
       '<div class="d-flex flex-wrap gap-2 mb-2 align-items-center">' +
         '<button class="btn btn-sm btn-outline-primary" id="zc-pause">Pause</button>' +
-        '<button class="btn btn-sm btn-outline-secondary zc-cmd" data-cmd="RawMode">Mode brut</button>' +
-        '<button class="btn btn-sm btn-outline-secondary zc-cmd" data-cmd="RawModeOff">Mode normal</button>' +
         '<button class="btn btn-sm btn-outline-danger zc-cmd" data-cmd="ClearConsole">Effacer</button>' +
-        '<span class="small text-muted" id="zc-state"></span>' +
       '</div>' +
       '<pre id="zc-log" style="height:60vh;overflow:auto;background:#1e1e1e;color:#d4d4d4;font-size:12px;padding:10px;border-radius:6px;"></pre>');
     var last = 0, paused = false;
@@ -717,7 +714,6 @@
         if (txt.length > 2000) $l.text(txt.slice(-2000).join('\n'));
         if (atEnd) el.scrollTop = el.scrollHeight;
         if (d.last != null) last = d.last;
-        $('#zc-state').text(d.rawMode ? 'mode brut actif' : '');
       });
     }
     $('#zc-pause').on('click', function() {
