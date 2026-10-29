@@ -34,3 +34,6 @@ desktop.ini
 *.bin
 *.elf
 __pycache__/
+
+# Fichiers de release fabriques localement (update.tar...)
+release/
