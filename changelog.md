@@ -44,6 +44,16 @@
 - Compteurs d'énergie Tuya : datapoints ramenés aux attributs standard
 - Console ZiGate : boutons Mode brut / Mode normal retirés
 
+### LoRa
+- Pilote radio aligné sur la v2.x : une trame valide n'est plus rejetée à cause d'une erreur d'en-tête due au bruit, et ce bruit ne relance plus la réception. Les réponses du ZLinky LoRa (identification, version, lectures à la demande) ne sont plus perdues
+- Lectures LoRa : même préambule que la v2.x de SF8 à SF10 ; sans réponse, chaque essai change l'instant d'émission et la longueur du préambule, et la lecture suivante repart du réglage qui a fonctionné
+- Identification du ZLinky LoRa en firmware 1.1.0 : la requête part 35 ms après sa trame au lieu de 20 ms
+
+### API et LiXee-Assist
+- `/api/devices` et `/api/device` (`/getDevices`, `/getDevice`) reprennent le format de la v2.x : `INFO` complet (`model`, `manufacturer`, `device_id`, `shortAddr`, `endpoint`, `LQI`, `lastSeen`, `Status`, `software_version`) et chaînes en texte. L'application ne trouvait pas le ZLinky, donc pas de graphe de consommation au kiosque, et les appareils n'avaient ni valeurs ni boutons. Les fichiers `/db` ne changent pas
+- Export CSV du graphe d'usage : colonnes d'index nommées comme en v2.x (`HC / EJPHN / BBRHCJB / EASF01`) ; un ZLinky autre que celui configuré garde le format complet
+- Routes v2.x rétablies : `/loadThermostats`, `/setThermostatSetpoint`, `/setThermostatForce`, `/setThermostatMode`, `/setThermostatFrost`, `/ZigbeeSendRequest`, `/agicons.js`
+
 ### Interface
 - Volets : curseur de position visible sur les pages Appareils et Tableau de bord
 - Répartition énergétique : légende alignée (couleur, nom, énergie, coût)
