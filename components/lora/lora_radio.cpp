@@ -58,11 +58,16 @@ static const char *TAG = "LORA_SX";
 // --- IRQ ---
 #define SX_IRQ_TX_DONE              0x0001
 #define SX_IRQ_RX_DONE              0x0002
+#define SX_IRQ_HEADER_VALID         0x0010
 #define SX_IRQ_HEADER_ERROR         0x0020
 #define SX_IRQ_CRC_ERROR            0x0040
 #define SX_IRQ_RX_TX_TIMEOUT        0x4000
 #define SX_IRQ_ALL                  0xFFFF
-#define SX_IRQ_RX_MASK  (SX_IRQ_RX_DONE | SX_IRQ_HEADER_ERROR | SX_IRQ_CRC_ERROR | SX_IRQ_RX_TX_TIMEOUT)
+// Comme RadioLib : tous ces drapeaux sont relus dans le registre, mais seul
+// RX_DONE (TX_DONE en emission) monte sur DIO1. Le bruit leve regulierement
+// HEADER_ERROR : route sur DIO1, il faisait redemarrer la reception pour rien.
+#define SX_IRQ_RX_MASK  (SX_IRQ_RX_DONE | SX_IRQ_HEADER_VALID | SX_IRQ_HEADER_ERROR | \
+                         SX_IRQ_CRC_ERROR | SX_IRQ_RX_TX_TIMEOUT)
 #define SX_IRQ_TX_MASK  (SX_IRQ_TX_DONE | SX_IRQ_RX_TX_TIMEOUT)
 
 // --- Parametres LoRa ---
@@ -215,11 +220,11 @@ static uint16_t get_irq(void)
     return (uint16_t)((d[0] << 8) | d[1]);
 }
 
-static esp_err_t set_dio_irq(uint16_t mask)
+static esp_err_t set_dio_irq(uint16_t irq_mask, uint16_t dio1_mask)
 {
-    // IRQ actives = celles routees sur DIO1 ; DIO2/DIO3 inutilises
-    uint8_t p[8] = { (uint8_t)(mask >> 8), (uint8_t)(mask & 0xFF),
-                     (uint8_t)(mask >> 8), (uint8_t)(mask & 0xFF), 0, 0, 0, 0 };
+    // DIO2/DIO3 inutilises
+    uint8_t p[8] = { (uint8_t)(irq_mask >> 8), (uint8_t)(irq_mask & 0xFF),
+                     (uint8_t)(dio1_mask >> 8), (uint8_t)(dio1_mask & 0xFF), 0, 0, 0, 0 };
     return cmd(SX_CMD_SET_DIO_IRQ_PARAMS, p, 8);
 }
 
@@ -381,7 +386,7 @@ esp_err_t sx_begin(uint32_t freq_mhz, uint8_t sf, uint16_t preamble, int8_t powe
     uint8_t txp[2] = { (uint8_t)p, SX_PA_RAMP_10_US };
     if ((err = cmd(SX_CMD_SET_TX_PARAMS, txp, 2)) != ESP_OK) return err;
 
-    if ((err = set_dio_irq(SX_IRQ_RX_MASK)) != ESP_OK) return err;
+    if ((err = set_dio_irq(SX_IRQ_RX_MASK, SX_IRQ_RX_DONE)) != ESP_OK) return err;
     return clear_irq(SX_IRQ_ALL);
 }
 
@@ -429,7 +434,7 @@ esp_err_t sx_start_receive(void)
     esp_err_t err = set_standby_rc();
     if (err == ESP_OK) err = set_buffer_base();
     if (err == ESP_OK) err = set_packet_params(0xFF);   // en-tete explicite : longueur max
-    if (err == ESP_OK) err = set_dio_irq(SX_IRQ_RX_MASK);
+    if (err == ESP_OK) err = set_dio_irq(SX_IRQ_RX_MASK, SX_IRQ_RX_DONE);
     if (err == ESP_OK) err = clear_irq(SX_IRQ_ALL);
     if (err == ESP_OK) {
         uint8_t p[3] = { SX_PERIOD_BASE_1_MS, 0xFF, 0xFF };   // 0xFFFF = reception continue
@@ -447,7 +452,7 @@ esp_err_t sx_transmit(const uint8_t *data, uint8_t len, uint32_t *air_ms)
     if (err == ESP_OK) err = set_buffer_base();
     if (err == ESP_OK) err = set_packet_params(len);
     if (err == ESP_OK) err = write_buf(0, data, len);
-    if (err == ESP_OK) err = set_dio_irq(SX_IRQ_TX_MASK);
+    if (err == ESP_OK) err = set_dio_irq(SX_IRQ_TX_MASK, SX_IRQ_TX_DONE);
     if (err == ESP_OK) err = clear_irq(SX_IRQ_ALL);
     if (err != ESP_OK) return err;
 
@@ -476,8 +481,12 @@ bool sx_irq_pending(void)
 int sx_read_packet(uint8_t *buf, int max_len, float *rssi, float *snr)
 {
     uint16_t irq = get_irq();
-    if (!(irq & SX_IRQ_RX_MASK)) return 0;
-    if (!(irq & SX_IRQ_RX_DONE) || (irq & (SX_IRQ_CRC_ERROR | SX_IRQ_HEADER_ERROR))) {
+    if (!(irq & SX_IRQ_RX_DONE)) return 0;
+    // Meme regle que readData() de RadioLib. HEADER_ERROR seul ne prouve rien :
+    // le drapeau peut rester d'un bruit anterieur. Une reponse POLL arrive
+    // pendant le decodage de la trame precedente, sans relecture du registre :
+    // une erreur d'en-tete residuelle la faisait jeter alors qu'elle etait bonne.
+    if ((irq & SX_IRQ_CRC_ERROR) || ((irq & SX_IRQ_HEADER_ERROR) && !(irq & SX_IRQ_HEADER_VALID))) {
         // Trame abimee (collision, signal faible...) : visible pour le
         // diagnostic des reponses POLL
         ESP_LOGD(TAG, "RX en erreur : irq=0x%04X%s%s", irq,

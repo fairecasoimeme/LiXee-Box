@@ -68,7 +68,7 @@ void sx_set_preamble(uint16_t symbols);
 /** Standby + effacement des IRQ (equivalent de RadioLib finishReceive()). */
 esp_err_t sx_standby(void);
 
-/** Passe en reception continue (DIO1 = RxDone / erreurs). */
+/** Passe en reception continue (DIO1 = RxDone seul, comme RadioLib). */
 esp_err_t sx_start_receive(void);
 
 /**

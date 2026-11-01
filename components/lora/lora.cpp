@@ -103,7 +103,14 @@ static const char *TAG = "LORA";
 #define POLL_ATTR_FW_VERSION 0xFF01
 #define POLL_ATTR_SW_BUILD   0x4000
 #define IDENT_RETRY_MS       300000UL
-#define POLL_TX_DELAY_MS     20       // emission du POLL a T+20 ms (protocole sect. 8)
+// Reglages d'emission d'un POLL : chaque essai sans reponse passe au suivant et
+// la lecture suivante repart de celui qui a abouti. Les pairs gardent le
+// preambule de la LiXee-Box, les impairs l'allongent (sans effet a SF7, SF11 et
+// SF12). T+35 ms en tete : mesure sur un ZLinky 1.1.0 en SF10, ou T+8 et T+20
+// (protocole sect. 8) restaient sans reponse, meme avec le preambule allonge.
+// T+20 reste essaye : il a ete valide en SF11 et SF7 avec le firmware 1.0.0.
+#define POLL_SETTINGS        8
+static const uint8_t POLL_DELAY_MS[POLL_SETTINGS / 2] = {35, 20, 8, 50};
 
 // OTA (protocole sect. 10)
 #define OTA_BLOCK_SIZE          64
@@ -169,6 +176,11 @@ typedef struct {
     uint16_t poll_attr;
     uint8_t  poll_seq;
     uint8_t  poll_retries;
+    uint8_t  poll_setting;      // reglage d'emission de depart (POLL_SETTINGS)
+    uint8_t  poll_last_delay;   // dernier POLL emis : delai apres l'uplink (ms)
+    uint16_t poll_last_pre;     // ... et preambule (symboles)
+    uint16_t poll_tx;           // diagnostic : requetes emises
+    uint16_t poll_rx;           // diagnostic : reponses recues
     bool     poll_resp_valid;
     uint8_t  poll_resp_status;
     uint8_t  poll_resp_type;
@@ -219,6 +231,7 @@ static bool     s_paired_pending = false;
 
 static uint32_t s_last_radio_rx = 0;
 static uint32_t s_rx_read_ms = 0;       // lecture de la derniere trame (delai du POLL)
+static uint32_t s_rx_errors = 0;        // diagnostic : trames rejetees (CRC, en-tete)
 
 static lora_removed_cb_t s_removed_cb = NULL;
 static uint32_t s_last_wd_rearm = 0;
@@ -1244,6 +1257,9 @@ static void handle_pair_confirm(const uint8_t *buf, int len)
     e->rx_count = 0;
     e->missed = 0;
     e->poll_pending = false;
+    e->poll_setting = 0;
+    e->poll_tx = 0;
+    e->poll_rx = 0;
     e->ident_step = s_pending_device_id[0] ? 0 : 1;     // identite inconnue : POLL
     e->ident_next_ms = millis();
     e->short_addr = compute_short_addr(e->mac, slot);
@@ -1283,10 +1299,13 @@ static bool queue_poll_locked(int slot, uint16_t cluster, uint16_t attr)
 
 // Preambule allonge aux SF bas : le ZLinky ne detecte un preambule que vers
 // T+40-60 ms apres son uplink. N = 0,040 x 406250 / 2^sf, jamais moins de 8.
-static uint16_t poll_preamble(uint8_t sf)
+// Sur la LiXee-Box, RadioLib refuse une longueur impaire et garde 8 symboles :
+// seul SF7 y est allonge (126), pas SF8 a SF10. 'extended' force l'allongement.
+static uint16_t poll_preamble(uint8_t sf, bool extended)
 {
     uint32_t n = 16250UL >> sf;
-    return (n < LORA_PREAMBLE) ? LORA_PREAMBLE : (uint16_t)n;
+    if (n < LORA_PREAMBLE || (!extended && (n & 1))) return LORA_PREAMBLE;
+    return (uint16_t)n;
 }
 
 static void send_poll_request(emitter_t *e)
@@ -1300,7 +1319,9 @@ static void send_poll_request(emitter_t *e)
     pkt[5] = (uint8_t)(e->poll_attr & 0xFF);
     int total = encrypt_packet(pkt, 6, e->key, e->mac);
 
-    uint16_t pre = poll_preamble(s_radio_sf);
+    uint8_t setting = (uint8_t)((e->poll_setting + e->poll_retries) % POLL_SETTINGS);
+    uint16_t pre = poll_preamble(s_radio_sf, (setting & 1) != 0);
+    uint8_t wait_ms = POLL_DELAY_MS[setting / 2];
     if (pre != LORA_PREAMBLE) sx_set_preamble(pre);
     // Chronologie du protocole (sect. 8) : le ZLinky passe en RX a T+5 ms et ne
     // detecte un preambule que vers T+40 a 60 ms ; le recepteur doit emettre
@@ -1309,8 +1330,11 @@ static void send_poll_request(emitter_t *e)
     // etait presque fini quand le ZLinky le cherchait, et les POLL restaient
     // sans reponse (identification, version, lectures a la demande).
     uint32_t since = millis() - s_rx_read_ms;
-    if (since < POLL_TX_DELAY_MS) vTaskDelay(pdMS_TO_TICKS(POLL_TX_DELAY_MS - since));
+    if (since < wait_ms) vTaskDelay(pdMS_TO_TICKS(wait_ms - since));
     uint32_t delay_ms = millis() - s_rx_read_ms;     // depuis la lecture de l'uplink
+    e->poll_last_delay = (delay_ms > 255) ? 255 : (uint8_t)delay_ms;
+    e->poll_last_pre = pre;
+    e->poll_tx++;
     uint32_t air_ms = 0;
     esp_err_t st = sx_transmit(pkt, (uint8_t)total, &air_ms);
     if (pre != LORA_PREAMBLE) sx_set_preamble(LORA_PREAMBLE);
@@ -1503,6 +1527,10 @@ static void handle_poll_response(uint8_t *buf, int len)
         uint8_t vlen = buf[8];
         if (9 + (int)vlen > data_len) vlen = (uint8_t)(data_len - 9);
 
+        // Ce reglage a abouti : la lecture suivante repart de lui
+        if (e->poll_pending && e->poll_retries > 0)
+            e->poll_setting = (uint8_t)((e->poll_setting + e->poll_retries - 1) % POLL_SETTINGS);
+        e->poll_rx++;
         e->poll_pending = false;
         e->poll_resp_valid = true;
         e->poll_resp_status = status;
@@ -2052,6 +2080,7 @@ static void loop_once(void)
     uint8_t buf[SX_MAX_PAYLOAD];
     float rssi = 0, snr = 0;
     int len = sx_read_packet(buf, sizeof(buf), &rssi, &snr);
+    if (len < 0) s_rx_errors++;
     if (len <= 0) { start_rx(); return; }
     s_rx_read_ms = millis();
     if ((buf[0] & 0x0F) != T_ESSENTIAL && (buf[0] & 0x0F) != T_EXTENDED) {
@@ -2512,13 +2541,16 @@ static void sb_emitter(sb_t *s, int slot)
     sb_str(s, e->version);
     sb_addf(s, ",\"identified\":%s,\"fwKnown\":%s,\"fwVersion\":%u,\"rx\":%lu,\"missed\":%lu,\"pdr\":%d,"
                "\"rssi\":%.0f,\"snr\":%.1f,\"age\":%ld,\"lastSeen\":%lu,\"modeKnown\":%s,\"linkyMode\":%u,"
-               "\"pollPending\":%s,\"hasData\":%s}",
+               "\"pollPending\":%s,\"hasData\":%s,\"identStep\":%u,\"verStep\":%u,\"pollTx\":%u,\"pollRx\":%u,"
+               "\"pollSetting\":%u,\"pollDelay\":%u,\"pollPreamble\":%u}",
             (e->ident_step == 0 && e->device_id[0] && e->model[0]) ? "true" : "false",
             e->fw_known ? "true" : "false", e->fw_version,
             (unsigned long)e->rx_count, (unsigned long)e->missed, pdr_of(e),
             (double)e->last_rssi, (double)e->last_snr, age, (unsigned long)e->last_seen_epoch,
             e->mode_known ? "true" : "false", e->linky_mode,
-            e->poll_pending ? "true" : "false", dd ? "true" : "false");
+            e->poll_pending ? "true" : "false", dd ? "true" : "false",
+            e->ident_step, e->ver_step, e->poll_tx, e->poll_rx,
+            e->poll_setting, e->poll_last_delay, e->poll_last_pre);
 }
 
 char *lora_status_json(void)
@@ -2536,11 +2568,11 @@ char *lora_status_json(void)
     }
     sb_addf(&s, "{\"detected\":%s,\"ready\":%s,\"chip\":\"%04X\",\"channel\":%u,\"sf\":%u,"
                 "\"pairing\":%s,\"pairLeft\":%d,\"otaActive\":%s,\"maxEmitters\":%d,\"count\":%d,"
-                "\"pairChannel\":%d,\"pairWindow\":%d,\"channels\":[",
+                "\"pairChannel\":%d,\"pairWindow\":%d,\"rxErrors\":%lu,\"channels\":[",
             s_detected ? "true" : "false", s_ready ? "true" : "false", s_chip_ver,
             s_op_channel, s_op_sf, pairing ? "true" : "false", left,
             ota_active_locked() ? "true" : "false", LORA_MAX_EMITTERS, lora_count_emitters(),
-            LORA_PAIR_CHANNEL, LORA_PAIR_WINDOW_S);
+            LORA_PAIR_CHANNEL, LORA_PAIR_WINDOW_S, (unsigned long)s_rx_errors);
     for (int c = 0; c < LORA_CHANNEL_COUNT; c++) sb_addf(&s, "%s%u", c ? "," : "", CH_FREQ[c]);
     sb_add(&s, "],\"emitters\":[");
     bool first = true;
