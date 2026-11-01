@@ -5,7 +5,8 @@
 // memes noms de champs, memes types que web.cpp de la Box.
 //   /api/system (/getSystem)                    etat reseau et passerelles
 //   /api/network/wifi-signal (/api/wifiSignal)  RSSI, qualite, puissance
-//   /api/devices (/getDevices), /api/device     fichiers bruts de /db
+//   /api/devices (/getDevices), /api/device     appareils au format de la Box :
+//                                               INFO complet, chaines en texte
 //   /api/device/energy, /api/device/power       historiques bruts de /hst
 //   /api/templates (/getTemplates)              tous les templates
 //   /api/energy/config                          roles, prix, seuils
@@ -28,6 +29,8 @@
 #include "wifi_manager.h"
 #include "eth_manager.h"
 #include "device_data.h"
+#include "zigate_devices.h"
+#include "lora.h"
 
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -209,7 +212,144 @@ static esp_err_t wifi_signal_handler(httpd_req_t *req)
 }
 
 // ----------------------------------------------------------------------------
-// Appareils et templates : fichiers bruts, envoyes par morceaux
+// Appareils : format de la LiXee-Box
+//
+// Les fichiers /db ne portent que linkyMode, powerSocket, alias et status dans
+// INFO, et les chaines en hexa avec leur type dans "_T". LiXee-Assist et les
+// clients existants lisent INFO.model, device_id, shortAddr et des chaines en
+// texte : la reponse est completee ici, sans toucher aux fichiers.
+// ----------------------------------------------------------------------------
+
+/** Chaine stockee en hexa -> texte ; false si ce n'est pas du texte affichable. */
+static bool hex_to_text(const char *hex, char *out, size_t len)
+{
+    size_t n = strlen(hex);
+    if (n == 0 || (n & 1) || n / 2 >= len) return false;
+    size_t o = 0;
+    for (size_t i = 0; i < n; i += 2) {
+        char hx[3] = { hex[i], hex[i + 1], 0 }, *end;
+        long c = strtol(hx, &end, 16);
+        if (*end) return false;
+        if (c == 0) continue;                    // comme la Box : octets nuls ignores
+        if (c < 0x20 || c > 0x7E) return false;  // une reponse doit rester en UTF-8 valide
+        out[o++] = (char)c;
+    }
+    out[o] = '\0';
+    return true;
+}
+
+static void info_set(cJSON *info, const char *key, const char *value)
+{
+    cJSON_DeleteItemFromObjectCaseSensitive(info, key);
+    cJSON_AddStringToObject(info, key, value);
+}
+
+/** Champ absent ou vide : prend la valeur connue, ou "" (la cle existe toujours). */
+static void info_fill(cJSON *info, const char *key, const char *value)
+{
+    const cJSON *it = cJSON_GetObjectItemCaseSensitive(info, key);
+    if (cJSON_IsString(it) && it->valuestring[0] && !(value && value[0])) return;
+    info_set(info, key, value ? value : "");
+}
+
+/** Attribut du cluster Basic en texte (attribut 5 : modele), "" si absent. */
+static void basic_text(const cJSON *doc, const char *attr, char *out, size_t len)
+{
+    out[0] = '\0';
+    const cJSON *v = cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(doc, "0000"), attr);
+    if (!cJSON_IsString(v)) return;
+    if (!hex_to_text(v->valuestring, out, len)) strlcpy(out, v->valuestring, len);
+}
+
+/** "JJ/MM/AAAA HH:MM" de la Box, "" si la date est inconnue. */
+static void last_seen_text(uint32_t epoch, char *out, size_t len)
+{
+    out[0] = '\0';
+    if (!epoch) return;
+    time_t t = epoch;
+    struct tm lt;
+    localtime_r(&t, &lt);
+    strftime(out, len, "%d/%m/%Y %H:%M", &lt);
+}
+
+static void complete_info(cJSON *doc, uint64_t ieee)
+{
+    cJSON *info = cJSON_GetObjectItemCaseSensitive(doc, "INFO");
+    if (!cJSON_IsObject(info)) info = cJSON_AddObjectToObject(doc, "INFO");
+    if (!info) return;
+
+    char model[DEVDATA_VALUE_LEN], manufacturer[DEVDATA_VALUE_LEN], version[DEVDATA_VALUE_LEN];
+    basic_text(doc, "5", model, sizeof(model));
+    basic_text(doc, "4", manufacturer, sizeof(manufacturer));
+    basic_text(doc, "16384", version, sizeof(version));
+
+    char sa[8] = "", dev_id[8] = "", lqi[8] = "", ep[8] = "1", seen[20] = "";
+    lora_emitter_info_t le;
+    int slot = lora_find_slot_by_ieee(ieee);
+    const zigate_device_t *z = zigate_devices_find_by_ieee(ieee);
+    if (slot >= 0 && lora_get_emitter(slot, &le)) {
+        snprintf(sa, sizeof(sa), "%u", le.short_addr);
+        strlcpy(dev_id, le.device_id, sizeof(dev_id));
+        last_seen_text(le.last_seen, seen, sizeof(seen));
+        if (le.model[0]) strlcpy(model, le.model, sizeof(model));
+        if (le.version[0]) strlcpy(version, le.version, sizeof(version));
+        if (!manufacturer[0]) strlcpy(manufacturer, "LiXee", sizeof(manufacturer));
+    } else if (z) {
+        snprintf(sa, sizeof(sa), "%u", z->short_addr);
+        snprintf(dev_id, sizeof(dev_id), "%u", z->device_id);
+        snprintf(lqi, sizeof(lqi), "%u", z->lqi);
+        snprintf(ep, sizeof(ep), "%u", z->endpoint);
+        last_seen_text(z->last_seen, seen, sizeof(seen));
+        if (z->model[0]) strlcpy(model, z->model, sizeof(model));
+        if (z->manufacturer[0]) strlcpy(manufacturer, z->manufacturer, sizeof(manufacturer));
+        info_fill(info, "alias", z->alias);
+    }
+    info_fill(info, "shortAddr", sa);
+    info_fill(info, "LQI", lqi);
+    info_fill(info, "device_id", dev_id);
+    info_fill(info, "lastSeen", seen);
+    info_fill(info, "Status", "00");
+    info_fill(info, "manufacturer", manufacturer);
+    info_fill(info, "model", model);
+    info_fill(info, "endpoint", ep);
+    info_fill(info, "software_version", version);
+}
+
+/** Chaines en texte d'apres les types de "_T", qui disparait de la reponse. */
+static void decode_strings(cJSON *doc)
+{
+    const cJSON *types = cJSON_GetObjectItemCaseSensitive(doc, "_T");
+    const cJSON *cl;
+    cJSON_ArrayForEach(cl, types) {
+        if (!cl->string || strcmp(cl->string, "0000") == 0) continue;   // hexa sur la Box aussi
+        cJSON *vals = cJSON_GetObjectItemCaseSensitive(doc, cl->string);
+        const cJSON *t;
+        cJSON_ArrayForEach(t, cl) {
+            if (!t->string || (t->valueint != 0x42 && t->valueint != 0x44)) continue;
+            cJSON *v = cJSON_GetObjectItemCaseSensitive(vals, t->string);
+            char text[DEVDATA_VALUE_LEN];
+            if (cJSON_IsString(v) && hex_to_text(v->valuestring, text, sizeof(text))) {
+                cJSON_SetValuestring(v, text);
+            }
+        }
+    }
+    cJSON_DeleteItemFromObjectCaseSensitive(doc, "_T");
+}
+
+/** Fiche /db au format de la Box, a liberer ; NULL si le fichier est illisible. */
+static char *device_json(const char *file_text, uint64_t ieee)
+{
+    cJSON *doc = cJSON_Parse(file_text);
+    if (!doc) return NULL;
+    complete_info(doc, ieee);
+    decode_strings(doc);
+    char *s = cJSON_PrintUnformatted(doc);
+    cJSON_Delete(doc);
+    return s;
+}
+
+// ----------------------------------------------------------------------------
+// Appareils et templates, envoyes par morceaux
 // ----------------------------------------------------------------------------
 
 /** {"<cle>" : <fichier>, ...} pour les fichiers JSON d'un repertoire. */
@@ -241,7 +381,13 @@ static esp_err_t send_dir_object(httpd_req_t *req, const char *dir, bool db)
             char head[64];
             snprintf(head, sizeof(head), "%s\"%s\" : ", n++ ? "," : "", key);
             httpd_resp_sendstr_chunk(req, head);
-            httpd_resp_send_chunk(req, buf, len);
+            char *dev = db ? device_json(buf, strtoull(key, NULL, 16)) : NULL;
+            if (dev) {
+                httpd_resp_sendstr_chunk(req, dev);
+                free(dev);
+            } else {
+                httpd_resp_send_chunk(req, buf, len);
+            }
         }
         heap_caps_free(buf);
     }
@@ -254,7 +400,7 @@ static esp_err_t devices_handler(httpd_req_t *req)   { return send_dir_object(re
 static esp_err_t templates_handler(httpd_req_t *req) { return send_dir_object(req, TP_DIR, false); }
 
 /** {"<IEEE>" : <fichier>} ; ieee absent : {} (comme la Box). */
-static esp_err_t send_one_file(httpd_req_t *req, const char *fmt)
+static esp_err_t send_one_file(httpd_req_t *req, const char *fmt, bool db)
 {
     char ieee[20];
     if (!query_ieee(req, ieee)) return send_json_str(req, "200 OK", "{}");
@@ -272,17 +418,23 @@ static esp_err_t send_one_file(httpd_req_t *req, const char *fmt)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     httpd_resp_sendstr_chunk(req, head);
-    httpd_resp_send_chunk(req, buf, len);
+    char *dev = db ? device_json(buf, strtoull(ieee, NULL, 16)) : NULL;
+    if (dev) {
+        httpd_resp_sendstr_chunk(req, dev);
+        free(dev);
+    } else {
+        httpd_resp_send_chunk(req, buf, len);
+    }
     heap_caps_free(buf);
     httpd_resp_sendstr_chunk(req, "}");
     return httpd_resp_sendstr_chunk(req, NULL);
 }
 
-static esp_err_t device_handler(httpd_req_t *req)        { return send_one_file(req, DB_DIR "/%s.json"); }
+static esp_err_t device_handler(httpd_req_t *req)        { return send_one_file(req, DB_DIR "/%s.json", true); }
 // La Box cherchait ces historiques dans /db au lieu de /hst (toujours 500) :
 // ici le bon repertoire
-static esp_err_t device_energy_handler(httpd_req_t *req) { return send_one_file(req, ENERGY_HST_DIR "/nrg_%s.json"); }
-static esp_err_t device_power_handler(httpd_req_t *req)  { return send_one_file(req, ENERGY_HST_DIR "/pwr_%s.json"); }
+static esp_err_t device_energy_handler(httpd_req_t *req) { return send_one_file(req, ENERGY_HST_DIR "/nrg_%s.json", false); }
+static esp_err_t device_power_handler(httpd_req_t *req)  { return send_one_file(req, ENERGY_HST_DIR "/pwr_%s.json", false); }
 
 // ----------------------------------------------------------------------------
 // /api/energy/config

@@ -142,8 +142,75 @@ static esp_err_t thermo_post(httpd_req_t *req)
     return ok ? send_status(req, "200 OK", "OK") : send_status(req, "400 Bad Request", "Zone ou parametre invalide");
 }
 
+// ----------------------------------------------------------------------------
+// Routes de la LiXee-Box (LiXee-Assist) : GET avec parametres, {"ok":true|false}
+// ----------------------------------------------------------------------------
+
+static bool legacy_num(httpd_req_t *req, const char *key, double *out)
+{
+    char q[64], v[16];
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK ||
+        httpd_query_key_value(q, key, v, sizeof(v)) != ESP_OK || !v[0]) return false;
+    *out = strtod(v, NULL);
+    return true;
+}
+
+static esp_err_t legacy_result(httpd_req_t *req, bool ok)
+{
+    httpd_resp_set_status(req, ok ? "200 OK" : "400 Bad Request");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, ok ? "{\"ok\":true}" : "{\"ok\":false}");
+}
+
+/** GET qui agit : refuse depuis une page d'un autre site (<img src=...>). */
+static bool legacy_args(httpd_req_t *req, const char *key, double *id, double *v)
+{
+    return web_server_origin_ok(req) && legacy_num(req, "id", id) && legacy_num(req, key, v);
+}
+
+static esp_err_t legacy_load(httpd_req_t *req) { return send_json_owned(req, thermostat_status_json()); }
+
+static esp_err_t legacy_setpoint(httpd_req_t *req)
+{
+    double id, v;
+    return legacy_result(req, legacy_args(req, "value", &id, &v) && thermostat_set_setpoint((int)id, (float)v));
+}
+
+static esp_err_t legacy_force(httpd_req_t *req)
+{
+    double id, v;
+    return legacy_result(req, legacy_args(req, "mode", &id, &v) && thermostat_set_force((int)id, (int)v));
+}
+
+static esp_err_t legacy_mode(httpd_req_t *req)
+{
+    double id, v;
+    return legacy_result(req, legacy_args(req, "heat", &id, &v) && thermostat_set_mode((int)id, v != 0));
+}
+
+static esp_err_t legacy_frost(httpd_req_t *req)
+{
+    double id, v;
+    return legacy_result(req, legacy_args(req, "on", &id, &v) && thermostat_set_frost((int)id, v != 0));
+}
+
 void web_thermostat_register(httpd_handle_t server)
 {
+    static const struct { const char *uri; esp_err_t (*fn)(httpd_req_t *); } legacy[] = {
+        { "/loadThermostats",       legacy_load },
+        { "/setThermostatSetpoint", legacy_setpoint },
+        { "/setThermostatForce",    legacy_force },
+        { "/setThermostatMode",     legacy_mode },
+        { "/setThermostatFrost",    legacy_frost },
+    };
+    for (size_t i = 0; i < sizeof(legacy) / sizeof(legacy[0]); i++) {
+        httpd_uri_t u = {};
+        u.uri = legacy[i].uri;
+        u.method = HTTP_GET;
+        u.handler = legacy[i].fn;
+        web_server_register_uri(server, &u);
+    }
+
     httpd_uri_t get = {};
     get.uri = "/api/thermostats*";
     get.method = HTTP_GET;

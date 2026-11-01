@@ -320,6 +320,24 @@ static void index_name(uint64_t zl, int mode, uint16_t attr, char *out, size_t l
     snprintf(out, len, "Index %d", n + 1);
 }
 
+/**
+ * Intitule d'un index dans l'export CSV : celui du template, comme la LiXee-Box
+ * ("HC / EJPHN / BBRHCJB / EASF01"), que LiXee-Assist reconnait a son libelle EASF.
+ */
+static void index_csv_name(uint64_t zl, int mode, uint16_t attr, char *out, size_t len)
+{
+    index_name(zl, mode, attr, out, len);
+    if (attr == 0) strlcpy(out, "BASE", len);      // index total seul : prix BASE
+    if (strcmp(out, "BASE") == 0) return;
+    const devdata_template_t *t = device_data_get_template(zl);
+    for (int i = 0; t && i < t->state_count; i++) {
+        if (t->states[i].cluster == 0x0702 && t->states[i].attribute == attr && t->states[i].name[0]) {
+            strlcpy(out, t->states[i].name, len);
+            return;
+        }
+    }
+}
+
 /** Index du ZLinky presents dans l'historique ; a defaut, le total (attr 0). */
 static int index_attrs(const energy_history_t *h, uint16_t *out)
 {
@@ -1063,6 +1081,8 @@ typedef struct {
     int      ns;
     series_t s[CHART_MAX_SERIES];
     bool     meter;                              // compteur gaz/eau (serie "0")
+    uint64_t zl;                                 // ZLinky de la courbe
+    int      mode;                               // son mode TIC
     double   coeff;
     const char *display_unit;
     double   meter_price;
@@ -1140,6 +1160,15 @@ static bool chart_build(chart_t *c, energy_gran_t g, uint64_t ieee)
     chart_labels(c, &now);
     const cfg_general_t *gc = cfg_get_general();
 
+    // Autre ZLinky que celui configure : ses index, au format du compteur
+    // principal (la LiXee-Box accepte tout appareil sur ses graphes)
+    if (ieee != r.zl && ieee != r.gaz && ieee != r.water) {
+        const energy_history_t *other = energy_history_find(ieee);
+        for (int i = 0; other && i < 10; i++) {
+            if (energy_history_has_attr(other, INDEX_ATTRS[i])) { r.zl = ieee; break; }
+        }
+    }
+
     if (ieee != r.zl) {
         // Compteur de gaz, d'eau ou autre : son total (attribut 0)
         c->meter = true;
@@ -1168,6 +1197,8 @@ static bool chart_build(chart_t *c, energy_gran_t g, uint64_t ieee)
     }
 
     int mode = linky_mode(r.zl);
+    c->zl = r.zl;
+    c->mode = mode;
     // ~10 Ko : en PSRAM, la pile de la tache HTTP n'en a que 8
     slot_agg_t *a = (slot_agg_t *)heap_caps_malloc(sizeof(slot_agg_t) * CHART_MAX_POINTS, MALLOC_CAP_SPIRAM);
     if (!a) a = (slot_agg_t *)malloc(sizeof(slot_agg_t) * CHART_MAX_POINTS);
@@ -1358,7 +1389,12 @@ char *energy_chart_csv(const char *period, uint64_t ieee)
     for (int k = 0; k < c->ns; k++) {
         if (!c->s[k].nonzero) continue;
         if (strcmp(c->s[k].type, "prod") == 0) has_prod = true;
-        sb_printf(&b, ";%s (Wh)", c->s[k].name);
+        char name[DEVDATA_NAME_LEN];
+        strlcpy(name, c->s[k].name, sizeof(name));
+        if (strcmp(c->s[k].type, "index") == 0) {
+            index_csv_name(c->zl, c->mode, (uint16_t)atoi(c->s[k].key), name, sizeof(name));
+        }
+        sb_printf(&b, ";%s (Wh)", name);
     }
     sb_printf(&b, ";Consommation totale (Wh);Conso - Energie (EUR);Conso - Abonnement (EUR);"
                   "Conso - Taxes (EUR);Conso - Cout total (EUR)");

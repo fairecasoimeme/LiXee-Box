@@ -1513,6 +1513,38 @@ static esp_err_t legacy_zigbee_action(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
+/**
+ * GET /ZigbeeSendRequest?shortaddr&endpoint&cluster&attribute (LiXee-Box) :
+ * relecture d'un attribut, parametres decimaux lus par position, reponse vide.
+ */
+static esp_err_t legacy_zigbee_read(httpd_req_t *req)
+{
+    if (!web_server_origin_ok(req)) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        return httpd_resp_sendstr(req, "Forbidden");
+    }
+    char q[96] = "";
+    long arg[4] = { 0, 0, 0, 0 };
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        char *save = NULL;
+        int k = 0;
+        for (char *tok = strtok_r(q, "&", &save); tok && k < 4; tok = strtok_r(NULL, "&", &save), k++) {
+            char *eq = strchr(tok, '=');
+            arg[k] = strtol(eq ? eq + 1 : tok, NULL, 10);
+        }
+    }
+    long sa = arg[0], ep = arg[1], cl = arg[2], at = arg[3];
+    const zigate_device_t *d = (sa > 0 && sa <= 0xFFFF) ? zigate_devices_find_by_short((uint16_t)sa) : NULL;
+    if (d && cl >= 0 && cl <= 0xFFFF && at >= 0 && at <= 0xFFFF) {
+        uint8_t kep = 0;
+        uint16_t zat = device_data_resolve_key(d->ieee_addr, (uint16_t)cl, (uint16_t)at, &kep);
+        zigate_read_attribute_mfr(d->short_addr, kep ? kep : (uint8_t)(ep > 0 ? ep : 1), (uint16_t)cl, zat,
+                                  template_mfr(d, (uint16_t)cl, (uint16_t)at));
+    }
+    httpd_resp_set_type(req, "text/html");
+    return httpd_resp_send(req, NULL, 0);
+}
+
 /** GET /OTAUpdateBar?id=<IEEE> (LiXee-Box) : pourcentage, -1 sans OTA, -2 inconnu. */
 static esp_err_t legacy_ota_bar(httpd_req_t *req)
 {
@@ -1666,6 +1698,12 @@ void web_zigbee_register(httpd_handle_t server)
     za.method = HTTP_GET;
     za.handler = legacy_zigbee_action;
     web_server_register_uri(server, &za);
+
+    httpd_uri_t zr = {};
+    zr.uri = "/ZigbeeSendRequest";
+    zr.method = HTTP_GET;
+    zr.handler = legacy_zigbee_read;
+    web_server_register_uri(server, &zr);
 
     httpd_uri_t bar = {};
     bar.uri = "/OTAUpdateBar";

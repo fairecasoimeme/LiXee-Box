@@ -16,6 +16,9 @@
  *   POST /api/thermostats/toggle          {id}
  *   POST /api/thermostats/delete          {id}
  * Deux gestionnaires generiques (GET / POST), a enregistrer avant celui des
- * fichiers statiques.
+ * fichiers statiques. Routes de la LiXee-Box, gardees pour LiXee-Assist :
+ *   GET  /loadThermostats, /setThermostatSetpoint?id&value,
+ *        /setThermostatForce?id&mode, /setThermostatMode?id&heat,
+ *        /setThermostatFrost?id&on
  */
 void web_thermostat_register(httpd_handle_t server);

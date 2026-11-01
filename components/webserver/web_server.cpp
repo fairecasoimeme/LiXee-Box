@@ -781,6 +781,10 @@ static esp_err_t static_file_handler(httpd_req_t *req)
     if (strcmp(uri, "/") == 0) {
         uri = "/index.html";
     }
+    // Chemin de la LiXee-Box, lu par LiXee-Assist
+    if (strcmp(uri, "/agicons.js") == 0) {
+        uri = "/js/agicons.js";
+    }
 
     // Construire le chemin LittleFS
     snprintf(filepath, sizeof(filepath), "/littlefs/web%s", uri);
@@ -875,7 +879,7 @@ static esp_err_t static_file_handler(httpd_req_t *req)
 esp_err_t web_server_init(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 160;  // ~130 enregistres (API, alias de la LiXee-Box) + marge
+    config.max_uri_handlers = 180;  // ~150 enregistres (API, alias de la LiXee-Box) + marge
     config.max_resp_headers = 12;   // CORS + cache + cookie + disposition
     config.stack_size = 8192;
     config.uri_match_fn = httpd_uri_match_wildcard;
