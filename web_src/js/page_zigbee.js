@@ -1124,6 +1124,8 @@
   // --------------------------------------------------------------------------
 
   function pageAssistDevice() {
+    // /assistDevice?type=lora de la LiXee-Box : assistant LoRa
+    if (A.params().type === 'lora') { window.location.replace('#assistLora'); return; }
     A.setContent(CSS +
       '<div class="container py-4" style="max-width:720px;"><h4>Ajouter un appareil Zigbee</h4>' +
         '<div class="card p-4" id="zb-as"></div></div>');

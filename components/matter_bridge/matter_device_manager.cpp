@@ -281,11 +281,11 @@ static int map_device_locked(const zigate_device_t *zigbee_dev)
     bool has_metering = false;
 
     // Methode 1: detection par clusters (runtime discovery)
-    ESP_LOGI(TAG, "Checking %d in_clusters for energy metering on 0x%04X (devId=0x%04X model=%s):",
+    ESP_LOGD(TAG, "Checking %d in_clusters for energy metering on 0x%04X (devId=0x%04X model=%s):",
              zigbee_dev->in_cluster_count, zigbee_dev->short_addr, zigbee_dev->device_id,
              zigbee_dev->model[0] ? zigbee_dev->model : "(empty)");
     for (int i = 0; i < zigbee_dev->in_cluster_count; i++) {
-        ESP_LOGI(TAG, "  in_cluster[%d] = 0x%04X", i, zigbee_dev->in_clusters[i]);
+        ESP_LOGD(TAG, "  in_cluster[%d] = 0x%04X", i, zigbee_dev->in_clusters[i]);
         if (zigbee_dev->in_clusters[i] == 0x0702 || zigbee_dev->in_clusters[i] == 0x0B04) {
             has_metering = true;
         }
@@ -294,17 +294,17 @@ static int map_device_locked(const zigate_device_t *zigbee_dev)
     // Methode 2: detection par model name (boot depuis LittleFS)
     if (!has_metering && zigbee_dev->model[0]) {
         if (strncmp(zigbee_dev->model, "ZLinky", 6) == 0) {
-            ESP_LOGI(TAG, "ZLinky detected by model name, overriding to ENERGY_METER");
+            ESP_LOGD(TAG, "ZLinky detected by model name, overriding to ENERGY_METER");
             has_metering = true;
         }
     }
 
     if (has_metering) {
-        ESP_LOGI(TAG, "Energy metering device detected on 0x%04X, mapping as ENERGY_METER",
+        ESP_LOGD(TAG, "Energy metering device detected on 0x%04X, mapping as ENERGY_METER",
                  zigbee_dev->short_addr);
         mtype = MATTER_DEV_ENERGY_METER;
     } else {
-        ESP_LOGI(TAG, "No metering detected, using ZCL devId 0x%04X", zigbee_dev->device_id);
+        ESP_LOGD(TAG, "No metering detected, using ZCL devId 0x%04X", zigbee_dev->device_id);
         mtype = matter_device_manager_zcl_to_matter_type(zigbee_dev->device_id);
     }
 
@@ -479,7 +479,7 @@ esp_err_t matter_device_manager_handle_zigbee_report(const zigate_attribute_repo
     // Trouver le device par adresse courte
     zigate_device_t *dev = zigate_devices_find_by_short(report->short_addr);
     if (!dev) {
-        ESP_LOGW(TAG, "No device found for short addr 0x%04X", report->short_addr);
+        ESP_LOGD(TAG, "No device found for short addr 0x%04X", report->short_addr);
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -791,7 +791,7 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
             int32_t demand = (int32_t)(v & 0xFFFFFF);
             if (demand & 0x800000) demand |= (int32_t)0xFF000000;
             elec->SetActivePower((int64_t)demand * 1000);  // W -> mW
-            ESP_LOGI(TAG, "ZLinky InstantaneousDemand: %ld W", (long)demand);
+            ESP_LOGD(TAG, "ZLinky InstantaneousDemand: %ld W", (long)demand);
         } else if (report->attr_id == 0x0000 ||
                    (report->attr_id >= 0x0100 && report->attr_id <= 0x0112 &&
                     !(report->attr_id & 1))) {
@@ -800,7 +800,7 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
             // adresses PAIRES 0x0100..0x0112 (Tier1..Tier10) ; les impaires
             // sont les index "Received".
             if (!be_uint(report, 1, &v)) break;
-            ESP_LOGI(TAG, "ZLinky index 0x%04X : %llu Wh", report->attr_id, (unsigned long long)v);
+            ESP_LOGD(TAG, "ZLinky index 0x%04X : %llu Wh", report->attr_id, (unsigned long long)v);
             matter_bridge_report_energy_index(mapping->matter_endpoint, report->attr_id, v);
         }
         break;
@@ -818,11 +818,11 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
             // 0 V ferait afficher une tension nulle au lieu d'"inconnu".
             if (voltage == 0) break;
             elec->SetRMSVoltage((int64_t)voltage * 1000);  // V -> mV
-            ESP_LOGI(TAG, "ZLinky RMSVoltage: %u V", voltage);
+            ESP_LOGD(TAG, "ZLinky RMSVoltage: %u V", voltage);
         } else if (report->attr_id == 0x0508) {  // RMSCurrent (A, uint16)
             uint16_t current = (uint16_t)v;
             elec->SetRMSCurrent((int64_t)current * 1000);  // A -> mA
-            ESP_LOGI(TAG, "ZLinky RMSCurrent: %u A", current);
+            ESP_LOGD(TAG, "ZLinky RMSCurrent: %u A", current);
         } else if (report->attr_id == 0x050B) {  // ActivePower (W, int16)
             int16_t power = (int16_t)(uint16_t)v;
             // ZLinky : 0x050B contient CCASN, un point de la courbe de charge
@@ -835,16 +835,16 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
                 break;
             }
             elec->SetActivePower((int64_t)power * 1000);  // W -> mW
-            ESP_LOGI(TAG, "ActivePower: %d W", power);
+            ESP_LOGD(TAG, "ActivePower: %d W", power);
         } else if (report->attr_id == 0x0306) {  // TotalApparentPower (VA, uint32)
             // SINSTS total : prioritaire sur 0x050F, qui ne contient que la
             // phase 1 en triphase standard.
             elec->SetTotalApparentPower((int64_t)v * 1000);  // VA -> mVA
-            ESP_LOGI(TAG, "ZLinky TotalApparentPower: %llu VA", (unsigned long long)v);
+            ESP_LOGD(TAG, "ZLinky TotalApparentPower: %llu VA", (unsigned long long)v);
         } else if (report->attr_id == 0x050F) {  // ApparentPower (VA, uint16)
             uint16_t apparent = (uint16_t)v;
             elec->SetApparentPower((int64_t)apparent * 1000);  // VA -> mVA
-            ESP_LOGI(TAG, "ZLinky ApparentPower: %u VA", apparent);
+            ESP_LOGD(TAG, "ZLinky ApparentPower: %u VA", apparent);
         }
         break;
     }

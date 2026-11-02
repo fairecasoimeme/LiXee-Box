@@ -19,6 +19,7 @@
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "lwip/sockets.h"
 #include <ctype.h>
 #include <strings.h>
 #include <string.h>
@@ -182,6 +183,28 @@ static bool url_host_matches(const char *url, const char *host)
 }
 
 /**
+ * Origine de bouclage (127.0.0.1, localhost, [::1], tout port) : le proxy de
+ * LiXee-Assist sert les pages du pont depuis http://127.0.0.1:<port> et
+ * relaie vers LIXEEBOX-xxxx.local, d'ou un Origin different du Host. Seul un
+ * programme du telephone lui-meme peut presenter cette origine, pas une page
+ * d'un site tiers.
+ */
+static bool url_is_loopback(const char *url)
+{
+    const char *p = strstr(url, "://");
+    if (!p) return false;
+    p += 3;
+    static const char *const LOOP[] = { "127.0.0.1", "localhost", "[::1]" };
+    for (size_t i = 0; i < sizeof(LOOP) / sizeof(LOOP[0]); i++) {
+        size_t n = strlen(LOOP[i]);
+        if (strncasecmp(p, LOOP[i], n) == 0 && (p[n] == '\0' || p[n] == ':' || p[n] == '/')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * CSRF : une requete qui modifie l'etat doit venir d'une page du pont.
  * Sans Origin ni Referer (client API, LiXee-Assist, curl), on laisse passer :
  * ces clients s'authentifient par Basic, que le navigateur d'une victime
@@ -209,10 +232,10 @@ static bool origin_ok(httpd_req_t *req)
     char host[96], src[256];
     if (httpd_req_get_hdr_value_str(req, "Host", host, sizeof(host)) != ESP_OK) return false;
     if (httpd_req_get_hdr_value_str(req, "Origin", src, sizeof(src)) == ESP_OK) {
-        return url_host_matches(src, host);
+        return url_host_matches(src, host) || url_is_loopback(src);
     }
     if (httpd_req_get_hdr_value_str(req, "Referer", src, sizeof(src)) == ESP_OK) {
-        return url_host_matches(src, host);
+        return url_host_matches(src, host) || url_is_loopback(src);
     }
     return true;
 }
@@ -622,8 +645,56 @@ static esp_err_t logout_handler(httpd_req_t *req)
     return httpd_resp_send(req, NULL, 0);
 }
 
-/** Trampoline commun : authentifie puis delegue au handler reel. */
-static esp_err_t auth_trampoline(httpd_req_t *req)
+/*
+ * Requete au corps "chunked" : le proxy de LiXee-Assist (shelf_proxy) envoie
+ * ses GET sans corps avec Transfer-Encoding: chunked, donc suivis du
+ * terminateur "0\r\n\r\n". Le serveur ne lit pas ce corps : ces 5 octets
+ * restaient sur la connexion et la requete suivante echouait (400, "parser
+ * error = 16"), d'ou des fichiers et appels manquants dans l'application. La
+ * reponse annonce donc la fermeture (Connection: close) : le client ferme la
+ * connexion et en ouvre une neuve pour la requete suivante. Le serveur ne la
+ * ferme pas lui-meme : httpd_sess_trigger_close agit en differe, et si la
+ * session a deja ete fermee entre-temps, sa place reprise par une nouvelle
+ * connexion etait fermee a tort (RST sans reponse, fichiers manquants).
+ */
+static bool chunked_body_begin(httpd_req_t *req)
+{
+    char te[16];
+    if (httpd_req_get_hdr_value_str(req, "Transfer-Encoding", te, sizeof(te)) != ESP_OK ||
+        strncasecmp(te, "chunked", 7) != 0) {
+        return false;
+    }
+    httpd_resp_set_hdr(req, "Connection", "close");
+    return true;
+}
+
+static void chunked_body_end(httpd_req_t *req, bool chunked)
+{
+    if (!chunked) return;
+    // Lire le terminateur reste dans la socket : sinon le serveur le prend
+    // pour une requete (400), et une socket fermee avec des octets non lus
+    // envoie un RST qui peut faire perdre la reponse au client. Il part juste
+    // apres les en-tetes : il est deja la, sinon une courte attente suffit.
+    int fd = httpd_req_to_sockfd(req);
+    char buf[5];
+    size_t got = 0;
+    bool waited = false;
+    while (got < 5) {
+        int n = recv(fd, buf, 5 - got, MSG_DONTWAIT);   // rien au-dela du terminateur
+        if (n > 0) { got += n; continue; }
+        if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK) || waited) break;
+        // Rien encore (ou deja lu avec les en-tetes par le serveur) : 20 ms
+        fd_set rd;
+        FD_ZERO(&rd);
+        FD_SET(fd, &rd);
+        struct timeval tv = { 0, 20 * 1000 };
+        select(fd + 1, &rd, NULL, NULL, &tv);
+        waited = true;
+    }
+}
+
+/** Authentifie puis delegue au handler reel. */
+static esp_err_t auth_dispatch(httpd_req_t *req)
 {
     // Acces a l'API depuis une autre origine (comme la LiXee-Box) : sans
     // identifiants, un navigateur n'envoyant pas de cookie ni de Basic avec "*"
@@ -637,6 +708,24 @@ static esp_err_t auth_trampoline(httpd_req_t *req)
         return ESP_FAIL;
     }
     return real(req);
+}
+
+/** Trampoline commun : authentifie puis delegue au handler reel. */
+static esp_err_t auth_trampoline(httpd_req_t *req)
+{
+    bool chunked = chunked_body_begin(req);
+    esp_err_t ret = auth_dispatch(req);
+    chunked_body_end(req, chunked);
+    return ret;
+}
+
+/** Trampoline des pages sans authentification (connexion, deconnexion). */
+static esp_err_t plain_trampoline(httpd_req_t *req)
+{
+    bool chunked = chunked_body_begin(req);
+    esp_err_t ret = ((web_handler_fn)req->user_ctx)(req);
+    chunked_body_end(req, chunked);
+    return ret;
 }
 
 esp_err_t web_server_register_uri(httpd_handle_t server, const httpd_uri_t *uri)
@@ -852,7 +941,7 @@ static esp_err_t static_file_handler(httpd_req_t *req)
     size_t read_bytes = fread(file_buf, 1, file_size, f);
     fclose(f);
 
-    ESP_LOGI(TAG, "Serving: %s (%lu bytes%s)", uri, (unsigned long)read_bytes,
+    ESP_LOGD(TAG, "Serving: %s (%lu bytes%s)", uri, (unsigned long)read_bytes,
              is_gzip ? ", gzip" : "");
 
     esp_err_t err = httpd_resp_send(req, file_buf, read_bytes);
@@ -903,11 +992,14 @@ esp_err_t web_server_init(void)
 
     // Connexion / deconnexion : hors trampoline, accessibles sans session
     httpd_uri_t login_get = {};
-    login_get.uri = "/login";  login_get.method = HTTP_GET;  login_get.handler = login_get_handler;
+    login_get.uri = "/login";  login_get.method = HTTP_GET;  login_get.handler = plain_trampoline;
+    login_get.user_ctx = (void *)login_get_handler;
     httpd_uri_t login_post = {};
-    login_post.uri = "/login"; login_post.method = HTTP_POST; login_post.handler = login_post_handler;
+    login_post.uri = "/login"; login_post.method = HTTP_POST; login_post.handler = plain_trampoline;
+    login_post.user_ctx = (void *)login_post_handler;
     httpd_uri_t logout = {};
-    logout.uri = "/logout";    logout.method = HTTP_GET;     logout.handler = logout_handler;
+    logout.uri = "/logout";    logout.method = HTTP_GET;     logout.handler = plain_trampoline;
+    logout.user_ctx = (void *)logout_handler;
     httpd_register_uri_handler(s_server, &login_get);
     httpd_register_uri_handler(s_server, &login_post);
     httpd_register_uri_handler(s_server, &logout);

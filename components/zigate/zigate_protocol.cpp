@@ -484,7 +484,7 @@ esp_err_t zigate_decode_packet(const uint8_t *raw, size_t raw_len, zigate_packet
 void zigate_dispatch_packet(const zigate_packet_t *pkt)
 {
     // Log toutes les reponses en INFO pour le debug initial
-    ESP_LOGI(TAG, "RX cmd=0x%04X len=%d lqi=%d", pkt->cmd, pkt->length, pkt->lqi);
+    ESP_LOGD(TAG, "RX cmd=0x%04X len=%d lqi=%d", pkt->cmd, pkt->length, pkt->lqi);
     g_zigate_coord.frames_rx++;
     zigate_console_frame('<', pkt);
 
@@ -789,7 +789,7 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
                 }
                 memcpy(report.data, &pkt->payload[idx], report.data_len);
 
-                ESP_LOGI(TAG, "Attr: addr=%04X ep=%d cl=%04X at=%04X type=%02X len=%d",
+                ESP_LOGD(TAG, "Attr: addr=%04X ep=%d cl=%04X at=%04X type=%02X len=%d",
                          report.short_addr, report.endpoint, report.cluster_id,
                          report.attr_id, report.attr_type, report.data_len);
 
@@ -1044,7 +1044,7 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
     }
 
     default:
-        ESP_LOGI(TAG, "Unhandled ZiGate response: 0x%04X (len=%d)", pkt->cmd, pkt->length);
+        ESP_LOGD(TAG, "Unhandled ZiGate response: 0x%04X (len=%d)", pkt->cmd, pkt->length);
         break;
     }
 }

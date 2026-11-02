@@ -424,7 +424,7 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
     ESP_LOGI(TAG, "Profil '%s' : %d liaison(s), capacites 0x%04lX", model ? model : "",
              p->link_count, (unsigned long)p->caps);
     for (int i = 0; i < p->link_count; i++) {
-        ESP_LOGI(TAG, "  %04X/%04X -> %s (x%g)", p->links[i].cluster, p->links[i].attr,
+        ESP_LOGD(TAG, "  %04X/%04X -> %s (x%g)", p->links[i].cluster, p->links[i].attr,
                  matter_link_target_name(p->links[i].target),
                  (double)(p->links[i].scale * p->links[i].unit_mul));
     }

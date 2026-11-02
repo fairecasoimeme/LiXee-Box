@@ -14,6 +14,7 @@
 - **Code d'appairage propre à chaque box**, tiré au hasard et conservé
 - Fenêtre d'appairage pour ajouter un deuxième contrôleur, choix des appareils publiés, Factory Reset Matter
 - Activation depuis **Passerelle → Matter** (désactivé par défaut)
+- Console allégée : les lignes émises à chaque trame ZiGate, à chaque rapport d'attribut et à chaque fichier servi passent en niveau debug
 
 ### Migration depuis la v2.x
 - Une LiXee-Box Arduino passe en v3 par sa mise à jour habituelle (`update.tar`, manuelle ou automatique)
@@ -27,7 +28,8 @@
 - **Ethernet prioritaire, WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté et relancé si le câble reste débranché 30 s
 - Les serveurs DNS de l'Ethernet sont rétablis après une coupure du WiFi (activation du tunnel en échec)
 - Provisionnement Bluetooth (LiXee-Assist) en tâche de fond : il ne bloque plus le démarrage
-- La remise à zéro (3 coupures) remet aussi l'Ethernet en DHCP
+- La remise à zéro (3 coupures) remet aussi l'Ethernet en DHCP ; la LED verte la confirme par 10 clignotements rapides, comme en v2.x
+- LED verte : clignote pendant le provisioning Bluetooth (attente de LiXee-Assist), éteinte ensuite
 
 ### Mises à jour
 - Mise à jour **automatique** disponible sans le mode développeur ; la source (releases GitHub de la LiXee-Box) n'est plus modifiable
@@ -55,6 +57,8 @@
 ### API et LiXee-Assist
 - `/api/devices` et `/api/device` (`/getDevices`, `/getDevice`) reprennent le format de la v2.x : `INFO` complet (`model`, `manufacturer`, `device_id`, `shortAddr`, `endpoint`, `LQI`, `lastSeen`, `Status`, `software_version`) et chaînes en texte. L'application ne trouvait pas le ZLinky, donc pas de graphe de consommation au kiosque, et les appareils n'avaient ni valeurs ni boutons. Les fichiers `/db` ne changent pas
 - Export CSV du graphe d'usage : colonnes d'index nommées comme en v2.x (`HC / EJPHN / BBRHCJB / EASF01`) ; un ZLinky autre que celui configuré garde le format complet
+- **Interface dans LiXee-Assist** : son proxy envoie les requêtes avec un corps vide « chunked » ; la box n'en lisait pas la fin, si bien que des scripts manquaient au hasard (ancienne page Zigbee, pas de redirection) et la console affichait des `400 Bad Request`. La fin est désormais lue et la connexion se termine proprement
+- Actions depuis LiXee-Assist (lancer le jumelage…) refusées en `Forbidden` : le contrôle d'origine accepte aussi une page servie en local par le téléphone (`127.0.0.1`, `localhost`) ; un site tiers reste refusé
 - Routes v2.x rétablies : `/loadThermostats`, `/setThermostatSetpoint`, `/setThermostatForce`, `/setThermostatMode`, `/setThermostatFrost`, `/ZigbeeSendRequest`, `/agicons.js`
 
 ### Interface
@@ -62,6 +66,7 @@
 - Répartition énergétique : légende alignée (couleur, nom, énergie, coût)
 - Infos système : occupation de la NVS ; ligne E-mail retirée des passerelles
 - Favicon de la v2.x rétabli (pages et page de connexion)
+- Box sans aucun appareil : l'accueil ouvre l'assistant d'appairage, LoRa si le module est présent, Zigbee sinon (comme la v2.x) ; `/assistDevice?type=lora` ouvre l'assistant LoRa
 - Outil Historique : seuls les fichiers `.json` sont listés
 
 ### Retiré

@@ -133,8 +133,35 @@
     loadVersion();
     updateClock();
     setInterval(updateClock, 30000);
-    navigate();
+    firstRoute(navigate);
   });
+
+  // Accueil (sans #route) d'une box sans aucun appareil Zigbee ni LoRa :
+  // assistant d'appairage, LoRa si le module est present, Zigbee sinon
+  // (handleRoot de la LiXee-Box). En cas d'erreur, page par defaut.
+  function firstRoute(done) {
+    if (window.location.hash) { done(); return; }
+    function list(url) {
+      var d = $.Deferred();
+      $.ajax({ url: url, dataType: 'json', global: false })
+        .done(function(r) { d.resolve($.isArray(r) ? r : null); })
+        .fail(function() { d.resolve(null); });
+      return d.promise();
+    }
+    $.ajax({ url: '/api/system/info', dataType: 'json', global: false }).done(function(info) {
+      var mods = (info && info.modules) || {};
+      $.when(mods.zigbee ? list('/api/zigbee/devices') : [],
+             mods.lora ? list('/api/lora/devices') : []).done(function(zb, lr) {
+        var target = null;
+        if (zb && lr && !zb.length && !lr.length) {
+          if (mods.lora) target = 'assistLora';
+          else if (mods.zigbee) target = 'assistDevice';
+        }
+        if (target) window.history.replaceState(null, '', '#' + target);
+        done();
+      });
+    }).fail(function() { done(); });
+  }
 
   function loadVersion() {
     $.getJSON('/api/system/info', function(data) {

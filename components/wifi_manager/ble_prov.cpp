@@ -10,6 +10,8 @@
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_err.h"
+#include "esp_timer.h"
+#include "driver/gpio.h"
 
 #include "host/ble_hs.h"
 #include "host/ble_uuid.h"
@@ -61,6 +63,12 @@ static ble_prov_credentials_cb_t s_credentials_cb = NULL;
 static void *s_credentials_ctx = NULL;
 
 static char s_device_name[20] = "LIXEEBOX-0000";
+
+// LED verte (GPIO 3, comme la v2.x) : clignote lentement tant que le
+// provisioning BLE attend LiXee-Assist. Meme LED que l'appairage LoRa
+#define BLE_PROV_LED_GPIO GPIO_NUM_3
+static esp_timer_handle_t s_led_timer = NULL;
+static bool s_led_on = false;
 
 // Buffer pour les credentials recues — utilise pour deferer le callback
 // hors du contexte GATT (sinon vTaskDelay bloque la tache NimBLE host
@@ -137,6 +145,35 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 // ============================================================================
 // Generation du nom de device "LIXEEBOX-XXYY" (2 derniers octets MAC)
 // ============================================================================
+
+static void led_timer_cb(void *arg)
+{
+    (void)arg;
+    s_led_on = !s_led_on;
+    gpio_set_level(BLE_PROV_LED_GPIO, s_led_on);
+}
+
+static void led_blink_start(void)
+{
+    if (!s_led_timer) {
+        gpio_reset_pin(BLE_PROV_LED_GPIO);
+        gpio_set_direction(BLE_PROV_LED_GPIO, GPIO_MODE_OUTPUT);
+        esp_timer_create_args_t a = {};
+        a.callback = led_timer_cb;
+        a.name = "ble_led";
+        if (esp_timer_create(&a, &s_led_timer) != ESP_OK) return;
+    }
+    esp_timer_stop(s_led_timer);
+    esp_timer_start_periodic(s_led_timer, 1000 * 1000);
+}
+
+static void led_blink_stop(void)
+{
+    if (!s_led_timer) return;
+    esp_timer_stop(s_led_timer);
+    s_led_on = false;
+    gpio_set_level(BLE_PROV_LED_GPIO, 0);
+}
 
 static void generate_device_name(void)
 {
@@ -254,6 +291,7 @@ static void process_received_data(const char *data, uint16_t len)
 
         // Repondre "ok" au client (protocole LiXee-Assist)
         ble_prov_send_message("ok");
+        led_blink_stop();   // redemarrage imminent : LED eteinte
 
         // Stocker les credentials — le callback sera appele depuis la boucle
         // principale (wifi_mgr_start) pour ne pas bloquer la tache NimBLE host.
@@ -486,6 +524,7 @@ esp_err_t ble_prov_init(ble_prov_credentials_cb_t cb, void *ctx, bool standalone
     }
 
     s_ble_active = true;
+    led_blink_start();
     ESP_LOGI(TAG, "BLE provisioning initialized");
     return ESP_OK;
 }
@@ -511,6 +550,7 @@ esp_err_t ble_prov_stop(bool full_deinit)
 
     // Arreter advertising
     ble_gap_adv_stop();
+    led_blink_stop();
 
     s_ble_active = false;
     s_client_connected = false;

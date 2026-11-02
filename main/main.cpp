@@ -60,6 +60,7 @@
 #include "notifications.h"
 #include "lora.h"
 #include "esp_timer.h"
+#include "driver/gpio.h"
 #include <sys/time.h>
 #include <time.h>
 #include "tunnel.h"
@@ -499,7 +500,7 @@ static void on_zigbee_attribute_report(const zigate_attribute_report_t *report)
         return;
     }
 
-    ESP_LOGI(TAG, "ZB attr report: short=0x%04X cluster=0x%04X attr=0x%04X",
+    ESP_LOGD(TAG, "ZB attr report: short=0x%04X cluster=0x%04X attr=0x%04X",
              report->short_addr, report->cluster_id, report->attr_id);
 
     zigate_device_t *dev = zigate_devices_find_by_short(report->short_addr);
@@ -861,6 +862,15 @@ static void boot_reset_check(void)
 
     if (count >= BOOT_RESET_COUNT) {
         ESP_LOGW(TAG, "!!! REINITIALISATION DE SECOURS (WiFi, Ethernet, securite HTTP) !!!");
+        // Confirmation visible comme en v2.x : 10 eclats rapides de la LED verte (GPIO 3)
+        gpio_reset_pin(GPIO_NUM_3);
+        gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
+        for (int i = 0; i < 10; i++) {
+            gpio_set_level(GPIO_NUM_3, 1);
+            vTaskDelay(pdMS_TO_TICKS(50));
+            gpio_set_level(GPIO_NUM_3, 0);
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
         boot_counter_clear(NULL);
         wifi_mgr_clear_credentials();
         remove("/littlefs/config/configWifi.json");
@@ -1211,6 +1221,12 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "===========================================");
     ESP_LOGI(TAG, "Free heap: %lu (dont RAM interne: %lu)",
              esp_get_free_heap_size(), esp_get_free_internal_heap_size());
+
+    // LED verte (GPIO 3) eteinte au demarrage, comme la v2.x : un redemarrage
+    // logiciel garde le niveau de la broche (LED du provisioning BLE allumee)
+    gpio_reset_pin(GPIO_NUM_3);
+    gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
+    gpio_set_level(GPIO_NUM_3, 0);
 
     // 1. NVS (requis par WiFi et Matter)
     ESP_ERROR_CHECK(init_nvs());

@@ -171,7 +171,7 @@ static esp_err_t matter_attribute_update_cb(attribute::callback_type_t type,
     }
 
     if (type == attribute::PRE_UPDATE) {
-        ESP_LOGI(TAG, "Matter PRE_UPDATE: ep=%d cluster=0x%04lX attr=0x%04lX",
+        ESP_LOGD(TAG, "Matter PRE_UPDATE: ep=%d cluster=0x%04lX attr=0x%04lX",
                  endpoint_id, cluster_id, attribute_id);
 
         // Endpoint virtuel (thermostat du pont) : traite par son module
@@ -634,7 +634,7 @@ esp_err_t matter_bridge_report_energy_index(int endpoint_id, uint16_t attr_id, u
             ElectricalEnergyMeasurement::Attributes::CumulativeEnergyImported::Id);
 
         st->published_mwh = mwh;
-        ESP_LOGI(TAG, "Energie cumulee ep=%d : %llu Wh (%s)", endpoint_id,
+        ESP_LOGD(TAG, "Energie cumulee ep=%d : %llu Wh (%s)", endpoint_id,
                  (unsigned long long)total, from_total ? "index total" : "somme des index");
     }
 
@@ -930,7 +930,7 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
     // 4. Definir le parent endpoint (l'aggregator)
     err = set_parent_endpoint(ep, s_aggregator_endpoint);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG, "set_parent_endpoint returned 0x%X (may be OK)", err);
+        ESP_LOGD(TAG, "set_parent_endpoint returned 0x%X (may be OK)", err);
         // Ne pas echouer sur ca, certains SDKs n'ont pas cette API
     }
 
@@ -950,7 +950,7 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
         uint16_t new_ep_id = endpoint::get_id(ep);
         ElecPowerDelegate *delegate = matter_bridge_get_elec_delegate(new_ep_id);
         if (delegate) {
-            ESP_LOGI(TAG, "Manually initializing ElectricalPowerMeasurement delegate for ep=%d", new_ep_id);
+            ESP_LOGD(TAG, "Manually initializing ElectricalPowerMeasurement delegate for ep=%d", new_ep_id);
             cluster::delegate_cb::ElectricalPowerMeasurementDelegateInitCB((void *)delegate, new_ep_id);
         }
         if (profile ? (profile->caps & MCAP_ENERGY) != 0 : device_type == MATTER_DEV_ENERGY_METER) {
