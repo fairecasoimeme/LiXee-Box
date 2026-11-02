@@ -43,7 +43,7 @@ La LiXee-Box est aussi vendue en **pack prêt à l'emploi**, avec le module pour
       
 ## Schéma de fonctionnement
 
-<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee-Box_Schema.png" width="1024">  
+<img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/LiXee-Box_Schema.webp" width="1024" alt="Schéma de fonctionnement de la LiXee-Box">  
 
 ## Installation
 
