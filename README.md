@@ -78,7 +78,7 @@ L'appareil peut être configuré via un site web local
 - **Volets roulants** : position 0–100 % par curseur, avec retour d'état en temps réel (à partir de la v2.23)
 - **État radio** : icône signalant un appareil injoignable (à partir de la v2.23)
 - Historique des données pour les appareils de puissance et d'énergie
-- Mises à jour OTA (Over-The-Air) automatiques et manuelles
+- Mises à jour OTA (Over-The-Air) du firmware des appareils Zigbee et du ZLinky LoRa
 
 ### 📡 Objets LoRa 2.4 GHz (à partir de la v2.22)
 - Réception d'objets **LoRa 2.4 GHz** en plus du Zigbee, le premier étant le **ZLinky LoRa**
@@ -89,7 +89,7 @@ L'appareil peut être configuré via un site web local
 ### 🔗 Pont Matter (à partir de la v3.0)
 - La LiXee-Box devient un **pont Matter** (« bridge ») : jusqu'à **32 appareils** publiés
 - Appareils **Zigbee**, **LoRa** (ZLinky LoRa), **thermostats virtuels** et **groupes d'actions**
-- Compatible **Home Assistant**, **Apple Maison** et les contrôleurs Matter qui acceptent les appareils non certifiés
+- Compatible **Home Assistant**, **Apple Maison**, **Amazon Alexa** et les contrôleurs Matter qui acceptent les appareils non certifiés
 - Code d'appairage **propre à chaque box**, choix des appareils publiés appareil par appareil
 
 ### 📊 Surveillance et Tableau de Bord
@@ -99,7 +99,7 @@ L'appareil peut être configuré via un site web local
 - Données Linky intégrées
 
 ### 🌐 Connectivité
-- **Ethernet** (W5500) prioritaire, **WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté, et relancé si le câble reste débranché 30 s (à partir de la v3.0)
+- **Ethernet** (W5500, à partir de la v2.26) prioritaire, **WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté (v3.0), et relancé si le câble reste débranché 30 s
 - **Matter** : voir [Pont Matter](#-pont-matter-à-partir-de-la-v30) (à partir de la v3.0)
 - **MQTT** : Serveur/port/utilisateur/mot de passe personnalisables
 - **MQTT Discovery** compatible avec Home Assistant
@@ -176,7 +176,7 @@ Répéter l'opération 3 fois et la LiXee-Box sera réinitialisée
 
 > **Note (v2.19+)** : La remise à zéro désactive également la sécurité HTTP, ce qui permet de récupérer l'accès à l'interface si le mot de passe est oublié.
 
-> **Note (v3.0+)** : elle remet aussi l'**Ethernet** en automatique (DHCP), utile après une IP fixe erronée. Les appareils, la configuration et l'appairage Matter sont conservés.
+> **Note (v3.0+)** : elle remet aussi l'**Ethernet** en automatique (DHCP), utile après une IP fixe erronée. Les appareils, la configuration et l'appairage Matter sont conservés. La **LED verte** confirme la remise à zéro par 10 clignotements rapides, puis clignote lentement tant que la box attend LiXee-Assist en Bluetooth.
 
 ## 🔄 Migrer une LiXee-Box vers la v3
 
@@ -230,14 +230,14 @@ L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour ave
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/devisser_boitier.jpg" width="480"/>
 2. Brancher la carte sur le port USB d'un ordinateur en appuyant sur le bouton flash.
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/update_flash.jpg" width="480" />
-4. Télécharger les fichiers de la v3 dans la section release : `bootloader.bin`, `partitions.bin`, `ota_data_initial.bin`, `firmware.bin` et `littlefs.bin`
+3. Télécharger les fichiers de la v3 dans la section [release](https://github.com/fairecasoimeme/LiXee-Box/releases/latest) : `bootloader.bin`, `partitions.bin`, `ota_data_initial.bin`, `firmware.bin` et `littlefs.bin`
    
 
 #### En mode GUI
 
-6. Télécharger l'utilitaire de flash : https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32s3/production_stage/tools/flash_download_tool.html
-7. Décompresser et lancer l'exéctutable : flash_download_tool_x.x.x.exe
-8. Suivez les mêmes paramètres que les captures d'écran (⚠️ **ne pas cliquer sur le bouton ERASE**)
+4. Télécharger l'utilitaire de flash : https://docs.espressif.com/projects/esp-test-tools/en/latest/esp32s3/production_stage/tools/flash_download_tool.html
+5. Décompresser et lancer l'exécutable : flash_download_tool_x.x.x.exe
+6. Suivez les mêmes paramètres que les captures d'écran (⚠️ **ne pas cliquer sur le bouton ERASE**)
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash tools.png"/>
 <img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/Flash/flash_firmware.png"/>
 
@@ -258,6 +258,8 @@ Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START
 2. Taper la commande suivante :
 
    ```esptool.exe --chip esp32s3 --port "COMXX" --baud 460800 write_flash -z --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin```
+
+   Si le flash échoue à 460800 bauds, relancez avec `--baud 115200`.
 
 ## 🔗 Pont Matter (à partir de la v3.0)
 
@@ -296,7 +298,7 @@ Chaque appareil Matter est construit à partir des états de son template :
 
 | Appareil | Dans Matter |
 |---|---|
-| Capteurs température / humidité (SNZB-02D, 770, STPH…) | température, humidité, batterie |
+| Capteurs température / humidité (SNZB-02D, STPH-4-1-00…) | température, humidité, batterie |
 | Détecteurs de fuite d'eau | détecteur de fuite, batterie |
 | Détecteurs de présence (SNZB-06P, Aqara, radars Tuya) | occupation (+ luminosité pour les radars) |
 | Capteurs d'ouverture | contact, batterie |
@@ -323,7 +325,9 @@ Chaque appareil Matter est construit à partir des états de son template :
 ## 📱 Interface Utilisateur
 
 ### Jumelage d'Appareils
-à partir de l'interface, aller dans le menu : Réseau --> Zigbee puis Appuyer sur le bouton "Ajouter"  
+À partir de l'interface, aller dans le menu **Réseau → Zigbee**, onglet **Appareils**, puis appuyer sur le bouton **Ajouter**. Pour un objet LoRa, l'assistant est dans **Réseau → LoRa**.
+
+Sur une box qui n'a encore **aucun appareil**, la page d'accueil ouvre directement l'assistant d'appairage : LoRa si la box a le module LoRa, Zigbee sinon.
 
 ![Appairage d'Appareils](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p1.png)
 ![Appairage LiXee-Box](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_AssistDevice_p2.png)
@@ -519,7 +523,7 @@ La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier e
 
 ![Fiche d'un appareil LoRa](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_LoRa_Reseau.png)
 
-> **Documentation technique** : le protocole radio est décrit dans [recepteur/PROTOCOLE_LORA.md](recepteur/PROTOCOLE_LORA.md).
+> **Documentation technique** : le protocole radio est décrit dans [doc/LORA_PROTOCOL.md](doc/LORA_PROTOCOL.md).
 
 ---
 
@@ -544,12 +548,12 @@ Une section **Configuration avancée** repliable permet également une connexion
 
 ### Caractéristiques
 
-* Jusqu'à **6 requêtes HTTP simultanées** grâce à une architecture non-bloquante à machine d'état
+* Requêtes traitées **en parallèle**, avec une **file d'attente** (16 requêtes) au lieu d'un refus quand la box est occupée
 * **Heartbeat** automatique (15s) pour maintenir la connexion active avec reconnexion rapide (3s)
 * **Hot-reload** : le tunnel redémarre automatiquement après modification de la configuration
-* **Mise à jour via tunnel** : upload OTA des devices et mise à jour firmware/restore de la LiXee-Box à distance (upload chunké en base64)
+* **Mise à jour via tunnel** : upload OTA des devices et mise à jour firmware/restore de la LiXee-Box à distance (envoi par morceaux)
 * **Notifications push** : les alertes sont relayées via le tunnel vers l'application LiXee-Assist
-* **Watchdog mémoire** : le tunnel est automatiquement arrêté si le heap descend sous 80KB et relancé quand il remonte au-dessus de 120KB
+* **Garde mémoire** : une nouvelle requête attend que la mémoire interne soit suffisante avant d'ouvrir sa connexion locale
 * L'URL d'accès distant est de la forme `https://<votre-id>.lixee-box.fr`
 * La désactivation du tunnel est protégée lorsqu'on y accède depuis l'accès distant (pour éviter de se couper l'accès)
 
@@ -674,7 +678,7 @@ Par défaut : `mode = "timer"`
 | Paramètre | Obligatoire | Type | Valeur | Commentaire |
 |-----------|:-----------:|------|--------|-------------|
 | `mode` | ✓ | String | `"timer"` ou `"event"` | |
-| `IEEE` | event | String | Adresse MAC sans ':' ni '-' | Requis si mode = event |
+| `IEEE` | event | String | Adresse IEEE : 16 caractères hexadécimaux, sans ':' ni '-' | Requis si mode = event |
 | `cluster` | event | Decimal | ID du cluster en décimal | Requis si mode = event |
 | `attribute` | event | Decimal | Numéro d'attribut | Requis si mode = event |
 
@@ -726,14 +730,14 @@ Par défaut : `mode = "timer"`
       "maxExecPerDay": 5,
       "trigger": {
         "mode": "event",
-        "IEEE": "00158d0006204fcf",
+        "IEEE": "00158D0006204FCF",
         "cluster": 2820,
         "attribute": 1295
       },
       "conditions": [
         {
           "type": "device",
-          "IEEE": "00158d0006204fcf",
+          "IEEE": "00158D0006204FCF",
           "cluster": 2820,
           "attribute": 1295,
           "operator": ">",
@@ -757,7 +761,7 @@ Par défaut : `mode = "timer"`
       "actions": [
         {
           "type": "device",
-          "IEEE": "a4c138bb23185d2c",
+          "IEEE": "A4C138BB23185D2C",
           "actionName": "OFF",
           "endpoint": 1
         },
@@ -770,7 +774,7 @@ Par défaut : `mode = "timer"`
       "elseActions": [
         {
           "type": "device",
-          "IEEE": "a4c138bb23185d2c",
+          "IEEE": "A4C138BB23185D2C",
           "actionName": "ON",
           "endpoint": 1
         }
@@ -787,7 +791,7 @@ Par défaut : `mode = "timer"`
       "conditions": [
         {
           "type": "device",
-          "IEEE": "00158d0006204fcf",
+          "IEEE": "00158D0006204FCF",
           "cluster": 2820,
           "attribute": 1295,
           "operator": ">",
@@ -798,10 +802,10 @@ Par défaut : `mode = "timer"`
       "actions": [
         {
           "type": "dynamic",
-          "IEEE": "b4e3f9d012345678",
+          "IEEE": "B4E3F9D012345678",
           "actionName": "SetLevel",
           "endpoint": 1,
-          "sourceIEEE": "00158d0006204fcf",
+          "sourceIEEE": "00158D0006204FCF",
           "sourceCluster": 2820,
           "sourceAttribute": 1295,
           "coefficient": 0.033,
@@ -811,7 +815,7 @@ Par défaut : `mode = "timer"`
       "elseActions": [
         {
           "type": "device",
-          "IEEE": "b4e3f9d012345678",
+          "IEEE": "B4E3F9D012345678",
           "actionName": "OFF",
           "endpoint": 1
         }
@@ -842,6 +846,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | 0x0000 | Basic | Informations de base de l'appareil |
 | 0x0001 | Power Configuration | Gestion batterie |
 | 0x0006 | On/Off | Commandes marche/arrêt |
+| 0x000F | Binary Input | Entrée binaire (état du contacteur Legrand) |
 | 0x0012 | Multistate Input | Entrées multi-états (boutons) |
 | 0x0102 | Window Covering | Contrôle volets/stores (montée, descente, stop, position) |
 | 0x0201 | Thermostat | Contrôle thermostatique |
@@ -852,6 +857,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | 0x0500 | IAS Zone | Alarmes (fuite d'eau, ouverture, etc.) |
 | 0x0702 | Simple Metering | Comptage d'énergie |
 | 0x0B04 | Electrical Measurement | Mesures électriques |
+| 0xE004, 0xED00 | Zosung IR | Clusters propriétaires des télécommandes infrarouges (apprentissage et émission des codes) |
 | 0xEF00 | Tuya | Cluster propriétaire Tuya |
 | 0xFC00 | NodOn Heating | Cluster propriétaire NodOn (fil pilote) |
 | 0xFC11 | Sonoff/Xiaomi Custom | Cluster propriétaire Sonoff/Xiaomi |
@@ -921,6 +927,7 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 |--------|---------|:--------------:|-------|:--------:|:-----:|
 | **Legrand** | Contacteur (DIN) | ✅ | Puissance, tension, courant, conso. Modes : Auto / Force ON / Force OFF | 📋 | ✅ |
 | **NodOn** | SIN-4-1-20 | ❌ | Module multifonction 16A, contact sec, On/Off simple | 📋 | ✅ |
+| **Aqara** | T2 double relais (lumi.switch.acn047) | ✅ | Deux canaux L1 / L2 (marche / arrêt et état de chaque canal), puissance, consommation, tension. Dans Matter, une seule voie est publiée | 📋 | |
 
 ---
 
@@ -933,13 +940,14 @@ Tout appareil Zigbee utilisant les clusters On/Off (0x0006) et optionnellement E
 
 ---
 
-### ❄️ Climatisation / Thermostat IR
-**Clusters : Thermostat (0x0201), Fan Control (0x0202)**
+### ❄️ Climatisation / Infrarouge
+**Clusters : Thermostat (0x0201), Fan Control (0x0202), Zosung IR (0xE004, 0xED00)**
 
 | Marque | Modèles | Notes | Template | Testé |
 |--------|---------|-------|:--------:|:-----:|
 | **Saswell/Tuya** | AC201A | Contrôle climatiseur : chaud, froid, ventilo, déshumidification. Consignes prédéfinies (18-26 °C) | 📋 |  |
 | **NodOn** | IRB-4-1-00 | Blaster IR pour climatiseur : chaud, froid, ventilo, auto, déshumidification. Consignes, vitesse ventilateur, position volet | 📋 | ✅ |
+| **Moes / Tuya (Zosung)** | UFO-R11, TS1201, ZS06 | Télécommande infrarouge universelle (v3.0) : apprentissage des codes depuis la fiche de l'appareil ; chaque code appris devient une action, utilisable dans les règles et les groupes d'actions | | |
 
 ---
 
@@ -1045,6 +1053,7 @@ Tout appareil utilisant le cluster IAS Zone (0x0500) avec Zone Type Water Sensor
 |--------|---------|-------|:--------:|:-----:|
 | **Xiaomi/Aqara** | lumi.sensor_switch.aq2 (WXKG11LM) | Bouton simple clic, multi-clic | 📋 | ✅ |
 | **Sonoff** | SNZB-01M (Orb 4-in-1) | 4 boutons : simple, double, long et triple appui (`single_button_1` … `triple_button_4`), utilisables dans les règles et en MQTT. Batterie | 📋 | ✅ |
+| **Sonoff** | SNZB-01P | Action `single` / `double` / `long`, utilisable dans les règles et en MQTT. Batterie et tension | 📋 | |
 | **IKEA** | TRÅDFRI Shortcut Button | Compatible clusters standards | | |
 | **Tuya/Moes** | Boutons scène, télécommandes | Via cluster 0x0006 ou 0x0012 | | |
 
@@ -1101,11 +1110,17 @@ Voici la structure :
     │   │   ├── mqtt_device_class  
     │   │   ├── mqtt_state_class  
     │   │   ├── mqtt_icon 
+    │   │   ├── endpoint  
+    │   │   ├── manufacturerSpecific
+    │   │   ├── mode
+    │   │   ├── writable
     │   ├── action   
     │   │   ├── name   
     │   │   ├── command  
     │   │   ├── endpoint  
     │   │   ├── value    
+    │   │   ├── cluster
+    │   │   ├── manufacturerSpecific
     │   │   ├── visible   
     │   ├── bind  
     │   ├── report  
@@ -1167,11 +1182,16 @@ Exemple de fichier 24321.json pour l'appareil id (5F01 Hex) :
 | `unit` | | String | Unité de mesure |
 | `coefficient` | | Float | Coefficient multiplicateur |
 | `jauge` | | String | "Gauge", "Battery", "text" |
+| `min`, `max` | | Decimal | Bornes de la jauge |
 | `visible` | | Decimal | 1 (visible) ou 0 (masqué) |
 | `poll` | | Decimal | Intervalle d'interrogation (sec) |
 | `mqtt_device_class` | | String | Classe de périphérique MQTT pour HA |
 | `mqtt_state_class` | | String | Classe d'état MQTT pour HA |
 | `mqtt_icon` | | String | Icône MQTT pour HA |
+| `endpoint` | | Decimal | Canal (endpoint Zigbee) lu par cette ligne, pour les appareils à plusieurs sorties (à partir de la v2.26). Sans ce champ : n'importe quel canal |
+| `manufacturerSpecific` | | String | Code fabricant (hex) pour un attribut propriétaire, ex. `"0x1021"` |
+| `mode` | | String | Modes du Linky concernés, séparés par `;` (ex. `"3;7"`) : la ligne n'est utilisée que dans ces modes |
+| `writable` | | Boolean | Attribut modifiable depuis l'interface |
 
 ### Action
 ### Paramètres d'Action
@@ -1182,6 +1202,8 @@ Exemple de fichier 24321.json pour l'appareil id (5F01 Hex) :
 | `command` | ✓ | Decimal | ID de commande |
 | `endpoint` | ✓ | Decimal | Numéro de point de terminaison |
 | `value` | ✓ | Decimal | Valeur à envoyer |
+| `cluster` | | String | Cluster (hex) d'une commande spécifique (`command` 400) |
+| `manufacturerSpecific` | | String | Code fabricant (hex) d'une commande spécifique (`command` 400) |
 | `visible` | | Decimal | 1 (visible) ou 0 (masqué) |
 
 #### Position de volet (à partir de la v2.23)
@@ -1211,6 +1233,8 @@ exemple : `bind : "1026;1029;1794"`
 | `max` | ✓ | Decimal | | Temps maximum (en secondes) pour envoyer un rapport | 
 | `timeout` | | Decimal | | En millisecondes | 
 | `change` | | Decimal | | Valeur de changement pour envoyer un rapport | 
+| `manufacturerSpecific` | | String | | Code fabricant (hex) d'un attribut propriétaire |
+| `mode` | | String | | Modes du Linky concernés, séparés par `;` : le rapport n'est configuré que dans ces modes |
 
 ## 🔌 API WEB
 Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, ou au travers du tunnel d'accès distant.
@@ -1220,7 +1244,7 @@ Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, 
 - **GET** pour lire, **POST** pour agir ou modifier (PUT / DELETE pour les notifications)
 - Paramètres **par leur nom** ; un appareil se désigne par **`ieee`** (les anciens noms `IEEE` et `id` restent acceptés)
 - Réponses en JSON ; une valeur inconnue vaut `null`
-- Authentification : celle de l'interface web — identifiant et mot de passe (Basic Auth) en accès direct, session de connexion au travers du tunnel. Une requête POST en accès direct doit porter un en-tête `Origin` ou `Referer` du même hôte (protection CSRF)
+- Authentification : celle de l'interface web — identifiant et mot de passe (Basic Auth) en accès direct, session de connexion au travers du tunnel. Une requête POST en accès direct qui porte un en-tête `Origin` ou `Referer` doit venir du même hôte, ou d'une page locale du téléphone (`127.0.0.1`, `localhost`, utilisée par LiXee-Assist) : protection CSRF. Un client API sans ces en-têtes est accepté
 - **Compatibilité** : les noms `/api/...` de la colonne de gauche existent à partir de la v2.27. Les anciens noms (colonne de droite) restent servis par réécriture d'URL, avec la même réponse ; une box antérieure à la v2.27 ne connaît qu'eux. Les routes marquées « v2.26 » n'existent pas avant cette version (réponse 404)
 
 ### Liste des routes
@@ -1338,7 +1362,7 @@ curl -X GET 'https://<HOST>/api/devices'\
 ##### Réponse
 ```json
 {
-  "00158d0006203a63": {
+  "00158D0006203A63": {
     "1": {
       "IN": "0,1,3,1026,1794",
       "OUT": "4,3,1794"
@@ -1370,14 +1394,14 @@ curl -X GET 'https://<HOST>/api/devices'\
 
 ##### Requête
 ```bash
-curl -X GET 'https://<HOST>/api/device?ieee=04cf8cdf3c79ce2b'\
+curl -X GET 'https://<HOST>/api/device?ieee=04CF8CDF3C79CE2B'\
     -u <username>:<password> \
     -H 'Content-Type: application/json' \
 ```
 ##### Réponse
 ```json
 {
-  "04cf8cdf3c79ce2b": {
+  "04CF8CDF3C79CE2B": {
     "1": {
       "IN": "0,2,3,4,5,6,9,1794,2820",
       "OUT": "10,25"
@@ -1497,13 +1521,13 @@ curl -X GET 'https://<HOST>/api/energy/config'\
 ##### Réponse
 ```json
 {
-  "zlinky": "00158d0001a2b3c4", "production": "", "gaz": "", "water": "00158d0009f8e7d6",
+  "zlinky": "00158D0001A2B3C4", "production": "", "gaz": "", "water": "00158D0009F8E7D6",
   "linkyMode": 1,
   "prices": {"256": 0.1612, "258": 0.2068},
   "subscription": {"abo": 15.65, "cspe": 0.0225, "cta": 1.2},
   "gas": {"price": 0.12, "coeff": 10, "unit": "m3"},
   "water": {"price": 0.004, "coeff": 1, "unit": "L"},
-  "subMeters": [{"index": 0, "ieee": "a4c1380000000002", "alias": "Véhicule", "color": "#e74c3c", "enabled": true}],
+  "subMeters": [{"index": 0, "ieee": "A4C1380000000002", "alias": "Véhicule", "color": "#e74c3c", "enabled": true}],
   "thresholds": {
     "budget": {"enabled": true, "monthEur": 80},
     "overPower": {"enabled": false, "w": 6000},
@@ -1512,7 +1536,7 @@ curl -X GET 'https://<HOST>/api/energy/config'\
     "waterLeak": {"enabled": false, "litres": 5},
     "freeze": {"enabled": false, "centiDeg": 300, "sensor": ""}
   },
-  "delestage": ["a4c1380000000001"]
+  "delestage": ["A4C1380000000001"]
 }
 ```
 
@@ -1645,7 +1669,7 @@ curl -X GET 'https://<HOST>/api/delestage'\
   "active": true, "since": "14/10/2026 18:42", "lastEnd": "13/10/2026 07:15", "reason": "meter",
   "restoreMinutes": 5, "restorePercent": 80, "anticipationPercent": 0,
   "minuteVA": 5230, "minuteLoadPercent": 58, "subscribedVA": 9000,
-  "devices": [{"ieee": "a4c1380000000001", "name": "Radiateur salon", "cut": true}]
+  "devices": [{"ieee": "A4C1380000000001", "name": "Radiateur salon", "cut": true}]
 }
 ```
 Pour rallumer les prises coupées (seules celles qui étaient allumées avant la coupure) :
@@ -1738,12 +1762,12 @@ Remplissez le formulaire :
   * Nom d'utilisateur MQTT
   * Mot de passe MQTT
 
-Puis cliquez sur **Home-Assistant** et **Sauvegarder**  
+Puis choisissez **Home Assistant (auto-discovery)** et cliquez sur **Sauvegarder**  
 Attendez un moment et si tout est correct, l'icône de connexion deviendra verte.
 
-Ensuite, allez dans le menu **Réseau** --> **Zigbee**
+Ensuite, allez dans le menu **Réseau** --> **Zigbee** (ou **Réseau** --> **LoRa** pour un objet LoRa)
 
-Pour chaque appareil Zigbee, un nouveau bouton **MQTT Discover** apparaît. Veuillez cliquer dessus pour créer un nouveau périphérique sur HA. Et voilà.
+Pour chaque appareil, un nouveau bouton **MQTT Discover** apparaît. Veuillez cliquer dessus pour créer un nouveau périphérique sur HA. Et voilà.
 <div align='center'><img src="https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-GW_Devices_mqtt_discover.png" width="320">  </div>
 
 Attendez un moment et allez dans vos périphériques MQTT HA :
