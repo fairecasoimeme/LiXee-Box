@@ -178,9 +178,13 @@ static bool zlinky_histo_base(uint64_t ieee)
     if (device_data_get_value(ieee, 0xFF66, 0x0010, buf, sizeof(buf)) != ESP_OK || !buf[0]) return false;
     char txt[24];
     size_t n = 0;
-    for (size_t i = 0; buf[i] && buf[i + 1] && n + 1 < sizeof(txt); i += 2) {
-        char hx[3] = { buf[i], buf[i + 1], 0 };
-        char c = (char)strtol(hx, NULL, 16);
+    bool hex = device_data_value_is_hex(buf);         // fiche 2.x : texte en clair
+    for (size_t i = 0; buf[i] && n + 1 < sizeof(txt); i += hex ? 2 : 1) {
+        char c = buf[i];
+        if (hex) {
+            char hx[3] = { buf[i], buf[i + 1], 0 };     // longueur paire
+            c = (char)strtol(hx, NULL, 16);
+        }
         if (c == ' ' && n == 0) continue;
         txt[n++] = (char)toupper((unsigned char)c);
     }
@@ -1528,6 +1532,18 @@ extern "C" void app_main(void)
     int last_reset_month = -1;
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(1000));
+
+        // Redemarrage demande (mise a jour, bouton) : d'abord les donnees
+        // gardees en RAM. Une restauration n'en souffre pas : ses fichiers ne
+        // remplacent les reels qu'au demarrage (maintenance_early_init)
+        if (maintenance_reboot_due()) {
+            ESP_LOGW(TAG, "Redemarrage demande : sauvegarde des donnees");
+            device_data_save_all();
+            energy_history_save_all();
+            energy_service_flush();
+            power_stats_flush();
+            esp_restart();
+        }
 
         // MQTT: health check + reconnexion (chaque seconde)
         mqtt_manager_loop();

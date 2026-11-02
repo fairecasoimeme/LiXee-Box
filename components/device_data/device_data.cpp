@@ -1625,6 +1625,12 @@ static size_t hex_to_text(const char *hex, size_t n, char *out, size_t out_len)
     return o;
 }
 
+bool device_data_value_is_hex(const char *value)
+{
+    size_t n = 0;
+    return value && is_hex_string(value, &n) && !(n & 1);
+}
+
 bool device_data_stge_value(const char *hex, uint32_t *out)
 {
     size_t n = 0;

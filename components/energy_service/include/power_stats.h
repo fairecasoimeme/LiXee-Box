@@ -30,6 +30,9 @@ void power_stats_init(void);
 /** Traitement toutes les 10 s : tache principale (ecrit la flash une fois par heure). */
 void power_stats_loop(void);
 
+/** Ecrit les statistiques modifiees sans attendre l'heure (avant un redemarrage). */
+void power_stats_flush(void);
+
 /** Rapport d'un attribut du ZLinky configure (tache ZiGate / LoRa, RAM seule). */
 void power_stats_on_attribute(uint64_t ieee, uint16_t cluster, uint16_t attr, int64_t value);
 

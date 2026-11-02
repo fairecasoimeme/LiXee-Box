@@ -31,6 +31,7 @@
 #include "device_data.h"
 #include "zigate_devices.h"
 #include "lora.h"
+#include "maintenance.h"
 
 #include "esp_log.h"
 #include "esp_netif.h"
@@ -663,16 +664,9 @@ static bool form_field(const char *body, const char *key, char *out, size_t len)
     return true;
 }
 
-static void reboot_task(void *arg)
-{
-    (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(1500));
-    esp_restart();
-}
-
 static void reboot_later(void)
 {
-    xTaskCreate(reboot_task, "compat_reboot", 2048, NULL, 5, NULL);
+    maintenance_request_reboot(1500);
 }
 
 /** POST /setConfigWiFi (ssid, password) : {"result":true|false}, puis redemarrage. */

@@ -371,6 +371,7 @@ static const char LOGIN_HTML[] =
     "  <meta charset='utf-8'>\n"
     "  <meta name='viewport' content='width=device-width, initial-scale=1'>\n"
     "  <title>Box - Connexion</title>\n"
+    "  <link rel='icon' type='image/x-icon' href='/favicon.ico'>\n"
     "  <link href='/css/bootstrap.min.css' rel='stylesheet'>\n"
     "  <style>\n"
     "    body { background-color: #f7f9fc; font-family: 'Inter', sans-serif; min-height: 100vh;"
@@ -442,7 +443,8 @@ static void attr_escape(const char *in, char *out, size_t len)
 /** Fichiers servis sans session : ceux de la page de connexion. */
 static bool login_asset(const char *uri)
 {
-    return !strcmp(uri, "/css/bootstrap.min.css") || !strcmp(uri, "/img/logo.png");
+    return !strcmp(uri, "/css/bootstrap.min.css") || !strcmp(uri, "/img/logo.png") ||
+           !strcmp(uri, "/favicon.ico");
 }
 
 static esp_err_t login_get_handler(httpd_req_t *req)

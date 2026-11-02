@@ -463,68 +463,8 @@ static esp_err_t load_energy_history(energy_history_t *h)
 }
 
 // ============================================================================
-// Power History - Save / Load
+// Power History - Load
 // ============================================================================
-
-static esp_err_t save_power_history(uint64_t ieee_addr, power_history_t *p)
-{
-    cJSON *root = cJSON_CreateObject();
-    if (!root) return ESP_ERR_NO_MEM;
-
-    // attr_ids
-    cJSON *ids = cJSON_CreateArray();
-    for (int i = 0; i < p->attr_count; i++) {
-        cJSON_AddItemToArray(ids, cJSON_CreateNumber(p->attr_ids[i]));
-    }
-    cJSON_AddItemToObject(root, "attr_ids", ids);
-
-    // datas — iterer en ordre chronologique (ring buffer)
-    cJSON *datas = cJSON_CreateArray();
-    cJSON_AddNumberToObject(root, "write_idx", p->write_idx);
-    cJSON_AddNumberToObject(root, "record_count", p->record_count);
-    int start = 0;
-    if (p->record_count >= POWER_HISTORY_MAX) {
-        // Ring buffer plein: le plus ancien est a write_idx
-        start = p->write_idx;
-    }
-    for (int n = 0; n < p->record_count; n++) {
-        int r = (start + n) % POWER_HISTORY_MAX;
-        power_record_t *rec = &p->records[r];
-        if (!rec->valid) continue;
-
-        cJSON *item = cJSON_CreateObject();
-        cJSON_AddStringToObject(item, "y", rec->timestamp);
-        for (int a = 0; a < p->attr_count; a++) {
-            char key[8]; snprintf(key, sizeof(key), "%d", p->attr_ids[a]);
-            cJSON_AddNumberToObject(item, key, rec->values[a]);
-        }
-        cJSON_AddItemToArray(datas, item);
-    }
-    cJSON_AddItemToObject(root, "datas", datas);
-
-    // stats
-    cJSON *stats = cJSON_CreateObject();
-    for (int a = 0; a < p->attr_count; a++) {
-        char key[8]; snprintf(key, sizeof(key), "%d", p->attr_ids[a]);
-        cJSON *st = cJSON_CreateObject();
-        cJSON_AddNumberToObject(st, "min", p->stats[a].min);
-        cJSON_AddNumberToObject(st, "max", p->stats[a].max);
-        cJSON_AddNumberToObject(st, "trend", p->stats[a].trend);
-        cJSON_AddNumberToObject(st, "last", p->stats[a].last);
-        cJSON_AddItemToObject(stats, key, st);
-    }
-    cJSON_AddItemToObject(root, "stats", stats);
-
-    char *json_str = cJSON_PrintUnformatted(root);
-    cJSON_Delete(root);
-    if (!json_str) return ESP_ERR_NO_MEM;
-
-    char path[64];
-    make_power_path(ieee_addr, path, sizeof(path));
-    esp_err_t ret = write_file(path, json_str, strlen(json_str));
-    free(json_str);
-    return ret;
-}
 
 static esp_err_t load_power_history(uint64_t ieee_addr, power_history_t *p)
 {
@@ -1200,9 +1140,6 @@ esp_err_t energy_history_save_all(void)
         if (s_entries[i].energy && s_entries[i].energy->dirty) {
             if (save_energy_history(s_entries[i].energy) == ESP_OK) saved++;
         }
-        if (s_entries[i].power && s_entries[i].power->record_count > 0) {
-            save_power_history(s_entries[i].ieee_addr, s_entries[i].power);
-        }
     }
     if (saved > 0) {
         ESP_LOGI(TAG, "Saved %d energy history files", saved);
@@ -1218,7 +1155,7 @@ esp_err_t energy_history_load_all(void)
         return ESP_OK;
     }
 
-    int loaded_energy = 0, loaded_power = 0;
+    int loaded_energy = 0;
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
         const char *name = entry->d_name;
@@ -1226,10 +1163,9 @@ esp_err_t energy_history_load_all(void)
         if (namelen < 25) continue; // prefix(4) + 16hex + .json(5) = 25
         if (strcmp(name + namelen - 5, ".json") != 0) continue;
 
-        // Determiner le type: nrg_ ou pwr_
-        bool is_energy = (strncmp(name, "nrg_", 4) == 0);
-        bool is_power  = (strncmp(name, "pwr_", 4) == 0);
-        if (!is_energy && !is_power) continue;
+        // nrg_ seulement. pwr_ : courbe 24 h de la LiXee-Box, reprise une fois par
+        // pw_import_box (energy_service) ; le tampon de 60 lignes la tronquerait
+        if (strncmp(name, "nrg_", 4) != 0) continue;
 
         char ieee_str[17];
         strncpy(ieee_str, name + 4, 16);
@@ -1238,18 +1174,12 @@ esp_err_t energy_history_load_all(void)
         uint64_t ieee_addr = strtoull(ieee_str, NULL, 16);
         if (ieee_addr == 0) continue;
 
-        if (is_energy) {
-            energy_history_t *h = energy_history_get_or_create(ieee_addr);
-            if (h && h->loaded) loaded_energy++;
-        } else {
-            power_history_t *p = power_history_get_or_create(ieee_addr);
-            if (p && p->loaded) loaded_power++;
-        }
+        energy_history_t *h = energy_history_get_or_create(ieee_addr);
+        if (h && h->loaded) loaded_energy++;
     }
     closedir(dir);
 
-    ESP_LOGI(TAG, "Loaded %d energy + %d power history files from " ENERGY_HST_DIR,
-             loaded_energy, loaded_power);
+    ESP_LOGI(TAG, "Loaded %d energy history files from " ENERGY_HST_DIR, loaded_energy);
     return ESP_OK;
 }
 

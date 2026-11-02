@@ -243,6 +243,13 @@ const devdata_attr_t* device_data_get_attr(uint64_t ieee_addr, uint16_t cluster_
 bool device_data_stge_value(const char *hex, uint32_t *out);
 
 /**
+ * Vrai si la valeur stockee est en hexa (longueur paire, chiffres hexa) : la
+ * v3 range un texte comme ses octets en hexa. Une fiche reprise d'une
+ * LiXee-Box 2.x garde ses chaines en clair ("HC..") : a lire telles quelles.
+ */
+bool device_data_value_is_hex(const char *value);
+
+/**
  * Convertit une valeur hexa stockee en entier, signe selon le type ZCL (ou,
  * type inconnu, selon une table des attributs signes usuels).
  * @return false si la valeur est vide ou non numerique

@@ -729,6 +729,14 @@ void power_stats_loop(void)
 // Lecture
 // ----------------------------------------------------------------------------
 
+void power_stats_flush(void)
+{
+    if (!s_days || !s_months) return;
+    lock();
+    if (s_dirty) save_file();
+    unlock();
+}
+
 int power_stats_minute_load_pct(void)
 {
     if (!s_days) return -1;

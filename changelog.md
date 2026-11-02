@@ -20,6 +20,8 @@
 - Au premier démarrage, la v3 reprend les appareils de la v2.x, remet les adresses IEEE en majuscules dans les fichiers de configuration, et convertit les historiques de puissance
 - La v3 refuse une mise à jour vers un firmware Arduino (retour en v2.x par ordinateur uniquement)
 - **Table des partitions identique à la v2.x** : une box neuve en v3 et une box migrée ont la même organisation (application 4,5 Mo, LittleFS 7 Mo)
+- Courbe de puissance 24 h reprise en entier : elle était tronquée à 60 points, et rejetée quand le fichier de la v2.x portait une date de 1970 (la v2.x ne règle pas l'horloge de la box)
+- Chaînes du ZLinky enregistrées en texte par la v2.x (option tarifaire, tarif en cours) : le tarif en cours s'affiche au tableau de bord en mode historique, et la répartition énergétique nomme les index HC / HP au lieu de « BASE / Index 2 »
 
 ### Réseau
 - **Ethernet prioritaire, WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté et relancé si le câble reste débranché 30 s
@@ -33,6 +35,7 @@
 - Page Firmware : version d'ESP-IDF et identifiant de build
 - L'image est contrôlée avant installation (ESP32-S3, nom du projet, SHA-256) ; la restauration d'une sauvegarde s'applique au redémarrage
 - La sauvegarde contient aussi les identifiants WiFi
+- **Données enregistrées avant chaque redémarrage** (mise à jour, bouton Redémarrer, changement de réseau) : la courbe de puissance 24 h perdait jusqu'à 15 min, et les statistiques de puissance jusqu'à 1 h
 
 ### Zigbee
 - **État radio** : mêmes icônes que la v2.x selon l'erreur, avec la date du dernier contact
@@ -58,6 +61,7 @@
 - Volets : curseur de position visible sur les pages Appareils et Tableau de bord
 - Répartition énergétique : légende alignée (couleur, nom, énergie, coût)
 - Infos système : occupation de la NVS ; ligne E-mail retirée des passerelles
+- Favicon de la v2.x rétabli (pages et page de connexion)
 - Outil Historique : seuls les fichiers `.json` sont listés
 
 ### Retiré

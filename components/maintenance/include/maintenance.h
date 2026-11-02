@@ -87,6 +87,17 @@ char *maintenance_status_json(void);
 /** Remet a zero les messages des canaux (equivalent /resetUpdateStatus). */
 void maintenance_reset_status(void);
 
+/**
+ * Redemarrage dans ms millisecondes, par la boucle principale qui sauvegarde
+ * d'abord les donnees gardees en RAM (courbe 24 h, statistiques de
+ * puissance...). Une minuterie redemarre quand meme 20 s apres l'echeance si
+ * la boucle ne repond pas.
+ */
+void maintenance_request_reboot(uint32_t ms);
+
+/** Vrai quand un redemarrage demande est echu (boucle principale). */
+bool maintenance_reboot_due(void);
+
 // ----------------------------------------------------------------------------
 // Sauvegardes
 // ----------------------------------------------------------------------------

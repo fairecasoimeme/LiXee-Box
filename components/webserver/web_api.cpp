@@ -28,6 +28,7 @@
 #include "energy_history.h"
 #include "mqtt_manager.h"
 #include "web_compat.h"
+#include "maintenance.h"
 #include "ntp_sync.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -494,9 +495,7 @@ static esp_err_t api_system_reboot_handler(httpd_req_t *req)
 {
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"status\":\"ok\",\"message\":\"Rebooting...\"}");
-    // Reboot differe pour que la reponse HTTP soit envoyee
-    vTaskDelay(pdMS_TO_TICKS(500));
-    esp_restart();
+    maintenance_request_reboot(500);   // apres la reponse et la sauvegarde des donnees
     return ESP_OK;
 }
 
@@ -645,10 +644,7 @@ static esp_err_t apply_wifi_credentials(httpd_req_t *req, cJSON *json)
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"status\":\"ok\",\"message\":\"WiFi saved. Rebooting...\"}");
-
-    // Reboot differe
-    vTaskDelay(pdMS_TO_TICKS(500));
-    esp_restart();
+    maintenance_request_reboot(500);
 
     return ESP_OK;
 }
@@ -766,7 +762,7 @@ static esp_err_t api_config_ethernet_post_handler(httpd_req_t *req)
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"status\":\"ok\",\"reboot\":true,\"message\":\"Configuration Ethernet enregistr\u00e9e, red\u00e9marrage\"}");
     ESP_LOGI(TAG, "Configuration Ethernet enregistree : redemarrage");
-    xTaskCreate([](void *) { vTaskDelay(pdMS_TO_TICKS(1500)); esp_restart(); }, "eth_reboot", 2048, NULL, 5, NULL);
+    maintenance_request_reboot(1500);
     return ESP_OK;
 }
 

@@ -32,6 +32,9 @@ esp_err_t energy_service_init(void);
  */
 void energy_service_minute_tick(void);
 
+/** Ecrit la courbe 24 h en flash sans attendre (avant un redemarrage). */
+void energy_service_flush(void);
+
 // ----------------------------------------------------------------------------
 // Valeurs pour les autres modules (alertes, regles, MQTT...)
 // ----------------------------------------------------------------------------

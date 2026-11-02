@@ -603,6 +603,12 @@ void rules_hex_to_text(const char *hex, char *out, size_t len)
 {
     size_t n = 0;
     if (!len) return;
+    if (hex && !device_data_value_is_hex(hex)) {        // fiche 2.x : texte en clair
+        strlcpy(out, hex, len);
+        n = strlen(out);
+        while (n > 0 && out[n - 1] == ' ') out[--n] = '\0';
+        return;
+    }
     for (size_t i = 0; hex && hex[i] && hex[i + 1] && n + 1 < len; i += 2) {
         char hx[3] = { hex[i], hex[i + 1], 0 };
         char c = (char)strtol(hx, NULL, 16);

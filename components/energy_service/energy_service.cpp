@@ -182,13 +182,18 @@ static bool dd_str(uint64_t ieee, uint16_t cl, uint16_t at, char *out, size_t le
     out[0] = '\0';
     if (!ieee || device_data_get_value(ieee, cl, at, buf, sizeof(buf)) != ESP_OK) return false;
     size_t n = 0;
-    for (size_t i = 0; buf[i] && buf[i + 1] && n + 1 < len; i += 2) {
-        char hx[3] = { buf[i], buf[i + 1], 0 };
-        char c = (char)strtol(hx, NULL, 16);
-        if (c == '\0') break;
-        out[n++] = (c >= 32 && c < 127) ? c : ' ';
+    if (!device_data_value_is_hex(buf)) {               // fiche 2.x : texte en clair
+        strlcpy(out, buf, len);
+        n = strlen(out);
+    } else {
+        for (size_t i = 0; buf[i] && buf[i + 1] && n + 1 < len; i += 2) {
+            char hx[3] = { buf[i], buf[i + 1], 0 };
+            char c = (char)strtol(hx, NULL, 16);
+            if (c == '\0') break;
+            out[n++] = (c >= 32 && c < 127) ? c : ' ';
+        }
+        out[n] = '\0';
     }
-    out[n] = '\0';
     while (n > 0 && out[n - 1] == ' ') out[--n] = '\0';
     return n > 0;
 }
@@ -305,6 +310,8 @@ static const char *index_color(uint16_t attr)
     return "#2980b9";
 }
 
+static int tariff_family(uint64_t zl);
+
 static void index_name(uint64_t zl, int mode, uint16_t attr, char *out, size_t len)
 {
     if (attr == 0) { strlcpy(out, "Total", len); return; }
@@ -312,6 +319,12 @@ static void index_name(uint64_t zl, int mode, uint16_t attr, char *out, size_t l
     if (!mode_is_histo(mode)) { snprintf(out, len, "EASF%02d", n + 1); return; }
     char opt[16];
     dd_str(zl, 0xFF66, 0, opt, sizeof(opt));   // OPTARIF
+    char ptec[16];
+    if (!opt[0] && dd_str(zl, 0x0702, 32, ptec, sizeof(ptec))) {
+        // OPTARIF pas encore lu : l'option d'apres le tarif en cours
+        static const char *const FAM[4] = { "BASE", "HC", "EJP", "BBR" };
+        strlcpy(opt, FAM[tariff_family(zl)], sizeof(opt));
+    }
     static const char *const BBR[6] = { "HCJB", "HPJB", "HCJW", "HPJW", "HCJR", "HPJR" };
     if (strncmp(opt, "BBR", 3) == 0 && n < 6) { strlcpy(out, BBR[n], len); return; }
     if (strncmp(opt, "EJP", 3) == 0) { strlcpy(out, n == 0 ? "HN" : (n == 1 ? "HPM" : "Index"), len); return; }
@@ -1510,19 +1523,27 @@ esp_err_t energy_service_init(void)
     return ESP_OK;
 }
 
+void energy_service_flush(void)
+{
+    if (s_pw && s_pw_ieee) pw_save();
+}
+
 /**
  * Courbe de la LiXee-Box Arduino (hst/pwr_<ZLinky>.json, sans pw24.bin) :
  * {"datas":[{"y":"HH:MM","1295":VA,"2319":..,"2575":..,"1":inj,"2":..,"3":..}]}.
  * Points dates d'apres la date du fichier (la Box n'en garde que l'heure) :
- * chaque "HH:MM" est sa derniere occurrence avant cette date. Une courbe de
- * plus de 24 h reste masquee par pw_walk. Heure locale requise (apres NTP).
+ * chaque "HH:MM" est sa derniere occurrence avant cette date. La Box ne regle
+ * pas l'horloge systeme, son fichier est donc date de 1970 : il a alors au plus
+ * une minute a la mise a jour (sauvegarde chaque minute), l'heure courante le
+ * date. Une courbe de plus de 24 h reste masquee par pw_walk. Heure locale
+ * requise (apres NTP).
  */
 static void pw_import_box(uint64_t zl)
 {
     char path[64];
     snprintf(path, sizeof(path), ENERGY_HST_DIR "/pwr_%016llX.json", (unsigned long long)zl);
     struct stat st;
-    if (stat(path, &st) != 0 || st.st_mtime < 1600000000 || st.st_size <= 0 || st.st_size > 200 * 1024) return;
+    if (stat(path, &st) != 0 || st.st_size <= 0 || st.st_size > 200 * 1024) return;
     FILE *f = fopen(path, "rb");
     if (!f) return;
     char *txt = (char *)heap_caps_malloc((size_t)st.st_size + 1, MALLOC_CAP_SPIRAM);
@@ -1538,7 +1559,8 @@ static void pw_import_box(uint64_t zl)
         return;
     }
     struct tm at;
-    time_t mt = st.st_mtime;
+    time_t now = time(NULL);
+    time_t mt = (st.st_mtime >= 1600000000 && st.st_mtime <= now) ? st.st_mtime : now;
     localtime_r(&mt, &at);
     const int anchor = at.tm_hour * 60 + at.tm_min;
     const uint32_t anchor_min = (uint32_t)(mt / 60);

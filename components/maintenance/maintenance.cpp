@@ -64,7 +64,10 @@ static int  s_busy_kind = -1;          // maint_kind_t de la session active, -1 
 static int  s_busy_ch = -1;
 static size_t s_busy_received, s_busy_total;
 static bool s_reboot;
+static int64_t s_reboot_at;          // echeance (esp_timer_get_time)
 static esp_timer_handle_t s_reboot_timer;
+
+#define MAINT_REBOOT_GRACE_MS 20000  // secours si la boucle principale ne redemarre pas
 
 static const char *const STATE_NAMES[] = { "idle", "running", "done", "error" };
 
@@ -100,21 +103,32 @@ void maintenance_reset_status(void)
 static void reboot_cb(void *arg)
 {
     (void)arg;
-    ESP_LOGW(TAG, "Redemarrage apres maintenance");
+    ESP_LOGW(TAG, "Redemarrage de secours : la boucle principale n'a pas redemarre");
     esp_restart();
 }
 
 void maint_schedule_reboot(uint32_t ms)
 {
     if (s_reboot) return;
+    s_reboot_at = esp_timer_get_time() + (int64_t)ms * 1000;
     s_reboot = true;
     esp_timer_create_args_t a = {};
     a.callback = reboot_cb;
     a.name = "maint_reboot";
     if (esp_timer_create(&a, &s_reboot_timer) != ESP_OK ||
-        esp_timer_start_once(s_reboot_timer, (uint64_t)ms * 1000) != ESP_OK) {
+        esp_timer_start_once(s_reboot_timer, ((uint64_t)ms + MAINT_REBOOT_GRACE_MS) * 1000) != ESP_OK) {
         esp_restart();   // sans minuterie : redemarrer tout de suite
     }
+}
+
+void maintenance_request_reboot(uint32_t ms)
+{
+    maint_schedule_reboot(ms);
+}
+
+bool maintenance_reboot_due(void)
+{
+    return s_reboot && esp_timer_get_time() >= s_reboot_at;
 }
 
 bool maint_reboot_pending(void)
