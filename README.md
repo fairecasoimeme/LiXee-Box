@@ -14,7 +14,7 @@ La **v3.0** est une réécriture complète du firmware sous **ESP-IDF 5.5** (le 
 - Tout sur le pont Matter → [Pont Matter](#-pont-matter-à-partir-de-la-v30)
 - Les changements depuis la v2.27 → [changelog.md](changelog.md)
 
-> La v3 est en **phase de test**. Le firmware Arduino (v2.x) reste disponible sur la branche [`master`](https://github.com/fairecasoimeme/LiXee-Box/tree/master) et les branches `lixee-box_v2.xx`.
+> La v3 est la version courante (branche `master`). Le firmware Arduino (v2.x) reste disponible sur la branche [`lixee-box_v2.27`](https://github.com/fairecasoimeme/LiXee-Box/tree/lixee-box_v2.27) et les branches `lixee-box_v2.xx`.
 
 ## Matériel Compatible
 
@@ -183,7 +183,9 @@ Répéter l'opération 3 fois et la LiXee-Box sera réinitialisée
 Une LiXee-Box en **v2.x** (Arduino) passe en v3 **sans ordinateur**, par sa page de mise à jour.
 
 ### Avant de commencer
-Faites une **sauvegarde** : **A propos → Sauvegarde**. Elle sert si vous voulez un jour revenir en v2.x.
+- Faites une **sauvegarde** : **A propos → Sauvegarde**. Elle sert si vous voulez un jour revenir en v2.x.
+- Faites la mise à jour depuis le **réseau local** (adresse IP de la box), plutôt que par l'accès distant (tunnel).
+- La box doit avoir environ **4,5 Mo libres** pendant l'installation : le paquet (3,4 Mo) et les fichiers qu'il installe cohabitent un moment. La v2.x ne vérifie pas cette place lors d'un envoi manuel : une box très chargée (nombreuses sauvegardes, historiques, journaux de debug) peut se retrouver en v3 avec une interface incomplète.
 
 ### Mise à jour
 - **Manuelle** : téléchargez le fichier `update.tar` de la [release v3](https://github.com/fairecasoimeme/LiXee-Box/releases), puis **A propos → Mise à jour** et envoyez-le
@@ -206,7 +208,7 @@ La box redémarre sur la v3. Le premier démarrage dure un peu plus longtemps : 
 - Une mise à jour vers un firmware **v2.x** (Arduino) est **refusée** par la v3
 
 ### Revenir en v2.x
-Uniquement **par ordinateur** : flashez la v2.x complète (voir la [procédure de la v2.x](https://github.com/fairecasoimeme/LiXee-Box/tree/master#avec-un-ordinateur)), puis restaurez la sauvegarde faite avant la migration.
+Uniquement **par ordinateur** : flashez la v2.x complète (voir la [procédure de la v2.x](https://github.com/fairecasoimeme/LiXee-Box/tree/lixee-box_v2.27#avec-un-ordinateur)), puis restaurez la sauvegarde faite avant la migration.
 
 ## Mise à Jour du Firmware
 
@@ -309,7 +311,8 @@ Chaque appareil Matter est construit à partir des états de son template :
 | **Groupes d'actions** publiés dans Matter | interrupteur virtuel |
 
 ### Limites
-- **Certificat de développement** : la box utilise le certificat de test d'Espressif, pas une certification de la CSA. Home Assistant (avec Test DCL) et Apple Maison l'acceptent ; **Google Home et Amazon Alexa n'acceptent que les appareils certifiés**
+- **Certificat de développement** : la box utilise le certificat de test d'Espressif, pas une certification de la CSA. Home Assistant (avec Test DCL), Apple Maison et Amazon Alexa (essayé avec un Echo) l'acceptent ; **Google Home n'accepte que les appareils certifiés**
+- **Amazon Alexa** : un volet ne peut pas être ajouté à une routine. Créez deux groupes d'actions (ouvrir, fermer) et publiez-les dans Matter comme interrupteurs en **mode impulsion** : ils s'utilisent dans les routines
 - **Apple Maison** n'affiche pas les compteurs et mesures d'énergie (ZLinky, puissance des prises)
 - **Appareils à plusieurs voies** : une seule voie est publiée
 - **Triphasé** : les phases 2 et 3 ne sont pas publiées

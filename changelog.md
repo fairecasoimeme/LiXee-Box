@@ -1,76 +1,71 @@
 # Changelog
 
-## v3.0 (en test)
+## v3.0
 
 ### Nouveau firmware ESP-IDF
-- Firmware réécrit sous **ESP-IDF 5.5.2** à la place d'Arduino, avec les mêmes pages, la même API et les mêmes fichiers de configuration
+- Firmware **réécrit sous ESP-IDF 5.5.2** (le framework officiel d'Espressif) à la place d'Arduino, avec les mêmes pages, la même API et les mêmes fichiers de configuration que la v2.x
 - Interface web servie compressée (gzip) : pages plus rapides, place libérée sur la box
-- La page de connexion est identique à celle de la v2.x
+- **Table des partitions identique à la v2.x** : une box neuve en v3 et une box migrée ont la même organisation (application 4,5 Mo, LittleFS 7 Mo)
+- Compatibilité conservée avec **LiXee-Assist** (appairage Bluetooth, interface, widgets, kiosque) et avec les routes de la v2.x
 
-### Pont Matter
-- La LiXee-Box devient un **pont Matter** : jusqu'à 32 appareils Zigbee, LoRa, thermostats virtuels et groupes d'actions, publiés dans Home Assistant, Apple Maison et les autres contrôleurs Matter
+### Pont Matter (nouvelle fonctionnalité)
+- La LiXee-Box devient un **pont Matter** : jusqu'à 32 appareils **Zigbee**, **LoRa**, **thermostats virtuels** et **groupes d'actions**, publiés dans **Home Assistant**, **Apple Maison** et les autres contrôleurs Matter, sans MQTT
 - Chaque appareil Matter est construit à partir des états de son template : capteurs, prises et mesures électriques, ZLinky (Zigbee et LoRa), volets avec position, thermostats et climatiseurs, boutons (appui simple, multiple, long)
 - Les commandes reçues de Matter passent par les actions du template (volet : monter, descendre, stop, position)
 - **Code d'appairage propre à chaque box**, tiré au hasard et conservé
 - Fenêtre d'appairage pour ajouter un deuxième contrôleur, choix des appareils publiés, Factory Reset Matter
 - Activation depuis **Passerelle → Matter** (désactivé par défaut)
-- Console allégée : les lignes émises à chaque trame ZiGate, à chaque rapport d'attribut et à chaque fichier servi passent en niveau debug
+- ⚠️ **Certificat de développement** (pas de certification CSA) : Home Assistant (avec Test DCL), Apple Maison et Amazon Alexa l'acceptent ; Google Home n'accepte que les appareils certifiés
+- **Amazon Alexa** : un volet ne peut pas être ajouté à une routine ; publiez deux groupes d'actions (ouvrir, fermer) comme interrupteurs Matter en mode impulsion
 
 ### Migration depuis la v2.x
-- Une LiXee-Box Arduino passe en v3 par sa mise à jour habituelle (`update.tar`, manuelle ou automatique)
-- Au premier démarrage, la v3 reprend les appareils de la v2.x, remet les adresses IEEE en majuscules dans les fichiers de configuration, et convertit les historiques de puissance
-- La v3 refuse une mise à jour vers un firmware Arduino (retour en v2.x par ordinateur uniquement)
-- **Table des partitions identique à la v2.x** : une box neuve en v3 et une box migrée ont la même organisation (application 4,5 Mo, LittleFS 7 Mo)
-- Courbe de puissance 24 h reprise en entier : elle était tronquée à 60 points, et rejetée quand le fichier de la v2.x portait une date de 1970 (la v2.x ne règle pas l'horloge de la box)
-- Chaînes du ZLinky enregistrées en texte par la v2.x (option tarifaire, tarif en cours) : le tarif en cours s'affiche au tableau de bord en mode historique, et la répartition énergétique nomme les index HC / HP au lieu de « BASE / Index 2 »
+- Une LiXee-Box en v2.x passe en v3 **par sa mise à jour habituelle** (`update.tar`, manuelle ou automatique), sans ordinateur
+- Au premier démarrage, la v3 reprend le réseau, les **appareils Zigbee et LoRa** (rien à réappairer), la configuration et les **historiques** (énergie, puissance, courbe 24 h)
+- **Avant de migrer** : faites une sauvegarde (**A propos → Sauvegarde**), faites la mise à jour depuis le réseau local plutôt que par le tunnel, et gardez environ **4,5 Mo libres** sur la box pendant l'installation
+- **Retour en v2.x par ordinateur uniquement** (flash complet de la v2.x) : la v3 refuse une mise à jour vers un firmware Arduino
 
 ### Réseau
 - **Ethernet prioritaire, WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté et relancé si le câble reste débranché 30 s
-- Les serveurs DNS de l'Ethernet sont rétablis après une coupure du WiFi (activation du tunnel en échec)
-- Provisionnement Bluetooth (LiXee-Assist) en tâche de fond : il ne bloque plus le démarrage
-- La remise à zéro (3 coupures) remet aussi l'Ethernet en DHCP ; la LED verte la confirme par 10 clignotements rapides, comme en v2.x
-- LED verte : clignote pendant le provisioning Bluetooth (attente de LiXee-Assist), éteinte ensuite
+- **Provisionnement Bluetooth** (LiXee-Assist) en tâche de fond : il ne bloque plus le démarrage. La LED verte clignote pendant l'attente
+- La **remise à zéro** (3 coupures) remet aussi l'Ethernet en DHCP ; la LED verte la confirme par 10 clignotements rapides
 
 ### Mises à jour
 - Mise à jour **automatique** disponible sans le mode développeur ; la source (releases GitHub de la LiXee-Box) n'est plus modifiable
 - Pastille de nouvelle version sur **A propos** et sur **Mise à jour** ; une version plus ancienne que celle installée n'est plus signalée comme nouvelle
-- Page Firmware : version d'ESP-IDF et identifiant de build
-- L'image est contrôlée avant installation (ESP32-S3, nom du projet, SHA-256) ; la restauration d'une sauvegarde s'applique au redémarrage
+- L'image est **contrôlée avant installation** (ESP32-S3, nom du projet, SHA-256) ; la restauration d'une sauvegarde s'applique au redémarrage
+- Les données gardées en mémoire (courbe de puissance 24 h, statistiques de puissance) sont **enregistrées avant chaque redémarrage**
 - La sauvegarde contient aussi les identifiants WiFi
-- **Données enregistrées avant chaque redémarrage** (mise à jour, bouton Redémarrer, changement de réseau) : la courbe de puissance 24 h perdait jusqu'à 15 min, et les statistiques de puissance jusqu'à 1 h
+- Page Firmware : version d'ESP-IDF et identifiant de build
 
 ### Zigbee
 - **État radio** : mêmes icônes que la v2.x selon l'erreur, avec la date du dernier contact
-- Les échecs des requêtes réseau de la ZiGate vers un appareil sur pile sont ignorés (alertes F0, E9, D4 sans raison) ; ils restent signalés sur secteur. Pas d'alerte pour un appareil sans nom
+- Les échecs des requêtes réseau de la ZiGate vers un **appareil sur pile** sont ignorés (alertes F0, E9, D4 sans raison) ; ils restent signalés sur secteur. Pas d'alerte pour un appareil sans nom
 - La version logicielle d'un appareil sur pile n'est plus lue à chaque démarrage (il dort)
 - Source d'alimentation (pile ou secteur) lue à l'appairage
 - **Télécommande IR Zosung** (TS1201) : les codes appris deviennent des actions de l'appareil, utilisables dans les règles et les groupes d'actions ; icône NodOn
 - Heure envoyée aux appareils Tuya qui la demandent
 - Compteurs d'énergie Tuya : datapoints ramenés aux attributs standard
-- Console ZiGate : boutons Mode brut / Mode normal retirés
 
-### LoRa
-- Pilote radio aligné sur la v2.x : une trame valide n'est plus rejetée à cause d'une erreur d'en-tête due au bruit, et ce bruit ne relance plus la réception. Les réponses du ZLinky LoRa (identification, version, lectures à la demande) ne sont plus perdues
-- Lectures LoRa : même préambule que la v2.x de SF8 à SF10 ; sans réponse, chaque essai change l'instant d'émission et la longueur du préambule, et la lecture suivante repart du réglage qui a fonctionné
-- Identification du ZLinky LoRa en firmware 1.1.0 : la requête part 35 ms après sa trame au lieu de 20 ms
-
-### API et LiXee-Assist
-- `/api/devices` et `/api/device` (`/getDevices`, `/getDevice`) reprennent le format de la v2.x : `INFO` complet (`model`, `manufacturer`, `device_id`, `shortAddr`, `endpoint`, `LQI`, `lastSeen`, `Status`, `software_version`) et chaînes en texte. L'application ne trouvait pas le ZLinky, donc pas de graphe de consommation au kiosque, et les appareils n'avaient ni valeurs ni boutons. Les fichiers `/db` ne changent pas
-- Export CSV du graphe d'usage : colonnes d'index nommées comme en v2.x (`HC / EJPHN / BBRHCJB / EASF01`) ; un ZLinky autre que celui configuré garde le format complet
-- **Interface dans LiXee-Assist** : son proxy envoie les requêtes avec un corps vide « chunked » ; la box n'en lisait pas la fin, si bien que des scripts manquaient au hasard (ancienne page Zigbee, pas de redirection) et la console affichait des `400 Bad Request`. La fin est désormais lue et la connexion se termine proprement
-- Actions depuis LiXee-Assist (lancer le jumelage…) refusées en `Forbidden` : le contrôle d'origine accepte aussi une page servie en local par le téléphone (`127.0.0.1`, `localhost`) ; un site tiers reste refusé
-- Routes v2.x rétablies : `/loadThermostats`, `/setThermostatSetpoint`, `/setThermostatForce`, `/setThermostatMode`, `/setThermostatFrost`, `/ZigbeeSendRequest`, `/agicons.js`
+### LoRa 2.4 GHz
+- Lectures à la demande plus fiables : sans réponse, chaque essai change l'instant d'émission et la longueur du préambule, et la lecture suivante repart du réglage qui a fonctionné
+- Identification du **ZLinky LoRa en firmware 1.1.0** : la requête part 35 ms après sa trame au lieu de 20 ms
 
 ### Interface
+- Box sans aucun appareil : l'accueil ouvre l'**assistant d'appairage**, LoRa si le module est présent, Zigbee sinon
 - Volets : curseur de position visible sur les pages Appareils et Tableau de bord
 - Répartition énergétique : légende alignée (couleur, nom, énergie, coût)
-- Infos système : occupation de la NVS ; ligne E-mail retirée des passerelles
-- Favicon de la v2.x rétabli (pages et page de connexion)
-- Box sans aucun appareil : l'accueil ouvre l'assistant d'appairage, LoRa si le module est présent, Zigbee sinon (comme la v2.x) ; `/assistDevice?type=lora` ouvre l'assistant LoRa
+- Infos système : occupation de la NVS
 - Outil Historique : seuls les fichiers `.json` sont listés
+
+### API
+- Routes **Matter** : `/api/matter/status`, `/api/matter/config`, `/api/matter/excluded`, `/api/matter/expose`, `/api/matter/open-window`, `/api/matter/factory_reset` (voir le README)
 
 ### Retiré
 - Notifications par e-mail, client UDP, émulation Shelly
+- Console ZiGate : boutons Mode brut / Mode normal
+
+### Installation par ordinateur
+Fichiers à flasher (box neuve ou retour à zéro, ⚠️ efface la configuration) : `bootloader.bin` @ 0x0, `partitions.bin` @ 0x8000, `ota_data_initial.bin` @ 0xe000, `firmware.bin` @ 0x10000, `littlefs.bin` @ 0x910000. Voir le README.
 
 ## v2.27a
 
