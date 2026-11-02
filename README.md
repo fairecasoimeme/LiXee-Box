@@ -33,7 +33,6 @@ La LiXee-Box est aussi vendue en **pack prêt à l'emploi**, avec le module pour
 | Pack | Contenu | Usage |
 |------|---------|-------|
 | [Pack LiXee-Box](https://lixee.fr/produits/44-pack-lixee-box-3770014375193.html) | LiXee-ZiWifi32 Lite + ZLinky_TIC v2 | Compteur proche de la box (Zigbee) |
-| [Pack LiXee-Box LoRa](https://lixee.fr/produits/52-pack-lixee-box-lora.html) | LiXee-ZiWifi32 Lite Duo sans Zigbee + ZLinky_LoRa | Compteur éloigné, sans pilotage d'objets Zigbee |
 | [Pack LiXee-Box Zigbee + LoRa](https://lixee.fr/produits/53-pack-lixee-box-zigbee-lora.html) | LiXee-ZiWifi32 Lite Duo Zigbee + LoRa + ZLinky_LoRa | Compteur éloigné et objets Zigbee |
 
 > **Note** : Vous pouvez également utiliser ce code avec d'autres cartes ESP32S3, selon les connexions de broches de votre carte.
@@ -503,7 +502,7 @@ Si ce cas arrive, vous aurez sur le graphique de puissance les données d'inject
 
 ## 📡 LoRa 2.4 GHz (à partir de la v2.22)
 
-> Nécessite une LiXee-Box équipée du module LoRa 2.4 GHz : [Pack LiXee-Box LoRa](https://lixee.fr/produits/52-pack-lixee-box-lora.html), [Pack LiXee-Box Zigbee + LoRa](https://lixee.fr/produits/53-pack-lixee-box-zigbee-lora.html) ou carte [LiXee-ZiWifi32 Lite Duo](https://lixee.fr/produits/49-lixee-ziwifi32-lite-duo-3770014375216.html).
+> Nécessite une LiXee-Box équipée du module LoRa 2.4 GHz : [Pack LiXee-Box Zigbee + LoRa](https://lixee.fr/produits/53-pack-lixee-box-zigbee-lora.html) ou carte [LiXee-ZiWifi32 Lite Duo](https://lixee.fr/produits/49-lixee-ziwifi32-lite-duo-3770014375216.html).
 
 La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier est le **[ZLinky LoRa](https://lixee.fr/produits/48-zlinky-tic-lora-3770014375209.html)**, qui transmet la téléinformation du compteur Linky sur de longues distances, là où le Zigbee ne passe pas : **jusqu'à 125 m en extérieur dégagé**, environ 100 m en milieu semi-urbain (portées indicatives).
 
