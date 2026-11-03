@@ -550,12 +550,20 @@ static void energy_endpoint_init(uint16_t ep_id)
         }
     }
 
-    // Accuracy est obligatoire dans ce cluster
+    // Accuracy est obligatoire dans ce cluster, avec au moins une plage
+    // (FixedMax : index au Wh pres). Le serveur garde un pointeur sur la plage.
+    static ElectricalEnergyMeasurement::Structs::MeasurementAccuracyRangeStruct::Type s_energy_range;
+    s_energy_range.rangeMin = 0;
+    s_energy_range.rangeMax = INT64_MAX / 2;
+    s_energy_range.fixedMax.SetValue(1000);
+
     ElectricalEnergyMeasurement::Structs::MeasurementAccuracyStruct::Type accuracy;
     accuracy.measurementType  = ElectricalEnergyMeasurement::MeasurementTypeEnum::kElectricalEnergy;
     accuracy.measured         = true;
     accuracy.minMeasuredValue = 0;
     accuracy.maxMeasuredValue = INT64_MAX / 2;
+    accuracy.accuracyRanges   = chip::app::DataModel::List<
+        const ElectricalEnergyMeasurement::Structs::MeasurementAccuracyRangeStruct::Type>(&s_energy_range, 1);
     ElectricalEnergyMeasurement::SetMeasurementAccuracy(ep_id, accuracy);
 
     if (s_energy_count < MATTER_BRIDGE_MAX_ENDPOINTS) {

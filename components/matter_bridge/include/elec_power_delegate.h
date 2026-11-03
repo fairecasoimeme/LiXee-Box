@@ -30,8 +30,11 @@ public:
     // l'approximation par la puissance apparente (voir SetApparentPower).
     void SetActivePower(int64_t mw)
     {
+        // Premiere mesure : ActivePower passe de "estimee" a "mesuree" dans
+        // la liste Accuracy, a signaler aussi.
+        bool first = !m_active_is_measured;
         m_active_is_measured = true;
-        Update(m_active_power, mw, lixee_epm_attr::ActivePower::Id);
+        Update(m_active_power, mw, lixee_epm_attr::ActivePower::Id, first);
     }
 
     // Les mesures RMS du ZLinky sont publiees sur Voltage et ActiveCurrent,
@@ -78,21 +81,43 @@ public:
         return chip::app::Clusters::ElectricalPowerMeasurement::PowerModeEnum::kAc;
     }
 
-    uint8_t GetNumberOfMeasurementTypes() override { return 1; }
+    // Types de mesure pris en charge : ceux dont l'attribut existe sur
+    // l'endpoint (voir matter_bridge.cpp), meme si leur valeur est encore nulle.
+    uint8_t GetNumberOfMeasurementTypes() override { return kMeasurementTypeCount; }
 
-    // --- Accuracy list (mandatory, return 1 entry for ActivePower) ---
-    CHIP_ERROR StartAccuracyRead() override { m_accuracy_index = 0; return CHIP_NO_ERROR; }
+    // --- Accuracy list (obligatoire) : une entree par type de mesure, ---
+    // --- ActivePower compris (exige par la specification)            ---
+    CHIP_ERROR StartAccuracyRead() override { return CHIP_NO_ERROR; }
     CHIP_ERROR GetAccuracyByIndex(uint8_t index,
         chip::app::Clusters::ElectricalPowerMeasurement::Structs::MeasurementAccuracyStruct::Type &entry) override
     {
-        if (index > 0) return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
-        entry.measurementType = chip::app::Clusters::ElectricalPowerMeasurement::MeasurementTypeEnum::kActivePower;
-        entry.measured = true;
+        using chip::app::Clusters::ElectricalPowerMeasurement::MeasurementTypeEnum;
+        using Range = chip::app::Clusters::ElectricalPowerMeasurement::Structs::MeasurementAccuracyRangeStruct::Type;
+
+        // Plages et precision (resolution d'une unite entiere : V, A, W, VA,
+        // celle de la TIC Linky et des prises Zigbee). La specification veut
+        // au moins une plage par type, avec FixedMax ou PercentMax.
+        static Range s_ranges[kMeasurementTypeCount];
+        static const struct { MeasurementTypeEnum type; int64_t max; uint64_t fixed; } k_types[kMeasurementTypeCount] = {
+            { MeasurementTypeEnum::kVoltage,       400000,    1000 },  // 400 V en mV
+            { MeasurementTypeEnum::kActiveCurrent, 100000,    1000 },  // 100 A en mA
+            { MeasurementTypeEnum::kActivePower,   100000000, 1000 },  // 100 kW en mW
+            { MeasurementTypeEnum::kApparentPower, 100000000, 1000 },  // 100 kVA en mVA
+        };
+        if (index >= kMeasurementTypeCount) return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
+
+        Range &r = s_ranges[index];
+        r.rangeMin = 0;
+        r.rangeMax = k_types[index].max;
+        r.fixedMax.SetValue(k_types[index].fixed);
+
+        entry.measurementType  = k_types[index].type;
+        // ActivePower n'est qu'estimee (puissance apparente, cos phi = 1)
+        // tant qu'aucune vraie puissance active n'a ete recue.
+        entry.measured         = k_types[index].type != MeasurementTypeEnum::kActivePower || m_active_is_measured;
         entry.minMeasuredValue = 0;
-        entry.maxMeasuredValue = 100000000;  // 100 kW en mW
-        // accuracyRanges est requis mais on peut le laisser vide
-        entry.accuracyRanges = chip::app::DataModel::List<
-            chip::app::Clusters::ElectricalPowerMeasurement::Structs::MeasurementAccuracyRangeStruct::Type>();
+        entry.maxMeasuredValue = k_types[index].max;
+        entry.accuracyRanges   = chip::app::DataModel::List<const Range>(&r, 1);
         return CHIP_NO_ERROR;
     }
     CHIP_ERROR EndAccuracyRead() override { return CHIP_NO_ERROR; }
@@ -148,8 +173,10 @@ private:
      *  - le serveur lit ces champs depuis la tache CHIP, et un int64 n'est pas
      *    ecrit de facon atomique sur ESP32 (lecture dechiree possible) ;
      *  - MatterReportingAttributeChangeCallback() exige ce verrou (assert).
+     * accuracy_changed signale aussi la liste Accuracy.
      */
-    void Update(chip::app::DataModel::Nullable<int64_t> &field, int64_t value, chip::AttributeId attr)
+    void Update(chip::app::DataModel::Nullable<int64_t> &field, int64_t value, chip::AttributeId attr,
+                bool accuracy_changed = false)
     {
         // Avant start(), le verrou de la pile n'existe pas encore et personne
         // ne lit ces champs : simple affectation.
@@ -168,9 +195,15 @@ private:
 
         // mEndpointId est renseigne par l'Instance du cluster a son
         // initialisation ; 0 (endpoint racine) signifie "pas encore initialise".
-        if (changed && mEndpointId != 0 && mEndpointId != chip::kInvalidEndpointId) {
-            MatterReportingAttributeChangeCallback(mEndpointId,
-                chip::app::Clusters::ElectricalPowerMeasurement::Id, attr);
+        if (mEndpointId != 0 && mEndpointId != chip::kInvalidEndpointId) {
+            if (changed) {
+                MatterReportingAttributeChangeCallback(mEndpointId,
+                    chip::app::Clusters::ElectricalPowerMeasurement::Id, attr);
+            }
+            if (accuracy_changed) {
+                MatterReportingAttributeChangeCallback(mEndpointId,
+                    chip::app::Clusters::ElectricalPowerMeasurement::Id, lixee_epm_attr::Accuracy::Id);
+            }
         }
 
         if (st == esp_matter::lock::SUCCESS) {
@@ -184,5 +217,7 @@ private:
     chip::app::DataModel::Nullable<int64_t> m_apparent_power;
     bool    m_active_is_measured = false;
     bool    m_has_total_apparent = false;
-    uint8_t m_accuracy_index = 0;
+
+    // Voltage, ActiveCurrent, ActivePower, ApparentPower
+    static constexpr uint8_t kMeasurementTypeCount = 4;
 };
