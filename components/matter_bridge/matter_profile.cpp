@@ -3,6 +3,7 @@
 // ============================================================================
 
 #include "matter_profile.h"
+#include "linky_cluster.h"
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -184,7 +185,7 @@ static cls_t classify_standard(const devdata_template_state_t *s, bool has_onoff
         else if (a == 0x0306) c.target = ML_EL_TOTAL_APPARENT;
         break;
     case 0x0B01:        // Meter Identification (ZLinky)
-    case 0xFF66:        // TIC du ZLinky : pas d'equivalent Matter
+    case 0xFF66:        // TIC du ZLinky : pas d'equivalent Matter standard, voir MCAP_LINKY
         break;
     default:
         *handled = false;
@@ -364,8 +365,14 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
     for (int i = 0; i < tmpl->action_count; i++)
         if (is_onoff_action(&tmpl->actions[i])) has_onoff_action = true;
 
+    // Cluster vendeur Linky (0xFFF1FC01) : expose en bloc le cluster Zigbee
+    // 0xFF66 (TIC), sans passer par les liaisons etat -> cible Matter (voir
+    // linky_cluster.h et matter_device_manager.cpp).
+    bool has_linky = false;
+
     for (int i = 0; i < tmpl->state_count; i++) {
         const devdata_template_state_t *s = &tmpl->states[i];
+        if (s->cluster == LINKY_ZB_CLUSTER) has_linky = true;
         bool handled = false;
         cls_t c = classify_standard(s, has_onoff_action, p->zlinky, meter_role, &handled);
         if (!handled) c = classify_generic(s);
@@ -411,6 +418,7 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
     if (has_target(p, ML_SWITCH_MULTI)) drop_target(p, ML_SWITCH_PRESS);
 
     for (int i = 0; i < p->link_count; i++) p->caps |= cap_of(p->links[i].target);
+    if (has_linky) p->caps |= MCAP_LINKY;
 
     // Lampe : DeviceId d'eclairage ZCL (le ZLinky s'annonce a tort en 0x0101)
     p->light = (p->caps & MCAP_ONOFF) && !p->zlinky &&
