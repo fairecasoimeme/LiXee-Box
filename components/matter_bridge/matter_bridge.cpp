@@ -18,6 +18,7 @@
 #include "matter_bridge.h"
 #include "matter_device_manager.h"
 #include "elec_power_delegate.h"
+#include "linky_cluster.h"
 #include "zigate_devices.h"
 #include "esp_log.h"
 #include "esp_err.h"
@@ -420,6 +421,42 @@ static void add_electrical_clusters(endpoint_t *ep, bool with_power, bool with_e
     }
 }
 
+// Cluster vendeur Linky (0xFFF1FC01) : transposition 1:1 du cluster Zigbee
+// 0xFF66 (TIC), voir linky_cluster.h. Pas de type ZAP : la pile esp-matter
+// lit/ecrit les attributs via le modele de donnees generique (cluster_t /
+// attribute_t), comme ElectricalEnergyMeasurement ci-dessus.
+static void add_linky_cluster(endpoint_t *ep)
+{
+    cluster_t *c = cluster::create(ep, LINKY_CLUSTER_ID, CLUSTER_FLAG_SERVER);
+    if (!c) {
+        ESP_LOGE(TAG, "Echec de creation du cluster vendeur Linky");
+        return;
+    }
+    cluster::global::attribute::create_cluster_revision(c, 1);
+    cluster::global::attribute::create_feature_map(c, 0);
+
+    for (size_t i = 0; i < kLinkyCount; i++) {
+        const linky_attr_t &a = kLinkyAttrs[i];
+        const uint32_t id = LINKY_ATTR_ID(a.zb);
+        const uint16_t flags = a.wr ? ATTRIBUTE_FLAG_WRITABLE : ATTRIBUTE_FLAG_NONE;
+        switch (a.kind) {
+        case LK_U8:  attribute::create(c, id, flags, esp_matter_uint8(0));  break;
+        case LK_U16: attribute::create(c, id, flags, esp_matter_uint16(0)); break;
+        case LK_U32: attribute::create(c, id, flags, esp_matter_uint32(0)); break;
+        case LK_STR: {
+            char buf[1] = {0};
+            attribute::create(c, id, flags, esp_matter_char_str(buf, 0), a.len);
+            break;
+        }
+        case LK_OCT: {
+            uint8_t buf[1] = {0};
+            attribute::create(c, id, flags, esp_matter_octet_str(buf, 0), a.len);
+            break;
+        }
+        }
+    }
+}
+
 static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
 {
     const uint32_t caps = p->caps;
@@ -504,6 +541,9 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
     }
     if (caps & (MCAP_ELECTRICAL | MCAP_ENERGY)) {
         add_electrical_clusters(ep, (caps & MCAP_ELECTRICAL) != 0, (caps & MCAP_ENERGY) != 0);
+    }
+    if (caps & MCAP_LINKY) {
+        add_linky_cluster(ep);
     }
     if (caps & MCAP_BATTERY) {
         // Power Source sur l'endpoint ponte : etat de la pile de l'appareil
