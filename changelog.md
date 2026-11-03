@@ -1,5 +1,21 @@
 # Changelog
 
+## v3.1
+
+### Énergie
+- **Sous-compteurs repris d'une LiXee-Box 2.x** absents du graphe « Usage d'électricité » et de la répartition : la v2.x rangeait leur consommation sous l'index tarifaire en cours, que la v3 ne lisait pas. Cet historique est de nouveau compté, avec ce que la v3 enregistre depuis la migration, et retiré des index du Linky comme avant
+- **Changement d'heure** : les dates du graphe sur 30 jours, la comparaison avec la veille, le contrôle du budget de la veille et la présence sur 24 h calculaient « hier » en reculant de 24 h ; le jour d'un changement d'heure (23 ou 25 h), une date apparaissait en double et une autre manquait. La veille est désormais calculée au calendrier
+- Le trou du **25/10/2026** visible sur les box migrées vient de la v2.x : le jour du passage à l'heure d'hiver, sa journée a été recalculée à 0 entre 23 h et minuit (même défaut). Cette consommation n'a pas été enregistrée et ne peut pas être reconstituée
+
+### Notifications
+- **Changement de tarif** : bandeau tarif figé et notification jamais envoyée sur certaines box. Le tarif en cours est de nouveau lu uniquement dans « Tarif en cours (report) » (FF66/16), que le ZLinky envoie à chaque changement, en standard comme en historique, comme en v2.x
+
+### Pont Matter
+- **Mesure de puissance électrique (0x0090)** : `NumberOfMeasurementTypes` valait 1 alors que la box expose tension, courant, puissance active et puissance apparente ; il vaut désormais 4, et la liste `Accuracy` décrit ces quatre mesures (la puissance active y est marquée estimée tant qu'elle est déduite de la puissance apparente). Les listes de précision des clusters 0x0090 et 0x0091 contiennent maintenant la plage exigée par la spécification ([#47](https://github.com/fairecasoimeme/LiXee-Box/issues/47))
+
+### Interface
+- **Répartition énergétique** : grille à colonnes fixes (couleur, nom, énergie, coût) ; en vue jour, mois ou année, le coût ne passe plus à la ligne sous le carré de couleur
+
 ## v3.0
 
 ### Nouveau firmware ESP-IDF

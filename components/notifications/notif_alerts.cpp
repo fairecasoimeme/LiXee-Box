@@ -153,6 +153,9 @@ static void check_tariff_state(void)
 
     bool known = L.tariff[0] && strcmp(L.tariff, "---") != 0;
     if (known) {
+        if (s_tariff[0] && strcmp(s_tariff, L.tariff) != 0) {
+            ESP_LOGI(TAG, "Tarif : %s -> %s (alerte %s)", s_tariff, L.tariff, n->price_change ? "oui" : "non");
+        }
         if (n->price_change && s_tariff[0] && strcmp(s_tariff, L.tariff) != 0) {
             char msg[64];
             snprintf(msg, sizeof(msg), "--> tarif : %s", L.tariff);
@@ -465,9 +468,16 @@ static void send_daily_metrics(void)
 void notif_alerts_daily(void)
 {
     if (!ntp_sync_is_synced()) return;
-    time_t y = time(NULL) - 86400;
+    // Veille au calendrier, a midi : "maintenant - 24 h" se trompe de jour
+    // pres d'un changement d'heure (jours de 23 ou 25 h)
+    time_t now = time(NULL);
     struct tm ty;
-    localtime_r(&y, &ty);
+    localtime_r(&now, &ty);
+    ty.tm_mday -= 1;
+    ty.tm_hour = 12;
+    ty.tm_min = ty.tm_sec = 0;
+    ty.tm_isdst = -1;
+    mktime(&ty);
     int key = (ty.tm_year + 1900) * 1000 + ty.tm_yday;
     if (key == s_budget_key) return;              // veille deja controlee
     s_budget_key = key;

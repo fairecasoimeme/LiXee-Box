@@ -311,6 +311,7 @@ static const char *index_color(uint16_t attr)
 }
 
 static int tariff_family(uint64_t zl);
+static bool tariff_text(uint64_t zl, char *out, size_t len);
 
 static void index_name(uint64_t zl, int mode, uint16_t attr, char *out, size_t len)
 {
@@ -320,7 +321,7 @@ static void index_name(uint64_t zl, int mode, uint16_t attr, char *out, size_t l
     char opt[16];
     dd_str(zl, 0xFF66, 0, opt, sizeof(opt));   // OPTARIF
     char ptec[16];
-    if (!opt[0] && dd_str(zl, 0x0702, 32, ptec, sizeof(ptec))) {
+    if (!opt[0] && tariff_text(zl, ptec, sizeof(ptec))) {
         // OPTARIF pas encore lu : l'option d'apres le tarif en cours
         static const char *const FAM[4] = { "BASE", "HC", "EJP", "BBR" };
         strlcpy(opt, FAM[tariff_family(zl)], sizeof(opt));
@@ -484,9 +485,15 @@ static slot_ref_t previous_slot(energy_gran_t g, const struct tm *t)
     switch (g) {
     case ENERGY_GRAN_HOUR:  s.key = (t->tm_hour + 23) % 24; break;
     case ENERGY_GRAN_DAY: {
-        time_t y = mktime((struct tm *)t) - 86400;
-        struct tm ty;
-        localtime_r(&y, &ty);
+        // Veille au calendrier, a midi : "maintenant - 24 h" retombait sur le
+        // jour meme entre 23 h et minuit le jour du passage a l'heure d'hiver
+        // (25 h). C'est ainsi que la LiXee-Box 2.x a remis le 25/10/2026 a 0.
+        struct tm ty = *t;
+        ty.tm_mday -= 1;
+        ty.tm_hour = 12;
+        ty.tm_min = ty.tm_sec = 0;
+        ty.tm_isdst = -1;
+        mktime(&ty);
         s.key = ty.tm_mday - 1;
         break;
     }
@@ -532,13 +539,35 @@ static const energy_history_t *prod_history(const roles_t *r)
     return energy_history_find(r->zl);
 }
 
+/**
+ * Energie d'un compteur sur un creneau (attribut 0), plus la part reprise d'une
+ * LiXee-Box 2.x : la Box rangeait la consommation d'un sous-compteur sous
+ * l'index tarifaire en cours (256, 258...), l'attribut 0 de son graphe restant
+ * a 0. Ces index, que la v3 n'a jamais mis a jour (lastTs nul), s'ajoutent a
+ * l'attribut 0 qu'elle enregistre depuis la migration. Un appareil qui publie
+ * lui-meme ses index tarifaires (lastTs renseigne) n'est pas compte deux fois.
+ */
+static int64_t meter_slot_raw(const energy_history_t *h, slot_ref_t s)
+{
+    if (!h) return 0;
+    int32_t v0 = slot_val(h, s, 0);
+    int64_t raw = v0 > 0 ? v0 : 0;
+    for (int i = 0; i < h->attr_count; i++) {
+        uint16_t a = h->attr_ids[i];
+        if (a < 0x0100 || a > 0x0112 || (a & 1) || h->last_ts[i]) continue;
+        int32_t v = slot_val(h, s, a);
+        if (v > 0) raw += v;
+    }
+    return raw;
+}
+
 static int64_t sub_value(uint64_t ieee, slot_ref_t s)
 {
     const energy_history_t *h = energy_history_find(ieee);
     if (!h) return 0;
     float coef = device_data_get_coefficient(ieee, 0x0702, 0);
     if (coef <= 0) coef = 1;
-    int64_t v = (int64_t)(slot_val(h, s, 0) * coef);
+    int64_t v = (int64_t)(meter_slot_raw(h, s) * coef);
     return v > 0 ? v : 0;
 }
 
@@ -1114,11 +1143,16 @@ static void chart_labels(chart_t *c, const struct tm *now)
         break;
     case ENERGY_GRAN_DAY: {
         c->n = 30;
-        time_t t0 = mktime((struct tm *)now);
         for (int i = 0; i < 30; i++) {
-            time_t t = t0 - (time_t)(29 - i) * 86400;
-            struct tm d;
-            localtime_r(&t, &d);
+            // Recul au calendrier, a midi : reculer de 29 x 24 h decalait la
+            // date d'un jour pres d'un changement d'heure (jour de 23 ou 25 h),
+            // d'ou une date en double et une autre absente
+            struct tm d = *now;
+            d.tm_mday -= 29 - i;
+            d.tm_hour = 12;
+            d.tm_min = d.tm_sec = 0;
+            d.tm_isdst = -1;
+            mktime(&d);
             snprintf(c->labels[i], sizeof(c->labels[i]), "%02d/%02d", d.tm_mday, d.tm_mon + 1);
             c->slots[i] = (slot_ref_t){ ENERGY_GRAN_DAY, d.tm_mday - 1 };
         }
@@ -1202,8 +1236,7 @@ static bool chart_build(chart_t *c, energy_gran_t g, uint64_t ieee)
         }
         series_t *s = chart_add_series(c, "0", name, color, "meter", c->meter_price);
         for (int i = 0; s && i < c->n; i++) {
-            int32_t v = slot_val(h, c->slots[i], 0);
-            s->data[i] = v > 0 ? v : 0;
+            s->data[i] = meter_slot_raw(h, c->slots[i]);   // sous-compteur repris de la v2.x compris
             if (s->data[i]) s->nonzero = true;
         }
         return true;
@@ -1837,6 +1870,17 @@ typedef struct {
     uint16_t index;
 } tariff_info_t;
 
+/**
+ * Tarif en cours en texte (PTEC en historique, LTARF en standard) : FF66/16
+ * seul, que le ZLinky envoie a chaque changement dans les deux modes, comme
+ * sur la LiXee-Box. 0702/32 et FF66/512, relus toutes les 10 min, retardaient
+ * ou masquaient le changement (bandeau fige, pas d'alerte "Changement de tarif").
+ */
+static bool tariff_text(uint64_t zl, char *out, size_t len)
+{
+    return dd_str(zl, 0xFF66, 16, out, len);
+}
+
 /** Tarif en cours, couleurs Tempo et index, en historique comme en standard. */
 static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
 {
@@ -1847,7 +1891,7 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
 
     if (mode_is_histo(mode)) {
         char ptec[16];
-        dd_str(zl, 0x0702, 32, ptec, sizeof(ptec));
+        tariff_text(zl, ptec, sizeof(ptec));
         ti->index = ptec_to_index(ptec);
         static const struct { const char *p; const char *name; const char *bg; int tempo; } T[] = {
             { "HCJB", "HC Bleu", "#2980b9", 1 },  { "HPJB", "HP Bleu", "#154360", 1 },
@@ -1876,7 +1920,7 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
     }
 
     char ltarf[24];
-    if (!dd_str(zl, 0xFF66, 16, ltarf, sizeof(ltarf))) dd_str(zl, 0xFF66, 512, ltarf, sizeof(ltarf));
+    tariff_text(zl, ltarf, sizeof(ltarf));
     if (ltarf[0]) strlcpy(ti->tariff, ltarf, sizeof(ti->tariff));
     // Le ZLinky en Standard envoie "Heure pleine" : comparaison sans la casse
     char up[sizeof(ltarf)];
@@ -1900,11 +1944,7 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
 static int tariff_family(uint64_t zl)
 {
     char p[24] = "";
-    if (mode_is_histo(linky_mode(zl))) {
-        dd_str(zl, 0x0702, 32, p, sizeof(p));                          // PTEC
-    } else if (!dd_str(zl, 0xFF66, 16, p, sizeof(p))) {
-        dd_str(zl, 0xFF66, 512, p, sizeof(p));                         // LTARF
-    }
+    tariff_text(zl, p, sizeof(p));                                     // PTEC / LTARF
     char u[sizeof(p)];
     size_t n = 0, s = 0;
     while (p[s] == ' ') s++;

@@ -232,9 +232,14 @@ char *presence_chart_json(const char *time_s)
         // de la veille, index 23 = heure courante (tous capteurs)
         int v[24] = {};
         if (ok) {
-            time_t y = time(NULL) - 86400;
-            struct tm ty;
-            localtime_r(&y, &ty);
+            // Veille au calendrier (pas "maintenant - 24 h", faux pres d'un
+            // changement d'heure)
+            struct tm ty = t;
+            ty.tm_mday -= 1;
+            ty.tm_hour = 12;
+            ty.tm_min = ty.tm_sec = 0;
+            ty.tm_isdst = -1;
+            mktime(&ty);
             int h0 = t.tm_hour;
             portENTER_CRITICAL(&s_mux);
             for (int i = 0; i < s_count; i++) {

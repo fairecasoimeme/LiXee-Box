@@ -20,7 +20,7 @@ extern "C" {
 #define MATTER_BRIDGE_PRODUCT_NAME    "LiXee MatterBridge"
 #define MATTER_BRIDGE_VENDOR_NAME     "LiXee"
 #define MATTER_BRIDGE_HW_VERSION      1
-#define MATTER_BRIDGE_SW_VERSION_STR  "3.0"
+#define MATTER_BRIDGE_SW_VERSION_STR  "3.1"
 
 // Nombre max d'endpoints dynamiques (devices Zigbee exposes via Matter)
 #define MATTER_BRIDGE_MAX_ENDPOINTS   32
