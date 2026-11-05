@@ -162,7 +162,7 @@ CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y
 
 # Identite Matter du pont (fabricant, produit) : main/CHIPProjectConfig.h
 CONFIG_CHIP_PROJECT_CONFIG="main/CHIPProjectConfig.h"
-CONFIG_DEVICE_SOFTWARE_VERSION_NUMBER=301
+CONFIG_DEVICE_SOFTWARE_VERSION_NUMBER=302
 
 # Code d appairage Matter propre a chaque passerelle (matter_bridge.cpp)
 CONFIG_CUSTOM_COMMISSIONABLE_DATA_PROVIDER=y

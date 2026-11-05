@@ -23,7 +23,7 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(COMPILE_DEFINITIONS "CJSON_NESTING_LIMIT=32" APPEND)
 
 # Version de l application (esp_app_desc), controlee par la mise a jour OTA
-set(PROJECT_VER "3.1")
+set(PROJECT_VER "3.2")
 project(lixee_matter_bridge)
 
 # esp-matter 1.4.2 : closure-control-cluster-logic.cpp ne compile pas avec

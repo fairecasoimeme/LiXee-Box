@@ -68,7 +68,7 @@
 
 // Version du firmware (peut etre surchargee par -DVERSION=... dans CMake)
 #ifndef VERSION
-#define VERSION "3.1"
+#define VERSION "3.2"
 #endif
 
 static const char *TAG = "MAIN";

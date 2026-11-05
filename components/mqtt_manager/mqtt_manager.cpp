@@ -17,6 +17,9 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "esp_timer.h"
+#include "esp_crt_bundle.h"
+#include "esp_tls_errors.h"
+#include "mbedtls/x509_crt.h"
 #include "mqtt_client.h"
 #include "cJSON.h"
 
@@ -54,6 +57,30 @@ static mqtt_cmd_handler_t s_cmd_handler = NULL;
 
 // URI construite
 static char s_uri[128] = {};
+
+// Certificat de l'autorite privee (tlsMQTT = 2) : le client MQTT garde le
+// pointeur, la memoire n'est liberee qu'apres esp_mqtt_client_destroy()
+static char *s_ca_pem = NULL;
+
+// Derniere erreur de connexion, affichee par la page MQTT (tache MQTT ->
+// serveur web)
+static char s_last_error[96] = {};
+static portMUX_TYPE s_err_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void set_last_error(const char *fmt, ...)
+{
+    char tmp[sizeof(s_last_error)];
+    tmp[0] = '\0';
+    if (fmt) {
+        va_list ap;
+        va_start(ap, fmt);
+        vsnprintf(tmp, sizeof(tmp), fmt, ap);
+        va_end(ap);
+    }
+    portENTER_CRITICAL(&s_err_mux);
+    memcpy(s_last_error, tmp, sizeof(s_last_error));
+    portEXIT_CRITICAL(&s_err_mux);
+}
 
 // ============================================================================
 // Helpers
@@ -636,6 +663,7 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         s_connected = true;
         s_reconnect_attempts = 0;
         s_publish_errors = 0;
+        set_last_error(NULL);
         ESP_LOGI(TAG, "Connected to MQTT broker");
 
         // Souscrire aux commandes
@@ -685,13 +713,50 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         }
         break;
 
-    case MQTT_EVENT_ERROR:
+    case MQTT_EVENT_ERROR: {
+        const esp_mqtt_error_codes_t *e = event->error_handle;
         ESP_LOGW(TAG, "MQTT error event");
-        if (event->error_handle->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
-            ESP_LOGW(TAG, "  TLS error: 0x%x", event->error_handle->esp_tls_last_esp_err);
-            ESP_LOGW(TAG, "  Socket errno: %d", event->error_handle->esp_transport_sock_errno);
+        if (e->error_type == MQTT_ERROR_TYPE_TCP_TRANSPORT) {
+            // Erreur mbedTLS : esp-tls la remonte selon les cas en positif ou
+            // en negatif ; comparee ici en valeur absolue (-0x2700 = refus
+            // du certificat, -0x0050 = connexion coupee par le serveur)
+            const int tls_err = e->esp_tls_stack_err < 0 ? -e->esp_tls_stack_err : e->esp_tls_stack_err;
+            ESP_LOGW(TAG, "  TLS error: 0x%x, mbedTLS: -0x%04X, verify flags: 0x%x",
+                     e->esp_tls_last_esp_err, (unsigned)tls_err, e->esp_tls_cert_verify_flags);
+            ESP_LOGW(TAG, "  Socket errno: %d", e->esp_transport_sock_errno);
+            // Flags mbedTLS (MBEDTLS_X509_BADCERT_*) : 0x01 expire,
+            // 0x04 nom du serveur different, 0x08 autorite inconnue. Souvent
+            // nuls : le refus n'apparait alors que dans l'erreur mbedTLS.
+            if (e->esp_tls_cert_verify_flags)
+                set_last_error("Certificat du broker refusé (flags 0x%x)", e->esp_tls_cert_verify_flags);
+            else if (tls_err == -MBEDTLS_ERR_X509_CERT_VERIFY_FAILED)
+                set_last_error("Certificat du broker refusé (autorité, nom du serveur ou date)");
+            else if (e->esp_tls_last_esp_err == ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED)
+                set_last_error("Négociation TLS impossible (port TLS du broker ?) mbedTLS -0x%04X",
+                               (unsigned)tls_err);
+            // esp-tls porte aussi le TCP simple : erreurs reseau en clair
+            else if (e->esp_tls_last_esp_err == ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME)
+                set_last_error("Nom du broker introuvable (DNS)");
+            else if (e->esp_tls_last_esp_err == ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT)
+                set_last_error("Broker injoignable (délai dépassé)");
+            else if (e->esp_tls_last_esp_err == ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST)
+                set_last_error("Broker injoignable (connexion refusée sur ce port)");
+            else if (e->esp_tls_last_esp_err)
+                set_last_error("Erreur de connexion %s", esp_err_to_name(e->esp_tls_last_esp_err));
+            else if (e->esp_transport_sock_errno)
+                set_last_error("Broker injoignable (errno %d)", e->esp_transport_sock_errno);
+            else
+                set_last_error("Connexion fermée par le serveur (est-ce un broker MQTT ?)");
+        } else if (e->error_type == MQTT_ERROR_TYPE_CONNECTION_REFUSED) {
+            ESP_LOGW(TAG, "  Connection refused: %d", e->connect_return_code);
+            if (e->connect_return_code == MQTT_CONNECTION_REFUSE_BAD_USERNAME ||
+                e->connect_return_code == MQTT_CONNECTION_REFUSE_NOT_AUTHORIZED)
+                set_last_error("Identifiant ou mot de passe refusé par le broker");
+            else
+                set_last_error("Connexion refusée par le broker (code %d)", e->connect_return_code);
         }
         break;
+    }
 
     case MQTT_EVENT_SUBSCRIBED:
         ESP_LOGD(TAG, "Subscribed, msg_id=%d", event->msg_id);
@@ -705,6 +770,103 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
         ESP_LOGD(TAG, "MQTT event: %d", (int)event_id);
         break;
     }
+}
+
+// ============================================================================
+// Certificat de l'autorite privee (TLS)
+// ============================================================================
+
+/** Lit le certificat enregistre (PEM, termine par un nul) ; NULL s'il n'y en a pas. */
+static char *load_ca_pem(void)
+{
+    FILE *f = fopen(CFG_PATH_MQTT_CA, "rb");
+    if (!f) return NULL;
+    char *buf = NULL;
+    if (fseek(f, 0, SEEK_END) == 0) {
+        long n = ftell(f);
+        if (n > 0 && n <= MQTT_CA_PEM_MAX && fseek(f, 0, SEEK_SET) == 0) {
+            buf = (char *)malloc((size_t)n + 1);
+            if (buf && fread(buf, 1, (size_t)n, f) == (size_t)n) {
+                buf[n] = '\0';
+            } else {
+                free(buf);
+                buf = NULL;
+            }
+        }
+    }
+    fclose(f);
+    return buf;
+}
+
+esp_err_t mqtt_manager_set_ca_pem(const char *pem, char *err, size_t err_len)
+{
+    if (err && err_len) err[0] = '\0';
+    if (!pem || !pem[0]) {
+        remove(CFG_PATH_MQTT_CA);
+        return ESP_OK;
+    }
+    size_t n = strlen(pem);
+    if (n > MQTT_CA_PEM_MAX) {
+        if (err) snprintf(err, err_len, "Certificat trop volumineux (%u octets max)", (unsigned)MQTT_CA_PEM_MAX);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    if (!strstr(pem, "-----BEGIN CERTIFICATE-----")) {
+        if (err) snprintf(err, err_len, "Format PEM attendu (-----BEGIN CERTIFICATE-----)");
+        return ESP_ERR_INVALID_ARG;
+    }
+    // Analyse complete : le PEM doit etre termine par un nul compte dans la
+    // longueur. r > 0 : nombre de certificats de la chaine rejetes.
+    mbedtls_x509_crt crt;
+    mbedtls_x509_crt_init(&crt);
+    int r = mbedtls_x509_crt_parse(&crt, (const unsigned char *)pem, n + 1);
+    mbedtls_x509_crt_free(&crt);
+    if (r != 0) {
+        if (err) snprintf(err, err_len, "Certificat invalide (mbedTLS -0x%04X)", (unsigned)(r < 0 ? -r : r));
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    FILE *f = fopen(CFG_PATH_MQTT_CA, "wb");
+    if (!f) {
+        if (err) snprintf(err, err_len, "Ecriture impossible");
+        return ESP_FAIL;
+    }
+    bool ok = fwrite(pem, 1, n, f) == n;
+    ok = (fclose(f) == 0) && ok;
+    if (!ok) {
+        remove(CFG_PATH_MQTT_CA);
+        if (err) snprintf(err, err_len, "Ecriture impossible");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Certificat d'autorite MQTT enregistre (%u octets)", (unsigned)n);
+    return ESP_OK;
+}
+
+bool mqtt_manager_ca_info(char *subject, size_t subj_len, char *not_after, size_t na_len)
+{
+    char *pem = load_ca_pem();
+    if (!pem) return false;
+    mbedtls_x509_crt crt;
+    mbedtls_x509_crt_init(&crt);
+    bool ok = mbedtls_x509_crt_parse(&crt, (const unsigned char *)pem, strlen(pem) + 1) >= 0
+              && crt.raw.p != NULL;
+    if (ok) {
+        if (subject && subj_len && mbedtls_x509_dn_gets(subject, subj_len, &crt.subject) < 0)
+            subject[0] = '\0';
+        if (not_after && na_len)
+            snprintf(not_after, na_len, "%04d-%02d-%02d",
+                     crt.valid_to.year, crt.valid_to.mon, crt.valid_to.day);
+    }
+    mbedtls_x509_crt_free(&crt);
+    free(pem);
+    return ok;
+}
+
+void mqtt_manager_last_error(char *buf, size_t len)
+{
+    if (!buf || !len) return;
+    portENTER_CRITICAL(&s_err_mux);
+    strlcpy(buf, s_last_error, len);
+    portEXIT_CRITICAL(&s_err_mux);
 }
 
 // ============================================================================
@@ -730,13 +892,15 @@ esp_err_t mqtt_manager_init(void)
         return ESP_OK;
     }
 
-    // Construire l'URI: "mqtt://host:port"
-    int port = 1883;
+    // Construire l'URI: "mqtt://host:port", "mqtts://host:port" en TLS
+    const bool tls = gen->tls_mqtt != 0;
+    const int def_port = tls ? 8883 : 1883;
+    int port = def_port;
     if (gen->port_mqtt[0] != '\0') {
         port = atoi(gen->port_mqtt);
-        if (port <= 0) port = 1883;
+        if (port <= 0) port = def_port;
     }
-    snprintf(s_uri, sizeof(s_uri), "mqtt://%s:%d", gen->serv_mqtt, port);
+    snprintf(s_uri, sizeof(s_uri), "%s://%s:%d", tls ? "mqtts" : "mqtt", gen->serv_mqtt, port);
     ESP_LOGI(TAG, "MQTT URI: %s", s_uri);
 
     // Configurer le client
@@ -756,6 +920,22 @@ esp_err_t mqtt_manager_init(void)
     // et tiennent dans la marge de RAM interne du projet (~50 Ko libres).
     mqtt_cfg.outbox.limit = 16 * 1024;
 
+    // TLS : le nom du serveur (servMQTT) est verifie contre le certificat
+    // presente ; l'autorite est soit le bundle public d'ESP-IDF (Let's
+    // Encrypt, Amazon Root CA, DigiCert...), soit le certificat importe
+    if (gen->tls_mqtt == 2) {
+        s_ca_pem = load_ca_pem();
+        if (!s_ca_pem) {
+            ESP_LOGE(TAG, "TLS : certificat d'autorite absent ou illisible (%s)", CFG_PATH_MQTT_CA);
+            set_last_error("Certificat de l'autorité privée absent");
+            s_initialized = true;
+            return ESP_OK;
+        }
+        mqtt_cfg.broker.verification.certificate = s_ca_pem;
+    } else if (tls) {
+        mqtt_cfg.broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
+    }
+
     if (gen->client_id_mqtt[0] != '\0') {
         mqtt_cfg.credentials.client_id = gen->client_id_mqtt;
     }
@@ -770,6 +950,8 @@ esp_err_t mqtt_manager_init(void)
     s_client = esp_mqtt_client_init(&mqtt_cfg);
     if (!s_client) {
         ESP_LOGE(TAG, "Failed to create MQTT client");
+        free(s_ca_pem);
+        s_ca_pem = NULL;
         return ESP_FAIL;
     }
 
@@ -959,6 +1141,9 @@ static void reload_client(void)
         s_client = NULL;
         if (s_client_mtx) xSemaphoreGive(s_client_mtx);
     }
+    free(s_ca_pem);
+    s_ca_pem = NULL;
+    set_last_error(NULL);
     s_started = false;
     s_initialized = false;
     mqtt_manager_init();

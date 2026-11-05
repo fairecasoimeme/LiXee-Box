@@ -72,6 +72,28 @@ void mqtt_manager_request_reload(void);
 bool mqtt_manager_is_connected(void);
 
 /**
+ * Derniere erreur de connexion (TLS, refus du broker, reseau), en clair ;
+ * chaine vide une fois connecte.
+ */
+void mqtt_manager_last_error(char *buf, size_t len);
+
+/** Taille maximale du certificat d'autorite privee (PEM, chaine comprise) */
+#define MQTT_CA_PEM_MAX  8192
+
+/**
+ * Verifie (X.509, PEM) puis enregistre le certificat de l'autorite privee
+ * du broker (tlsMQTT = 2). pem NULL ou vide : supprime le certificat.
+ * En cas de refus, err recoit la raison.
+ */
+esp_err_t mqtt_manager_set_ca_pem(const char *pem, char *err, size_t err_len);
+
+/**
+ * Sujet et date d'expiration (AAAA-MM-JJ) du premier certificat de
+ * l'autorite privee enregistree ; false s'il n'y en a pas.
+ */
+bool mqtt_manager_ca_info(char *subject, size_t subj_len, char *not_after, size_t na_len);
+
+/**
  * Publie une valeur d'attribut Zigbee.
  * Le format du topic et du payload depend du mode (HA/TB/Custom).
  *

@@ -46,7 +46,7 @@
 #include <string.h>
 
 #ifndef VERSION
-#define VERSION "3.1"
+#define VERSION "3.2"
 #endif
 
 // Fonctions definies dans main.cpp pour le parametre Matter enable/disable
@@ -989,6 +989,13 @@ static esp_err_t api_config_mqtt_get_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(root, "TBMQTT",         g->tb_mqtt);
     cJSON_AddBoolToObject(root, "customMQTT",     g->custom_mqtt);
     cJSON_AddStringToObject(root, "customMQTTJson", g->custom_mqtt_json);
+    cJSON_AddNumberToObject(root, "tlsMQTT",        g->tls_mqtt);
+    char ca_subject[160], ca_expiry[16];
+    if (mqtt_manager_ca_info(ca_subject, sizeof(ca_subject), ca_expiry, sizeof(ca_expiry))) {
+        cJSON *ca = cJSON_AddObjectToObject(root, "caMQTT");
+        cJSON_AddStringToObject(ca, "subject", ca_subject);
+        cJSON_AddStringToObject(ca, "notAfter", ca_expiry);
+    }
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -1049,12 +1056,62 @@ static esp_err_t api_config_mqtt_post_handler(httpd_req_t *req)
         g->custom_mqtt = cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint);
     if ((item = cJSON_GetObjectItem(doc, "customMQTTJson")) && cJSON_IsString(item))
         strlcpy(g->custom_mqtt_json, item->valuestring, sizeof(g->custom_mqtt_json));
+    if ((item = cJSON_GetObjectItem(doc, "tlsMQTT")) && cJSON_IsNumber(item))
+        g->tls_mqtt = (item->valueint >= 0 && item->valueint <= 2) ? item->valueint : 0;
+    if ((item = cJSON_GetObjectItem(doc, "clearCaMQTT")) &&
+        (cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint)))
+        mqtt_manager_set_ca_pem(NULL, NULL, 0);
 
     cJSON_Delete(doc);
     esp_err_t err = cfg_save_general();
     if (err == ESP_OK) mqtt_manager_request_reload();   // appliquee sans redemarrer
 
     return send_save_result(req, err);
+}
+
+// ============================================================================
+// POST /api/config/mqtt/ca - Importe le certificat de l'autorite privee du
+// broker (corps : PEM brut). Verifie avant enregistrement ; le client MQTT
+// est recree s'il l'utilise.
+// ============================================================================
+
+static esp_err_t api_config_mqtt_ca_post_handler(httpd_req_t *req)
+{
+    size_t len = req->content_len;
+    if (len == 0 || len > MQTT_CA_PEM_MAX) {
+        httpd_resp_send_err(req, len ? HTTPD_413_CONTENT_TOO_LARGE : HTTPD_400_BAD_REQUEST,
+                            len ? "Certificat trop volumineux" : "Certificat manquant");
+        return ESP_OK;
+    }
+    char *pem = (char *)heap_caps_malloc(len + 1, MALLOC_CAP_SPIRAM);
+    if (!pem) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+        return ESP_OK;
+    }
+    size_t got = 0;
+    int timeouts = 0;
+    while (got < len) {
+        int r = httpd_req_recv(req, pem + got, len - got);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts <= 3) continue;
+        if (r <= 0) {
+            free(pem);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete body");
+            return ESP_OK;
+        }
+        got += r;
+    }
+    pem[len] = '\0';
+
+    char err[96];
+    esp_err_t e = mqtt_manager_set_ca_pem(pem, err, sizeof(err));
+    free(pem);
+    if (e != ESP_OK) {
+        httpd_resp_send_err(req, e == ESP_FAIL ? HTTPD_500_INTERNAL_SERVER_ERROR : HTTPD_400_BAD_REQUEST, err);
+        return ESP_OK;
+    }
+    if (cfg_get_general()->tls_mqtt == 2) mqtt_manager_request_reload();
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
 }
 
 // ============================================================================
@@ -1471,6 +1528,10 @@ static esp_err_t api_mqtt_status_handler(httpd_req_t *req)
     const cfg_general_t *g = cfg_get_general();
     cJSON_AddStringToObject(root, "server", g->serv_mqtt);
     cJSON_AddStringToObject(root, "port",   g->port_mqtt);
+    cJSON_AddBoolToObject(root, "tls",      g->tls_mqtt != 0);
+    char last_err[96];
+    mqtt_manager_last_error(last_err, sizeof(last_err));
+    if (!connected && last_err[0]) cJSON_AddStringToObject(root, "lastError", last_err);
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -1659,6 +1720,10 @@ esp_err_t web_api_register_handlers(httpd_handle_t server)
 
     uri = { .uri = "/api/config/mqtt", .method = HTTP_POST,
             .handler = api_config_mqtt_post_handler, .user_ctx = NULL };
+    web_server_register_uri(server, &uri);
+
+    uri = { .uri = "/api/config/mqtt/ca", .method = HTTP_POST,
+            .handler = api_config_mqtt_ca_post_handler, .user_ctx = NULL };
     web_server_register_uri(server, &uri);
 
     uri = { .uri = "/api/config/webpush", .method = HTTP_GET,

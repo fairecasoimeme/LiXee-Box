@@ -11,6 +11,8 @@ idf_component_register(
     PRIV_REQUIRES
         json
         mqtt
+        mbedtls
+        esp-tls
         esp_timer
         zigate
 )

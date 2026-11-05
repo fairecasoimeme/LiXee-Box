@@ -1866,6 +1866,7 @@
             '<h5 class="mb-0">Statut</h5>' +
             '<span id="mqtt-status" class="badge bg-secondary">V&eacute;rification...</span>' +
           '</div>' +
+          '<div id="mqtt-last-error" class="small text-danger mt-2" style="display:none;"></div>' +
         '</div>' +
 
         '<div class="card p-4">' +
@@ -1877,6 +1878,22 @@
             '<div class="row">' +
               '<div class="col-md-8 mb-3"><label class="form-label">Serveur MQTT</label><input type="text" class="form-control" id="mqtt-broker" placeholder="192.168.1.x"></div>' +
               '<div class="col-md-4 mb-3"><label class="form-label">Port</label><input type="number" class="form-control" id="mqtt-port" value="1883"></div>' +
+            '</div>' +
+
+            // Securite (TLS)
+            '<div class="mb-3"><label class="form-label" for="mqtt-tls">S&eacute;curit&eacute; de la connexion</label>' +
+              '<select class="form-select" id="mqtt-tls">' +
+                '<option value="0">Aucune (MQTT en clair)</option>' +
+                '<option value="1">TLS &ndash; certificat du broker sign&eacute; par une autorit&eacute; publique</option>' +
+                '<option value="2">TLS &ndash; autorit&eacute; priv&eacute;e (certificat &agrave; importer)</option>' +
+              '</select>' +
+              '<div class="form-text">En TLS, le nom du serveur doit correspondre &agrave; celui du certificat du broker.</div>' +
+            '</div>' +
+            '<div class="mb-3" id="mqtt-ca-block" style="display:none;">' +
+              '<label class="form-label" for="mqtt-ca-file">Certificat de l\'autorit&eacute; (PEM)</label>' +
+              '<div id="mqtt-ca-info" class="form-text mb-2"></div>' +
+              '<input type="file" class="form-control" id="mqtt-ca-file" accept=".pem,.crt,.cer">' +
+              '<div class="form-text">Import imm&eacute;diat, apr&egrave;s v&eacute;rification par la box. Fichier .pem / .crt au format texte (-----BEGIN CERTIFICATE-----).</div>' +
             '</div>' +
 
             // User + Pass
@@ -1922,10 +1939,52 @@
       if (MQTT_HEADERS[mode]) $('#mqtt-header').val(MQTT_HEADERS[mode]);
     });
 
+    // TLS : bloc du certificat en autorite privee ; le port suit s'il etait
+    // le port par defaut de l'autre mode
+    $('#mqtt-tls').on('change', function() {
+      var tls = parseInt($(this).val(), 10) || 0;
+      $('#mqtt-ca-block').toggle(tls === 2);
+      var port = $('#mqtt-port').val();
+      if (tls && port === '1883') $('#mqtt-port').val(8883);
+      if (!tls && port === '8883') $('#mqtt-port').val(1883);
+    });
+
+    function showMqttCa(ca) {
+      $('#mqtt-ca-info').html(ca
+        ? 'Certificat enregistr&eacute; : <code>' + escHtml(ca.subject) + '</code>, valide jusqu\'au ' + escHtml(ca.notAfter)
+        : '<span class="text-warning">Aucun certificat enregistr&eacute;.</span>');
+    }
+
+    $('#mqtt-ca-file').on('change', function() {
+      var file = this.files && this.files[0];
+      if (!file) return;
+      var input = this;
+      var reader = new FileReader();
+      reader.onload = function() {
+        $.ajax({
+          url: '/api/config/mqtt/ca',
+          method: 'POST',
+          contentType: 'application/x-pem-file',
+          processData: false,
+          data: reader.result,
+          success: function() {
+            showAlert('Certificat de l\'autorit&eacute; enregistr&eacute;.');
+            $.getJSON('/api/config/mqtt', function(cfg) { showMqttCa(cfg.caMQTT); });
+          },
+          error: function(xhr) { showAlert(apiErrorMsg(xhr), 'danger'); },
+          complete: function() { input.value = ''; }
+        });
+      };
+      reader.readAsText(file);
+    });
+
     // Load config
     // Noms de cles = ceux du serveur et de la configuration persistee.
     // Le mot de passe n'est jamais renvoye : seul hasPassMQTT l'est.
     $.getJSON('/api/config/mqtt', function(cfg) {
+      $('#mqtt-tls').val(String(cfg.tlsMQTT || 0));
+      $('#mqtt-ca-block').toggle(cfg.tlsMQTT === 2);
+      showMqttCa(cfg.caMQTT);
       $('#mqtt-enabled').prop('checked', !!cfg.enableMqtt);
       $('#mqtt-broker').val(cfg.servMQTT || '');
       $('#mqtt-port').val(cfg.portMQTT || 1883);
@@ -1953,6 +2012,7 @@
           .removeClass('bg-secondary bg-success bg-danger')
           .addClass(cls)
           .text(txt);
+        $('#mqtt-last-error').text(st.lastError || '').toggle(!!st.lastError);
       }).fail(function() {
         $('#mqtt-status').removeClass('bg-secondary bg-success bg-danger').addClass('bg-secondary').text('Inconnu');
       });
@@ -1969,6 +2029,7 @@
         enableMqtt: $('#mqtt-enabled').is(':checked'),
         servMQTT: $('#mqtt-broker').val().trim(),
         portMQTT: String(parseInt($('#mqtt-port').val(), 10) || 1883),
+        tlsMQTT: parseInt($('#mqtt-tls').val(), 10) || 0,
         userMQTT: $('#mqtt-user').val(),
         passMQTT: $('#mqtt-pass').val(),   // vide = conserver l'actuel
         clientIDMQTT: $('#mqtt-clientid').val(),

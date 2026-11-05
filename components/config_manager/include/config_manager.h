@@ -26,6 +26,7 @@ extern "C" {
 #define CFG_PATH_WIFI           "/littlefs/config/configWifi.json"
 #define CFG_PATH_NOTIFICATIONS  "/littlefs/config/notifications.json"
 #define CFG_PATH_RULES          "/littlefs/config/rules.json"
+#define CFG_PATH_MQTT_CA        "/littlefs/config/mqttCA.pem"
 
 // ============================================================================
 // Structures de configuration
@@ -179,6 +180,8 @@ typedef struct {
     bool tb_mqtt;               // Mode ThingsBoard
     bool custom_mqtt;           // Mode Custom JSON
     char custom_mqtt_json[512]; // Template JSON custom
+    int  tls_mqtt;              // "tlsMQTT" : 0 sans TLS, 1 TLS (autorites publiques),
+                                // 2 TLS (autorite privee, CFG_PATH_MQTT_CA)
 
     // HTTP auth
     char user_http[50];
