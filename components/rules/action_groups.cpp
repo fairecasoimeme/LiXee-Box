@@ -284,8 +284,10 @@ static int run_locked(int idx)
             }
             sent++;
         } else if (!strcmp(a->type, "led")) {
-            if (rule_action_led(a)) sent++;
-            else ESP_LOGW(TAG, "Groupe '%s' : action LED invalide", g->name);
+            esp_err_t e = rule_action_led(a);
+            if (e == ESP_OK) sent++;
+            else ESP_LOGW(TAG, "Groupe '%s' : action LED %s", g->name,
+                          e == ESP_ERR_NOT_SUPPORTED ? "ignoree : LiXee-Box Pro uniquement" : "invalide");
         } else if (!strcmp(a->type, "actiongroup")) {
             ESP_LOGW(TAG, "Groupe '%s' : action \"actiongroup\" imbriquee ignoree", g->name);
         } else {

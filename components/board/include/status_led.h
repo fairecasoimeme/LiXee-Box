@@ -9,6 +9,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,13 +51,18 @@ void status_led_user(bool on, uint8_t r, uint8_t g, uint8_t b, uint32_t blink_ms
 
 /**
  * Commande de l'etat utilisateur, commune a POST /api/led et aux actions "led"
- * des regles : mode "off", "on" ou "blink" ; color "#RRGGBB" (NULL ou "" :
- * blanc) ; brightness 0-100 ; period_ms periode complete du clignotement
- * (< 100 : 1000) ; duration_s extinction automatique (0 : sans fin).
- * Renvoie false si le mode ou la couleur est invalide (rien n'est change).
+ * des regles (LiXee-Box Pro uniquement) : mode "off", "on" ou "blink" ; color
+ * "#RRGGBB" (NULL ou "" : blanc) ; brightness 0-100 ; period_ms periode
+ * complete du clignotement (< 100 : 1000) ; duration_s extinction automatique
+ * (0 : sans fin).
+ * Retour : ESP_OK, ESP_ERR_NOT_SUPPORTED si la carte n'est pas une Pro,
+ * ESP_ERR_INVALID_ARG si le mode ou la couleur est invalide (rien n'est change).
  */
-bool status_led_command(const char *mode, const char *color, int brightness,
-                        uint32_t period_ms, uint32_t duration_s);
+esp_err_t status_led_command(const char *mode, const char *color, int brightness,
+                             uint32_t period_ms, uint32_t duration_s);
+
+/** Vrai si la LED se pilote par l'API et les regles (LiXee-Box Pro). */
+bool status_led_user_available(void);
 
 /**
  * Test materiel pendant duration_s secondes, prioritaire sur tout le reste :

@@ -247,9 +247,16 @@
   // Groupes d'actions (handleConfigActionGroups + HTTP_ACTION_GROUPS_JS)
   // ==========================================================================
 
-  var G = { groups: [], max: 8, maxActions: 10, edit: -1, cur: null, devs: null };
+  var G = { groups: [], max: 8, maxActions: 10, edit: -1, cur: null, devs: null, led: false };
+  var AG_LED_MODES = [['on', 'Allumer'], ['blink', 'Clignoter'], ['off', 'Éteindre']];
+
+  function agLedAction() {
+    return { type: 'led', mode: 'on', color: '#0096D6', brightness: 30, period: 1000, duration: 0 };
+  }
 
   function groupsLoad() {
+    // LED pilotable : LiXee-Box Pro uniquement
+    $.getJSON('/api/led').done(function(l) { G.led = !!(l && l.available); });
     $.getJSON('/api/actiongroups/list').done(function(d) {
       G.groups = (d && d.groups) || [];
       G.max = (d && d.max) || 8;
@@ -341,15 +348,36 @@
   function renderActs() {
     var h = '';
     G.cur.actions.forEach(function(a, j) {
-      // Seules les actions "Appareil" se configurent ici (comme sur la LiXee-Box) ;
-      // les autres types d'un fichier edite a la main sont conserves tels quels.
+      // Actions "Appareil" et "LED de la box" (Pro) ; les autres types d'un
+      // fichier edite a la main sont conserves tels quels.
+      var isLed = a.type === 'led';
+      var typeSel = (G.led || isLed) ? '<select class="form-select ag-type" data-j="' + j + '" style="width:150px">' +
+        '<option value="device"' + (isLed ? '' : ' selected') + '>Appareil</option>' +
+        '<option value="led"' + (isLed ? ' selected' : '') + '>LED de la box</option></select>' : '';
+      if (isLed) {
+        var color = /^#[0-9a-fA-F]{6}$/.test(a.color || '') ? a.color : '#0096D6';
+        h += '<div class="ag-act"><div class="ag-row">' + typeSel +
+          '<select class="form-select ag-led" data-j="' + j + '" data-k="mode" style="width:130px">' +
+          AG_LED_MODES.map(function(m) { return '<option value="' + m[0] + '"' + (m[0] === (a.mode || 'on') ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select>';
+        if (a.mode !== 'off') {
+          h += '<input type="color" class="form-control form-control-color ag-led" data-j="' + j + '" data-k="color" title="Couleur" value="' + esc(color) + '">' +
+            '<label class="ag-muted">Luminosité %</label><input type="number" class="form-control ag-led" data-j="' + j + '" data-k="brightness" min="1" max="100" style="width:80px" value="' + esc(a.brightness !== undefined ? a.brightness : 30) + '">';
+          if (a.mode === 'blink') {
+            h += '<label class="ag-muted">Période ms</label><input type="number" class="form-control ag-led" data-j="' + j + '" data-k="period" min="100" step="100" style="width:95px" value="' + esc(a.period || 1000) + '">';
+          }
+          h += '<label class="ag-muted">Durée s</label><input type="number" class="form-control ag-led" data-j="' + j + '" data-k="duration" min="0" style="width:85px" title="0 : reste allumée" value="' + esc(a.duration || 0) + '">';
+        }
+        h += '<span style="flex:1"></span><button type="button" class="btn btn-sm btn-danger ag-rm" data-j="' + j + '">Retirer</button></div>' +
+          (G.led ? '' : '<div class="ag-muted small mt-1">LiXee-Box Pro uniquement : action ignorée sur cette box.</div>') + '</div>';
+        return;
+      }
       if (a.type && a.type !== 'device') {
         h += '<div class="ag-act"><div class="ag-row"><span class="ag-muted">Action de type ' + esc(a.type) +
           ' (conservée telle quelle)</span><span style="flex:1"></span>' +
           '<button type="button" class="btn btn-sm btn-danger ag-rm" data-j="' + j + '">Retirer</button></div></div>';
         return;
       }
-      h += '<div class="ag-act"><div class="ag-row">' +
+      h += '<div class="ag-act"><div class="ag-row">' + typeSel +
         '<select class="form-select ag-dev" data-j="' + j + '" style="width:230px"><option value="">-- appareil --</option>';
       var known = false;
       G.devs.forEach(function(d) {
@@ -470,6 +498,22 @@
       if (G.cur.actions.length >= G.maxActions) { A.showAlert(G.maxActions + ' actions maximum par groupe', 'danger'); return; }
       G.cur.actions.push({ type: 'device', IEEE: '', actionName: '', endpoint: 1, command: -1, value: '' });
       renderActs();
+    });
+    page.on('change', '.ag-type', function() {
+      var j = parseInt($(this).attr('data-j'), 10);
+      G.cur.actions[j] = $(this).val() === 'led' ? agLedAction()
+        : { type: 'device', IEEE: '', actionName: '', endpoint: 1, command: -1, value: '' };
+      renderActs();
+    });
+    page.on('change', '.ag-led', function() {
+      var a = G.cur.actions[parseInt($(this).attr('data-j'), 10)];
+      var k = $(this).attr('data-k'), v = $(this).val();
+      if (k === 'mode') { a.mode = v; renderActs(); return; }
+      if (k === 'color') { a.color = String(v).toUpperCase(); return; }
+      var n = parseInt(v, 10);
+      if (k === 'brightness') a.brightness = Math.min(100, Math.max(1, n || 30));
+      else if (k === 'period') a.period = Math.max(100, n || 1000);
+      else a.duration = Math.max(0, n || 0);
     });
     page.on('click', '.ag-rm', function() {
       G.cur.actions.splice(parseInt($(this).attr('data-j'), 10), 1);

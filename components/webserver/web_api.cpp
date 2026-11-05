@@ -1708,8 +1708,8 @@ static esp_err_t api_scan_network_handler(httpd_req_t *req)
 }
 
 // ============================================================================
-// LED d'etat : GET /api/led (etat), POST /api/led (pilotage, meme forme que
-// pour les regles) :
+// LED d'etat : GET /api/led (etat ; "available" : pilotable, LiXee-Box Pro),
+// POST /api/led (pilotage, Pro uniquement, meme forme que pour les regles) :
 //   {"mode":"off"}                           eteint l'etat utilisateur
 //   {"mode":"on"|"blink", "color":"#RRGGBB", "brightness":0-100,
 //    "period":ms (blink, periode complete), "duration":s (0 : sans fin)}
@@ -1724,6 +1724,7 @@ static esp_err_t send_led_state(httpd_req_t *req)
     status_led_info_t st;
     status_led_get(&st);
     cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "available", status_led_user_available());
     cJSON_AddBoolToObject(root, "rgb", st.rgb);
     cJSON_AddStringToObject(root, "shown", st.shown);
     cJSON *u = cJSON_AddObjectToObject(root, "user");
@@ -1748,6 +1749,10 @@ static esp_err_t api_led_get_handler(httpd_req_t *req)
 
 static esp_err_t api_led_post_handler(httpd_req_t *req)
 {
+    if (!status_led_user_available()) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "LED pilotable uniquement sur la LiXee-Box Pro");
+        return ESP_OK;
+    }
     cJSON *doc = read_json_body(req, 256);
     if (!doc) return ESP_OK;
     const cJSON *mode = cJSON_GetObjectItem(doc, "mode");
@@ -1759,10 +1764,10 @@ static esp_err_t api_led_post_handler(httpd_req_t *req)
         const cJSON *c = cJSON_GetObjectItem(doc, "color");
         const cJSON *br = cJSON_GetObjectItem(doc, "brightness");
         const cJSON *per = cJSON_GetObjectItem(doc, "period");
-        if (!status_led_command(m, cJSON_IsString(c) ? c->valuestring : NULL,
-                                cJSON_IsNumber(br) ? br->valueint : 30,
-                                cJSON_IsNumber(per) && per->valuedouble > 0 ? (uint32_t)per->valuedouble : 0,
-                                duration)) {
+        if (status_led_command(m, cJSON_IsString(c) ? c->valuestring : NULL,
+                               cJSON_IsNumber(br) ? br->valueint : 30,
+                               cJSON_IsNumber(per) && per->valuedouble > 0 ? (uint32_t)per->valuedouble : 0,
+                               duration) != ESP_OK) {
             cJSON_Delete(doc);
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "color : #RRGGBB attendu");
             return ESP_OK;

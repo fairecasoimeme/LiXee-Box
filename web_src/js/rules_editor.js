@@ -554,7 +554,8 @@
   function addAction(listId, data) {
     var id = ++S.seq;
     var type = (data && data.type) || 'device';
-    var types = ACT_TYPES.slice();
+    // LED : LiXee-Box Pro uniquement (une action existante reste affichee)
+    var types = ACT_TYPES.filter(function(t) { return t[0] !== 'led' || S.led || type === 'led'; });
     if (type === 'onoff') types.push(['onoff', 'ON/OFF (ancien format)']);
     else if (!types.some(function(t) { return t[0] === type; })) types.push([type, esc(type) + ' (inconnu)']);
     var list = $('#' + listId);
@@ -626,7 +627,7 @@
           col(2, lbl('Luminosité %') + '<input type="number" class="form-control form-control-sm a-led-bri" min="1" max="100" value="' + esc(d.brightness !== undefined ? d.brightness : 30) + '">', 'a-led-on') +
           col(2, lbl('Période ms') + '<input type="number" class="form-control form-control-sm a-led-per" min="100" step="100" value="' + esc(d.period || 1000) + '">', 'a-led-blink') +
           col(3, lbl('Durée s') + '<input type="number" class="form-control form-control-sm a-led-dur" min="0" value="' + esc(d.duration || 0) + '" title="0 : reste allumée">', 'a-led-on')) +
-          '<div class="form-text small">Durée 0 : la LED reste dans cet état jusqu\'à une autre commande. Les indications système (appairage BLE, LoRa) restent prioritaires. Sans LED RGB, seule l\'extinction et l\'allumage comptent.</div>');
+          '<div class="form-text small">LiXee-Box Pro uniquement. Durée 0 : la LED reste dans cet état jusqu\'à une autre commande. Les indications système (appairage BLE, LoRa) restent prioritaires.</div>');
         onLedMode(card);
         break;
       }
@@ -976,10 +977,13 @@
     // Les groupes d'actions ne doivent jamais bloquer l'editeur
     var pGrp = $.Deferred();
     $.getJSON('/api/actiongroups/list').done(function(g) { pGrp.resolve(g); }).fail(function() { pGrp.resolve({ groups: [] }); });
+    var pLed = $.Deferred();
+    $.getJSON('/api/led').done(function(l) { pLed.resolve(l); }).fail(function() { pLed.resolve({}); });
     var pRule = S.mode === 'edit' ? $.getJSON('/api/rules/get', { name: name }) : $.Deferred().resolve(null);
-    $.when(pDev, pGrp, pRule).done(function(d, g, r) {
+    $.when(pDev, pGrp, pRule, pLed).done(function(d, g, r, l) {
       S.devices = unwrap(d) || {};
       S.groups = (unwrap(g) || {}).groups || [];
+      S.led = !!(unwrap(l) || {}).available;
       var rule = unwrap(r);
       A.setContent(formHtml());
       bindEvents();

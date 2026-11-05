@@ -222,23 +222,29 @@ void status_led_user(bool on, uint8_t r, uint8_t g, uint8_t b, uint32_t blink_ms
     xSemaphoreGive(s_mtx);
 }
 
-bool status_led_command(const char *mode, const char *color, int brightness,
-                        uint32_t period_ms, uint32_t duration_s)
+bool status_led_user_available(void)
 {
-    if (!mode) return false;
+    return board_type() == BOARD_PRO;
+}
+
+esp_err_t status_led_command(const char *mode, const char *color, int brightness,
+                             uint32_t period_ms, uint32_t duration_s)
+{
+    if (!status_led_user_available()) return ESP_ERR_NOT_SUPPORTED;
+    if (!mode) return ESP_ERR_INVALID_ARG;
     if (!strcmp(mode, "off")) {
         status_led_user(false, 0, 0, 0, 0, 0);
-        return true;
+        return ESP_OK;
     }
     bool blink = !strcmp(mode, "blink");
-    if (!blink && strcmp(mode, "on")) return false;
+    if (!blink && strcmp(mode, "on")) return ESP_ERR_INVALID_ARG;
     uint32_t rgb = 0xFFFFFF;
     if (color && color[0]) {
         const char *s = color[0] == '#' ? color + 1 : color;
-        if (strlen(s) != 6) return false;
+        if (strlen(s) != 6) return ESP_ERR_INVALID_ARG;
         rgb = 0;
         for (int i = 0; i < 6; i++) {
-            if (!isxdigit((unsigned char)s[i])) return false;
+            if (!isxdigit((unsigned char)s[i])) return ESP_ERR_INVALID_ARG;
             char c = (char)tolower((unsigned char)s[i]);
             rgb = (rgb << 4) | (uint32_t)(c <= '9' ? c - '0' : c - 'a' + 10);
         }
@@ -248,7 +254,7 @@ bool status_led_command(const char *mode, const char *color, int brightness,
     uint32_t half = blink ? (period_ms >= 100 ? period_ms : 1000) / 2 : 0;
     status_led_user(true, ((rgb >> 16) & 0xFF) * brightness / 100, ((rgb >> 8) & 0xFF) * brightness / 100,
                     (rgb & 0xFF) * brightness / 100, half, duration_s);
-    return true;
+    return ESP_OK;
 }
 
 static void test_start(bool gpio, int hold, uint32_t duration_s);

@@ -533,7 +533,7 @@ void rule_action_to_json(sb_t *sb, const rule_action_t *a, act_style_t style)
     sb_close(sb, '}');
 }
 
-bool rule_action_led(const rule_action_t *a)
+esp_err_t rule_action_led(const rule_action_t *a)
 {
     return status_led_command(a->ledMode, a->color, a->brightness,
                               a->period > 0 ? (uint32_t)a->period : 0,

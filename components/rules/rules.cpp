@@ -1328,8 +1328,10 @@ static void dispatch_action(const rule_t *r, const rule_action_t *a, eval_ctx_t 
     } else if (!strcmp(a->type, "notification")) {
         notify_from_rule(r, a, x);
     } else if (!strcmp(a->type, "led")) {
-        ESP_LOGI(TAG, "Action : LED %s %s (regle '%s')", a->ledMode, a->color, r->name);
-        if (!rule_action_led(a)) ESP_LOGW(TAG, "Action LED invalide (regle '%s')", r->name);
+        esp_err_t e = rule_action_led(a);
+        if (e == ESP_OK) ESP_LOGI(TAG, "Action : LED %s %s (regle '%s')", a->ledMode, a->color, r->name);
+        else ESP_LOGW(TAG, "Action LED %s (regle '%s')",
+                      e == ESP_ERR_NOT_SUPPORTED ? "ignoree : LiXee-Box Pro uniquement" : "invalide", r->name);
     } else if (!strcmp(a->type, "actiongroup")) {
         // Le groupe est designe par son NOM : un index se decalerait a la
         // suppression d'un autre groupe.

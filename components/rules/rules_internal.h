@@ -66,8 +66,11 @@ bool rule_action_from_text(const char *text, size_t len, rule_action_t *act);
 /** Vrai pour les actions qui emettent une commande Zigbee (file cadencee). */
 bool rule_action_is_radio(const rule_action_t *a);
 
-/** Execute une action "led" (locale, immediate). false : parametres invalides. */
-bool rule_action_led(const rule_action_t *a);
+/**
+ * Execute une action "led" (locale, immediate). ESP_ERR_NOT_SUPPORTED hors
+ * LiXee-Box Pro, ESP_ERR_INVALID_ARG si les parametres sont invalides.
+ */
+esp_err_t rule_action_led(const rule_action_t *a);
 
 // ----------------------------------------------------------------------------
 // Constructeur de chaine JSON en PSRAM (evite cJSON pour les sorties : ses noeuds
