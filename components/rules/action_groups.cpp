@@ -283,6 +283,9 @@ static int run_locked(int idx)
                 free(msg);
             }
             sent++;
+        } else if (!strcmp(a->type, "led")) {
+            if (rule_action_led(a)) sent++;
+            else ESP_LOGW(TAG, "Groupe '%s' : action LED invalide", g->name);
         } else if (!strcmp(a->type, "actiongroup")) {
             ESP_LOGW(TAG, "Groupe '%s' : action \"actiongroup\" imbriquee ignoree", g->name);
         } else {

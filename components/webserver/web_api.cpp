@@ -30,6 +30,7 @@
 #include "web_compat.h"
 #include "maintenance.h"
 #include "board.h"
+#include "status_led.h"
 #include "ntp_sync.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -1706,6 +1707,79 @@ static esp_err_t api_scan_network_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+// ============================================================================
+// LED d'etat : GET /api/led (etat), POST /api/led (pilotage, meme forme que
+// pour les regles) :
+//   {"mode":"off"}                           eteint l'etat utilisateur
+//   {"mode":"on"|"blink", "color":"#RRGGBB", "brightness":0-100,
+//    "period":ms (blink, periode complete), "duration":s (0 : sans fin)}
+//   {"mode":"test", "duration":s}            rouge, vert, bleu, blanc (1 s chacun)
+//   {"mode":"gpio", "duration":s}            GPIO 3 a 3,3 V / 0 V chaque seconde
+//   {"mode":"gpio", "level":0|1, "duration":s}  GPIO 3 maintenu a 0 V ou 3,3 V
+// Les etats systeme (appairage BLE, LoRa) restent prioritaires sur "on"/"blink".
+// ============================================================================
+
+static esp_err_t send_led_state(httpd_req_t *req)
+{
+    status_led_info_t st;
+    status_led_get(&st);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddBoolToObject(root, "rgb", st.rgb);
+    cJSON_AddStringToObject(root, "shown", st.shown);
+    cJSON *u = cJSON_AddObjectToObject(root, "user");
+    cJSON_AddBoolToObject(u, "on", st.user_on);
+    char color[8];
+    snprintf(color, sizeof(color), "#%02X%02X%02X", st.r, st.g, st.b);
+    cJSON_AddStringToObject(u, "color", color);
+    cJSON_AddNumberToObject(u, "period", st.blink_ms * 2);
+    cJSON_AddNumberToObject(u, "remaining", st.remaining_s);
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    httpd_resp_set_type(req, "application/json");
+    esp_err_t r = httpd_resp_sendstr(req, json ? json : "{}");
+    free(json);
+    return r;
+}
+
+static esp_err_t api_led_get_handler(httpd_req_t *req)
+{
+    return send_led_state(req);
+}
+
+static esp_err_t api_led_post_handler(httpd_req_t *req)
+{
+    cJSON *doc = read_json_body(req, 256);
+    if (!doc) return ESP_OK;
+    const cJSON *mode = cJSON_GetObjectItem(doc, "mode");
+    const cJSON *dur = cJSON_GetObjectItem(doc, "duration");
+    uint32_t duration = cJSON_IsNumber(dur) && dur->valuedouble > 0 ? (uint32_t)dur->valuedouble : 0;
+    const char *m = cJSON_IsString(mode) ? mode->valuestring : "";
+
+    if (!strcmp(m, "off") || !strcmp(m, "on") || !strcmp(m, "blink")) {
+        const cJSON *c = cJSON_GetObjectItem(doc, "color");
+        const cJSON *br = cJSON_GetObjectItem(doc, "brightness");
+        const cJSON *per = cJSON_GetObjectItem(doc, "period");
+        if (!status_led_command(m, cJSON_IsString(c) ? c->valuestring : NULL,
+                                cJSON_IsNumber(br) ? br->valueint : 30,
+                                cJSON_IsNumber(per) && per->valuedouble > 0 ? (uint32_t)per->valuedouble : 0,
+                                duration)) {
+            cJSON_Delete(doc);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "color : #RRGGBB attendu");
+            return ESP_OK;
+        }
+    } else if (!strcmp(m, "gpio") && cJSON_IsNumber(cJSON_GetObjectItem(doc, "level"))) {
+        status_led_gpio_hold(cJSON_GetObjectItem(doc, "level")->valueint, duration ? duration : 60);
+    } else if (!strcmp(m, "test") || !strcmp(m, "gpio")) {
+        status_led_test(!strcmp(m, "gpio"), duration ? duration : (m[0] == 't' ? 16 : 20));
+    } else {
+        cJSON_Delete(doc);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "mode : off, on, blink, test ou gpio");
+        return ESP_OK;
+    }
+    cJSON_Delete(doc);
+    return send_led_state(req);
+}
+
 esp_err_t web_api_register_handlers(httpd_handle_t server)
 {
     // --- Zigbee API ---
@@ -1743,6 +1817,14 @@ esp_err_t web_api_register_handlers(httpd_handle_t server)
 
     uri = { .uri = "/api/system/reboot", .method = HTTP_POST,
             .handler = api_system_reboot_handler, .user_ctx = NULL };
+    web_server_register_uri(server, &uri);
+
+    uri = { .uri = "/api/led", .method = HTTP_GET,
+            .handler = api_led_get_handler, .user_ctx = NULL };
+    web_server_register_uri(server, &uri);
+
+    uri = { .uri = "/api/led", .method = HTTP_POST,
+            .handler = api_led_post_handler, .user_ctx = NULL };
     web_server_register_uri(server, &uri);
 
     // --- WiFi Config API ---

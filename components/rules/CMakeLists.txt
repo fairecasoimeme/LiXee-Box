@@ -17,4 +17,5 @@ idf_component_register(
         energy_service
         config_manager
         ntp_sync
+        board
 )

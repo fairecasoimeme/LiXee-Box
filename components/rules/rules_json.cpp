@@ -5,6 +5,7 @@
 // ============================================================================
 
 #include "rules_internal.h"
+#include "status_led.h"
 #include "zigate_devices.h"
 #include "ntp_sync.h"
 #include "esp_heap_caps.h"
@@ -477,6 +478,11 @@ void rule_action_from_json(const cJSON *a, rule_action_t *act)
     act->sourceAttribute = (int32_t)jint(a, "sourceAttribute", 0);
     act->coefficient     = jnum(a, "coefficient", 1.0);
     act->offset          = jnum(a, "offset", 0.0);
+    jcopy(act->ledMode, sizeof(act->ledMode), jstr(a, "mode", "on"));
+    jcopy(act->color, sizeof(act->color), jstr(a, "color", "#FFFFFF"));
+    act->brightness = (int32_t)jint(a, "brightness", 30);
+    act->period     = (int32_t)jint(a, "period", 1000);
+    act->duration   = (int32_t)jint(a, "duration", 0);
 }
 
 bool rule_action_from_text(const char *text, size_t len, rule_action_t *act)
@@ -517,7 +523,21 @@ void rule_action_to_json(sb_t *sb, const rule_action_t *a, act_style_t style)
         sb_knum(sb, "coefficient", a->coefficient);
         sb_knum(sb, "offset", a->offset);
     }
+    if (!strcmp(a->type, "led")) {
+        sb_kstr(sb, "mode", a->ledMode);
+        sb_kstr(sb, "color", a->color);
+        sb_kint(sb, "brightness", a->brightness);
+        sb_kint(sb, "period", a->period);
+        sb_kint(sb, "duration", a->duration);
+    }
     sb_close(sb, '}');
+}
+
+bool rule_action_led(const rule_action_t *a)
+{
+    return status_led_command(a->ledMode, a->color, a->brightness,
+                              a->period > 0 ? (uint32_t)a->period : 0,
+                              a->duration > 0 ? (uint32_t)a->duration : 0);
 }
 
 bool rule_action_is_radio(const rule_action_t *a)

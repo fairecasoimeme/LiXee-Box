@@ -109,7 +109,8 @@
     ['datetime', 'Date et heure'], ['day', 'Jour du mois'], ['month', 'Mois']
   ];
   var ACT_TYPES = [['device', 'Appareil'], ['dynamic', 'Valeur dynamique'],
-                   ['actiongroup', 'Groupe d\'actions'], ['notification', 'Notification']];
+                   ['actiongroup', 'Groupe d\'actions'], ['notification', 'Notification'], ['led', 'LED de la box']];
+  var LED_MODES = [['on', 'Allumer'], ['blink', 'Clignoter'], ['off', 'Éteindre']];
   var OPS = [['==', '=='], ['!=', '!='], ['<', '&lt;'], ['<=', '&le;'], ['>', '&gt;'], ['>=', '&ge;']];
   var DAY_NAMES = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
   var DAY_SHORT = ['', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -617,6 +618,18 @@
           col(7, lbl('Message') + '<input type="text" class="form-control form-control-sm a-msg" maxlength="255" value="' + esc(d.message || '') + '">')) +
           '<div class="form-text small">Variables : {rule} {date} {time} {value} {device} {threshold} {value_N} {device_N}</div>');
         break;
+      case 'led': {
+        var mode = d.mode || 'on';
+        var color = /^#[0-9a-fA-F]{6}$/.test(d.color || '') ? d.color : '#0096D6';
+        w.html(row(col(3, lbl('LED') + selectHtml('a-led-mode', LED_MODES, mode)) +
+          col(2, lbl('Couleur') + '<input type="color" class="form-control form-control-sm form-control-color a-led-color" value="' + esc(color) + '">', 'a-led-on') +
+          col(2, lbl('Luminosité %') + '<input type="number" class="form-control form-control-sm a-led-bri" min="1" max="100" value="' + esc(d.brightness !== undefined ? d.brightness : 30) + '">', 'a-led-on') +
+          col(2, lbl('Période ms') + '<input type="number" class="form-control form-control-sm a-led-per" min="100" step="100" value="' + esc(d.period || 1000) + '">', 'a-led-blink') +
+          col(3, lbl('Durée s') + '<input type="number" class="form-control form-control-sm a-led-dur" min="0" value="' + esc(d.duration || 0) + '" title="0 : reste allumée">', 'a-led-on')) +
+          '<div class="form-text small">Durée 0 : la LED reste dans cet état jusqu\'à une autre commande. Les indications système (appairage BLE, LoRa) restent prioritaires. Sans LED RGB, seule l\'extinction et l\'allumage comptent.</div>');
+        onLedMode(card);
+        break;
+      }
       case 'onoff':
         w.html(row(col(5, lbl('Appareil') + '<select class="form-select form-select-sm a-dev" required>' + deviceOptions(d.IEEE || '', hasCluster0006) + '</select>') +
           col(3, lbl('Endpoint') + '<input type="number" class="form-control form-control-sm a-ep" min="1" value="' + esc(ep) + '">') +
@@ -626,6 +639,12 @@
         w.html('<div class="small text-muted pt-4">Action de type non géré par l\'éditeur (conservée telle quelle).</div>');
         card.data('raw', d);
     }
+  }
+
+  function onLedMode(card) {
+    var m = card.find('.a-led-mode').val();
+    card.find('.a-led-on').toggle(m !== 'off');
+    card.find('.a-led-blink').toggle(m === 'blink');
   }
 
   // Selection d'une action : endpoint du template, champ position si volet
@@ -661,6 +680,12 @@
       a.value = card.find('.a-onoff').val();
     } else if (t === 'actiongroup') {
       a.actionName = card.find('.a-group').val();
+    } else if (t === 'led') {
+      a.mode = card.find('.a-led-mode').val();
+      a.color = String(card.find('.a-led-color').val() || '#FFFFFF').toUpperCase();
+      a.brightness = Math.min(100, Math.max(0, parseInt(card.find('.a-led-bri').val(), 10) || 30));
+      a.period = Math.max(100, parseInt(card.find('.a-led-per').val(), 10) || 1000);
+      a.duration = Math.max(0, parseInt(card.find('.a-led-dur').val(), 10) || 0);
     } else {
       a.title = card.find('.a-title').val();
       a.message = card.find('.a-msg').val();
@@ -787,6 +812,12 @@
         return (a.value === '1' ? 'allumer' : a.value === '0' ? 'éteindre' : 'basculer') + ' <i>' + esc(devLabel(a.IEEE)) + '</i>';
       case 'notification': return 'envoyer la notification « ' + esc(a.title || '...') + ' »';
       case 'actiongroup': return 'déclencher le groupe d’actions <b>' + esc(a.actionName || '?') + '</b>';
+      case 'led': {
+        if (a.mode === 'off') return 'éteindre la LED de la box';
+        var lt = (a.mode === 'blink' ? 'faire clignoter' : 'allumer') + ' la LED en <span style="display:inline-block;width:.9em;height:.9em;border-radius:50%;vertical-align:middle;background:' +
+          esc(a.color) + '"></span> <b>' + esc(a.color) + '</b> à ' + esc(a.brightness) + ' %';
+        return lt + (a.duration > 0 ? ' pendant ' + esc(a.duration) + ' s' : '');
+      }
       default: return '...';
     }
   }
@@ -896,6 +927,7 @@
       onActionName(card, false);
     });
     f.on('change', '.a-name', function() { onActionName($(this).closest('.action-item'), true); });
+    f.on('change', '.a-led-mode', function() { onLedMode($(this).closest('.action-item')); });
     f.on('change', '.a-src', function() {
       var card = $(this).closest('.action-item');
       card.find('.a-scl').html(clusterOptions($(this).val()));

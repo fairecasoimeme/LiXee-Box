@@ -35,7 +35,7 @@
 // Action (meme structure pour les regles et les groupes d'actions)
 // ----------------------------------------------------------------------------
 typedef struct {
-    char    type[RULES_TYPE_LEN];         // device, dynamic, onoff, notification, actiongroup
+    char    type[RULES_TYPE_LEN];         // device, dynamic, onoff, notification, actiongroup, led
     char    IEEE[RULES_IEEE_LEN];
     char    actionName[RULES_ACTNAME_LEN];
     int32_t endpoint;
@@ -48,6 +48,12 @@ typedef struct {
     int32_t sourceAttribute;
     double  coefficient;
     double  offset;
+    // led : memes champs que POST /api/led
+    char    ledMode[8];                   // on, blink, off
+    char    color[8];                     // #RRGGBB
+    int32_t brightness;                   // 0-100
+    int32_t period;                       // ms, periode complete (blink)
+    int32_t duration;                     // s, 0 : sans fin
 } rule_action_t;
 
 /** Style d'ecriture d'une action : celui de web.cpp (regles) ou d'actionGroups.cpp. */
@@ -59,6 +65,9 @@ bool rule_action_from_text(const char *text, size_t len, rule_action_t *act);
 
 /** Vrai pour les actions qui emettent une commande Zigbee (file cadencee). */
 bool rule_action_is_radio(const rule_action_t *a);
+
+/** Execute une action "led" (locale, immediate). false : parametres invalides. */
+bool rule_action_led(const rule_action_t *a);
 
 // ----------------------------------------------------------------------------
 // Constructeur de chaine JSON en PSRAM (evite cJSON pour les sorties : ses noeuds
