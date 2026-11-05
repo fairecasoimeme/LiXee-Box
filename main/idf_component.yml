@@ -8,7 +8,7 @@ dependencies:
   ## SDK Matter Espressif (ConnectedHomeIP / CHIP)
   ## Inclut : esp_matter, esp_matter_core, chip
   espressif/esp_matter:
-    version: ">=1.3.0"
+    version: "~1.5.1"
     rules:
       - if: "idf_version >=5.3"
 

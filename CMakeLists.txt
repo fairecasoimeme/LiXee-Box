@@ -36,6 +36,16 @@ set_source_files_properties(
     DIRECTORY "${_matter_dir}"
     PROPERTIES HEADER_FILE_ONLY TRUE)
 
+# esp-matter 1.5.1 : MatterCommodityMeteringPluginServerInitCallback() est
+# defini (vide) a la fois par esp_matter_plugin_server_init_callbacks.cpp et
+# par commodity-metering-server.cpp, d'ou une double definition des que le
+# pont utilise ce serveur. Renommee dans ce seul fichier.
+set_source_files_properties(
+    "${_matter_dir}/connectedhomeip/connectedhomeip/src/app/clusters/commodity-metering-server/commodity-metering-server.cpp"
+    DIRECTORY "${_matter_dir}"
+    PROPERTIES COMPILE_DEFINITIONS
+        "MatterCommodityMeteringPluginServerInitCallback=LixeeUnusedCommodityMeteringPluginServerInitCallback")
+
 # Fichiers web : sources editables dans web_src/, compressees (gzip) vers
 # data/web/*.gz avant chaque image LittleFS. Le serveur sert la version .gz.
 add_custom_target(web_gz

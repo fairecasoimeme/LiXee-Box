@@ -19,10 +19,12 @@
 #include "matter_device_manager.h"
 #include "elec_power_delegate.h"
 #include "zigate_devices.h"
+#include "device_data.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 // esp-matter SDK
 #include <esp_matter.h>
@@ -31,7 +33,9 @@
 #include <esp_matter_feature.h>
 #include <esp_matter_event.h>
 #include <esp_matter_delegate_callbacks.h>
-#include <app/clusters/electrical-energy-measurement-server/electrical-energy-measurement-server.h>
+#include <app/clusters/electrical-energy-measurement-server/ElectricalEnergyMeasurementCluster.h>
+#include <app/clusters/meter-identification-server/meter-identification-server.h>
+#include <app/clusters/commodity-metering-server/commodity-metering-server.h>
 #include <app/reporting/reporting.h>
 #include <app/server/Server.h>
 #include <setup_payload/OnboardingCodesUtil.h>
@@ -84,26 +88,28 @@ typedef struct {
 } energy_state_t;
 
 static energy_state_t s_energy[MATTER_BRIDGE_MAX_ENDPOINTS];
+
+// esp-matter 1.5.1 reference ce callback (cluster door_lock) sans plus le
+// fournir ; la 1.4.2 en avait une version faible vide. Meme comportement.
+void emberAfDoorLockClusterInitCallback(chip::EndpointId endpoint) {}
 static int s_energy_count = 0;
 
 // ============================================================================
 // Verrou de la pile CHIP
 // ============================================================================
 
-// Renvoie false si le verrou n'a pas pu etre pris. 'held' indique s'il faut le
-// relacher (faux si la tache courante le tenait deja).
+// 'held' indique s'il faut relacher le verrou (faux si la tache courante le
+// tenait deja). esp-matter 1.5 ne publie plus chip_stack_lock() : meme logique
+// que lock::ScopedChipStackLock, avec PlatformMgr.
 static bool stack_lock(bool *held)
 {
-    lock::status_t st = lock::chip_stack_lock(portMAX_DELAY);
-    *held = (st == lock::SUCCESS);
-    return st != lock::FAILED;
+    *held = lixee_chip_lock();
+    return true;
 }
 
 static void stack_unlock(bool held)
 {
-    if (held) {
-        lock::chip_stack_unlock();
-    }
+    lixee_chip_unlock(held);
 }
 
 // ============================================================================
@@ -274,6 +280,23 @@ static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *labe
 // sur un endpoint bridged_node deja cree
 // ============================================================================
 
+// Matter 1.5 : compteur du distributeur (device type Electrical Utility Meter)
+// avec Meter Identification (n de serie, puissance souscrite) et Commodity
+// Metering (index par tarif). Valeurs : linky_apply().
+static void add_linky_clusters(endpoint_t *ep)
+{
+    endpoint::electrical_utility_meter::config_t um_cfg;
+    endpoint::electrical_utility_meter::add(ep, &um_cfg);
+    cluster_t *mi = cluster::get(ep, MeterIdentification::Id);
+    if (mi) {
+        cluster::meter_identification::feature::power_threshold::add(mi);
+        // Attribut facultatif (TIC historique / standard), absent sans cela
+        cluster::meter_identification::attribute::create_protocol_version(mi, NULL, 0);
+    }
+    cluster::commodity_metering::config_t cm_cfg;
+    cluster::commodity_metering::create(ep, &cm_cfg, CLUSTER_FLAG_SERVER);
+}
+
 static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t device_type)
 {
     switch (device_type) {
@@ -289,8 +312,8 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
         break;
     }
     case MATTER_DEV_ON_OFF_PLUG: {
-        endpoint::on_off_plugin_unit::config_t cfg;
-        endpoint::on_off_plugin_unit::add(ep, &cfg);
+        endpoint::on_off_plug_in_unit::config_t cfg;
+        endpoint::on_off_plug_in_unit::add(ep, &cfg);
         break;
     }
     case MATTER_DEV_TEMPERATURE_SENSOR: {
@@ -319,8 +342,8 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
         break;
     }
     case MATTER_DEV_WINDOW_COVERING: {
-        endpoint::window_covering_device::config_t cfg;
-        endpoint::window_covering_device::add(ep, &cfg);
+        endpoint::window_covering::config_t cfg;
+        endpoint::window_covering::add(ep, &cfg);
         break;
     }
     case MATTER_DEV_THERMOSTAT: {
@@ -358,6 +381,8 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
             cluster::electrical_energy_measurement::feature::cumulative_energy::get_id();
         cluster::electrical_energy_measurement::create(ep, &eem_cfg, CLUSTER_FLAG_SERVER);
 
+        add_linky_clusters(ep);
+
         // Stocker le delegate pour pouvoir le mettre a jour plus tard
         if (s_elec_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
             s_elec_delegates[s_elec_delegate_count] = delegate;
@@ -369,8 +394,8 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
     default:
         ESP_LOGW(TAG, "Unsupported device type 0x%04X, creating as on_off_plugin_unit",
                  device_type);
-        endpoint::on_off_plugin_unit::config_t cfg;
-        endpoint::on_off_plugin_unit::add(ep, &cfg);
+        endpoint::on_off_plug_in_unit::config_t cfg;
+        endpoint::on_off_plug_in_unit::add(ep, &cfg);
         break;
     }
     return ESP_OK;
@@ -429,8 +454,8 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
             endpoint::on_off_light::config_t cfg;
             endpoint::on_off_light::add(ep, &cfg);
         } else {
-            endpoint::on_off_plugin_unit::config_t cfg;
-            endpoint::on_off_plugin_unit::add(ep, &cfg);
+            endpoint::on_off_plug_in_unit::config_t cfg;
+            endpoint::on_off_plug_in_unit::add(ep, &cfg);
         }
     }
     if (caps & MCAP_TEMPERATURE) {
@@ -466,11 +491,11 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         endpoint::contact_sensor::add(ep, &cfg);
     }
     if (caps & MCAP_COVER) {
-        endpoint::window_covering_device::config_t cfg(0);
+        endpoint::window_covering::config_t cfg(0);
         cfg.window_covering.feature_flags =
             cluster::window_covering::feature::lift::get_id() |
             cluster::window_covering::feature::position_aware_lift::get_id();
-        endpoint::window_covering_device::add(ep, &cfg);
+        endpoint::window_covering::add(ep, &cfg);
     }
     if (caps & MCAP_THERMOSTAT) {
         endpoint::thermostat::config_t cfg;
@@ -504,6 +529,7 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
     }
     if (caps & (MCAP_ELECTRICAL | MCAP_ENERGY)) {
         add_electrical_clusters(ep, (caps & MCAP_ELECTRICAL) != 0, (caps & MCAP_ENERGY) != 0);
+        if (p->zlinky && (caps & MCAP_ENERGY)) add_linky_clusters(ep);
     }
     if (caps & MCAP_BATTERY) {
         // Power Source sur l'endpoint ponte : etat de la pile de l'appareil
@@ -582,9 +608,203 @@ static energy_state_t *energy_state_for(int endpoint_id)
     return NULL;
 }
 
+// ============================================================================
+// Matter 1.5 : identification du compteur et index par tarif (ZLinky)
+//
+// Clusters provisoires de Matter 1.5 (Meter Identification 0x0B06, Commodity
+// Metering 0x0B07) sur l'endpoint compteur d'un ZLinky. Les instances restent
+// enregistrees pour la duree du programme : un endpoint retire puis remis
+// (meme numero) reprend la sienne.
+// ============================================================================
+
+typedef struct {
+    int      endpoint_id;
+    uint64_t ieee;
+    MeterIdentification::Instance *mi;
+    CommodityMetering::Instance   *cm;
+    uint16_t cm_mask;                       // index publies (bit = tarif)
+    int64_t  cm_kwh[ENERGY_TIER_COUNT];
+} linky_state_t;
+
+static linky_state_t s_linky[MATTER_BRIDGE_MAX_ENDPOINTS];
+static int s_linky_count = 0;
+
+// Index EASF01..EASF10 publies sous les identifiants de composante tarifaire
+// 1..10 (pas encore de cluster Commodity Tariff pour les decrire).
+static const uint32_t k_tier_component_ids[ENERGY_TIER_COUNT] = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+
+// Commodity Metering : Quantity est exprimee dans l'unite de TariffUnit (kWh)
+#define LINKY_WH_PER_QUANTITY 1000
+
+// Secondes entre l'epoch Unix et l'epoch Matter (01/01/2000 UTC)
+#define MATTER_EPOCH_OFFSET_S 946684800
+
+typedef struct {
+    bool    histo;
+    bool    has_serial;
+    char    serial[24];
+    bool    has_power;
+    int64_t power_va;
+} linky_info_t;
+
+// Les entrees ne sont qu'ajoutees, sous le verrou de la pile
+static linky_state_t *linky_state_for(int endpoint_id)
+{
+    for (int i = 0; i < s_linky_count; i++) {
+        if (s_linky[i].endpoint_id == endpoint_id) return &s_linky[i];
+    }
+    return NULL;
+}
+
+// Appele verrou de la pile tenu, une fois l'endpoint active.
+static void linky_endpoint_init(uint16_t ep_id, uint64_t ieee)
+{
+    linky_state_t *ls = linky_state_for(ep_id);
+    if (!ls) {
+        if (s_linky_count >= MATTER_BRIDGE_MAX_ENDPOINTS) return;
+        ls = &s_linky[s_linky_count];
+        memset(ls, 0, sizeof(*ls));
+        ls->endpoint_id = ep_id;
+
+        ls->mi = new MeterIdentification::Instance(ep_id,
+            chip::BitMask<MeterIdentification::Feature>(MeterIdentification::Feature::kPowerThreshold));
+        if (ls->mi->Init() != CHIP_NO_ERROR) {
+            ESP_LOGE(TAG, "MeterIdentification ep=%u : echec d'initialisation", ep_id);
+            delete ls->mi;
+            ls->mi = nullptr;
+        } else {
+            ls->mi->SetMeterType(chip::app::DataModel::MakeNullable(MeterIdentification::MeterTypeEnum::kUtility));
+        }
+
+        ls->cm = new CommodityMetering::Instance(ep_id);
+        if (ls->cm->Init() != CHIP_NO_ERROR) {
+            ESP_LOGE(TAG, "CommodityMetering ep=%u : echec d'initialisation", ep_id);
+            delete ls->cm;
+            ls->cm = nullptr;
+        } else {
+            ls->cm->SetMaximumMeteredQuantities(chip::app::DataModel::MakeNullable<uint16_t>(ENERGY_TIER_COUNT));
+            ls->cm->SetTariffUnit(chip::app::DataModel::MakeNullable(Globals::TariffUnitEnum::kKWh));
+        }
+        s_linky_count++;
+    }
+    ls->ieee    = ieee;
+    ls->cm_mask = 0;   // republier les index au prochain rapport
+}
+
+static bool dd_hex_num(uint64_t ieee, uint16_t cl, uint16_t at, int64_t *out)
+{
+    char buf[DEVDATA_VALUE_LEN];
+    if (device_data_get_value(ieee, cl, at, buf, sizeof(buf)) != ESP_OK || !buf[0]) return false;
+    *out = (int64_t)strtoull(buf, NULL, 16);
+    return true;
+}
+
+// Lu hors du verrou de la pile : device_data a son propre verrou.
+static void linky_read_info(uint64_t ieee, linky_info_t *li)
+{
+    memset(li, 0, sizeof(*li));
+
+    // ADSC (0702/0x0308) : octets BCD stockes en hexa ("022076206405"),
+    // texte encode en hexa, ou texte en clair (fiche 2.x)
+    char buf[DEVDATA_VALUE_LEN];
+    if (device_data_get_value(ieee, 0x0702, 0x0308, buf, sizeof(buf)) == ESP_OK && buf[0]) {
+        char txt[sizeof(li->serial)];
+        size_t n = 0;
+        bool text = device_data_value_is_hex(buf);
+        for (size_t i = 0; text && buf[i] && buf[i + 1]; i += 2) {
+            char hx[3] = { buf[i], buf[i + 1], 0 };
+            long c = strtol(hx, NULL, 16);
+            if (c < 0x20 || c > 0x7E || n + 1 >= sizeof(txt)) text = false;
+            else txt[n++] = (char)c;
+        }
+        txt[n] = '\0';
+        strlcpy(li->serial, (text && n) ? txt : buf, sizeof(li->serial));
+        li->has_serial = li->serial[0] != '\0';
+    }
+
+    // Puissance souscrite, comme energy_service : ISOUSC x 200 VA par phase
+    // (historique), PREF en kVA (standard, a defaut 0B01/13)
+    int64_t mode = -1, v = 0;
+    dd_hex_num(ieee, 0xFF66, 0x0300, &mode);
+    li->histo = (mode == 0 || mode == 2);
+    bool tri  = (mode == 2 || mode == 3 || mode == 7);
+    if (li->histo) {
+        if (dd_hex_num(ieee, 0x0B01, 13, &v) && v > 0) {
+            li->has_power = true;
+            li->power_va  = v * 200 * (tri ? 3 : 1);
+        }
+    } else if ((dd_hex_num(ieee, 0x0B01, 14, &v) && v > 0) || (dd_hex_num(ieee, 0x0B01, 13, &v) && v > 0)) {
+        li->has_power = true;
+        li->power_va  = v * 1000;
+    }
+}
+
+// Appele verrou de la pile tenu. Les Set* du serveur ne signalent un
+// changement aux abonnes que si la valeur change.
+static void linky_apply(linky_state_t *ls, const linky_info_t *li, const energy_state_t *st)
+{
+    using chip::app::DataModel::List;
+    using chip::app::DataModel::MakeNullable;
+    using chip::app::DataModel::Nullable;
+
+    if (ls->mi) {
+        ls->mi->SetProtocolVersion(MakeNullable(
+            chip::CharSpan::fromCharString(li->histo ? "TIC historique" : "TIC standard")));
+
+        Nullable<chip::CharSpan> serial;
+        if (li->has_serial) serial.SetNonNull(chip::CharSpan::fromCharString(li->serial));
+        ls->mi->SetMeterSerialNumber(serial);
+
+        Nullable<Globals::Structs::PowerThresholdStruct::Type> threshold;
+        if (li->has_power) {
+            Globals::Structs::PowerThresholdStruct::Type t;
+            t.apparentPowerThreshold.SetValue(li->power_va * 1000);   // VA -> mVA
+            t.powerThresholdSource.SetNonNull(Globals::PowerThresholdSourceEnum::kContract);
+            threshold.SetNonNull(t);
+        }
+        ls->mi->SetPowerThreshold(threshold);
+    }
+
+    if (!ls->cm || !st || !st->tier_mask) return;
+
+    int64_t kwh[ENERGY_TIER_COUNT] = {};
+    bool same = (st->tier_mask == ls->cm_mask);
+    for (int t = 0; t < ENERGY_TIER_COUNT; t++) {
+        if (!(st->tier_mask & (1u << t))) continue;
+        kwh[t] = (int64_t)(st->tier_wh[t] / LINKY_WH_PER_QUANTITY);
+        if (kwh[t] != ls->cm_kwh[t]) same = false;
+    }
+    if (same) return;
+
+    CommodityMetering::Structs::MeteredQuantityStruct::Type q[ENERGY_TIER_COUNT];
+    size_t n = 0;
+    for (int t = 0; t < ENERGY_TIER_COUNT; t++) {
+        if (!(st->tier_mask & (1u << t))) continue;
+        q[n].tariffComponentIDs = List<const uint32_t>(&k_tier_component_ids[t], 1);
+        q[n].quantity           = kwh[t];
+        n++;
+    }
+    if (ls->cm->SetMeteredQuantity(MakeNullable(
+            List<CommodityMetering::Structs::MeteredQuantityStruct::Type>(q, n))) != CHIP_NO_ERROR) {
+        return;
+    }
+    time_t now = time(NULL);
+    if (now > 1600000000) {
+        ls->cm->SetMeteredQuantityTimestamp(MakeNullable((uint32_t)(now - MATTER_EPOCH_OFFSET_S)));
+    }
+    ls->cm_mask = st->tier_mask;
+    memcpy(ls->cm_kwh, kwh, sizeof(kwh));
+}
+
 esp_err_t matter_bridge_report_energy_index(int endpoint_id, uint16_t attr_id, uint64_t wh)
 {
     if (!s_matter_started) return ESP_ERR_INVALID_STATE;
+
+    // Donnees du compteur lues avant de prendre le verrou de la pile
+    linky_info_t li;
+    const linky_state_t *ls0 = linky_state_for(endpoint_id);
+    uint64_t linky_ieee = ls0 ? ls0->ieee : 0;
+    if (linky_ieee) linky_read_info(linky_ieee, &li);
 
     bool held;
     if (!stack_lock(&held)) return ESP_FAIL;
@@ -606,6 +826,11 @@ esp_err_t matter_bridge_report_energy_index(int endpoint_id, uint16_t attr_id, u
     } else {
         ret = ESP_ERR_INVALID_ARG;
         goto out;
+    }
+
+    if (linky_ieee) {
+        linky_state_t *ls = linky_state_for(endpoint_id);
+        if (ls) linky_apply(ls, &li, st);
     }
 
     {
@@ -964,6 +1189,9 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
         if (profile ? (profile->caps & MCAP_ENERGY) != 0 : device_type == MATTER_DEV_ENERGY_METER) {
             energy_endpoint_init(new_ep_id);
         }
+        if (profile ? (profile->zlinky && (profile->caps & MCAP_ENERGY)) : device_type == MATTER_DEV_ENERGY_METER) {
+            linky_endpoint_init(new_ep_id, zigbee_ieee);
+        }
     }
 
     ret_ep = endpoint::get_id(ep);
@@ -1091,7 +1319,7 @@ public:
     CHIP_ERROR GetRotatingDeviceIdUniqueId(chip::MutableByteSpan &s) override { return base->GetRotatingDeviceIdUniqueId(s); }
     CHIP_ERROR GetProductFinish(chip::app::Clusters::BasicInformation::ProductFinishEnum *f) override { return base->GetProductFinish(f); }
     CHIP_ERROR GetProductPrimaryColor(chip::app::Clusters::BasicInformation::ColorEnum *c) override { return base->GetProductPrimaryColor(c); }
-    CHIP_ERROR GetSoftwareVersionString(char *b, size_t n) override { return base->GetSoftwareVersionString(b, n); }
+    CHIP_ERROR GetJointFabricMode(uint8_t &m) override { return base->GetJointFabricMode(m); }
 };
 static HwNameInstanceInfo s_hw_info;
 

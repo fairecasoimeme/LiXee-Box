@@ -16,6 +16,29 @@
 #include <esp_matter_core.h>
 #include "freertos/FreeRTOS.h"
 #include "matter_bridge.h"
+#include <platform/PlatformManager.h>
+
+// Verrou de la pile CHIP, reentrant pour la tache qui le tient deja.
+// esp-matter 1.5 ne publie plus lock::chip_stack_lock() (seulement
+// lock::ScopedChipStackLock) : meme logique avec PlatformMgr. Renvoie vrai si
+// le verrou a ete pris et doit etre relache par lixee_chip_unlock().
+inline bool lixee_chip_lock()
+{
+#if CHIP_STACK_LOCK_TRACKING_ENABLED
+    if (chip::DeviceLayer::PlatformMgr().IsChipStackLockedByCurrentThread()) {
+        return false;
+    }
+#endif
+    chip::DeviceLayer::PlatformMgr().LockChipStack();
+    return true;
+}
+
+inline void lixee_chip_unlock(bool held)
+{
+    if (held) {
+        chip::DeviceLayer::PlatformMgr().UnlockChipStack();
+    }
+}
 
 namespace lixee_epm_attr = chip::app::Clusters::ElectricalPowerMeasurement::Attributes;
 
@@ -185,10 +208,7 @@ private:
             return;
         }
 
-        esp_matter::lock::status_t st = esp_matter::lock::chip_stack_lock(portMAX_DELAY);
-        if (st == esp_matter::lock::FAILED) {
-            return;
-        }
+        bool held = lixee_chip_lock();
 
         bool changed = field.IsNull() || field.Value() != value;
         field.SetNonNull(value);
@@ -206,9 +226,7 @@ private:
             }
         }
 
-        if (st == esp_matter::lock::SUCCESS) {
-            esp_matter::lock::chip_stack_unlock();
-        }
+        lixee_chip_unlock(held);
     }
 
     chip::app::DataModel::Nullable<int64_t> m_active_power;
