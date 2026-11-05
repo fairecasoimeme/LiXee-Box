@@ -20,6 +20,11 @@
 #include "esp_crt_bundle.h"
 #include "esp_tls_errors.h"
 #include "mbedtls/x509_crt.h"
+#include "mbedtls/pk.h"
+#include "mbedtls/net_sockets.h"
+#include "mbedtls/platform_util.h"
+#include "esp_random.h"
+#include <sys/stat.h>
 #include "mqtt_client.h"
 #include "cJSON.h"
 
@@ -61,6 +66,12 @@ static char s_uri[128] = {};
 // Certificat de l'autorite privee (tlsMQTT = 2) : le client MQTT garde le
 // pointeur, la memoire n'est liberee qu'apres esp_mqtt_client_destroy()
 static char *s_ca_pem = NULL;
+// Certificat client et cle privee (certMQTT, TLS mutuel), meme regle
+static char *s_client_cert = NULL;
+static char *s_client_key = NULL;
+// Protocole ALPN (alpnMQTT) : liste terminee par NULL attendue par esp-tls
+static char s_alpn_buf[32] = {};
+static const char *s_alpn_protos[2] = { s_alpn_buf, NULL };
 
 // Derniere erreur de connexion, affichee par la page MQTT (tache MQTT ->
 // serveur web)
@@ -731,6 +742,15 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
                 set_last_error("Certificat du broker refusé (flags 0x%x)", e->esp_tls_cert_verify_flags);
             else if (tls_err == -MBEDTLS_ERR_X509_CERT_VERIFY_FAILED)
                 set_last_error("Certificat du broker refusé (autorité, nom du serveur ou date)");
+            else if (tls_err == -MBEDTLS_ERR_SSL_FATAL_ALERT_MESSAGE)
+                set_last_error("Connexion TLS refusée par le broker (certificat client absent ou refusé ?)");
+            // Connexion coupee pendant la negociation : un broker (mosquitto,
+            // OpenSSL) qui refuse le certificat client, ou qui en exige un,
+            // ferme sans alerte, comme un port qui ne parle pas TLS
+            else if (tls_err == -MBEDTLS_ERR_NET_CONN_RESET && s_client_cert)
+                set_last_error("Connexion TLS coupée par le broker (certificat client refusé ?)");
+            else if (tls_err == -MBEDTLS_ERR_NET_CONN_RESET)
+                set_last_error("Connexion TLS coupée par le broker (port non TLS, ou certificat client exigé ?)");
             else if (e->esp_tls_last_esp_err == ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED)
                 set_last_error("Négociation TLS impossible (port TLS du broker ?) mbedTLS -0x%04X",
                                (unsigned)tls_err);
@@ -776,15 +796,15 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
 // Certificat de l'autorite privee (TLS)
 // ============================================================================
 
-/** Lit le certificat enregistre (PEM, termine par un nul) ; NULL s'il n'y en a pas. */
-static char *load_ca_pem(void)
+/** Lit un fichier PEM enregistre (termine par un nul) ; NULL s'il n'y en a pas. */
+static char *load_pem(const char *path, size_t max)
 {
-    FILE *f = fopen(CFG_PATH_MQTT_CA, "rb");
+    FILE *f = fopen(path, "rb");
     if (!f) return NULL;
     char *buf = NULL;
     if (fseek(f, 0, SEEK_END) == 0) {
         long n = ftell(f);
-        if (n > 0 && n <= MQTT_CA_PEM_MAX && fseek(f, 0, SEEK_SET) == 0) {
+        if (n > 0 && (size_t)n <= max && fseek(f, 0, SEEK_SET) == 0) {
             buf = (char *)malloc((size_t)n + 1);
             if (buf && fread(buf, 1, (size_t)n, f) == (size_t)n) {
                 buf[n] = '\0';
@@ -796,6 +816,35 @@ static char *load_ca_pem(void)
     }
     fclose(f);
     return buf;
+}
+
+static void free_secret(char *buf)
+{
+    if (!buf) return;
+    mbedtls_platform_zeroize(buf, strlen(buf));
+    free(buf);
+}
+
+/** Libere les PEM utilises par le client (apres esp_mqtt_client_destroy). */
+static void free_tls_buffers(void)
+{
+    free(s_ca_pem);
+    s_ca_pem = NULL;
+    free(s_client_cert);
+    s_client_cert = NULL;
+    free_secret(s_client_key);
+    s_client_key = NULL;
+}
+
+/** Ecrit un fichier en entier ; supprime en cas d'echec. */
+static bool write_file(const char *path, const char *data, size_t n)
+{
+    FILE *f = fopen(path, "wb");
+    if (!f) return false;
+    bool ok = fwrite(data, 1, n, f) == n;
+    ok = (fclose(f) == 0) && ok;
+    if (!ok) remove(path);
+    return ok;
 }
 
 esp_err_t mqtt_manager_set_ca_pem(const char *pem, char *err, size_t err_len)
@@ -825,15 +874,7 @@ esp_err_t mqtt_manager_set_ca_pem(const char *pem, char *err, size_t err_len)
         return ESP_ERR_INVALID_ARG;
     }
 
-    FILE *f = fopen(CFG_PATH_MQTT_CA, "wb");
-    if (!f) {
-        if (err) snprintf(err, err_len, "Ecriture impossible");
-        return ESP_FAIL;
-    }
-    bool ok = fwrite(pem, 1, n, f) == n;
-    ok = (fclose(f) == 0) && ok;
-    if (!ok) {
-        remove(CFG_PATH_MQTT_CA);
+    if (!write_file(CFG_PATH_MQTT_CA, pem, n)) {
         if (err) snprintf(err, err_len, "Ecriture impossible");
         return ESP_FAIL;
     }
@@ -843,7 +884,7 @@ esp_err_t mqtt_manager_set_ca_pem(const char *pem, char *err, size_t err_len)
 
 bool mqtt_manager_ca_info(char *subject, size_t subj_len, char *not_after, size_t na_len)
 {
-    char *pem = load_ca_pem();
+    char *pem = load_pem(CFG_PATH_MQTT_CA, MQTT_CA_PEM_MAX);
     if (!pem) return false;
     mbedtls_x509_crt crt;
     mbedtls_x509_crt_init(&crt);
@@ -859,6 +900,180 @@ bool mqtt_manager_ca_info(char *subject, size_t subj_len, char *not_after, size_
     mbedtls_x509_crt_free(&crt);
     free(pem);
     return ok;
+}
+
+// ============================================================================
+// Certificat client (TLS mutuel)
+// ============================================================================
+
+static int rng_fill(void *ctx, unsigned char *buf, size_t len)
+{
+    (void)ctx;
+    esp_fill_random(buf, len);
+    return 0;
+}
+
+/**
+ * Bloc "-----BEGIN ...PRIVATE KEY-----" ... "-----END ...-----" du texte :
+ * debut et longueur, false s'il n'y en a pas. encrypted : cle PKCS#8 chiffree.
+ */
+static bool find_key_block(const char *pem, const char **start, size_t *len, bool *encrypted)
+{
+    const char *p = pem;
+    while ((p = strstr(p, "-----BEGIN ")) != NULL) {
+        const char *label = p + 11;
+        const char *eol = strstr(label, "-----");
+        if (!eol) return false;
+        size_t lab = (size_t)(eol - label);
+        if (lab >= 11 && memcmp(eol - 11, "PRIVATE KEY", 11) == 0) {
+            const char *end = strstr(eol, "-----END ");
+            const char *fin = end ? strstr(end + 9, "-----") : NULL;
+            if (!fin) return false;
+            *start = p;
+            *len = (size_t)(fin + 5 - p);
+            *encrypted = lab >= 9 && memcmp(label, "ENCRYPTED", 9) == 0;
+            return true;
+        }
+        p = eol + 5;
+    }
+    return false;
+}
+
+/**
+ * Copie les blocs CERTIFICATE du texte dans out, chacun suivi d'un saut de
+ * ligne (taille >= strlen(pem) + strlen(pem) / 32 + 2 : un bloc fait plus
+ * de 32 caracteres).
+ */
+static size_t extract_cert_blocks(const char *pem, char *out)
+{
+    static const char BEGIN[] = "-----BEGIN CERTIFICATE-----";
+    static const char END[] = "-----END CERTIFICATE-----";
+    size_t n = 0;
+    const char *p = pem;
+    while ((p = strstr(p, BEGIN)) != NULL) {
+        const char *e = strstr(p, END);
+        if (!e) break;
+        size_t len = (size_t)(e + sizeof(END) - 1 - p);
+        memcpy(out + n, p, len);
+        n += len;
+        out[n++] = '\n';
+        p = e + sizeof(END) - 1;
+    }
+    out[n] = '\0';
+    return n;
+}
+
+esp_err_t mqtt_manager_set_client_pem(const char *pem, char *err, size_t err_len)
+{
+    if (err && err_len) err[0] = '\0';
+    if (!pem || !pem[0]) {
+        remove(CFG_PATH_MQTT_CERT);
+        remove(CFG_PATH_MQTT_KEY);
+        return ESP_OK;
+    }
+    size_t n = strlen(pem);
+    if (n > MQTT_CLIENT_PEM_MAX) {
+        if (err) snprintf(err, err_len, "Fichier trop volumineux (%u octets max)", (unsigned)MQTT_CLIENT_PEM_MAX);
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    const char *key_start = NULL;
+    size_t key_len = 0;
+    bool encrypted = false;
+    bool has_key = find_key_block(pem, &key_start, &key_len, &encrypted);
+    char *certs = (char *)malloc(n + n / 32 + 2);
+    char *key = has_key ? (char *)malloc(key_len + 1) : NULL;
+    if (!certs || (has_key && !key)) {
+        free(certs);
+        free(key);
+        if (err) snprintf(err, err_len, "Mémoire insuffisante");
+        return ESP_ERR_NO_MEM;
+    }
+    size_t certs_len = extract_cert_blocks(pem, certs);
+    if (has_key) {
+        memcpy(key, key_start, key_len);
+        key[key_len] = '\0';
+    }
+
+    esp_err_t ret = ESP_OK;
+    mbedtls_x509_crt crt;
+    mbedtls_pk_context pk;
+    mbedtls_x509_crt_init(&crt);
+    mbedtls_pk_init(&pk);
+
+    if (!certs_len && !has_key) {
+        if (err) snprintf(err, err_len, "Format PEM attendu (certificat ou clé privée)");
+        ret = ESP_ERR_INVALID_ARG;
+    } else if (encrypted) {
+        if (err) snprintf(err, err_len, "Clé privée chiffrée : l'exporter sans mot de passe");
+        ret = ESP_ERR_INVALID_ARG;
+    }
+    if (ret == ESP_OK && has_key) {
+        int r = mbedtls_pk_parse_key(&pk, (const unsigned char *)key, key_len + 1, NULL, 0, rng_fill, NULL);
+        if (r == MBEDTLS_ERR_PK_PASSWORD_REQUIRED) {
+            if (err) snprintf(err, err_len, "Clé privée chiffrée : l'exporter sans mot de passe");
+            ret = ESP_ERR_INVALID_ARG;
+        } else if (r != 0) {
+            if (err) snprintf(err, err_len, "Clé privée invalide (mbedTLS -0x%04X)", (unsigned)-r);
+            ret = ESP_ERR_INVALID_ARG;
+        }
+    }
+    if (ret == ESP_OK && certs_len) {
+        int r = mbedtls_x509_crt_parse(&crt, (const unsigned char *)certs, certs_len + 1);
+        if (r != 0) {
+            if (err) snprintf(err, err_len, "Certificat invalide (mbedTLS -0x%04X)", (unsigned)(r < 0 ? -r : r));
+            ret = ESP_ERR_INVALID_ARG;
+        }
+    }
+    // Certificat et cle fournis ensemble : ils doivent aller par paire
+    if (ret == ESP_OK && certs_len && has_key &&
+        mbedtls_pk_check_pair(&crt.pk, &pk, rng_fill, NULL) != 0) {
+        if (err) snprintf(err, err_len, "La clé privée ne correspond pas au certificat");
+        ret = ESP_ERR_INVALID_ARG;
+    }
+    mbedtls_x509_crt_free(&crt);
+    mbedtls_pk_free(&pk);
+
+    if (ret == ESP_OK && certs_len && !write_file(CFG_PATH_MQTT_CERT, certs, certs_len)) ret = ESP_FAIL;
+    if (ret == ESP_OK && has_key && !write_file(CFG_PATH_MQTT_KEY, key, key_len)) ret = ESP_FAIL;
+    if (ret == ESP_FAIL && err) snprintf(err, err_len, "Ecriture impossible");
+    if (ret == ESP_OK)
+        ESP_LOGI(TAG, "Certificat client MQTT enregistre (certificat %u octets, cle %s)",
+                 (unsigned)certs_len, has_key ? "oui" : "non");
+    free(certs);
+    free_secret(key);
+    return ret;
+}
+
+void mqtt_manager_client_cert_info(mqtt_client_cert_info_t *info)
+{
+    if (!info) return;
+    memset(info, 0, sizeof(*info));
+    struct stat st;
+    info->has_key = stat(CFG_PATH_MQTT_KEY, &st) == 0;
+    char *pem = load_pem(CFG_PATH_MQTT_CERT, MQTT_CLIENT_PEM_MAX);
+    if (!pem) return;
+    mbedtls_x509_crt crt;
+    mbedtls_x509_crt_init(&crt);
+    if (mbedtls_x509_crt_parse(&crt, (const unsigned char *)pem, strlen(pem) + 1) >= 0 && crt.raw.p) {
+        info->has_cert = true;
+        if (mbedtls_x509_dn_gets(info->subject, sizeof(info->subject), &crt.subject) < 0)
+            info->subject[0] = '\0';
+        snprintf(info->not_after, sizeof(info->not_after), "%04d-%02d-%02d",
+                 crt.valid_to.year, crt.valid_to.mon, crt.valid_to.day);
+        char *key = info->has_key ? load_pem(CFG_PATH_MQTT_KEY, MQTT_CLIENT_PEM_MAX) : NULL;
+        if (key) {
+            mbedtls_pk_context pk;
+            mbedtls_pk_init(&pk);
+            info->key_match =
+                mbedtls_pk_parse_key(&pk, (const unsigned char *)key, strlen(key) + 1, NULL, 0, rng_fill, NULL) == 0 &&
+                mbedtls_pk_check_pair(&crt.pk, &pk, rng_fill, NULL) == 0;
+            mbedtls_pk_free(&pk);
+            free_secret(key);
+        }
+    }
+    mbedtls_x509_crt_free(&crt);
+    free(pem);
 }
 
 void mqtt_manager_last_error(char *buf, size_t len)
@@ -924,7 +1139,7 @@ esp_err_t mqtt_manager_init(void)
     // presente ; l'autorite est soit le bundle public d'ESP-IDF (Let's
     // Encrypt, Amazon Root CA, DigiCert...), soit le certificat importe
     if (gen->tls_mqtt == 2) {
-        s_ca_pem = load_ca_pem();
+        s_ca_pem = load_pem(CFG_PATH_MQTT_CA, MQTT_CA_PEM_MAX);
         if (!s_ca_pem) {
             ESP_LOGE(TAG, "TLS : certificat d'autorite absent ou illisible (%s)", CFG_PATH_MQTT_CA);
             set_last_error("Certificat de l'autorité privée absent");
@@ -934,6 +1149,29 @@ esp_err_t mqtt_manager_init(void)
         mqtt_cfg.broker.verification.certificate = s_ca_pem;
     } else if (tls) {
         mqtt_cfg.broker.verification.crt_bundle_attach = esp_crt_bundle_attach;
+    }
+
+    // TLS mutuel : le broker authentifie la box par son certificat (AWS IoT
+    // Core, RabbitMQ...) ; identifiant et mot de passe restent possibles
+    if (tls && gen->cert_mqtt) {
+        s_client_cert = load_pem(CFG_PATH_MQTT_CERT, MQTT_CLIENT_PEM_MAX);
+        s_client_key = load_pem(CFG_PATH_MQTT_KEY, MQTT_CLIENT_PEM_MAX);
+        if (!s_client_cert || !s_client_key) {
+            ESP_LOGE(TAG, "TLS : certificat client ou cle privee absent");
+            set_last_error("Certificat client ou clé privée absent");
+            free_tls_buffers();
+            s_initialized = true;
+            return ESP_OK;
+        }
+        mqtt_cfg.credentials.authentication.certificate = s_client_cert;
+        mqtt_cfg.credentials.authentication.key = s_client_key;
+    }
+
+    // ALPN : AWS IoT Core accepte le TLS mutuel sur le port 443 avec
+    // "x-amzn-mqtt-ca" (8883 n'en demande pas)
+    if (tls && gen->alpn_mqtt[0]) {
+        strlcpy(s_alpn_buf, gen->alpn_mqtt, sizeof(s_alpn_buf));
+        mqtt_cfg.broker.verification.alpn_protos = s_alpn_protos;
     }
 
     if (gen->client_id_mqtt[0] != '\0') {
@@ -950,8 +1188,7 @@ esp_err_t mqtt_manager_init(void)
     s_client = esp_mqtt_client_init(&mqtt_cfg);
     if (!s_client) {
         ESP_LOGE(TAG, "Failed to create MQTT client");
-        free(s_ca_pem);
-        s_ca_pem = NULL;
+        free_tls_buffers();
         return ESP_FAIL;
     }
 
@@ -1141,8 +1378,7 @@ static void reload_client(void)
         s_client = NULL;
         if (s_client_mtx) xSemaphoreGive(s_client_mtx);
     }
-    free(s_ca_pem);
-    s_ca_pem = NULL;
+    free_tls_buffers();
     set_last_error(NULL);
     s_started = false;
     s_initialized = false;

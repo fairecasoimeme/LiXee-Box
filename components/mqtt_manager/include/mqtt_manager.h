@@ -93,6 +93,29 @@ esp_err_t mqtt_manager_set_ca_pem(const char *pem, char *err, size_t err_len);
  */
 bool mqtt_manager_ca_info(char *subject, size_t subj_len, char *not_after, size_t na_len);
 
+/** Taille maximale d'un import de certificat client (certificat(s) + cle) */
+#define MQTT_CLIENT_PEM_MAX  16384
+
+/**
+ * Importe le certificat client et/ou sa cle privee (PEM, TLS mutuel).
+ * Un meme texte peut contenir les deux ; chaque partie est verifiee
+ * (cle non chiffree, paire coherente si les deux sont fournies) puis
+ * enregistree. pem NULL ou vide : supprime certificat et cle.
+ * En cas de refus, err recoit la raison.
+ */
+esp_err_t mqtt_manager_set_client_pem(const char *pem, char *err, size_t err_len);
+
+typedef struct {
+    bool has_cert;
+    bool has_key;
+    bool key_match;         // la cle enregistree correspond au certificat
+    char subject[160];
+    char not_after[16];     // AAAA-MM-JJ
+} mqtt_client_cert_info_t;
+
+/** Etat du certificat client enregistre (la cle n'est jamais renvoyee). */
+void mqtt_manager_client_cert_info(mqtt_client_cert_info_t *info);
+
 /**
  * Publie une valeur d'attribut Zigbee.
  * Le format du topic et du payload depend du mode (HA/TB/Custom).

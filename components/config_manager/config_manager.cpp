@@ -378,6 +378,8 @@ esp_err_t cfg_load_general(void)
     g_general.custom_mqtt = json_get_bool(doc, "customMQTT", false);
     json_get_str(doc, "customMQTTJson", g_general.custom_mqtt_json, sizeof(g_general.custom_mqtt_json), "");
     g_general.tls_mqtt = json_get_int(doc, "tlsMQTT", 0);
+    g_general.cert_mqtt = json_get_bool(doc, "certMQTT", false);
+    json_get_str(doc, "alpnMQTT", g_general.alpn_mqtt, sizeof(g_general.alpn_mqtt), "");
 
     // HTTP auth
     json_get_str(doc, "userHTTP", g_general.user_http, sizeof(g_general.user_http), "");
@@ -622,6 +624,8 @@ static esp_err_t save_general_unlocked(void)
     put_flag(doc, "customMQTT",     g_general.custom_mqtt);
     put_str(doc, "customMQTTJson", g_general.custom_mqtt_json);
     put_num(doc, "tlsMQTT",        g_general.tls_mqtt);
+    put_flag(doc, "certMQTT",      g_general.cert_mqtt);
+    put_str(doc, "alpnMQTT",       g_general.alpn_mqtt);
 
     // HTTP
     put_str(doc, "userHTTP", g_general.user_http);

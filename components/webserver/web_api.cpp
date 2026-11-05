@@ -996,6 +996,21 @@ static esp_err_t api_config_mqtt_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(ca, "subject", ca_subject);
         cJSON_AddStringToObject(ca, "notAfter", ca_expiry);
     }
+    cJSON_AddBoolToObject(root, "certMQTT",         g->cert_mqtt);
+    cJSON_AddStringToObject(root, "alpnMQTT",       g->alpn_mqtt);
+    // Certificat client : sujet et validite ; la cle privee n'est jamais renvoyee
+    mqtt_client_cert_info_t cc;
+    mqtt_manager_client_cert_info(&cc);
+    if (cc.has_cert || cc.has_key) {
+        cJSON *c = cJSON_AddObjectToObject(root, "clientCertMQTT");
+        cJSON_AddBoolToObject(c, "hasCert", cc.has_cert);
+        cJSON_AddBoolToObject(c, "hasKey", cc.has_key);
+        cJSON_AddBoolToObject(c, "keyMatches", cc.key_match);
+        if (cc.has_cert) {
+            cJSON_AddStringToObject(c, "subject", cc.subject);
+            cJSON_AddStringToObject(c, "notAfter", cc.not_after);
+        }
+    }
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
@@ -1061,6 +1076,13 @@ static esp_err_t api_config_mqtt_post_handler(httpd_req_t *req)
     if ((item = cJSON_GetObjectItem(doc, "clearCaMQTT")) &&
         (cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint)))
         mqtt_manager_set_ca_pem(NULL, NULL, 0);
+    if ((item = cJSON_GetObjectItem(doc, "certMQTT")))
+        g->cert_mqtt = cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint);
+    if ((item = cJSON_GetObjectItem(doc, "alpnMQTT")) && cJSON_IsString(item))
+        strlcpy(g->alpn_mqtt, item->valuestring, sizeof(g->alpn_mqtt));
+    if ((item = cJSON_GetObjectItem(doc, "clearClientCertMQTT")) &&
+        (cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint)))
+        mqtt_manager_set_client_pem(NULL, NULL, 0);
 
     cJSON_Delete(doc);
     esp_err_t err = cfg_save_general();
@@ -1075,18 +1097,22 @@ static esp_err_t api_config_mqtt_post_handler(httpd_req_t *req)
 // est recree s'il l'utilise.
 // ============================================================================
 
-static esp_err_t api_config_mqtt_ca_post_handler(httpd_req_t *req)
+/**
+ * Lit un corps PEM brut (max octets) en PSRAM, termine par un nul ; NULL
+ * apres avoir repondu l'erreur au client.
+ */
+static char *recv_pem_body(httpd_req_t *req, size_t max)
 {
     size_t len = req->content_len;
-    if (len == 0 || len > MQTT_CA_PEM_MAX) {
+    if (len == 0 || len > max) {
         httpd_resp_send_err(req, len ? HTTPD_413_CONTENT_TOO_LARGE : HTTPD_400_BAD_REQUEST,
-                            len ? "Certificat trop volumineux" : "Certificat manquant");
-        return ESP_OK;
+                            len ? "Fichier trop volumineux" : "Fichier manquant");
+        return NULL;
     }
     char *pem = (char *)heap_caps_malloc(len + 1, MALLOC_CAP_SPIRAM);
     if (!pem) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
-        return ESP_OK;
+        return NULL;
     }
     size_t got = 0;
     int timeouts = 0;
@@ -1096,11 +1122,18 @@ static esp_err_t api_config_mqtt_ca_post_handler(httpd_req_t *req)
         if (r <= 0) {
             free(pem);
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete body");
-            return ESP_OK;
+            return NULL;
         }
         got += r;
     }
     pem[len] = '\0';
+    return pem;
+}
+
+static esp_err_t api_config_mqtt_ca_post_handler(httpd_req_t *req)
+{
+    char *pem = recv_pem_body(req, MQTT_CA_PEM_MAX);
+    if (!pem) return ESP_OK;
 
     char err[96];
     esp_err_t e = mqtt_manager_set_ca_pem(pem, err, sizeof(err));
@@ -1110,6 +1143,31 @@ static esp_err_t api_config_mqtt_ca_post_handler(httpd_req_t *req)
         return ESP_OK;
     }
     if (cfg_get_general()->tls_mqtt == 2) mqtt_manager_request_reload();
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+}
+
+// ============================================================================
+// POST /api/config/mqtt/client - Importe le certificat client et/ou sa cle
+// privee (TLS mutuel ; corps : PEM brut, les deux peuvent etre dans le meme
+// texte). La cle est effacee de la memoire apres usage.
+// ============================================================================
+
+static esp_err_t api_config_mqtt_client_post_handler(httpd_req_t *req)
+{
+    char *pem = recv_pem_body(req, MQTT_CLIENT_PEM_MAX);
+    if (!pem) return ESP_OK;
+
+    char err[96];
+    esp_err_t e = mqtt_manager_set_client_pem(pem, err, sizeof(err));
+    memset(pem, 0, strlen(pem));
+    free(pem);
+    if (e != ESP_OK) {
+        httpd_resp_send_err(req, e == ESP_FAIL ? HTTPD_500_INTERNAL_SERVER_ERROR : HTTPD_400_BAD_REQUEST, err);
+        return ESP_OK;
+    }
+    const cfg_general_t *g = cfg_get_general();
+    if (g->tls_mqtt && g->cert_mqtt) mqtt_manager_request_reload();
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
 }
@@ -1724,6 +1782,10 @@ esp_err_t web_api_register_handlers(httpd_handle_t server)
 
     uri = { .uri = "/api/config/mqtt/ca", .method = HTTP_POST,
             .handler = api_config_mqtt_ca_post_handler, .user_ctx = NULL };
+    web_server_register_uri(server, &uri);
+
+    uri = { .uri = "/api/config/mqtt/client", .method = HTTP_POST,
+            .handler = api_config_mqtt_client_post_handler, .user_ctx = NULL };
     web_server_register_uri(server, &uri);
 
     uri = { .uri = "/api/config/webpush", .method = HTTP_GET,

@@ -27,6 +27,8 @@ extern "C" {
 #define CFG_PATH_NOTIFICATIONS  "/littlefs/config/notifications.json"
 #define CFG_PATH_RULES          "/littlefs/config/rules.json"
 #define CFG_PATH_MQTT_CA        "/littlefs/config/mqttCA.pem"
+#define CFG_PATH_MQTT_CERT      "/littlefs/config/mqttClient.pem"
+#define CFG_PATH_MQTT_KEY       "/littlefs/config/mqttClient.key"
 
 // ============================================================================
 // Structures de configuration
@@ -182,6 +184,9 @@ typedef struct {
     char custom_mqtt_json[512]; // Template JSON custom
     int  tls_mqtt;              // "tlsMQTT" : 0 sans TLS, 1 TLS (autorites publiques),
                                 // 2 TLS (autorite privee, CFG_PATH_MQTT_CA)
+    bool cert_mqtt;             // "certMQTT" : authentification par certificat client
+                                // (TLS mutuel, CFG_PATH_MQTT_CERT + CFG_PATH_MQTT_KEY)
+    char alpn_mqtt[32];         // "alpnMQTT" : protocole ALPN annonce en TLS (vide : aucun)
 
     // HTTP auth
     char user_http[50];

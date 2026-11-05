@@ -1895,6 +1895,22 @@
               '<input type="file" class="form-control" id="mqtt-ca-file" accept=".pem,.crt,.cer">' +
               '<div class="form-text">Import imm&eacute;diat, apr&egrave;s v&eacute;rification par la box. Fichier .pem / .crt au format texte (-----BEGIN CERTIFICATE-----).</div>' +
             '</div>' +
+            '<div id="mqtt-tls-adv" style="display:none;">' +
+              '<div class="mb-3"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="mqtt-cert">' +
+                '<label class="form-check-label" for="mqtt-cert">Authentification par certificat client (TLS mutuel)</label></div>' +
+                '<div class="form-text">Exig&eacute; par AWS IoT Core ; l\'identifiant et le mot de passe restent utilisables en plus.</div>' +
+              '</div>' +
+              '<div class="mb-3" id="mqtt-client-block" style="display:none;">' +
+                '<label class="form-label" for="mqtt-client-file">Certificat client et cl&eacute; priv&eacute;e (PEM)</label>' +
+                '<div id="mqtt-client-info" class="form-text mb-2"></div>' +
+                '<input type="file" class="form-control" id="mqtt-client-file" accept=".pem,.crt,.cer,.key" multiple>' +
+                '<div class="form-text">Import imm&eacute;diat, apr&egrave;s v&eacute;rification par la box : le certificat et la cl&eacute; (non chiffr&eacute;e), en un ou deux fichiers. La cl&eacute; n\'est jamais r&eacute;affich&eacute;e.</div>' +
+              '</div>' +
+              '<div class="mb-3"><label class="form-label" for="mqtt-alpn">Protocole ALPN (facultatif)</label>' +
+                '<input type="text" class="form-control" id="mqtt-alpn" maxlength="31" placeholder="ex. x-amzn-mqtt-ca">' +
+                '<div class="form-text">AWS IoT Core sur le port 443 : <code>x-amzn-mqtt-ca</code>. Laisser vide sur le port 8883.</div>' +
+              '</div>' +
+            '</div>' +
 
             // User + Pass
             '<div class="row">' +
@@ -1944,6 +1960,7 @@
     $('#mqtt-tls').on('change', function() {
       var tls = parseInt($(this).val(), 10) || 0;
       $('#mqtt-ca-block').toggle(tls === 2);
+      $('#mqtt-tls-adv').toggle(tls !== 0);
       var port = $('#mqtt-port').val();
       if (tls && port === '1883') $('#mqtt-port').val(8883);
       if (!tls && port === '8883') $('#mqtt-port').val(1883);
@@ -1954,6 +1971,55 @@
         ? 'Certificat enregistr&eacute; : <code>' + escHtml(ca.subject) + '</code>, valide jusqu\'au ' + escHtml(ca.notAfter)
         : '<span class="text-warning">Aucun certificat enregistr&eacute;.</span>');
     }
+
+    $('#mqtt-cert').on('change', function() {
+      $('#mqtt-client-block').toggle(this.checked);
+    });
+
+    function showMqttClient(c) {
+      var html;
+      if (!c) html = '<span class="text-warning">Aucun certificat client enregistr&eacute;.</span>';
+      else {
+        html = c.hasCert
+          ? 'Certificat : <code>' + escHtml(c.subject) + '</code>, valide jusqu\'au ' + escHtml(c.notAfter)
+          : '<span class="text-warning">Certificat manquant.</span>';
+        html += '<br>' + (!c.hasKey ? '<span class="text-warning">Cl&eacute; priv&eacute;e manquante.</span>'
+          : c.hasCert && !c.keyMatches ? '<span class="text-danger">La cl&eacute; priv&eacute;e ne correspond pas au certificat.</span>'
+          : 'Cl&eacute; priv&eacute;e enregistr&eacute;e.');
+      }
+      $('#mqtt-client-info').html(html);
+    }
+
+    // Certificat et cle : un ou deux fichiers, envoyes ensemble pour que la
+    // box verifie la paire
+    $('#mqtt-client-file').on('change', function() {
+      var files = Array.prototype.slice.call(this.files || []);
+      if (!files.length) return;
+      var input = this;
+      var texts = [];
+      var pending = files.length;
+      files.forEach(function(file, i) {
+        var reader = new FileReader();
+        reader.onload = function() {
+          texts[i] = reader.result;
+          if (--pending) return;
+          $.ajax({
+            url: '/api/config/mqtt/client',
+            method: 'POST',
+            contentType: 'application/x-pem-file',
+            processData: false,
+            data: texts.join('\n'),
+            success: function() {
+              showAlert('Certificat client enregistr&eacute;.');
+              $.getJSON('/api/config/mqtt', function(cfg) { showMqttClient(cfg.clientCertMQTT); });
+            },
+            error: function(xhr) { showAlert(apiErrorMsg(xhr), 'danger'); },
+            complete: function() { input.value = ''; }
+          });
+        };
+        reader.readAsText(file);
+      });
+    });
 
     $('#mqtt-ca-file').on('change', function() {
       var file = this.files && this.files[0];
@@ -1985,6 +2051,11 @@
       $('#mqtt-tls').val(String(cfg.tlsMQTT || 0));
       $('#mqtt-ca-block').toggle(cfg.tlsMQTT === 2);
       showMqttCa(cfg.caMQTT);
+      $('#mqtt-tls-adv').toggle(!!cfg.tlsMQTT);
+      $('#mqtt-cert').prop('checked', !!cfg.certMQTT);
+      $('#mqtt-client-block').toggle(!!cfg.certMQTT);
+      $('#mqtt-alpn').val(cfg.alpnMQTT || '');
+      showMqttClient(cfg.clientCertMQTT);
       $('#mqtt-enabled').prop('checked', !!cfg.enableMqtt);
       $('#mqtt-broker').val(cfg.servMQTT || '');
       $('#mqtt-port').val(cfg.portMQTT || 1883);
@@ -2030,6 +2101,8 @@
         servMQTT: $('#mqtt-broker').val().trim(),
         portMQTT: String(parseInt($('#mqtt-port').val(), 10) || 1883),
         tlsMQTT: parseInt($('#mqtt-tls').val(), 10) || 0,
+        certMQTT: $('#mqtt-cert').is(':checked'),
+        alpnMQTT: $('#mqtt-alpn').val().trim(),
         userMQTT: $('#mqtt-user').val(),
         passMQTT: $('#mqtt-pass').val(),   // vide = conserver l'actuel
         clientIDMQTT: $('#mqtt-clientid').val(),
