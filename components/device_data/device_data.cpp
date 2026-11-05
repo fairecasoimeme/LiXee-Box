@@ -507,7 +507,15 @@ static esp_err_t json_to_device(device_data_t *dd, const char *json_str)
             cJSON *v;
             v = cJSON_GetObjectItem(item, "cluster");
             if (v && v->valuestring) {
-                pi->cluster_id = (uint16_t)strtoul(v->valuestring, NULL, 16);
+                // Format courant : toujours prefixe "0x" (voir device_to_json
+                // ci-dessus). Un fichier /littlefs/db/<IEEE>.json herite de
+                // l'ancien firmware Arduino peut stocker le cluster en
+                // decimal brut sans prefixe (ex. "1794" pour 0x0702) : sans
+                // cette distinction, strtoul(...,16) relit "1794" comme de
+                // l'hexa (0x1794) et corrompt la poll list.
+                const char *s = v->valuestring;
+                int base = (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? 16 : 10;
+                pi->cluster_id = (uint16_t)strtoul(s, NULL, base);
             }
             v = cJSON_GetObjectItem(item, "attribut");
             if (v) pi->attr_id = (uint16_t)v->valuedouble;
