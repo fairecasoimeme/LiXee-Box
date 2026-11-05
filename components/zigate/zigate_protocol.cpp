@@ -1043,6 +1043,11 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
         break;
     }
 
+    case 0x8006:   // redemarrage, reseau existant
+    case 0x8007:   // redemarrage usine
+        ESP_LOGI(TAG, "ZiGate redemarree (0x%04X)", pkt->cmd);
+        break;
+
     default:
         ESP_LOGD(TAG, "Unhandled ZiGate response: 0x%04X (len=%d)", pkt->cmd, pkt->length);
         break;

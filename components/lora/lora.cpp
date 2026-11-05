@@ -51,6 +51,7 @@
 #include "esp_timer.h"
 #include "mbedtls/aes.h"
 #include "cJSON.h"
+#include "status_led.h"
 
 static const char *TAG = "LORA";
 
@@ -136,12 +137,6 @@ static const uint8_t POLL_DELAY_MS[POLL_SETTINGS / 2] = {35, 20, 8, 50};
 #define LORA_TASK_PRIO      6       // au-dessus de httpd (5) : fenetre RX de 300 ms
 #define LORA_LOOP_MS        10
 #define LORA_LOCK_WAIT_MS   3000
-
-// LED d'appairage de la LiXee-Box (meme LED que le provisioning BLE). -1 pour
-// la desactiver si un autre module la pilote.
-#ifndef LORA_PIN_LED
-#define LORA_PIN_LED        3
-#endif
 
 static const uint16_t CH_FREQ[LORA_CHANNEL_COUNT] = {2410, 2420, 2430, 2440, 2450, 2460, 2470, 2480};
 
@@ -236,8 +231,7 @@ static uint32_t s_rx_errors = 0;        // diagnostic : trames rejetees (CRC, en
 static lora_removed_cb_t s_removed_cb = NULL;
 static uint32_t s_last_wd_rearm = 0;
 
-static uint32_t s_led_toggle = 0;
-static bool     s_led_state  = false;
+static bool     s_led_state  = false;   // LED d'appairage demandee
 
 static lora_report_cb_t s_report_cb = NULL;
 
@@ -567,33 +561,18 @@ static void set_sf(uint8_t sf)
 
 static void start_rx(void) { sx_start_receive(); }
 
-static void led_set(bool on)
-{
-#if LORA_PIN_LED >= 0
-    static bool init = false;
-    if (!init) {
-        gpio_reset_pin((gpio_num_t)LORA_PIN_LED);
-        gpio_set_direction((gpio_num_t)LORA_PIN_LED, GPIO_MODE_OUTPUT);
-        init = true;
-    }
-    gpio_set_level((gpio_num_t)LORA_PIN_LED, on ? 1 : 0);
-#else
-    (void)on;
-#endif
-}
-
+// LED d'etat : clignotement rapide pendant la fenetre d'appairage
 static void pairing_led_tick(void)
 {
-    if (millis() - s_led_toggle < 300) return;
-    s_led_toggle = millis();
-    s_led_state = !s_led_state;
-    led_set(s_led_state);
+    if (s_led_state) return;
+    s_led_state = true;
+    status_led_set(LED_STATE_LORA_PAIRING, true);
 }
 
 static void pairing_led_off(void)
 {
     s_led_state = false;
-    led_set(false);
+    status_led_set(LED_STATE_LORA_PAIRING, false);
 }
 
 // ============================================================================
@@ -1164,8 +1143,6 @@ static void start_pairing_now(void)
     s_pairing_mode = true;
     s_pairing_start = millis();
     s_awaiting_confirm = false;
-    s_led_toggle = 0;
-    s_led_state = false;
     // Rendez-vous FIXE : canal 3 + SF11, quelle que soit la config operationnelle
     set_channel(LORA_PAIR_CHANNEL);
     set_sf(LORA_PAIR_SF);

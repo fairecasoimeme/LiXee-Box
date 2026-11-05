@@ -18,6 +18,8 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_attr.h"
+#include "board.h"
+#include "zigate_isp.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -73,6 +75,11 @@ static uint8_t s_rx_frame[ZIGATE_BUF_SIZE];
 static size_t  s_rx_frame_pos = 0;
 static bool    s_rx_in_frame = false;
 
+// UART prete au bootloader ISP du JN5189 (zigate_uart_suspend) : la tache de
+// reception se met de cote, les envois sont refuses
+static volatile bool s_uart_suspended = false;
+static volatile bool s_rx_parked = false;
+
 // ============================================================================
 // Traitement des trames - Tache FreeRTOS
 // ============================================================================
@@ -105,6 +112,12 @@ static void zigate_rx_task(void *arg)
     uint8_t buf[256];
 
     while (1) {
+        if (s_uart_suspended) {
+            s_rx_parked = true;
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;
+        }
+        s_rx_parked = false;
         int len = uart_read_bytes(ZIGATE_UART_NUM, buf, sizeof(buf), pdMS_TO_TICKS(50));
         if (len <= 0) continue;
 
@@ -161,20 +174,20 @@ esp_err_t zigate_init(void)
     zigate_ota_prepare();
     zigate_ir_prepare();
 
-    // Config GPIO reset et flash
+    // Reset et entree ISP du JN5189 : relies sur la LiXee-Box Pro, libres sur
+    // la ZiWiFi32 (signaux pilotes par son FTDI). Reset en drain ouvert,
+    // relache ; entree ISP en haute impedance hors programmation (au niveau
+    // bas pendant le reset, elle ferait demarrer le JN5189 en ISP)
+    gpio_set_level((gpio_num_t)ZIGATE_RESET_PIN, 1);
     gpio_config_t io_conf = {};
-    io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = (1ULL << ZIGATE_RESET_PIN) | (1ULL << ZIGATE_FLASH_PIN);
+    io_conf.mode = GPIO_MODE_OUTPUT_OD;
+    io_conf.pin_bit_mask = 1ULL << ZIGATE_RESET_PIN;
     io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
     io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
     gpio_config(&io_conf);
-
-    // Sequence identique au code de reference (ino.cpp):
-    // FLASH=HIGH (mode normal, pas flash), puis RESET pulse LOW->HIGH
-    gpio_set_level((gpio_num_t)ZIGATE_FLASH_PIN, 1);
-    gpio_set_level((gpio_num_t)ZIGATE_RESET_PIN, 0);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    gpio_set_level((gpio_num_t)ZIGATE_RESET_PIN, 1);
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pin_bit_mask = 1ULL << ZIGATE_FLASH_PIN;
+    gpio_config(&io_conf);
 
     // Config UART - buffer RX 4096 comme dans le code de reference
     uart_config_t uart_config = {
@@ -195,6 +208,15 @@ esp_err_t zigate_init(void)
 
     // Console des trames (tampon en PSRAM), avant tout echange
     zigate_console_init();
+
+    // Carte : seule une Pro joint le bootloader ISP du JN5189 (eFuse prioritaire)
+    if (board_source() != BOARD_SRC_EFUSE) board_set_zigate_isp(zigate_isp_probe());
+
+    // Reset materiel, entree ISP relachee : demarrage normal de la ZiGate
+    uart_flush_input(ZIGATE_UART_NUM);
+    gpio_set_level((gpio_num_t)ZIGATE_RESET_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level((gpio_num_t)ZIGATE_RESET_PIN, 1);
 
     // Mutex pour l'envoi
     s_tx_mutex = xSemaphoreCreateMutex();
@@ -244,6 +266,28 @@ esp_err_t zigate_init(void)
     return ESP_OK;
 }
 
+esp_err_t zigate_uart_suspend(bool suspend)
+{
+    if (suspend) {
+        if (s_uart_suspended) return ESP_ERR_INVALID_STATE;
+        // Emission en cours terminee avant de passer la main au bootloader
+        if (s_tx_mutex && xSemaphoreTake(s_tx_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) return ESP_ERR_TIMEOUT;
+        s_uart_suspended = true;
+        for (int i = 0; s_rx_task_handle && !s_rx_parked && i < 20; i++) vTaskDelay(pdMS_TO_TICKS(10));
+        uart_flush_input(ZIGATE_UART_NUM);
+        ESP_LOGW(TAG, "Liaison ZiGate suspendue (programmation du module)");
+    } else {
+        if (!s_uart_suspended) return ESP_OK;
+        uart_flush_input(ZIGATE_UART_NUM);
+        s_rx_frame_pos = 0;
+        s_rx_in_frame = false;
+        s_uart_suspended = false;
+        if (s_tx_mutex) xSemaphoreGive(s_tx_mutex);
+        ESP_LOGI(TAG, "Liaison ZiGate reprise");
+    }
+    return ESP_OK;
+}
+
 esp_err_t zigate_reset(void)
 {
     ESP_LOGI(TAG, "Resetting ZiGate...");
@@ -276,6 +320,7 @@ esp_err_t zigate_send_packet(const zigate_packet_t *pkt)
 {
     if (!pkt) return ESP_ERR_INVALID_ARG;
     if (!s_tx_mutex) return ESP_ERR_INVALID_STATE;   // zigate_init() pas encore fait
+    if (s_uart_suspended) return ESP_ERR_INVALID_STATE;
 
     xSemaphoreTake(s_tx_mutex, portMAX_DELAY);
     esp_err_t ret = send_packet_locked(pkt);
@@ -294,6 +339,7 @@ esp_err_t zigate_send_command(uint16_t cmd, const uint8_t *data, uint16_t len)
     }
     if (len > 0 && !data) return ESP_ERR_INVALID_ARG;
     if (!s_tx_mutex) return ESP_ERR_INVALID_STATE;
+    if (s_uart_suspended) return ESP_ERR_INVALID_STATE;
 
     // Paquet statique (voir s_tx_pkt), rempli et emis sous le verrou d'emission
     xSemaphoreTake(s_tx_mutex, portMAX_DELAY);

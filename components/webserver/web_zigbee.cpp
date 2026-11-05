@@ -45,6 +45,9 @@
 #include "zigate_actions.h"
 #include "zigate_ota.h"
 #include "zigate_ir.h"
+#include "zigate_isp.h"
+#include "board.h"
+#include "maintenance.h"
 #include <sys/stat.h>
 #include "device_data.h"
 #include "device_setup.h"
@@ -1615,6 +1618,113 @@ static esp_err_t post_ir(httpd_req_t *req, cJSON *j)
 // Aiguillage
 // ============================================================================
 
+// ============================================================================
+// Firmware du module Zigbee (LiXee-Box Pro) : POST /api/zigbee/firmware
+// (corps : image .bin brute), suivi par GET /api/zigbee/firmware/status. La
+// programmation tourne dans une tache ; la box redemarre ensuite pour
+// reprendre la sequence d'initialisation de la ZiGate.
+// ============================================================================
+
+typedef struct {
+    const char *state;   // "idle", "running", "done", "error"
+    int pct;
+    char msg[96];
+} fw_status_t;
+
+static fw_status_t s_fw = { "idle", 0, "" };
+static portMUX_TYPE s_fw_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint8_t *s_fw_img = NULL;
+static size_t s_fw_len = 0;
+
+static void fw_set(const char *state, int pct, const char *msg)
+{
+    portENTER_CRITICAL(&s_fw_mux);
+    if (state) s_fw.state = state;
+    if (pct >= 0) s_fw.pct = pct;
+    if (msg) strlcpy(s_fw.msg, msg, sizeof(s_fw.msg));
+    portEXIT_CRITICAL(&s_fw_mux);
+}
+
+static fw_status_t fw_get(void)
+{
+    portENTER_CRITICAL(&s_fw_mux);
+    fw_status_t st = s_fw;
+    portEXIT_CRITICAL(&s_fw_mux);
+    return st;
+}
+
+static void fw_progress(int pct, const char *step) { fw_set(NULL, pct, step); }
+
+static void fw_task(void *arg)
+{
+    (void)arg;
+    char err[96] = "";
+    esp_err_t e = zigate_isp_flash(s_fw_img, s_fw_len, fw_progress, err, sizeof(err));
+    heap_caps_free(s_fw_img);
+    s_fw_img = NULL;
+    if (e == ESP_OK) {
+        fw_set("done", 100, "Firmware programme : redemarrage de la box");
+        maintenance_request_reboot(3000);
+    } else {
+        fw_set("error", -1, err);
+    }
+    vTaskDelete(NULL);
+}
+
+static esp_err_t post_firmware(httpd_req_t *req)
+{
+    if (!board_has_zigate_isp())
+        return send_status(req, "409 Conflict",
+                           "Cette carte ne programme pas son module Zigbee (ZiWiFi32 : par le FTDI)");
+    if (s_fw_img || !strcmp(fw_get().state, "running"))
+        return send_status(req, "409 Conflict", "Programmation deja en cours");
+    size_t len = req->content_len;
+    if (len < 1024 || len > ZIGATE_ISP_IMAGE_MAX) return send_bad(req, "Taille de firmware invalide");
+
+    uint8_t *img = (uint8_t *)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!img) return send_status(req, "500 Internal Server Error", "Memoire insuffisante");
+    size_t got = 0;
+    int timeouts = 0;
+    while (got < len) {
+        int r = httpd_req_recv(req, (char *)img + got, len - got);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts <= 3) continue;
+        if (r <= 0) {
+            heap_caps_free(img);
+            return send_bad(req, "Envoi interrompu");
+        }
+        timeouts = 0;
+        got += r;
+    }
+    char err[96];
+    if (!zigate_isp_image_valid(img, len, err, sizeof(err))) {
+        heap_caps_free(img);
+        return send_bad(req, err);
+    }
+    s_fw_img = img;
+    s_fw_len = len;
+    fw_set("running", 0, "Demarrage");
+    if (xTaskCreate(fw_task, "zigate_fw", 4096, NULL, 5, NULL) != pdPASS) {
+        heap_caps_free(img);
+        s_fw_img = NULL;
+        fw_set("error", -1, "Tache de programmation impossible (RAM interne)");
+        return send_status(req, "500 Internal Server Error", "Memoire insuffisante");
+    }
+    return send_status(req, "200 OK", "Programmation du module Zigbee lancee");
+}
+
+static esp_err_t get_firmware_status(httpd_req_t *req)
+{
+    fw_status_t st = fw_get();
+    jw_t w = {};
+    jw_obj(&w);
+    jw_kbool(&w, "available", board_has_zigate_isp());
+    jw_kstr(&w, "state", st.state);
+    jw_kint(&w, "pct", st.pct);
+    jw_kstr(&w, "msg", st.msg);
+    jw_obj_end(&w);
+    return jw_send(req, &w);
+}
+
 /** Partie de l'URI apres "/api/zigbee/", sans la query. */
 static void route_name(httpd_req_t *req, char *out, size_t len)
 {
@@ -1639,6 +1749,7 @@ static esp_err_t zigbee_get_handler(httpd_req_t *req)
     if (!strcmp(r, "console"))      return get_console(req);
     if (!strcmp(r, "ota/status"))   return get_ota_status(req);
     if (!strcmp(r, "ir"))           return get_ir(req);
+    if (!strcmp(r, "firmware/status")) return get_firmware_status(req);
     return send_not_found(req, "Route inconnue");
 }
 
@@ -1646,6 +1757,7 @@ static esp_err_t zigbee_post_handler(httpd_req_t *req)
 {
     char r[32];
     route_name(req, r, sizeof(r));
+    if (!strcmp(r, "firmware")) return post_firmware(req);   // corps binaire
 
     static const struct { const char *name; esp_err_t (*fn)(httpd_req_t *, cJSON *); } routes[] = {
         { "action",      post_action },

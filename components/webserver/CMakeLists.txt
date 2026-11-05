@@ -26,6 +26,7 @@ idf_component_register(
         energy_service
         log
     PRIV_REQUIRES
+        board
         rules
         esp_app_format
         device_setup

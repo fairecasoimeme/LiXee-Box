@@ -8,6 +8,7 @@ idf_component_register(
     LDFRAGMENTS
         "psram_bss.lf"
     PRIV_REQUIRES
+        board
         json
         rules
         notifications

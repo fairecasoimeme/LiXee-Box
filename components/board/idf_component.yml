@@ -1,0 +1,4 @@
+dependencies:
+  ## LED RGB WS2812 de la LiXee-Box Pro (pilote RMT)
+  espressif/led_strip:
+    version: "^3.0.0"

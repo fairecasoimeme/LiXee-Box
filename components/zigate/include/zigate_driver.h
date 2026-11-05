@@ -34,13 +34,13 @@ extern "C" {
 #ifdef CONFIG_ZIGATE_RESET_GPIO
 #define ZIGATE_RESET_PIN CONFIG_ZIGATE_RESET_GPIO
 #else
-#define ZIGATE_RESET_PIN 19
+#define ZIGATE_RESET_PIN 15
 #endif
 
 #ifdef CONFIG_ZIGATE_FLASH_GPIO
 #define ZIGATE_FLASH_PIN CONFIG_ZIGATE_FLASH_GPIO
 #else
-#define ZIGATE_FLASH_PIN 40
+#define ZIGATE_FLASH_PIN 21
 #endif
 
 #define ZIGATE_UART_NUM    UART_NUM_1
@@ -148,6 +148,13 @@ esp_err_t zigate_init(void);
  * Reset hardware de la ZiGate (toggle du pin RESET)
  */
 esp_err_t zigate_reset(void);
+
+/**
+ * Suspend (true) ou reprend l'usage normal de l'UART de la ZiGate : la
+ * reception est mise de cote et les envois refuses, pour dialoguer avec le
+ * bootloader ISP du JN5189 (zigate_isp_flash).
+ */
+esp_err_t zigate_uart_suspend(bool suspend);
 
 /**
  * Envoie un paquet brut a la ZiGate

@@ -7,6 +7,7 @@ idf_component_register(
         "zigate_actions.cpp"
         "zigate_ota.cpp"
         "zigate_ir.cpp"
+        "zigate_isp.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES
@@ -14,6 +15,7 @@ idf_component_register(
         esp_event
         log
     PRIV_REQUIRES
+        board
         json
         vfs
         esp_timer

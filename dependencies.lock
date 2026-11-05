@@ -204,8 +204,18 @@ dependencies:
       registry_url: https://components.espressif.com
       type: service
     version: 1.0.3
+  espressif/led_strip:
+    component_hash: 027f68f2b57b0dca1d68dff6cc1139d9093825aa808c2bc3ca42bb2ce530fce9
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.2'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 3.1.1
   espressif/mdns:
-    component_hash: ef0766474b37459f6ad22461e453a8713e780e831a7c993b16919d817988dff6
+    component_hash: 2fa43caa78cc170842255bc7bf71f306bc815cae12e9496bfb12372423019ac7
     dependencies:
     - name: idf
       require: private
@@ -213,7 +223,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com/
       type: service
-    version: 1.14.1
+    version: 1.15.1
   espressif/rmaker_cmd_resp:
     component_hash: 343ccd5d3a2789ecb241f9de5ac7f67fc39db126c1af139116a20c9a6e3669f3
     dependencies:
@@ -225,7 +235,7 @@ dependencies:
       type: service
     version: 1.0.0
   espressif/rmaker_common:
-    component_hash: cfbe92d0e739288354c91655e4fe7b9592bbfa410c01a2480428038acd149a7f
+    component_hash: 36a112cd8750c05dda3123334643ca0d792e6ec4660a85a824d85a3ca4b8c0fd
     dependencies:
     - name: espressif/mqtt
       registry_url: https://components.espressif.com
@@ -244,7 +254,7 @@ dependencies:
     - name: espressif/rmaker_console
       registry_url: https://components.espressif.com
       require: private
-      version: ^1.0.0
+      version: ^1.1.0
     - name: espressif/rmaker_system_ctrl
       registry_url: https://components.espressif.com
       require: private
@@ -263,7 +273,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.10.1
+    version: 1.11.0
   espressif/rmaker_common_events:
     component_hash: 3cd947e1e97c3c391087f0f82167c830dd20dd852e36db3c918f9bbff484b2ff
     dependencies:
@@ -275,7 +285,7 @@ dependencies:
       type: service
     version: 1.2.0
   espressif/rmaker_console:
-    component_hash: 22f38fe0ec9c84257427dad9a92e09ddbba48a6278eae42b0b167589f0e79f20
+    component_hash: 627c588581909ea68676f100e1ad0643fab7b5402c5d5cc4994785d61fa69326
     dependencies:
     - name: espressif/rmaker_system_ctrl
       registry_url: https://components.espressif.com
@@ -291,7 +301,7 @@ dependencies:
     source:
       registry_url: https://components.espressif.com
       type: service
-    version: 1.0.1
+    version: 1.1.0
   espressif/rmaker_system_ctrl:
     component_hash: b4208fbc7e99b30fb1d272cbd30e578327079a6495499d12fb466b6c2fc0d899
     dependencies:
@@ -346,8 +356,9 @@ dependencies:
     version: 1.23.1
 direct_dependencies:
 - espressif/esp_matter
+- espressif/led_strip
 - espressif/mdns
 - joltwallet/littlefs
-manifest_hash: 3444e703635f6898db49b2daa38571fa35f82fa76e983eacb72058ad30763e72
+manifest_hash: 50b328ef548bcbf0863a6e28fd139d7d5fafa321801ee5d05b45aba47ca84ba6
 target: esp32s3
 version: 2.0.0

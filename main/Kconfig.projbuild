@@ -22,16 +22,18 @@ menu "LiXee MatterBridge Configuration"
 
         config ZIGATE_RESET_GPIO
             int "ZiGate RESET GPIO"
-            default 19
+            default 15
             help
-                GPIO pour le reset hardware de la ZiGate+.
+                GPIO du reset du JN5189 (LiXee-Box Pro ; non relie sur la
+                ZiWiFi32, ou le FTDI pilote le reset). Jamais 19/20 : USB natif.
                 Active LOW.
 
         config ZIGATE_FLASH_GPIO
-            int "ZiGate FLASH GPIO"
-            default 40
+            int "ZiGate ISP GPIO"
+            default 21
             help
-                GPIO pour le mode flash de la ZiGate+.
+                GPIO de l'entree ISP du JN5189 (SPIMISO, bas pendant le reset
+                = programmation). LiXee-Box Pro ; non relie sur la ZiWiFi32.
                 HIGH = normal, LOW = flash mode.
 
     endmenu

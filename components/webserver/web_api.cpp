@@ -29,6 +29,7 @@
 #include "mqtt_manager.h"
 #include "web_compat.h"
 #include "maintenance.h"
+#include "board.h"
 #include "ntp_sync.h"
 #include "esp_log.h"
 #include "nvs.h"
@@ -472,6 +473,12 @@ static esp_err_t api_system_info_handler(httpd_req_t *req)
     // Protection HTTP active : le menu propose "Deconnexion" (LiXee-Box)
     cJSON_AddBoolToObject(root, "secureHttp", cfg_get_settings()->enable_secure_http &&
                                               cfg_get_general()->user_http[0] && cfg_get_general()->pass_http[0]);
+    // Carte (ZiWiFi32 / LiXee-Box Pro) et alimentation (USB ou PoE seul, Pro)
+    cJSON *board = cJSON_AddObjectToObject(root, "board");
+    cJSON_AddStringToObject(board, "id", board_id());
+    cJSON_AddStringToObject(board, "name", board_name());
+    cJSON_AddStringToObject(board, "source", board_source_name());
+    cJSON_AddStringToObject(board, "power", board_usb_powered() ? "usb" : "poe");
     cJSON *mods = cJSON_AddObjectToObject(root, "modules");
     cJSON_AddBoolToObject(mods, "zigbee", zigate_is_detected());
     cJSON_AddBoolToObject(mods, "ethernet", eth.detected);

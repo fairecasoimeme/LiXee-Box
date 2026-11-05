@@ -65,6 +65,8 @@
 #include <time.h>
 #include "tunnel.h"
 #include "maintenance.h"
+#include "board.h"
+#include "status_led.h"
 
 // Version du firmware (peut etre surchargee par -DVERSION=... dans CMake)
 #ifndef VERSION
@@ -862,15 +864,8 @@ static void boot_reset_check(void)
 
     if (count >= BOOT_RESET_COUNT) {
         ESP_LOGW(TAG, "!!! REINITIALISATION DE SECOURS (WiFi, Ethernet, securite HTTP) !!!");
-        // Confirmation visible comme en v2.x : 10 eclats rapides de la LED verte (GPIO 3)
-        gpio_reset_pin(GPIO_NUM_3);
-        gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
-        for (int i = 0; i < 10; i++) {
-            gpio_set_level(GPIO_NUM_3, 1);
-            vTaskDelay(pdMS_TO_TICKS(50));
-            gpio_set_level(GPIO_NUM_3, 0);
-            vTaskDelay(pdMS_TO_TICKS(50));
-        }
+        // Confirmation visible comme en v2.x : 10 eclats rapides de la LED
+        status_led_flash_reset();
         boot_counter_clear(NULL);
         wifi_mgr_clear_credentials();
         remove("/littlefs/config/configWifi.json");
@@ -1222,14 +1217,13 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Free heap: %lu (dont RAM interne: %lu)",
              esp_get_free_heap_size(), esp_get_free_internal_heap_size());
 
-    // LED verte (GPIO 3) eteinte au demarrage, comme la v2.x : un redemarrage
-    // logiciel garde le niveau de la broche (LED du provisioning BLE allumee)
-    gpio_reset_pin(GPIO_NUM_3);
-    gpio_set_direction(GPIO_NUM_3, GPIO_MODE_OUTPUT);
-    gpio_set_level(GPIO_NUM_3, 0);
-
     // 1. NVS (requis par WiFi et Matter)
     ESP_ERROR_CHECK(init_nvs());
+
+    // Carte (ZiWiFi32 ou Pro) puis LED eteinte, comme la v2.x : un redemarrage
+    // logiciel garde le niveau de la broche ou la couleur de la WS2812
+    board_init();
+    status_led_init();
 
     // 2. LittleFS (configs, templates, web)
     ESP_ERROR_CHECK(init_littlefs());

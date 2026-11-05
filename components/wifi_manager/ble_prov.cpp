@@ -26,6 +26,7 @@
 
 #include <string.h>
 #include <stdio.h>
+#include "status_led.h"
 
 static const char *TAG = "BLE_PROV";
 
@@ -64,11 +65,8 @@ static void *s_credentials_ctx = NULL;
 
 static char s_device_name[20] = "LIXEEBOX-0000";
 
-// LED verte (GPIO 3, comme la v2.x) : clignote lentement tant que le
-// provisioning BLE attend LiXee-Assist. Meme LED que l'appairage LoRa
-#define BLE_PROV_LED_GPIO GPIO_NUM_3
-static esp_timer_handle_t s_led_timer = NULL;
-static bool s_led_on = false;
+// LED d'etat (comme la v2.x) : clignote lentement tant que le provisioning
+// BLE attend LiXee-Assist
 
 // Buffer pour les credentials recues — utilise pour deferer le callback
 // hors du contexte GATT (sinon vTaskDelay bloque la tache NimBLE host
@@ -146,34 +144,8 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 // Generation du nom de device "LIXEEBOX-XXYY" (2 derniers octets MAC)
 // ============================================================================
 
-static void led_timer_cb(void *arg)
-{
-    (void)arg;
-    s_led_on = !s_led_on;
-    gpio_set_level(BLE_PROV_LED_GPIO, s_led_on);
-}
-
-static void led_blink_start(void)
-{
-    if (!s_led_timer) {
-        gpio_reset_pin(BLE_PROV_LED_GPIO);
-        gpio_set_direction(BLE_PROV_LED_GPIO, GPIO_MODE_OUTPUT);
-        esp_timer_create_args_t a = {};
-        a.callback = led_timer_cb;
-        a.name = "ble_led";
-        if (esp_timer_create(&a, &s_led_timer) != ESP_OK) return;
-    }
-    esp_timer_stop(s_led_timer);
-    esp_timer_start_periodic(s_led_timer, 1000 * 1000);
-}
-
-static void led_blink_stop(void)
-{
-    if (!s_led_timer) return;
-    esp_timer_stop(s_led_timer);
-    s_led_on = false;
-    gpio_set_level(BLE_PROV_LED_GPIO, 0);
-}
+static void led_blink_start(void) { status_led_set(LED_STATE_BLE_PROV, true); }
+static void led_blink_stop(void)  { status_led_set(LED_STATE_BLE_PROV, false); }
 
 static void generate_device_name(void)
 {
