@@ -2,7 +2,8 @@
 // Sauvegardes : archive tar de la configuration et des donnees.
 //
 // Portage de handleToolCreateBackup() (microtar) de la LiXee-Box :
-//  - meme contenu : db/, config/, debug/, hst/, tp/ et bk/*.json. L'original
+//  - meme contenu : db/, config/, debug/, hst/, tp/ et bk/*.json, plus ir/
+//    (codes infrarouges appris, absents de la LiXee-Box 2.x). L'original
 //    ne gardait de bk/ que les noms de 16 caracteres + ".json" (test sur
 //    substring(19,24)) ; ici tous les .json de bk/ sont pris ;
 //  - config/ contient les mots de passe (WiFi, MQTT, SMTP, WebPush, HTTP) :
@@ -35,7 +36,7 @@
 static const char *TAG = "MAINT_BK";
 
 // Ordre de la LiXee-Box
-static const char *const BACKUP_DIRS[] = { "db", "config", "debug", "hst", "tp", "bk" };
+static const char *const BACKUP_DIRS[] = { "db", "config", "debug", "hst", "tp", "ir", "bk" };
 
 #define BK_TMP_SUFFIX "~w"
 

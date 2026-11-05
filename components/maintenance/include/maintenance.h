@@ -38,7 +38,7 @@ extern "C" {
 #endif
 
 /** Repertoires de /littlefs places dans une sauvegarde (bk : *.json seuls). */
-#define MAINT_BACKUP_DIRS      "db, config, debug, hst, tp, bk/*.json"
+#define MAINT_BACKUP_DIRS      "db, config, debug, hst, tp, ir, bk/*.json"
 /** Nom de la sauvegarde enregistree par maint_backup_create(). */
 #define MAINT_BACKUP_NAME      "backup.tar"
 /** Fichier de configuration du lot (URL de mise a jour). */
