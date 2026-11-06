@@ -128,6 +128,27 @@ typedef esp_err_t (*matter_virtual_write_cb_t)(int endpoint_id, uint32_t cluster
 void matter_bridge_set_virtual_write_cb(matter_virtual_write_cb_t cb);
 
 /**
+ * Invoque quand un controleur Matter selectionne un preset (commande
+ * SetActivePresetRequest du cluster Thermostat, feature Presets) sur un
+ * thermostat virtuel. frost : true si le preset "Hors-gel" a ete choisi,
+ * false pour "Confort". Ne concerne que les endpoints crees avec
+ * matter_profile_t.presets (voir matter_bridge_add_virtual_endpoint).
+ */
+typedef esp_err_t (*matter_thermostat_preset_cb_t)(int endpoint_id, bool frost);
+/** Un seul module gere les presets (les thermostats virtuels). */
+void matter_bridge_set_thermostat_preset_cb(matter_thermostat_preset_cb_t cb);
+
+/**
+ * Met a jour le contenu des presets Matter "Confort"/"Hors-gel" d'une zone de
+ * thermostat virtuel et l'etat actif courant, pour qu'un controleur Matter
+ * les lise a jour. Consignes en centiemes de degre (comme
+ * matter_bridge_set_number sur 0x0201/0x0012). Sans effet si l'endpoint n'a
+ * pas la feature Presets.
+ */
+void matter_bridge_set_thermostat_presets(int endpoint_id, int32_t comfort_setpoint,
+                                          int32_t frost_setpoint, bool frost_active);
+
+/**
  * Cree un endpoint virtuel. uid : identifiant stable (UniqueID), product :
  * nom de produit affiche (fabricant : LiXee). Memes regles que
  * matter_bridge_add_endpoint() pour preferred_ep.

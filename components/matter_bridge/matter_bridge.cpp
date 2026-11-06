@@ -18,6 +18,7 @@
 #include "matter_bridge.h"
 #include "matter_device_manager.h"
 #include "elec_power_delegate.h"
+#include "thermostat_presets_delegate.h"
 #include "zigate_devices.h"
 #include "esp_log.h"
 #include "esp_err.h"
@@ -31,6 +32,7 @@
 #include <esp_matter_feature.h>
 #include <esp_matter_event.h>
 #include <esp_matter_delegate_callbacks.h>
+#include <app/PluginApplicationCallbacks.h>
 #include <app/clusters/electrical-energy-measurement-server/electrical-energy-measurement-server.h>
 #include <app/reporting/reporting.h>
 #include <app/server/Server.h>
@@ -67,6 +69,56 @@ static bool s_zigbee_update_in_progress = false;
 static ElecPowerDelegate *s_elec_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static int s_elec_delegate_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static int s_elec_delegate_count = 0;
+
+// Delegates pour la feature Presets des thermostats virtuels (un par endpoint max)
+static ThermostatPresetsDelegate *s_thermo_preset_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static int s_thermo_preset_delegate_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static int s_thermo_preset_delegate_count = 0;
+static matter_thermostat_preset_cb_t s_thermo_preset_cb = nullptr;
+
+void matter_bridge_set_thermostat_preset_cb(matter_thermostat_preset_cb_t cb)
+{
+    s_thermo_preset_cb = cb;
+}
+
+static ThermostatPresetsDelegate *get_thermo_preset_delegate(int endpoint_id)
+{
+    for (int i = 0; i < s_thermo_preset_delegate_count; i++) {
+        if (s_thermo_preset_delegate_ep_ids[i] == endpoint_id) return s_thermo_preset_delegates[i];
+    }
+    return nullptr;
+}
+
+void matter_bridge_set_thermostat_presets(int endpoint_id, int32_t comfort_setpoint,
+                                          int32_t frost_setpoint, bool frost_active)
+{
+    ThermostatPresetsDelegate *d = get_thermo_preset_delegate(endpoint_id);
+    if (d) d->SyncFromZone(comfort_setpoint, frost_setpoint, frost_active);
+}
+
+// Appelee par le serveur CHIP quand un controleur invoque SetActivePresetRequest :
+// repercute le choix sur la zone via le callback enregistre par thermostat.cpp
+// (definie ici, et non dans thermostat_presets_delegate.h, pour acceder a
+// s_thermo_preset_cb).
+CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
+    const chip::app::DataModel::Nullable<chip::ByteSpan> &newActivePresetHandle)
+{
+    if (newActivePresetHandle.IsNull()) {
+        return CHIP_NO_ERROR;   // aucun preset actif demande : rien a repercuter sur la zone
+    }
+    const chip::ByteSpan &v = newActivePresetHandle.Value();
+    if (v.size() != 1 || (v.data()[0] != 0x01 && v.data()[0] != 0x02)) {
+        return CHIP_ERROR_INVALID_ARGUMENT;
+    }
+    bool frost = (v.data()[0] == 0x02);
+    if (s_thermo_preset_cb) {
+        esp_err_t err = s_thermo_preset_cb(EndpointId(), frost);
+        if (err == ESP_ERR_NOT_FOUND) {
+            ESP_LOGW(TAG, "Preset Matter sur l'endpoint %d : zone introuvable", EndpointId());
+        }
+    }
+    return CHIP_NO_ERROR;
+}
 
 // Energie cumulee : un acces partage pour tous les endpoints compteur, et
 // l'etat des index Zigbee par endpoint.
@@ -477,16 +529,39 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         uint32_t f = 0;
         if (p->heat) f |= cluster::thermostat::feature::heating::get_id();
         if (p->cool) f |= cluster::thermostat::feature::cooling::get_id();
+        if (p->presets) f |= cluster::thermostat::feature::presets::get_id();
         cfg.thermostat.feature_flags = f;
         // ControlSequenceOfOperation : 2 chauffage seul, 0 froid seul, 4 les deux
         cfg.thermostat.control_sequence_of_operation = (p->heat && p->cool) ? 4 : (p->heat ? 2 : 0);
         cfg.thermostat.system_mode = p->heat ? 4 : 3;     // Heat / Cool
+        // Feature Presets (Confort/Hors-gel, issue #51) : le Delegate doit etre
+        // fourni via cfg.thermostat.delegate *avant* endpoint::thermostat::add().
+        // esp-matter l'enregistre alors lui-meme au bon moment (une fois l'endpoint
+        // reellement actif) via set_delegate_and_init_callback()/ThermostatDelegateInitCB.
+        // Un chip::app::Clusters::Thermostat::SetDefaultDelegate() appele a la main
+        // juste apres add() est trop tot : l'endpoint n'est pas encore "enabled"
+        // (voir matter_bridge_add_endpoint_impl, etape 5), emberAfGetClusterServerEndpointIndex()
+        // echoue alors silencieusement et GetDelegate() renverra nullptr pour toujours.
+        ThermostatPresetsDelegate *presets_delegate = nullptr;
+        if (p->presets) {
+            presets_delegate = new ThermostatPresetsDelegate(endpoint::get_id(ep));
+            cfg.thermostat.delegate = presets_delegate;
+        }
         endpoint::thermostat::add(ep, &cfg);
         cluster_t *th = cluster::get(ep, Thermostat::Id);
         bool running = false;
         for (int i = 0; i < p->link_count; i++)
             if (p->links[i].target == ML_TH_RUNNING) running = true;
         if (th && running) cluster::thermostat::attribute::create_thermostat_running_state(th, 0);
+        if (presets_delegate) {
+            if (s_thermo_preset_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
+                s_thermo_preset_delegates[s_thermo_preset_delegate_count] = presets_delegate;
+                s_thermo_preset_delegate_ep_ids[s_thermo_preset_delegate_count] = endpoint::get_id(ep);
+                s_thermo_preset_delegate_count++;
+            } else {
+                ESP_LOGE(TAG, "Trop de thermostats avec presets Matter");
+            }
+        }
     }
     if (caps & MCAP_FAN) {
         endpoint::fan::config_t cfg;
@@ -960,6 +1035,21 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
         if (delegate) {
             ESP_LOGD(TAG, "Manually initializing ElectricalPowerMeasurement delegate for ep=%d", new_ep_id);
             cluster::delegate_cb::ElectricalPowerMeasurementDelegateInitCB((void *)delegate, new_ep_id);
+        }
+        ThermostatPresetsDelegate *presets_delegate = get_thermo_preset_delegate(new_ep_id);
+        if (presets_delegate) {
+            ESP_LOGD(TAG, "Manually initializing Thermostat Presets delegate for ep=%d", new_ep_id);
+            cluster::delegate_cb::ThermostatDelegateInitCB((void *)presets_delegate, new_ep_id);
+            // Le premier thermostat avec presets cree apres start() : son
+            // AttributeAccessInterface (lecture de Presets/PresetTypes/...) n'est
+            // sinon jamais enregistree (le sweep plugin_init_callback_common() qui
+            // le ferait ne tourne qu'une fois, au demarrage du stack, avant que ce
+            // endpoint dynamique existe) - meme cause que pour le Delegate ci-dessus.
+            static bool s_thermo_plugin_initialized = false;
+            if (!s_thermo_plugin_initialized) {
+                MatterThermostatPluginServerInitCallback();
+                s_thermo_plugin_initialized = true;
+            }
         }
         if (profile ? (profile->caps & MCAP_ENERGY) != 0 : device_type == MATTER_DEV_ENERGY_METER) {
             energy_endpoint_init(new_ep_id);
