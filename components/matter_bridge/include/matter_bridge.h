@@ -104,6 +104,15 @@ esp_err_t matter_bridge_update_attribute(int endpoint_id, uint32_t cluster_id,
                                           uint32_t attr_id, const void *value, size_t size);
 
 /**
+ * Complete ou met a jour VendorName / ProductName (BridgedDeviceBasicInformation,
+ * 0x0039) : cree l'attribut s'il n'existait pas encore (fabricant/modele
+ * Zigbee pas encore connus a la creation de l'endpoint), sinon met a jour sa
+ * valeur. vendor/model NULL ou vides : aucune action pour ce champ.
+ */
+esp_err_t matter_bridge_update_bridged_identity(int endpoint_id, const char *vendor,
+                                                const char *model);
+
+/**
  * Ajoute un endpoint dont les types d'appareil et clusters viennent du profil
  * du template (voir matter_profile.h). Memes regles que
  * matter_bridge_add_endpoint() pour preferred_ep.
