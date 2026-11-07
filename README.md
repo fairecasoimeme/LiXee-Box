@@ -8,7 +8,7 @@
 
 ## 🆕 Version 3 : la LiXee-Box parle Matter
 
-La **v3.0** est une réécriture complète du firmware sous **ESP-IDF 5.5** (le framework officiel d'Espressif), à la place d'Arduino. Elle garde toutes les fonctions de la LiXee-Box et ajoute un **pont Matter** : vos appareils **Zigbee**, **LoRa**, vos **thermostats virtuels** et vos **groupes d'actions** apparaissent dans **Home Assistant**, **Apple Maison** et les autres contrôleurs Matter, sans MQTT.
+La **v3.0** est une réécriture complète du firmware sous **ESP-IDF 5.5** (le framework officiel d'Espressif), à la place d'Arduino. Elle garde toutes les fonctions de la LiXee-Box et ajoute un **pont Matter** : vos appareils **Zigbee**, **LoRa**, vos **thermostats virtuels**, vos **chauffe-eau virtuels** et vos **groupes d'actions** apparaissent dans **Home Assistant**, **Apple Maison** et les autres contrôleurs Matter, sans MQTT.
 
 - Une LiXee-Box en v2.x passe en v3 par une **mise à jour habituelle** (manuelle ou automatique) : appareils, configuration et historiques sont repris → [Migrer vers la v3](#-migrer-une-lixee-box-vers-la-v3)
 - Tout sur le pont Matter → [Pont Matter](#-pont-matter-à-partir-de-la-v30)
@@ -121,6 +121,13 @@ L'appareil peut être configuré via un site web local
 - Régulation **TPI** (modulation par le temps) ou **hystérésis** selon l'actionneur
 - Maîtrise de l'énergie : **présence**, **ouverture** de fenêtre, **plages horaires**, **tarif Linky**
 - Hors-gel, forçage manuel, cadran temps réel — guide détaillé : [THERMOSTATS.md](THERMOSTATS.md)
+
+### 🚿 Chauffe-eau virtuel
+- Régulation d'un ballon d'eau chaude : sonde de température **optionnelle** + contacteur/relais Zigbee dissociés
+- 3 modes fixes : **Arrêt**, **Marche forcée**, **Programme** (plages horaires, tarif Linky)
+- Régulation **TPI** si sonde présente, pilotage simple sinon ; préréglages résistance / chauffe-eau thermodynamique
+- **Boost** temporaire (30 min / 2h) avec retour automatique au mode précédent
+- Exposé en Matter comme device type standard **Water Heater** (`0x050F`) — guide détaillé : [WATERHEATER.md](WATERHEATER.md)
 
 ### 🔒 Sécurité
 - Authentification par sessions (token 32 caractères, durée 24h, max 16 sessions simultanées à partir de la v3.2, 4 avant)
@@ -336,6 +343,7 @@ Chaque appareil Matter est construit à partir des états de son template :
 | Climatiseurs (AC201A, IRB-4) | thermostat chaud/froid, ventilation |
 | Boutons (SNZB-01P, Aqara) | bouton : appui simple, multiple, long ; batterie |
 | **Thermostats virtuels** | thermostat ; presets **Confort** et **Hors-gel** en chauffage (à partir de la v3.2, Home Assistant) |
+| **Chauffe-eau virtuels** | chauffe-eau (Water Heater) |
 | **Groupes d'actions** publiés dans Matter | interrupteur virtuel |
 
 ### Limites
@@ -343,6 +351,7 @@ Chaque appareil Matter est construit à partir des états de son template :
 - **Amazon Alexa** : un volet ne peut pas être ajouté à une routine. Créez deux groupes d'actions (ouvrir, fermer) et publiez-les dans Matter comme interrupteurs en **mode impulsion** : ils s'utilisent dans les routines
 - **Apple Maison** n'affiche pas les compteurs et mesures d'énergie (ZLinky, puissance des prises), ni les presets des thermostats virtuels
 - L'identification du compteur et les index par période (v3.2) utilisent des clusters encore **provisoires** dans Matter 1.5 : peu de contrôleurs les affichent
+- **Chauffe-eau virtuel** (device type Water Heater) : reconnu nativement par Home Assistant et SmartThings (entités dédiées) ; **non supporté par Apple Maison**
 - **Appareils à plusieurs voies** : une seule voie est publiée
 - **Triphasé** : les phases 2 et 3 ne sont pas publiées
 - **Sans équivalent Matter** : énergie injectée, modes fil pilote, vanne d'arrosage, champs TIC propres au Linky
@@ -645,6 +654,19 @@ Configuration dans **Config → Thermostat**, visuel temps réel dans **Mesures 
 ![Cadran thermostat — chauffage](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Thermostat_Cadran_chauffage.jpg)
 
 > **Documentation complète** : voir [THERMOSTATS.md](THERMOSTATS.md) pour le guide détaillé (modes de régulation, capteurs, actionneurs, algorithmes TPI/hystérésis, paramètres avancés, cadran, priorités, cas d'usage, dépannage).
+
+## 🚿 Chauffe-eau virtuel (Matter Water Heater)
+
+Le **chauffe-eau virtuel** régule un ballon d'eau chaude piloté par un **contacteur/relais Zigbee**, avec une **sonde de température optionnelle** (beaucoup de ballons n'en ont pas). Il est exposé côté Matter comme le device type standard **Water Heater** (`0x050F`, spécification Matter 1.5).
+
+- **3 modes fixes** : Arrêt, Marche forcée, Programme (plages horaires et/ou tarif Linky)
+- Régulation **TPI** (si sonde présente) ou pilotage simple (sans sonde), avec préréglages **résistance** / **chauffe-eau thermodynamique**
+- **Boost** temporaire (durée configurable, retour automatique au mode précédent à l'échéance)
+- **Jusqu'à 4 chauffe-eau** indépendants, plusieurs contacteurs par chauffe-eau
+
+Configuration dans **Config → Chauffe-eau**, visuel temps réel dans **Mesures → Chauffe-eau**.
+
+> **Documentation complète** : voir [WATERHEATER.md](WATERHEATER.md) pour le guide détaillé (modes, programme, sonde et contacteur, régulation TPI, boost, exposition Matter, priorités, cas d'usage, dépannage).
 
 ## 🎛️ Groupes d'actions (à partir de la v2.23)
 
