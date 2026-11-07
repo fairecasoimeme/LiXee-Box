@@ -11,6 +11,7 @@ idf_component_register(
         "web_tunnel.cpp"
         "web_maint.cpp"
         "web_thermostat.cpp"
+        "web_waterheater.cpp"
         "web_compat.cpp"
     INCLUDE_DIRS
         "include"
@@ -44,5 +45,6 @@ idf_component_register(
         ntp_sync
         mqtt_manager
         thermostat
+        water_heater
         delestage
 )

@@ -81,6 +81,7 @@ typedef enum {
 #define MCAP_ELECTRICAL   (1u << 12)   // puissance, tension, courant
 #define MCAP_ENERGY       (1u << 13)   // energie cumulee importee
 #define MCAP_SWITCH       (1u << 14)
+#define MCAP_WATER_HEATER (1u << 15)   // Water Heater (0x050F) : Thermostat HEAT seul + WaterHeaterManagement + WaterHeaterMode
 
 #define MATTER_PROFILE_MAX_LINKS  32
 

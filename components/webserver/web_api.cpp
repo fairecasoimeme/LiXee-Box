@@ -12,6 +12,7 @@
 #include "web_tunnel.h"
 #include "web_lora.h"
 #include "web_thermostat.h"
+#include "web_waterheater.h"
 #include "web_notif.h"
 #include "tunnel.h"
 #include "lora.h"
@@ -1642,6 +1643,7 @@ esp_err_t web_api_register_handlers(httpd_handle_t server)
     web_lora_register(server);
     web_notif_register(server);
     web_thermostat_register(server);
+    web_waterheater_register(server);
     web_compat_register(server);
 
     // --- Config API ---

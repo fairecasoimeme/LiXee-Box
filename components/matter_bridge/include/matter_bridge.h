@@ -128,6 +128,51 @@ typedef esp_err_t (*matter_virtual_write_cb_t)(int endpoint_id, uint32_t cluster
 void matter_bridge_set_virtual_write_cb(matter_virtual_write_cb_t cb);
 
 /**
+ * Commandes (invocations, pas des ecritures d'attribut) recues sur un
+ * endpoint virtuel : Boost / CancelBoost (Water Heater Management) et
+ * ChangeToMode (Water Heater Mode / Mode Base). Contrairement aux ecritures
+ * d'attribut (matter_virtual_write_cb_t), ces commandes n'ont pas d'attribut
+ * cible : le module proprietaire de l'endpoint les identifie par leur type.
+ */
+typedef enum {
+    MATTER_VCMD_WH_CHANGE_MODE = 1,   // value = nouveau CurrentMode (0x4000/0x4001/0x4002)
+    MATTER_VCMD_WH_BOOST       = 2,   // boost != NULL
+    MATTER_VCMD_WH_CANCEL_BOOST = 3,
+} matter_virtual_cmd_t;
+
+/** Parametres de la commande Boost (Water Heater Management, 0x0094/0x00). */
+typedef struct {
+    uint32_t duration_s;        // duree avant retour au mode precedent
+    bool     one_shot;
+    bool     emergency;
+    bool     has_temp;
+    int16_t  temp_centidegrees; // TemporarySetpoint (x0,01 degC), valide si has_temp
+} matter_wh_boost_t;
+
+/**
+ * @return ESP_ERR_NOT_FOUND si aucun module n'a reconnu l'endpoint (commande
+ *         alors rejetee cote appelant)
+ */
+typedef esp_err_t (*matter_virtual_command_cb_t)(int endpoint_id, matter_virtual_cmd_t cmd,
+                                                 int32_t value, const matter_wh_boost_t *boost);
+/** Ajoute un module d'endpoints virtuels repondant a des commandes : 4 au plus. */
+void matter_bridge_set_virtual_command_cb(matter_virtual_command_cb_t cb);
+
+/** Appele par les delegates (tache CHIP) pour transmettre une commande recue. */
+esp_err_t matter_bridge_dispatch_virtual_command(int endpoint_id, matter_virtual_cmd_t cmd,
+                                                 int32_t value, const matter_wh_boost_t *boost);
+
+/**
+ * Pousse l'etat d'un endpoint Water Heater vers Matter : HeatDemand et
+ * BoostState (cluster 0x0094, via leur delegate) et CurrentMode (cluster
+ * 0x009E / Mode Base, via son Instance - UpdateCurrentMode() n'est pas sur le
+ * delegate mais sur l'Instance que la pile cree). ESP_ERR_NOT_FOUND si
+ * l'endpoint n'est pas un Water Heater virtuel.
+ */
+esp_err_t matter_bridge_wh_push_state(int endpoint_id, bool heat_demand, bool boost_active,
+                                      uint8_t current_mode);
+
+/**
  * Cree un endpoint virtuel. uid : identifiant stable (UniqueID), product :
  * nom de produit affiche (fabricant : LiXee). Memes regles que
  * matter_bridge_add_endpoint() pour preferred_ep.
@@ -213,5 +258,11 @@ esp_err_t matter_bridge_get_energy_data(matter_energy_data_t *out);
 // C++ only: access au delegate ElectricalPowerMeasurement
 class ElecPowerDelegate;
 ElecPowerDelegate* matter_bridge_get_elec_delegate(int endpoint_id);
+
+// C++ only: acces aux delegates de l'endpoint Water Heater (0x050F)
+class WaterHeaterManagementDelegate;
+class WaterHeaterModeDelegate;
+WaterHeaterManagementDelegate* matter_bridge_get_wh_mgmt_delegate(int endpoint_id);
+WaterHeaterModeDelegate* matter_bridge_get_wh_mode_delegate(int endpoint_id);
 
 #endif

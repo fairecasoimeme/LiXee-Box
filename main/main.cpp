@@ -44,6 +44,7 @@
 #include "zigate_driver.h"
 #include "zigate_actions.h"
 #include "thermostat.h"
+#include "water_heater.h"
 #include "delestage.h"
 #include "web_zigbee_remove.h"
 #include "zigate_devices.h"
@@ -1370,6 +1371,7 @@ extern "C" void app_main(void)
     zigate_actions_set_setpoint_source(hvac_setpoint_source);
     rules_set_notify_cb(rules_notify);
     thermostat_init();          // thermostats virtuels (lit thermostats.json, regulation 30 s)
+    water_heater_init();        // chauffe-eau virtuels (lit waterheaters.json, regulation 30 s)
     delestage_init();           // delestage des prises sur depassement de puissance souscrite
     {
         // Module LoRa : absent sur la plupart des cartes (ESP_ERR_NOT_FOUND, sans gravite)
@@ -1497,6 +1499,8 @@ extern "C" void app_main(void)
 
         // Thermostats virtuels : un thermostat ponte par zone
         thermostat_matter_start();
+        // Chauffe-eau virtuels : un endpoint Water Heater ponte par zone
+        water_heater_matter_start();
         // Groupes d'actions publies : un interrupteur ponte par groupe
         group_matter_start();
         matter_device_manager_set_exposure_cb(on_matter_exposure);
