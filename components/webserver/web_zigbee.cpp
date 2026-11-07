@@ -399,15 +399,23 @@ static bool has_occupancy(const zigate_device_t *d)
     return false;
 }
 
-/** Prise / relais pilotable en marche-arret (delestage) : prise declaree ou cluster 0x0006. */
+/**
+ * Prise / relais pilotable en marche-arret (delestage) : prise declaree,
+ * cluster 0x0006, ou relais Tuya sans OnOff standard pilote par datapoints
+ * EF00 (ex. TS0601 "Double relais" : dp 1/2 booleens, cluster proprietaire
+ * 0xEF00, issue #58).
+ */
 static bool has_onoff(const zigate_device_t *d)
 {
     const device_data_t *dd = device_data_find(d->ieee_addr);
     if (dd && !strcmp(dd->info.power_socket, "1")) return true;
-    for (int i = 0; i < d->in_cluster_count && i < 32; i++) if (d->in_clusters[i] == 0x0006) return true;
+    for (int i = 0; i < d->in_cluster_count && i < 32; i++)
+        if (d->in_clusters[i] == 0x0006 || d->in_clusters[i] == 0xEF00) return true;
     if (device_data_get_attr(d->ieee_addr, 0x0006, 0x0000)) return true;
+    if (device_data_get_attr(d->ieee_addr, 0xEF00, 0x0001)) return true;
     const devdata_template_t *t = device_data_get_template(d->ieee_addr);
-    for (int i = 0; t && i < t->state_count; i++) if (t->states[i].cluster == 0x0006) return true;
+    for (int i = 0; t && i < t->state_count; i++)
+        if (t->states[i].cluster == 0x0006 || t->states[i].cluster == 0xEF00) return true;
     return false;
 }
 
