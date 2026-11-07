@@ -256,20 +256,80 @@ static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *labe
             bdbi, buf, (uint16_t)strlen(buf));
     } else if (dev) {
         char buf[33];
-        // Fabricant Zigbee pas toujours connu (pas encore remonte par l'appareil
-        // au moment de l'interview) : repli sur "LiXee", comme web_compat.cpp et
-        // mqtt_manager.cpp. Sans attribut VendorName cree, le cluster
-        // BridgedDeviceBasicInformation n'a pas d'attribut Manufacturer du tout
-        // (absent de AttributeList), pas juste une valeur vide.
-        strlcpy(buf, dev->manufacturer[0] ? dev->manufacturer : MATTER_BRIDGE_VENDOR_NAME, sizeof(buf));
-        cluster::bridged_device_basic_information::attribute::create_vendor_name(
-            bdbi, buf, (uint16_t)strlen(buf));
+        // Fabricant/modele Zigbee : connus de l'interview s'ils sont arrives
+        // avant la creation de cet endpoint, sinon rattrapes plus tard par
+        // matter_bridge_update_bridged_identity() quand le rapport du cluster
+        // Basic (0x0000, attributs 0x0004/0x0005) arrive - voir son appel dans
+        // matter_device_manager.cpp. Mettre une valeur de remplacement ici
+        // (ex. MATTER_BRIDGE_VENDOR_NAME) serait trompeur : l'attribut
+        // afficherait un fabricant incorrect au lieu d'etre simplement absent
+        // jusqu'a ce qu'il soit connu.
+        if (dev->manufacturer[0]) {
+            strlcpy(buf, dev->manufacturer, sizeof(buf));
+            cluster::bridged_device_basic_information::attribute::create_vendor_name(
+                bdbi, buf, (uint16_t)strlen(buf));
+        }
         if (dev->model[0]) {
             strlcpy(buf, dev->model, sizeof(buf));
             cluster::bridged_device_basic_information::attribute::create_product_name(
                 bdbi, buf, (uint16_t)strlen(buf));
         }
     }
+}
+
+// ============================================================================
+// Helper: completer/mettre a jour VendorName et ProductName (BridgedDeviceBasic
+// Information, 0x0039) apres coup, quand le fabricant/modele Zigbee arrive
+// apres la creation de l'endpoint (set_bridged_identity() ne s'execute qu'une
+// fois). Cree l'attribut s'il n'existait pas encore, sinon met a jour sa
+// valeur. vendor/model peuvent etre NULL ou vides (aucune action pour ce
+// champ dans ce cas).
+// ============================================================================
+
+esp_err_t matter_bridge_update_bridged_identity(int endpoint_id, const char *vendor, const char *model)
+{
+    if (!s_matter_node || !s_matter_started) return ESP_ERR_INVALID_STATE;
+    bool held;
+    if (!stack_lock(&held)) return ESP_FAIL;
+
+    esp_err_t ret = ESP_ERR_NOT_FOUND;
+    endpoint_t *ep = endpoint::get(s_matter_node, endpoint_id);
+    cluster_t *bdbi = ep ? cluster::get(ep, BridgedDeviceBasicInformation::Id) : NULL;
+    if (bdbi) {
+        ret = ESP_OK;
+        char buf[33];
+        if (vendor && vendor[0]) {
+            strlcpy(buf, vendor, sizeof(buf));
+            attribute_t *attr = attribute::get(bdbi, BridgedDeviceBasicInformation::Attributes::VendorName::Id);
+            if (attr) {
+                esp_matter_attr_val_t v = esp_matter_char_str(buf, (uint16_t)strlen(buf));
+                s_zigbee_update_in_progress = true;
+                attribute::update(endpoint_id, BridgedDeviceBasicInformation::Id,
+                                  BridgedDeviceBasicInformation::Attributes::VendorName::Id, &v);
+                s_zigbee_update_in_progress = false;
+            } else {
+                cluster::bridged_device_basic_information::attribute::create_vendor_name(
+                    bdbi, buf, (uint16_t)strlen(buf));
+            }
+        }
+        if (model && model[0]) {
+            strlcpy(buf, model, sizeof(buf));
+            attribute_t *attr = attribute::get(bdbi, BridgedDeviceBasicInformation::Attributes::ProductName::Id);
+            if (attr) {
+                esp_matter_attr_val_t v = esp_matter_char_str(buf, (uint16_t)strlen(buf));
+                s_zigbee_update_in_progress = true;
+                attribute::update(endpoint_id, BridgedDeviceBasicInformation::Id,
+                                  BridgedDeviceBasicInformation::Attributes::ProductName::Id, &v);
+                s_zigbee_update_in_progress = false;
+            } else {
+                cluster::bridged_device_basic_information::attribute::create_product_name(
+                    bdbi, buf, (uint16_t)strlen(buf));
+            }
+        }
+    }
+
+    stack_unlock(held);
+    return ret;
 }
 
 // ============================================================================
