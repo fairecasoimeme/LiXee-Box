@@ -67,6 +67,7 @@ typedef struct {
     float frost_temp;
     bool  frost_mode;                    // bascule hors-gel active (consigne = frost_temp)
     float setpoint_saved;                // consigne memorisee avant le hors-gel
+    float unoccupied_temp;               // consigne d'absence (UnoccupiedHeatingSetpoint Matter, feature OCC)
     int   tpi_cycle_s;
     float kp, ki;
     int   min_on_s, min_off_s;
@@ -99,7 +100,8 @@ typedef struct {
     uint8_t m_feat;
     bool    m_pushed;
     bool    m_valid;
-    int32_t m_temp, m_sp, m_mode, m_run;
+    bool    m_occ;
+    int32_t m_temp, m_sp, m_usp, m_mode, m_run;
 } zone_t;
 
 static zone_t *s_z;
@@ -188,6 +190,7 @@ static void zone_defaults(zone_t *t)
     t->setpoint = 19.0f;
     t->frost_temp = 7.0f;
     t->setpoint_saved = 19.0f;
+    t->unoccupied_temp = 16.0f;
     t->tpi_cycle_s = 900;
     t->kp = 0.8f;
     t->ki = 0.1f;
@@ -502,7 +505,11 @@ static void regulation_tick(void)
             t->integral = 0.0f;
         } else {
             bool frost = t->heating && tc < t->frost_temp;
-            bool inhibit = (t->window_open || !t->occupied || !t->sched_active) && !frost;
+            // Absence : consigne reduite (unoccupied_temp) plutot qu'arret total, comme un
+            // vrai thermostat connecte (feature OCC / UnoccupiedHeatingSetpoint Matter) ;
+            // fenetre ouverte / hors plage horaire restent des coupures franches.
+            float sp = t->occupied ? t->setpoint : t->unoccupied_temp;
+            bool inhibit = (t->window_open || !t->sched_active) && !frost;
             if (frost) {
                 desired = true;
             } else if (t->force_mode == 1) {
@@ -512,7 +519,7 @@ static void regulation_tick(void)
             } else if (inhibit) {
                 desired = false;                 // integrale gelee
             } else if (action_based(t)) {
-                float error = t->heating ? (t->setpoint - tc) : (tc - t->setpoint);
+                float error = t->heating ? (sp - tc) : (tc - sp);
                 if (error > HYSTERESIS_C) desired = true;
                 else if (error < -HYSTERESIS_C) desired = false;
                 else desired = t->output;
@@ -521,7 +528,7 @@ static void regulation_tick(void)
                 // TPI : rapport cyclique recalcule a chaque debut de cycle
                 if (t->cycle_start_ms == 0 || now - t->cycle_start_ms >= (int64_t)t->tpi_cycle_s * 1000) {
                     t->cycle_start_ms = now;
-                    float error = t->heating ? (t->setpoint - tc) : (tc - t->setpoint);
+                    float error = t->heating ? (sp - tc) : (tc - sp);
                     t->integral += error;
                     if (t->ki > 0.0f) {          // anti-windup : Ki x integrale dans [0, 1]
                         float imax = 1.0f / t->ki;
@@ -611,6 +618,7 @@ static bool save_locked(void)
         cJSON_AddBoolToObject(o, "frostMode", t->frost_mode);
         cJSON_AddNumberToObject(o, "forceMode", t->force_mode);
         cJSON_AddNumberToObject(o, "setpointSaved", r3(t->setpoint_saved));
+        cJSON_AddNumberToObject(o, "unoccupiedTemp", r3(t->unoccupied_temp));
         cJSON_AddNumberToObject(o, "tpiCycleSec", t->tpi_cycle_s);
         cJSON_AddNumberToObject(o, "tpiKp", r3(t->kp));
         cJSON_AddNumberToObject(o, "tpiKi", r3(t->ki));
@@ -685,6 +693,7 @@ static void load_config(void)
         j_int(o, "forceMode", &t->force_mode);
         t->setpoint_saved = t->setpoint;
         j_num(o, "setpointSaved", &t->setpoint_saved);
+        j_num(o, "unoccupiedTemp", &t->unoccupied_temp);
         j_int(o, "tpiCycleSec", &t->tpi_cycle_s);
         j_num(o, "tpiKp", &t->kp);
         j_num(o, "tpiKi", &t->ki);
@@ -741,6 +750,7 @@ char *thermostat_status_json(void)
         cJSON_AddNumberToObject(o, "heating", t->heating ? 1 : 0);
         cJSON_AddNumberToObject(o, "setpoint", round1(t->setpoint));
         cJSON_AddNumberToObject(o, "frostTemp", round1(t->frost_temp));
+        cJSON_AddNumberToObject(o, "unoccupiedTemp", round1(t->unoccupied_temp));
         if (t->sensor_valid) cJSON_AddNumberToObject(o, "temp", round1(t->current_temp));
         else cJSON_AddNullToObject(o, "temp");
         cJSON_AddNumberToObject(o, "sensorValid", t->sensor_valid ? 1 : 0);
@@ -784,6 +794,7 @@ char *thermostat_config_json(void)
         cJSON_AddBoolToObject(o, "heating", t->heating);
         cJSON_AddNumberToObject(o, "setpoint", round1(t->setpoint));
         cJSON_AddNumberToObject(o, "frostTemp", round1(t->frost_temp));
+        cJSON_AddNumberToObject(o, "unoccupiedTemp", round1(t->unoccupied_temp));
         cJSON_AddStringToObject(o, "sensorIEEE", t->sensor);
         device_label(t->sensor, lbl, sizeof(lbl));
         cJSON_AddStringToObject(o, "sensorLabel", lbl);
@@ -824,6 +835,7 @@ char *thermostat_config_json(void)
     cJSON_AddBoolToObject(def, "heating", d.heating);
     cJSON_AddNumberToObject(def, "setpoint", d.setpoint);
     cJSON_AddNumberToObject(def, "frostTemp", d.frost_temp);
+    cJSON_AddNumberToObject(def, "unoccupiedTemp", d.unoccupied_temp);
     cJSON_AddNumberToObject(def, "operMode", 0);
     cJSON_AddNumberToObject(def, "tpiCycleSec", d.tpi_cycle_s);
     cJSON_AddNumberToObject(def, "tpiKp", r3(d.kp));
@@ -971,6 +983,7 @@ int thermostat_save_zone(int id, const cJSON *j)
     j_bool(j, "heating", &t->heating);
     j_num(j, "setpoint", &t->setpoint);
     j_num(j, "frostTemp", &t->frost_temp);
+    j_num(j, "unoccupiedTemp", &t->unoccupied_temp);
     int cycle = 0;
     j_int(j, "tpiCycleSec", &cycle);
     if (cycle >= 60) t->tpi_cycle_s = cycle;
@@ -1007,6 +1020,13 @@ static bool set_setpoint_locked(zone_t *t, float value)
     t->frost_mode = false;                       // reglage manuel : sortie du hors-gel
     t->integral = 0.0f;
     t->cycle_start_ms = 0;
+    return save_locked();
+}
+
+static bool set_unoccupied_locked(zone_t *t, float value)
+{
+    if (!isfinite(value)) value = t->unoccupied_temp;
+    t->unoccupied_temp = value < 0.0f ? 0.0f : (value > 40.0f ? 40.0f : value);
     return save_locked();
 }
 
@@ -1068,18 +1088,21 @@ static esp_err_t matter_write_cb(int ep, uint32_t cluster, uint32_t attr, int32_
     bool ours = false;
     for (int i = 0; i < THERMO_MAX_ZONES && !ours; i++) ours = (ep > 1 && s_vep[i] == ep);
     if (!ours) return ESP_ERR_NOT_FOUND;
-    if (cluster == 0x0201 && !is_null && (attr == 0x0011 || attr == 0x0012 || attr == 0x001C)) {
+    if (cluster == 0x0201 && !is_null &&
+        (attr == 0x0011 || attr == 0x0012 || attr == 0x0014 || attr == 0x001C)) {
         thermo_msg_t m = { MSG_WRITE, ep, attr, value };
         if (s_q) xQueueSend(s_q, &m, 0);
     }
     return ESP_OK;
 }
 
-/** Types d'appareil Matter de la zone : bit 0 chauffage, bit 1 froid. */
+/** Types d'appareil Matter de la zone : bit 0 chauffage, bit 1 froid, bit 2 feature OCC. */
 static uint8_t zone_features(const zone_t *t)
 {
     bool rev = t->action_heat[0] && t->action_cool[0];
-    return (uint8_t)((t->heating || rev ? 1 : 0) | (!t->heating || rev ? 2 : 0));
+    uint8_t f = (uint8_t)((t->heating || rev ? 1 : 0) | (!t->heating || rev ? 2 : 0));
+    if (t->presence[0]) f |= 4;
+    return f;
 }
 
 static void vep_rebuild(void)
@@ -1116,6 +1139,7 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
         p->caps = MCAP_THERMOSTAT;
         p->heat = feat & 1;
         p->cool = (feat & 2) != 0;
+        p->occ = (feat & 4) != 0;
         p->link_count = 1;
         p->links[0].target = ML_TH_RUNNING;          // cree ThermostatRunningState
         int ep = matter_bridge_add_virtual_endpoint(MATTER_UID_BASE | t->uid, p, t->name,
@@ -1132,6 +1156,7 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
     int ep = t->matter_ep;
     int32_t temp = t->sensor_valid ? (int32_t)lroundf(t->current_temp * 100.0f) : 0;
     int32_t sp = (int32_t)lroundf(t->setpoint * 100.0f);
+    int32_t usp = (int32_t)lroundf(t->unoccupied_temp * 100.0f);
     int32_t mode = !t->enabled ? 0 : (t->heating ? 4 : 3);
     int32_t run = (t->enabled && t->actual_on) ? (t->heating ? 0x1 : 0x2) : 0;
     bool force = !t->m_pushed;
@@ -1142,12 +1167,20 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
         if (feat & 1) matter_bridge_set_number(ep, 0x0201, 0x0012, clamp32(sp, 700, 3000), false);
         if (feat & 2) matter_bridge_set_number(ep, 0x0201, 0x0011, clamp32(sp, 1600, 3200), false);
     }
+    if ((feat & 4) && (feat & 1) && (force || t->m_usp != usp)) {
+        matter_bridge_set_number(ep, 0x0201, 0x0014, clamp32(usp, 700, 3000), false);
+    }
     if (force || t->m_mode != mode) matter_bridge_set_number(ep, 0x0201, 0x001C, mode, false);
     if (force || t->m_run != run) matter_bridge_set_number(ep, 0x0201, 0x0029, run, false);
+    if ((feat & 4) && (force || t->m_occ != t->occupied)) {
+        matter_bridge_set_number(ep, 0x0201, 0x0002, t->occupied ? 1 : 0, false);
+    }
     t->m_valid = t->sensor_valid;
     t->m_temp = temp;
     t->m_sp = sp;
+    t->m_usp = usp;
     t->m_mode = mode;
+    t->m_occ = t->occupied;
     t->m_run = run;
     t->m_pushed = true;
 }
@@ -1175,6 +1208,8 @@ static void matter_apply_write(const thermo_msg_t *m)
     if (m->attr == 0x0012 || m->attr == 0x0011) {
         // Consigne du mode en cours (une zone n'a qu'une consigne)
         if ((m->attr == 0x0012) == t->heating) set_setpoint_locked(t, m->value / 100.0f);
+    } else if (m->attr == 0x0014) {
+        if (t->heating) set_unoccupied_locked(t, m->value / 100.0f);
     } else if (m->attr == 0x001C) {
         if (m->value == 0) {
             if (t->enabled) set_enabled_locked(t, false);
