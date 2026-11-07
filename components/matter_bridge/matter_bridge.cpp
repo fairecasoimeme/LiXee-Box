@@ -477,7 +477,9 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         uint32_t f = 0;
         if (p->heat) f |= cluster::thermostat::feature::heating::get_id();
         if (p->cool) f |= cluster::thermostat::feature::cooling::get_id();
+        if (p->occ)  f |= cluster::thermostat::feature::occupancy::get_id();
         cfg.thermostat.feature_flags = f;
+        cfg.thermostat.features.occupancy.occupancy = 1;  // occupe par defaut, republie par la zone juste apres
         // ControlSequenceOfOperation : 2 chauffage seul, 0 froid seul, 4 les deux
         cfg.thermostat.control_sequence_of_operation = (p->heat && p->cool) ? 4 : (p->heat ? 2 : 0);
         cfg.thermostat.system_mode = p->heat ? 4 : 3;     // Heat / Cool
