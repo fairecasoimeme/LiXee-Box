@@ -256,11 +256,14 @@ static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *labe
             bdbi, buf, (uint16_t)strlen(buf));
     } else if (dev) {
         char buf[33];
-        if (dev->manufacturer[0]) {
-            strlcpy(buf, dev->manufacturer, sizeof(buf));
-            cluster::bridged_device_basic_information::attribute::create_vendor_name(
-                bdbi, buf, (uint16_t)strlen(buf));
-        }
+        // Fabricant Zigbee pas toujours connu (pas encore remonte par l'appareil
+        // au moment de l'interview) : repli sur "LiXee", comme web_compat.cpp et
+        // mqtt_manager.cpp. Sans attribut VendorName cree, le cluster
+        // BridgedDeviceBasicInformation n'a pas d'attribut Manufacturer du tout
+        // (absent de AttributeList), pas juste une valeur vide.
+        strlcpy(buf, dev->manufacturer[0] ? dev->manufacturer : MATTER_BRIDGE_VENDOR_NAME, sizeof(buf));
+        cluster::bridged_device_basic_information::attribute::create_vendor_name(
+            bdbi, buf, (uint16_t)strlen(buf));
         if (dev->model[0]) {
             strlcpy(buf, dev->model, sizeof(buf));
             cluster::bridged_device_basic_information::attribute::create_product_name(
