@@ -398,64 +398,9 @@
                        '.bin,.tar,.gz,.tgz') +
           '</div>' +
         '</div>' +
-        // Module Zigbee (LiXee-Box Pro : l'ESP programme le JN5189)
-        '<div class="card p-4 mb-4" id="zfw-card" style="display:none">' +
-          '<h5>Firmware du module Zigbee</h5>' +
-          '<div id="zfw-version" class="small mb-2"></div>' +
-          '<p class="small text-muted">Image <code>.bin</code> du JN5189 (ZiGate). Le module est programm&eacute; puis v&eacute;rifi&eacute; ' +
-            'depuis la box (environ 1 min) ; la box red&eacute;marre ensuite. Seule la zone du firmware est effac&eacute;e : ' +
-            'le r&eacute;seau Zigbee (PDM) est conserv&eacute;.</p>' +
-          '<input type="file" class="form-control mb-2" id="zfw-file" accept=".bin">' +
-          '<button class="btn btn-primary" id="zfw-btn">Programmer le module</button>' +
-          progressHtml('zfw-p') +
-        '</div>' +
       '</div>'
     );
-
-    // Programmation du module Zigbee : proposee si la carte la permet
-    function pollZfw() {
-      $('#zfw-btn').prop('disabled', true);
-      var id = A.pageInterval(function() {
-        $.ajax({ url: '/api/zigbee/firmware/status', dataType: 'json', timeout: 4000 }).done(function(s) {
-          if (s.state === 'error') {
-            clearInterval(id);
-            setProgress('zfw-p', null, s.msg || 'Erreur', 'error');
-            $('#zfw-btn').prop('disabled', false);
-          } else if (s.state === 'done') {
-            clearInterval(id);
-            waitReboot('zfw-p');
-          } else {
-            setProgress('zfw-p', s.pct, s.msg || 'En cours...');
-          }
-        });
-      }, 1500);
-    }
-    $.getJSON('/api/zigbee/firmware/status').done(function(s) {
-      if (!s.available) return;
-      $('#zfw-card').show();
-      if (s.state === 'running') pollZfw();
-      $.getJSON('/api/zigbee/coordinator').done(function(c) {
-        $('#zfw-version').text(c.versionKnown ? 'Version actuelle : ' + c.version : 'Le module ne répond pas (firmware absent ?)');
-      });
-    });
-    $('#zfw-btn').on('click', function() {
-      var file = $('#zfw-file')[0].files[0];
-      if (!file) { A.showAlert('Choisir un fichier .bin', 'warning'); return; }
-      if (!confirm('Programmer le module Zigbee avec ' + file.name + ' ? La box redémarrera.')) return;
-      var reader = new FileReader();
-      reader.onload = function() {
-        setProgress('zfw-p', 0, 'Envoi du fichier...');
-        $.ajax({
-          url: '/api/zigbee/firmware',
-          method: 'POST',
-          contentType: 'application/octet-stream',
-          processData: false,
-          data: reader.result
-        }).done(function() { pollZfw(); })
-          .fail(function(xhr) { setProgress('zfw-p', null, errText(xhr), 'error'); });
-      };
-      reader.readAsArrayBuffer(file);
-    });
+    // Firmware du module Zigbee (ZiGate) : page Zigbee > Config Zigbee
 
     $('#up-btn').on('click', function() {
       if (!confirm('Lancer la mise à jour ? L\'appareil redémarrera.')) return;

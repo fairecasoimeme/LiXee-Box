@@ -1026,10 +1026,25 @@
         '<input class="form-control" id="zb-chan" type="text" placeholder="ex. 15 ou 0x07FFF800"><br>' +
         '<button type="button" class="btn btn-primary" id="zb-chan-set">Set Channel</button><br>' +
       '</div></div></div>' +
-      // Complements du pont : ouverture du reseau et nettoyage de la table
+      // Mise a jour de la ZiGate : LiXee-Box Pro seulement (l'ESP programme le
+      // JN5189), carte affichee si /api/zigbee/firmware/status le permet
+      '<div id="zfw-card" style="display:none">' +
+      '<h5 class="card-title mb-4 mt-4">Mise à jour de la ZiGate</h5>' +
+      '<div class="card mx-auto shadow-sm"><div class="card-body">' +
+        '<div id="zfw-version" class="small mb-2"></div>' +
+        '<p class="small text-muted">Image <code>.bin</code> du JN5189 (ZiGate). Le module est programmé puis vérifié ' +
+          'depuis la box (environ 1 min) ; la box redémarre ensuite. Seule la zone du firmware est effacée : ' +
+          'le réseau Zigbee (PDM) est conservé.</p>' +
+        '<input type="file" class="form-control mb-2" id="zfw-file" accept=".bin">' +
+        '<button type="button" class="btn btn-primary" id="zfw-btn">Mettre à jour la ZiGate</button>' +
+        '<div id="zfw-p" class="mt-3" style="display:none">' +
+          '<div class="progress" style="height:20px"><div class="progress-bar" role="progressbar" style="width:0%">0%</div></div>' +
+          '<div class="small mt-1 zfw-msg"></div>' +
+        '</div>' +
+      '</div></div></div>' +
+      // Complement du pont : nettoyage de la table (l'appairage a sa propre page)
       '<h5 class="card-title mb-4 mt-4">Réseau Zigbee</h5>' +
       '<div class="card mx-auto shadow-sm"><div class="card-body">' +
-        '<div class="mb-3"><button class="btn btn-success" id="zb-pj">Autoriser l\'appairage (60 s)</button> <span id="zb-pj-state" class="small text-muted"></span></div>' +
         '<div><button class="btn btn-outline-secondary zb-cmd" data-cmd="CleanGhosts" data-confirm="Effacer de la table de la ZiGate les appareils inconnus de la passerelle ?">Nettoyer la table de la ZiGate</button> ' +
         '<span id="zb-ghost" class="small text-muted"></span></div>' +
       '</div></div>' +
@@ -1058,7 +1073,8 @@
           ['Version coordinator', c.versionKnown ? esc(c.version) : '-'],
           ['R\u00e9seau', c.network ? ok : nok],
           ['Canal', c.channel || '-'],
-          ['PAN ID', c.stateKnown ? esc(c.panId) : '-']
+          ['PAN ID', c.stateKnown ? esc(c.panId) : '-'],
+          ['LED', c.led === 1 ? 'ON' : (c.led === 0 ? 'OFF' : '-')]
         ];
         var h = '';
         rows.forEach(function(r) { h += '<span> ' + esc(r[0]) + ' : </span>' + r[1] + '<br>'; });
@@ -1068,7 +1084,6 @@
         if (c.channel && !$ch.data('prefilled') && !$ch.val() && document.activeElement !== $ch[0]) {
           $ch.val(c.channel).data('prefilled', true);
         }
-        $('#zb-pj-state').text(c.permitJoin < 0 ? 'ouvert sans limite' : (c.permitJoin > 0 ? 'ouvert encore ' + c.permitJoin + ' s' : 'ferm\u00e9'));
         $('#zb-ghost').text(c.ghostPending ? 'en cours...' : (c.ghostResult >= 0 ? c.ghostResult + ' entr\u00e9e(s) effac\u00e9e(s)' : ''));
       }).fail(function() { $('#zb-coord').html('<div class="text-danger">Erreur de chargement.</div>'); });
     }
@@ -1089,8 +1104,67 @@
       if (!v) return;
       cmd('SetChannelMask', v, 'Changer le canal ou le masque (' + v + ') ? La ZiGate va red\u00e9marrer.');
     });
-    $t.on('click.zbco', '#zb-pj', function() {
-      confirmPost(null, '/api/zigbee/permit_join', { duration: 60 }, loadCoord);
+    // Mise a jour de la ZiGate (LiXee-Box Pro)
+    function zfwProgress(pct, msg, kind) {
+      var $p = $('#zfw-p').show(), $bar = $p.find('.progress-bar');
+      if (pct !== null && pct !== undefined) $bar.css('width', pct + '%').text(pct + '%');
+      $bar.toggleClass('bg-danger', kind === 'error').toggleClass('bg-success', kind === 'done');
+      $p.find('.zfw-msg').toggleClass('text-danger', kind === 'error').text(msg || '');
+    }
+    function zfwWaitReboot() {
+      zfwProgress(100, 'Redémarrage de la box...', 'done');
+      var tries = 0;
+      setTimeout(function poll() {
+        $.ajax({ url: '/api/system/info', dataType: 'json', timeout: 3000 })
+          .done(function() { window.location.reload(); })
+          .fail(function() {
+            if (++tries < 40) setTimeout(poll, 3000);
+            else zfwProgress(100, 'La box ne répond pas encore : rechargez la page.', 'error');
+          });
+      }, 8000);
+    }
+    function zfwPoll() {
+      $('#zfw-btn').prop('disabled', true);
+      var id = A.pageInterval(function() {
+        $.ajax({ url: '/api/zigbee/firmware/status', dataType: 'json', timeout: 4000 }).done(function(s) {
+          if (s.state === 'error') {
+            clearInterval(id);
+            zfwProgress(null, s.msg || 'Erreur', 'error');
+            $('#zfw-btn').prop('disabled', false);
+          } else if (s.state === 'done') {
+            clearInterval(id);
+            zfwWaitReboot();
+          } else {
+            zfwProgress(s.pct || 0, s.msg || 'En cours...');
+          }
+        });
+      }, 1500);
+    }
+    $.getJSON('/api/zigbee/firmware/status').done(function(s) {
+      if (!s || !s.available) return;
+      $('#zfw-card').show();
+      if (s.state === 'running') zfwPoll();
+      $.getJSON('/api/zigbee/coordinator').done(function(c) {
+        $('#zfw-version').text(c.versionKnown ? 'Version actuelle : ' + c.version : 'La ZiGate ne répond pas (firmware absent ?)');
+      });
+    });
+    $t.on('click.zbco', '#zfw-btn', function() {
+      var file = $('#zfw-file')[0].files[0];
+      if (!file) { A.showAlert('Choisir un fichier .bin', 'warning'); return; }
+      if (!confirm('Mettre à jour la ZiGate avec ' + file.name + ' ? La box redémarrera.')) return;
+      var reader = new FileReader();
+      reader.onload = function() {
+        zfwProgress(0, 'Envoi du fichier...');
+        $.ajax({
+          url: '/api/zigbee/firmware',
+          method: 'POST',
+          contentType: 'application/octet-stream',
+          processData: false,
+          data: reader.result
+        }).done(function() { zfwPoll(); })
+          .fail(function(xhr) { zfwProgress(null, errMsg(xhr), 'error'); });
+      };
+      reader.readAsArrayBuffer(file);
     });
     $t.on('click.zbco', '#zb-rd-go', function() {
       var ieee = $('#zb-rd-dev').val();
