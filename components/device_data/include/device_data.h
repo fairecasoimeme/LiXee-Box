@@ -27,7 +27,8 @@ extern "C" {
 
 #define DEVDATA_MAX_DEVICES      64
 #define DEVDATA_MAX_CLUSTERS     16   // Clusters par device (plupart < 10)
-#define DEVDATA_MAX_ATTRS        24   // Attributs par cluster
+#define DEVDATA_INLINE_ATTRS     24   // Attributs par cluster dans la structure
+#define DEVDATA_MAX_ATTRS        64   // Au-dela de 24 : bloc PSRAM (cluster 0xFF66 du ZLinky : 27 et plus)
 #define DEVDATA_VALUE_LEN        72   // Valeurs hex : 35 octets (libelles TIC de 32 caracteres, noms Tuya)
 #define DEVDATA_NAME_LEN         50
 #define DEVDATA_UNIT_LEN         20
@@ -50,12 +51,25 @@ typedef struct {
     uint8_t  type;             // type ZCL du dernier rapport, 0 = inconnu
 } devdata_attr_t;
 
-/** Cluster avec ses attributs */
+/**
+ * Cluster avec ses attributs. Les DEVDATA_INLINE_ATTRS premiers sont dans la
+ * structure ; les suivants dans attrs_more, alloue au premier depassement et
+ * jamais libere ni deplace (des lecteurs parcourent les valeurs sans verrou),
+ * garde par le cluster a la remise a vide. Acces : devdata_attr_at().
+ */
 typedef struct {
-    uint16_t       cluster_id;
-    devdata_attr_t attrs[DEVDATA_MAX_ATTRS];
-    uint8_t        attr_count;
+    uint16_t        cluster_id;
+    devdata_attr_t  attrs_inline[DEVDATA_INLINE_ATTRS];
+    devdata_attr_t *attrs_more;     // DEVDATA_MAX_ATTRS - DEVDATA_INLINE_ATTRS elements
+    uint8_t         attr_count;
 } devdata_cluster_t;
+
+/** Attribut i (0 <= i < attr_count) d'un cluster. */
+static inline devdata_attr_t *devdata_attr_at(const devdata_cluster_t *cl, int i)
+{
+    return i < DEVDATA_INLINE_ATTRS ? (devdata_attr_t *)&cl->attrs_inline[i]
+                                    : &cl->attrs_more[i - DEVDATA_INLINE_ATTRS];
+}
 
 /** Element de poll list */
 typedef struct {

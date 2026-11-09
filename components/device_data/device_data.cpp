@@ -188,7 +188,11 @@ static void clear_slot_locked(int slot)
         dd->tmpl->report_count = 0;
     }
     memset(&dd->info, 0, sizeof(dd->info));
-    memset(dd->clusters, 0, sizeof(dd->clusters));
+    for (int c = 0; c < DEVDATA_MAX_CLUSTERS; c++) {
+        devdata_attr_t *more = dd->clusters[c].attrs_more;   // garde, jamais libere
+        memset(&dd->clusters[c], 0, sizeof(dd->clusters[c]));
+        dd->clusters[c].attrs_more = more;
+    }
     memset(dd->poll_list, 0, sizeof(dd->poll_list));
     s_slot_gen[slot]++;
 }
@@ -318,7 +322,9 @@ static devdata_cluster_t* find_or_create_cluster(device_data_t *dd, uint16_t clu
     }
 
     cl = &dd->clusters[dd->cluster_count++];
+    devdata_attr_t *more = cl->attrs_more;   // bloc d'un ancien usage du slot : garde
     memset(cl, 0, sizeof(devdata_cluster_t));
+    cl->attrs_more = more;
     cl->cluster_id = cluster_id;
     return cl;
 }
@@ -329,9 +335,8 @@ static devdata_cluster_t* find_or_create_cluster(device_data_t *dd, uint16_t clu
 static devdata_attr_t* find_attr(devdata_cluster_t *cl, uint16_t attr_id)
 {
     for (int i = 0; i < cl->attr_count; i++) {
-        if (cl->attrs[i].attr_id == attr_id) {
-            return &cl->attrs[i];
-        }
+        devdata_attr_t *a = devdata_attr_at(cl, i);
+        if (a->attr_id == attr_id) return a;
     }
     return NULL;
 }
@@ -349,9 +354,23 @@ static devdata_attr_t* find_or_create_attr(devdata_cluster_t *cl, uint16_t attr_
         return NULL;
     }
 
-    attr = &cl->attrs[cl->attr_count++];
+    if (cl->attr_count >= DEVDATA_INLINE_ATTRS && !cl->attrs_more) {
+        size_t n = DEVDATA_MAX_ATTRS - DEVDATA_INLINE_ATTRS;
+        devdata_attr_t *more = (devdata_attr_t *)heap_caps_calloc(n, sizeof(devdata_attr_t), MALLOC_CAP_SPIRAM);
+        if (!more) more = (devdata_attr_t *)calloc(n, sizeof(devdata_attr_t));
+        if (!more) {
+            ESP_LOGW(TAG, "No memory for more attrs in cluster 0x%04X", cl->cluster_id);
+            return NULL;
+        }
+        cl->attrs_more = more;
+    }
+
+    // Compteur incremente apres l'initialisation : un lecteur sans verrou ne
+    // voit jamais un attribut a moitie ecrit
+    attr = devdata_attr_at(cl, cl->attr_count);
     memset(attr, 0, sizeof(devdata_attr_t));
     attr->attr_id = attr_id;
+    cl->attr_count++;
     return attr;
 }
 
@@ -411,7 +430,7 @@ static cJSON* device_to_json(device_data_t *dd)
 
         cJSON *cl_obj = cJSON_CreateObject();
         for (int j = 0; j < cl->attr_count; j++) {
-            devdata_attr_t *attr = &cl->attrs[j];
+            devdata_attr_t *attr = devdata_attr_at(cl, j);
             char attr_key[8];
             snprintf(attr_key, sizeof(attr_key), "%d", attr->attr_id);
             cJSON_AddStringToObject(cl_obj, attr_key, attr->value);
@@ -426,7 +445,8 @@ static cJSON* device_to_json(device_data_t *dd)
         devdata_cluster_t *cl = &dd->clusters[i];
         cJSON *t_cl = NULL;
         for (int j = 0; j < cl->attr_count; j++) {
-            if (!cl->attrs[j].type) continue;
+            const devdata_attr_t *at = devdata_attr_at(cl, j);
+            if (!at->type) continue;
             if (!types) types = cJSON_AddObjectToObject(root, "_T");
             if (!types) break;
             if (!t_cl) {
@@ -436,8 +456,8 @@ static cJSON* device_to_json(device_data_t *dd)
                 if (!t_cl) break;
             }
             char attr_key[8];
-            snprintf(attr_key, sizeof(attr_key), "%d", cl->attrs[j].attr_id);
-            cJSON_AddNumberToObject(t_cl, attr_key, cl->attrs[j].type);
+            snprintf(attr_key, sizeof(attr_key), "%d", at->attr_id);
+            cJSON_AddNumberToObject(t_cl, attr_key, at->type);
         }
     }
 
@@ -1501,7 +1521,7 @@ char* device_data_cluster_to_json(uint64_t ieee_addr, uint16_t cluster_id)
     if (!obj) { dd_unlock(); return NULL; }
 
     for (int j = 0; j < cl->attr_count; j++) {
-        devdata_attr_t *attr = &cl->attrs[j];
+        devdata_attr_t *attr = devdata_attr_at(cl, j);
         char attr_key[8];
         snprintf(attr_key, sizeof(attr_key), "%d", attr->attr_id);
         cJSON_AddStringToObject(obj, attr_key, attr->value);

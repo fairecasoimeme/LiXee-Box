@@ -2572,8 +2572,9 @@ static void sb_values(sb_t *s, const device_data_t *dd)
         const devdata_cluster_t *cl = &dd->clusters[ci];
         sb_addf(s, "%s\"%04X\":{", ci ? "," : "", cl->cluster_id);
         for (int ai = 0; ai < cl->attr_count; ai++) {
-            sb_addf(s, "%s\"%u\":", ai ? "," : "", cl->attrs[ai].attr_id);
-            sb_str(s, cl->attrs[ai].value);
+            const devdata_attr_t *at = devdata_attr_at(cl, ai);
+            sb_addf(s, "%s\"%u\":", ai ? "," : "", at->attr_id);
+            sb_str(s, at->value);
         }
         sb_add(s, "}");
     }
@@ -2694,8 +2695,9 @@ void lora_add_devices_json(struct cJSON *array)
                 cJSON *co = cJSON_AddObjectToObject(values, key);
                 for (int ai = 0; co && ai < cl->attr_count; ai++) {
                     char ak[12];
-                    snprintf(ak, sizeof(ak), "%u", (unsigned)cl->attrs[ai].attr_id);
-                    cJSON_AddStringToObject(co, ak, cl->attrs[ai].value);
+                    const devdata_attr_t *at = devdata_attr_at(cl, ai);
+                    snprintf(ak, sizeof(ak), "%u", (unsigned)at->attr_id);
+                    cJSON_AddStringToObject(co, ak, at->value);
                 }
             }
             if (dd->info.alias[0]) cJSON_AddStringToObject(o, "dataAlias", dd->info.alias);

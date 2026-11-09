@@ -1333,7 +1333,7 @@ esp_err_t mqtt_manager_publish_device(uint64_t ieee_addr)
         devdata_cluster_t *cl = &dd->clusters[i];
 
         for (int j = 0; j < cl->attr_count; j++) {
-            devdata_attr_t *attr = &cl->attrs[j];
+            devdata_attr_t *attr = devdata_attr_at(cl, j);
             if (attr->value[0] == '\0') continue;
 
             int64_t v = 0;

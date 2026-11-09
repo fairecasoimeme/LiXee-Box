@@ -748,7 +748,7 @@ static bool zlinky_connected(uint64_t zl)
     for (int c = 0; c < dd->cluster_count; c++) {
         if (dd->clusters[c].cluster_id != 0x0B04) continue;
         for (int a = 0; a < dd->clusters[c].attr_count; a++) {
-            const devdata_attr_t *at = &dd->clusters[c].attrs[a];
+            const devdata_attr_t *at = devdata_attr_at(&dd->clusters[c], a);
             if ((at->attr_id == 1295 || at->attr_id == 0x0306) && at->last_update &&
                 now - at->last_update < 600) {
                 return true;

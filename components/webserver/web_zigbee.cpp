@@ -522,8 +522,9 @@ static esp_err_t get_devices(httpd_req_t *req, bool full)
                     jw_obj(&w);
                     for (int a = 0; a < dd->clusters[c].attr_count; a++) {
                         char at[12];
-                        snprintf(at, sizeof(at), "%u", (unsigned)dd->clusters[c].attrs[a].attr_id);
-                        jw_kstr(&w, at, dd->clusters[c].attrs[a].value);
+                        const devdata_attr_t *da = devdata_attr_at(&dd->clusters[c], a);
+                        snprintf(at, sizeof(at), "%u", (unsigned)da->attr_id);
+                        jw_kstr(&w, at, da->value);
                     }
                     jw_obj_end(&w);
                 }
@@ -766,7 +767,7 @@ static void write_device_body(jw_t *w, uint64_t ieee, const devdata_template_t *
     for (int c = 0; dd && c < dd->cluster_count; c++) {
         const devdata_cluster_t *cl = &dd->clusters[c];
         for (int a = 0; a < cl->attr_count; a++) {
-            const devdata_attr_t *at = &cl->attrs[a];
+            const devdata_attr_t *at = devdata_attr_at(cl, a);
             char hex[DEVDATA_VALUE_LEN], txt[96];
             strlcpy(hex, at->value, sizeof(hex));
             device_data_format_value(cl->cluster_id, at->attr_id, hex, at->type, "", 1.0f,
