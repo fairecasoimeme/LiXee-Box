@@ -14,6 +14,7 @@
 #include "led_strip.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <string.h>
 
 static const char *TAG = "LED";
@@ -21,7 +22,11 @@ static const char *TAG = "LED";
 typedef struct {
     uint32_t half_period_ms;   // 0 : fixe
     uint8_t r, g, b;
+    bool breathe;              // respiration sur 2 x half_period_ms au lieu du clignotement
 } led_pattern_t;
+
+// Respiration (effet Wanadoo) : luminosite recalculee toutes les 20 ms
+#define BREATH_STEP_MS 20
 
 // La WS2812 eclaire le logo a travers le boitier : couleurs systeme a 70/255,
 // sous les 30 % conseilles. Utilisateur et test : couleur fournie.
@@ -48,6 +53,7 @@ static int64_t s_user_end_us = 0;
 static bool s_test_gpio = false;    // test GPIO : la broche n'est plus a la WS2812
 static uint32_t s_test_steps = 0, s_test_step = 0;
 static int s_test_hold = -1;        // test GPIO a niveau fixe (0 ou 1), -1 : bascule
+static int64_t s_breath_t0 = 0;     // debut du cycle de respiration
 
 /** Prepare la sortie selon la carte. s_mtx tenu. */
 static void hw_setup(void)
@@ -116,15 +122,38 @@ static void show(bool force)
     }
     const led_pattern_t *p = &s_pat[top];
     s_on = true;
+    if (p->breathe && p->half_period_ms) {
+        // Part du noir : la montee est le premier mouvement visible
+        s_breath_t0 = esp_timer_get_time();
+        hw_out(true, 0, 0, 0);
+        esp_timer_start_periodic(s_timer, BREATH_STEP_MS * 1000);
+        return;
+    }
     hw_out(true, p->r, p->g, p->b);
     if (p->half_period_ms) esp_timer_start_periodic(s_timer, (uint64_t)p->half_period_ms * 1000);
+}
+
+/**
+ * Pas de la respiration : niveau (1 - cos) / 2 sur la periode, au carre pour
+ * suivre la perception de l'oeil (montee lente depuis le noir, plateau court
+ * en haut). s_mtx tenu.
+ */
+static void breath_step(const led_pattern_t *p)
+{
+    uint32_t period = p->half_period_ms * 2;
+    uint32_t t = (uint32_t)(((esp_timer_get_time() - s_breath_t0) / 1000) % period);
+    float x = (1.0f - cosf(2.0f * (float)M_PI * (float)t / (float)period)) * 0.5f;
+    x *= x;
+    hw_out(true, (uint8_t)(p->r * x + 0.5f), (uint8_t)(p->g * x + 0.5f), (uint8_t)(p->b * x + 0.5f));
 }
 
 static void timer_cb(void *arg)
 {
     (void)arg;
     xSemaphoreTake(s_mtx, portMAX_DELAY);
-    if (s_shown >= 0 && s_pat[s_shown].half_period_ms) {
+    if (s_shown >= 0 && s_pat[s_shown].breathe && s_pat[s_shown].half_period_ms) {
+        breath_step(&s_pat[s_shown]);
+    } else if (s_shown >= 0 && s_pat[s_shown].half_period_ms) {
         s_on = !s_on;
         const led_pattern_t *p = &s_pat[s_shown];
         hw_out(s_on, p->r, p->g, p->b);
@@ -201,14 +230,15 @@ void status_led_set(led_state_t state, bool active)
     xSemaphoreGive(s_mtx);
 }
 
-void status_led_user(bool on, uint8_t r, uint8_t g, uint8_t b, uint32_t blink_ms, uint32_t duration_s)
+static void user_set(bool on, uint8_t r, uint8_t g, uint8_t b, uint32_t half_ms, bool breathe,
+                     uint32_t duration_s)
 {
     if (!s_mtx) return;
     xSemaphoreTake(s_mtx, portMAX_DELAY);
     esp_timer_stop(s_user_timer);
     s_user_end_us = 0;
     if (on) {
-        s_pat[LED_STATE_USER] = { blink_ms, r, g, b };
+        s_pat[LED_STATE_USER] = { half_ms, r, g, b, breathe && half_ms };
         s_active |= 1u << LED_STATE_USER;
         if (duration_s) {
             esp_timer_start_once(s_user_timer, (uint64_t)duration_s * 1000000);
@@ -222,6 +252,11 @@ void status_led_user(bool on, uint8_t r, uint8_t g, uint8_t b, uint32_t blink_ms
     xSemaphoreGive(s_mtx);
 }
 
+void status_led_user(bool on, uint8_t r, uint8_t g, uint8_t b, uint32_t blink_ms, uint32_t duration_s)
+{
+    user_set(on, r, g, b, blink_ms, false, duration_s);
+}
+
 bool status_led_user_available(void)
 {
     return board_type() == BOARD_PRO;
@@ -233,11 +268,12 @@ esp_err_t status_led_command(const char *mode, const char *color, int brightness
     if (!status_led_user_available()) return ESP_ERR_NOT_SUPPORTED;
     if (!mode) return ESP_ERR_INVALID_ARG;
     if (!strcmp(mode, "off")) {
-        status_led_user(false, 0, 0, 0, 0, 0);
+        user_set(false, 0, 0, 0, 0, false, 0);
         return ESP_OK;
     }
     bool blink = !strcmp(mode, "blink");
-    if (!blink && strcmp(mode, "on")) return ESP_ERR_INVALID_ARG;
+    bool breathe = !strcmp(mode, "breathe");
+    if (!blink && !breathe && strcmp(mode, "on")) return ESP_ERR_INVALID_ARG;
     uint32_t rgb = 0xFFFFFF;
     if (color && color[0]) {
         const char *s = color[0] == '#' ? color + 1 : color;
@@ -251,9 +287,10 @@ esp_err_t status_led_command(const char *mode, const char *color, int brightness
     }
     if (brightness < 0) brightness = 0;
     if (brightness > 100) brightness = 100;
-    uint32_t half = blink ? (period_ms >= 100 ? period_ms : 1000) / 2 : 0;
-    status_led_user(true, ((rgb >> 16) & 0xFF) * brightness / 100, ((rgb >> 8) & 0xFF) * brightness / 100,
-                    (rgb & 0xFF) * brightness / 100, half, duration_s);
+    uint32_t half = blink   ? (period_ms >= 100 ? period_ms : 1000) / 2
+                  : breathe ? (period_ms >= 500 ? period_ms : 4000) / 2 : 0;
+    user_set(true, ((rgb >> 16) & 0xFF) * brightness / 100, ((rgb >> 8) & 0xFF) * brightness / 100,
+             (rgb & 0xFF) * brightness / 100, half, breathe, duration_s);
     return ESP_OK;
 }
 
@@ -323,6 +360,7 @@ void status_led_get(status_led_info_t *out)
     out->g = s_pat[LED_STATE_USER].g;
     out->b = s_pat[LED_STATE_USER].b;
     out->blink_ms = s_pat[LED_STATE_USER].half_period_ms;
+    out->breathe = s_pat[LED_STATE_USER].breathe;
     if (s_user_end_us) {
         int64_t left = s_user_end_us - esp_timer_get_time();
         out->remaining_s = left > 0 ? (uint32_t)((left + 999999) / 1000000) : 0;

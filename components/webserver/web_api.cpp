@@ -1711,12 +1711,13 @@ static esp_err_t api_scan_network_handler(httpd_req_t *req)
 // LED d'etat : GET /api/led (etat ; "available" : pilotable, LiXee-Box Pro),
 // POST /api/led (pilotage, Pro uniquement, meme forme que pour les regles) :
 //   {"mode":"off"}                           eteint l'etat utilisateur
-//   {"mode":"on"|"blink", "color":"#RRGGBB", "brightness":0-100,
-//    "period":ms (blink, periode complete), "duration":s (0 : sans fin)}
+//   {"mode":"on"|"blink"|"breathe", "color":"#RRGGBB", "brightness":0-100,
+//    "period":ms (blink, breathe : periode complete), "duration":s (0 : sans fin)}
+//   ("breathe" : respiration, effet Wanadoo)
 //   {"mode":"test", "duration":s}            rouge, vert, bleu, blanc (1 s chacun)
 //   {"mode":"gpio", "duration":s}            GPIO 3 a 3,3 V / 0 V chaque seconde
 //   {"mode":"gpio", "level":0|1, "duration":s}  GPIO 3 maintenu a 0 V ou 3,3 V
-// Les etats systeme (appairage BLE, LoRa) restent prioritaires sur "on"/"blink".
+// Les etats systeme (appairage BLE, LoRa) restent prioritaires sur l'etat utilisateur.
 // ============================================================================
 
 static esp_err_t send_led_state(httpd_req_t *req)
@@ -1729,6 +1730,7 @@ static esp_err_t send_led_state(httpd_req_t *req)
     cJSON_AddStringToObject(root, "shown", st.shown);
     cJSON *u = cJSON_AddObjectToObject(root, "user");
     cJSON_AddBoolToObject(u, "on", st.user_on);
+    cJSON_AddStringToObject(u, "mode", !st.user_on ? "off" : st.breathe ? "breathe" : st.blink_ms ? "blink" : "on");
     char color[8];
     snprintf(color, sizeof(color), "#%02X%02X%02X", st.r, st.g, st.b);
     cJSON_AddStringToObject(u, "color", color);
@@ -1760,7 +1762,7 @@ static esp_err_t api_led_post_handler(httpd_req_t *req)
     uint32_t duration = cJSON_IsNumber(dur) && dur->valuedouble > 0 ? (uint32_t)dur->valuedouble : 0;
     const char *m = cJSON_IsString(mode) ? mode->valuestring : "";
 
-    if (!strcmp(m, "off") || !strcmp(m, "on") || !strcmp(m, "blink")) {
+    if (!strcmp(m, "off") || !strcmp(m, "on") || !strcmp(m, "blink") || !strcmp(m, "breathe")) {
         const cJSON *c = cJSON_GetObjectItem(doc, "color");
         const cJSON *br = cJSON_GetObjectItem(doc, "brightness");
         const cJSON *per = cJSON_GetObjectItem(doc, "period");
@@ -1778,7 +1780,7 @@ static esp_err_t api_led_post_handler(httpd_req_t *req)
         status_led_test(!strcmp(m, "gpio"), duration ? duration : (m[0] == 't' ? 16 : 20));
     } else {
         cJSON_Delete(doc);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "mode : off, on, blink, test ou gpio");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "mode : off, on, blink, breathe, test ou gpio");
         return ESP_OK;
     }
     cJSON_Delete(doc);

@@ -110,7 +110,7 @@
   ];
   var ACT_TYPES = [['device', 'Appareil'], ['dynamic', 'Valeur dynamique'],
                    ['actiongroup', 'Groupe d\'actions'], ['notification', 'Notification'], ['led', 'LED de la box']];
-  var LED_MODES = [['on', 'Allumer'], ['blink', 'Clignoter'], ['off', 'Éteindre']];
+  var LED_MODES = [['on', 'Allumer'], ['blink', 'Clignoter'], ['breathe', 'Respiration (effet Wanadoo)'], ['off', 'Éteindre']];
   var OPS = [['==', '=='], ['!=', '!='], ['<', '&lt;'], ['<=', '&le;'], ['>', '&gt;'], ['>=', '&ge;']];
   var DAY_NAMES = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
   var DAY_SHORT = ['', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
@@ -625,7 +625,7 @@
         w.html(row(col(3, lbl('LED') + selectHtml('a-led-mode', LED_MODES, mode)) +
           col(2, lbl('Couleur') + '<input type="color" class="form-control form-control-sm form-control-color a-led-color" value="' + esc(color) + '">', 'a-led-on') +
           col(2, lbl('Luminosité %') + '<input type="number" class="form-control form-control-sm a-led-bri" min="1" max="100" value="' + esc(d.brightness !== undefined ? d.brightness : 30) + '">', 'a-led-on') +
-          col(2, lbl('Période ms') + '<input type="number" class="form-control form-control-sm a-led-per" min="100" step="100" value="' + esc(d.period || 1000) + '">', 'a-led-blink') +
+          col(2, lbl('Période ms') + '<input type="number" class="form-control form-control-sm a-led-per" min="100" step="100" value="' + esc(d.period || (mode === 'breathe' ? 4000 : 1000)) + '">', 'a-led-blink') +
           col(3, lbl('Durée s') + '<input type="number" class="form-control form-control-sm a-led-dur" min="0" value="' + esc(d.duration || 0) + '" title="0 : reste allumée">', 'a-led-on')) +
           '<div class="form-text small">LiXee-Box Pro uniquement. Durée 0 : la LED reste dans cet état jusqu\'à une autre commande. Les indications système (appairage BLE, LoRa) restent prioritaires.</div>');
         onLedMode(card);
@@ -642,10 +642,16 @@
     }
   }
 
-  function onLedMode(card) {
+  function onLedMode(card, changed) {
     var m = card.find('.a-led-mode').val();
     card.find('.a-led-on').toggle(m !== 'off');
-    card.find('.a-led-blink').toggle(m === 'blink');
+    card.find('.a-led-blink').toggle(m === 'blink' || m === 'breathe');
+    // Periode par defaut du mode choisi : 1 s pour clignoter, 4 s pour respirer
+    if (changed) {
+      var per = card.find('.a-led-per'), v = parseInt(per.val(), 10) || 0;
+      if (m === 'breathe' && v <= 1000) per.val(4000);
+      else if (m === 'blink' && v === 4000) per.val(1000);
+    }
   }
 
   // Selection d'une action : endpoint du template, champ position si volet
@@ -815,7 +821,7 @@
       case 'actiongroup': return 'déclencher le groupe d’actions <b>' + esc(a.actionName || '?') + '</b>';
       case 'led': {
         if (a.mode === 'off') return 'éteindre la LED de la box';
-        var lt = (a.mode === 'blink' ? 'faire clignoter' : 'allumer') + ' la LED en <span style="display:inline-block;width:.9em;height:.9em;border-radius:50%;vertical-align:middle;background:' +
+        var lt = (a.mode === 'blink' ? 'faire clignoter' : a.mode === 'breathe' ? 'faire respirer' : 'allumer') + ' la LED en <span style="display:inline-block;width:.9em;height:.9em;border-radius:50%;vertical-align:middle;background:' +
           esc(a.color) + '"></span> <b>' + esc(a.color) + '</b> à ' + esc(a.brightness) + ' %';
         return lt + (a.duration > 0 ? ' pendant ' + esc(a.duration) + ' s' : '');
       }
@@ -928,7 +934,7 @@
       onActionName(card, false);
     });
     f.on('change', '.a-name', function() { onActionName($(this).closest('.action-item'), true); });
-    f.on('change', '.a-led-mode', function() { onLedMode($(this).closest('.action-item')); });
+    f.on('change', '.a-led-mode', function() { onLedMode($(this).closest('.action-item'), true); });
     f.on('change', '.a-src', function() {
       var card = $(this).closest('.action-item');
       card.find('.a-scl').html(clusterOptions($(this).val()));

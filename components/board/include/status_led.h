@@ -30,6 +30,7 @@ typedef struct {
     bool user_on;             // etat utilisateur actif
     uint8_t r, g, b;          // couleur utilisateur (luminosite appliquee)
     uint32_t blink_ms;        // demi-periode utilisateur, 0 : fixe
+    bool breathe;             // respiration (effet Wanadoo) plutot que clignotement
     uint32_t remaining_s;     // extinction automatique de l'etat utilisateur, 0 : aucune
 } status_led_info_t;
 
@@ -51,10 +52,11 @@ void status_led_user(bool on, uint8_t r, uint8_t g, uint8_t b, uint32_t blink_ms
 
 /**
  * Commande de l'etat utilisateur, commune a POST /api/led et aux actions "led"
- * des regles (LiXee-Box Pro uniquement) : mode "off", "on" ou "blink" ; color
- * "#RRGGBB" (NULL ou "" : blanc) ; brightness 0-100 ; period_ms periode
- * complete du clignotement (< 100 : 1000) ; duration_s extinction automatique
- * (0 : sans fin).
+ * des regles (LiXee-Box Pro uniquement) : mode "off", "on", "blink" ou
+ * "breathe" (respiration, effet Wanadoo : la luminosite monte et redescend
+ * progressivement) ; color "#RRGGBB" (NULL ou "" : blanc) ; brightness 0-100 ;
+ * period_ms periode complete (blink : < 100 -> 1000 ; breathe : < 500 -> 4000) ;
+ * duration_s extinction automatique (0 : sans fin).
  * Retour : ESP_OK, ESP_ERR_NOT_SUPPORTED si la carte n'est pas une Pro,
  * ESP_ERR_INVALID_ARG si le mode ou la couleur est invalide (rien n'est change).
  */

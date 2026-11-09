@@ -248,7 +248,7 @@
   // ==========================================================================
 
   var G = { groups: [], max: 8, maxActions: 10, edit: -1, cur: null, devs: null, led: false };
-  var AG_LED_MODES = [['on', 'Allumer'], ['blink', 'Clignoter'], ['off', 'Éteindre']];
+  var AG_LED_MODES = [['on', 'Allumer'], ['blink', 'Clignoter'], ['breathe', 'Respiration (Wanadoo)'], ['off', 'Éteindre']];
 
   function agLedAction() {
     return { type: 'led', mode: 'on', color: '#0096D6', brightness: 30, period: 1000, duration: 0 };
@@ -357,12 +357,12 @@
       if (isLed) {
         var color = /^#[0-9a-fA-F]{6}$/.test(a.color || '') ? a.color : '#0096D6';
         h += '<div class="ag-act"><div class="ag-row">' + typeSel +
-          '<select class="form-select ag-led" data-j="' + j + '" data-k="mode" style="width:130px">' +
+          '<select class="form-select ag-led" data-j="' + j + '" data-k="mode" style="width:190px">' +
           AG_LED_MODES.map(function(m) { return '<option value="' + m[0] + '"' + (m[0] === (a.mode || 'on') ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select>';
         if (a.mode !== 'off') {
           h += '<input type="color" class="form-control form-control-color ag-led" data-j="' + j + '" data-k="color" title="Couleur" value="' + esc(color) + '">' +
             '<label class="ag-muted">Luminosité %</label><input type="number" class="form-control ag-led" data-j="' + j + '" data-k="brightness" min="1" max="100" style="width:80px" value="' + esc(a.brightness !== undefined ? a.brightness : 30) + '">';
-          if (a.mode === 'blink') {
+          if (a.mode === 'blink' || a.mode === 'breathe') {
             h += '<label class="ag-muted">Période ms</label><input type="number" class="form-control ag-led" data-j="' + j + '" data-k="period" min="100" step="100" style="width:95px" value="' + esc(a.period || 1000) + '">';
           }
           h += '<label class="ag-muted">Durée s</label><input type="number" class="form-control ag-led" data-j="' + j + '" data-k="duration" min="0" style="width:85px" title="0 : reste allumée" value="' + esc(a.duration || 0) + '">';
@@ -508,7 +508,12 @@
     page.on('change', '.ag-led', function() {
       var a = G.cur.actions[parseInt($(this).attr('data-j'), 10)];
       var k = $(this).attr('data-k'), v = $(this).val();
-      if (k === 'mode') { a.mode = v; renderActs(); return; }
+      if (k === 'mode') {
+        // Periode par defaut du mode choisi : 1 s pour clignoter, 4 s pour respirer
+        if (v === 'breathe' && (a.period || 0) <= 1000) a.period = 4000;
+        else if (v === 'blink' && a.period === 4000) a.period = 1000;
+        a.mode = v; renderActs(); return;
+      }
       if (k === 'color') { a.color = String(v).toUpperCase(); return; }
       var n = parseInt(v, 10);
       if (k === 'brightness') a.brightness = Math.min(100, Math.max(1, n || 30));

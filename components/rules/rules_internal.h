@@ -49,7 +49,7 @@ typedef struct {
     double  coefficient;
     double  offset;
     // led : memes champs que POST /api/led
-    char    ledMode[8];                   // on, blink, off
+    char    ledMode[8];                   // on, blink, breathe, off
     char    color[8];                     // #RRGGBB
     int32_t brightness;                   // 0-100
     int32_t period;                       // ms, periode complete (blink)
