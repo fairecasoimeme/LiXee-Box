@@ -32,7 +32,6 @@
 #include <esp_matter_endpoint.h>
 #include <esp_matter_feature.h>
 #include <esp_matter_event.h>
-#include <esp_matter_delegate_callbacks.h>
 #include <app/clusters/electrical-energy-measurement-server/ElectricalEnergyMeasurementCluster.h>
 #include <app/clusters/meter-identification-server/meter-identification-server.h>
 #include <app/clusters/commodity-metering-server/commodity-metering-server.h>
@@ -1240,15 +1239,13 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
             goto out;
         }
 
-        // 6. Pour les endpoints dynamiques, les delegate init callbacks ne sont PAS
-        //    appeles automatiquement (ils ne tournent qu'une fois au start()).
-        //    On initialise donc ici le delegate et l'energie cumulee.
+        // 6. Delegate ElectricalPowerMeasurement : deja initialise par
+        //    endpoint::enable(), qui appelle les init callbacks des clusters
+        //    quand le stack est demarre (esp-matter 1.5). Un second appel
+        //    creait une deuxieme instance dont Init() echouait (interface
+        //    d'acces deja enregistree pour cet endpoint) : instance perdue.
+        //    Reste a initialiser l'energie cumulee et les attributs Linky.
         uint16_t new_ep_id = endpoint::get_id(ep);
-        ElecPowerDelegate *delegate = matter_bridge_get_elec_delegate(new_ep_id);
-        if (delegate) {
-            ESP_LOGD(TAG, "Manually initializing ElectricalPowerMeasurement delegate for ep=%d", new_ep_id);
-            cluster::delegate_cb::ElectricalPowerMeasurementDelegateInitCB((void *)delegate, new_ep_id);
-        }
         if (profile ? (profile->caps & MCAP_ENERGY) != 0 : device_type == MATTER_DEV_ENERGY_METER) {
             energy_endpoint_init(new_ep_id);
         }
