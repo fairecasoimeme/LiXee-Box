@@ -1868,6 +1868,7 @@ typedef struct {
     int      today;
     int      tomorrow;
     uint16_t index;
+    bool     known;      // tarif identifie : sinon index = 256 par defaut, sans prix affiche
 } tariff_info_t;
 
 /**
@@ -1888,6 +1889,7 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
     ti->bg = "#2980b9";
     ti->today = ti->tomorrow = 0;
     ti->index = 256;
+    ti->known = false;
 
     if (mode_is_histo(mode)) {
         char ptec[16];
@@ -1906,6 +1908,7 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
                 strlcpy(ti->tariff, T[i].name, sizeof(ti->tariff));
                 ti->bg = T[i].bg;
                 ti->today = T[i].tempo;
+                ti->known = true;
                 break;
             }
         }
@@ -1928,8 +1931,31 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
     for (; ltarf[ui] && ui + 1 < sizeof(up); ui++) up[ui] = (char)toupper((unsigned char)ltarf[ui]);
     up[ui] = '\0';
     bool is_hp = strstr(up, "HP") || strstr(up, "PLEINE");
+    bool is_hc = strstr(up, "HC") || strstr(up, "CREUSE");
+    int color = strstr(up, "BLEU") ? 0 : strstr(up, "BLANC") ? 1 : strstr(up, "ROUGE") ? 2 : -1;
+    // Index d'apres le seul libelle FF66/16, envoye a chaque changement, avec
+    // la numerotation de l'historique (HC 256, HP 258 ; Tempo HC/HP Bleu
+    // 256/258, Blanc 260/262, Rouge 264/266 ; EJP HN 256, PM 258). NTARF
+    // (FF66/513) n'etait relu que toutes les 60 min : le prix restait celui
+    // du tarif precedent (ex. HP Blanc affiche au prix HP Bleu).
+    // Emetteur LoRa (absent des appareils Zigbee) : NTARF arrive dans chaque
+    // trame de releve, alors que le libelle depend d'une trame a part ; il
+    // donne l'index en repli d'un libelle absent ou inconnu.
     int64_t ntarf, stge;
-    if (dd_num(zl, 0xFF66, 513, &ntarf) && ntarf >= 1 && ntarf <= 10) ti->index = (uint16_t)(256 + 2 * (ntarf - 1));
+    if (is_hp != is_hc) {
+        ti->index = (uint16_t)(256 + (color >= 0 ? 4 * color : 0) + (is_hp ? 2 : 0));
+        ti->known = true;
+    } else if (strstr(up, "POINTE")) {
+        ti->index = 258;
+        ti->known = true;
+    } else if (!strncmp(up, "BASE", 4) || strstr(up, "TOUTE") || strstr(up, "NORMALE")) {
+        ti->index = 256;
+        ti->known = true;
+    } else if (!zigate_devices_find_by_ieee(zl) &&
+               dd_num(zl, 0xFF66, 513, &ntarf) && ntarf >= 1 && ntarf <= 10) {
+        ti->index = (uint16_t)(256 + 2 * (ntarf - 1));
+        ti->known = true;
+    }
     if (dd_stge(zl, &stge)) {
         ti->today = (int)((stge >> 24) & 3);
         ti->tomorrow = (int)((stge >> 26) & 3);
@@ -2030,8 +2056,10 @@ char *energy_tariff_json(void)
     cJSON_AddBoolToObject(root, "isTempo", ti.today != 0);
     tempo_badge(root, "today", ti.today, "?");
     tempo_badge(root, "tomorrow", ti.tomorrow, "-");
-    double pr = ti.index ? price_for_attr(ti.index) : 0;
-    if (ti.index) cJSON_AddNumberToObject(root, "index", ti.index);
+    // Tarif non identifie (libelle "---" juste apres le demarrage...) : ni
+    // index ni prix, plutot que le prix de la premiere plage
+    double pr = ti.known ? price_for_attr(ti.index) : 0;
+    if (ti.known) cJSON_AddNumberToObject(root, "index", ti.index);
     else cJSON_AddNullToObject(root, "index");
     if (pr > 0) cJSON_AddNumberToObject(root, "price", round(pr * 10000.0) / 10000.0);
     else cJSON_AddNullToObject(root, "price");
