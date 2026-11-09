@@ -1386,6 +1386,9 @@ extern "C" void app_main(void)
     zigate_register_sleepy_cb(device_on_battery);
     device_setup_register_progress_cb(on_device_setup_progress);
 
+    // LED de la ZiGate reglee par l'utilisateur : renvoyee a chaque redemarrage
+    zigate_set_led_pref(cfg_get_general()->zigate_led);
+
     // Sequence d'init ZiGate identique au code de reference (ino.cpp setupZigbeeAndTasks):
     // 1. Reset logiciel (0x0011)
     ESP_LOGI(TAG, "ZiGate: sending soft reset (0x0011)...");
@@ -1401,6 +1404,9 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "ZiGate: starting Zigbee network (0x0024)...");
     zigate_start_network();
     vTaskDelay(pdMS_TO_TICKS(200));
+
+    // LED : aussi sans message de redemarrage (ZiGate deja demarree)
+    if (zigate_get_led_pref() >= 0) zigate_set_led(zigate_get_led_pref() != 0);
 
     // 4. Get version (0x0010)
     ESP_LOGI(TAG, "ZiGate: requesting firmware version (0x0010)...");

@@ -267,6 +267,13 @@ esp_err_t zigate_soft_reset(void);
 esp_err_t zigate_set_led(bool on);
 
 /**
+ * Etat de LED voulu (0 eteinte, 1 allumee, -1 aucun) : renvoye a la ZiGate a
+ * chacun de ses redemarrages (0x8006 / 0x8007), car elle rallume sa LED.
+ */
+void zigate_set_led_pref(int pref);
+int  zigate_get_led_pref(void);
+
+/**
  * Masque de canaux (0x0021) puis reset logiciel pour l'appliquer, comme la
  * LiXee-Box. Accepte un numero de canal (11..26) ou un masque de bits.
  * @return ESP_ERR_INVALID_ARG si aucun canal 11..26 n'est designe

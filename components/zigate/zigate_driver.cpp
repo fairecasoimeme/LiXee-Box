@@ -687,6 +687,11 @@ esp_err_t zigate_soft_reset(void)
     return zigate_send_command(ZIGATE_CMD_RESET, NULL, 0);
 }
 
+static volatile int s_led_pref = -1;
+
+void zigate_set_led_pref(int pref) { s_led_pref = pref < 0 ? -1 : (pref ? 1 : 0); }
+int  zigate_get_led_pref(void)     { return s_led_pref; }
+
 esp_err_t zigate_set_led(bool on)
 {
     uint8_t v = on ? 1 : 0;

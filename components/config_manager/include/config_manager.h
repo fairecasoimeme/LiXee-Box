@@ -230,6 +230,10 @@ typedef struct {
     char presence[20];
     bool enable_presence_graph;
 
+    // LED de la ZiGate (Set Led) : -1 jamais reglee, 0 eteinte, 1 allumee.
+    // Renvoyee a chaque redemarrage de la ZiGate, qui la rallume sinon.
+    int  zigate_led;
+
     // Delestage (prises coupees sur depassement de la puissance souscrite)
     char delestage[18 * 16];           // IEEE des prises, separes par des virgules
     int  delestage_restore_min;        // rallumage apres N minutes sous le seuil (0 = jamais)

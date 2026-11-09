@@ -1046,6 +1046,8 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
     case 0x8006:   // redemarrage, reseau existant
     case 0x8007:   // redemarrage usine
         ESP_LOGI(TAG, "ZiGate redemarree (0x%04X)", pkt->cmd);
+        // La ZiGate rallume sa LED a chaque demarrage : etat choisi renvoye
+        if (zigate_get_led_pref() >= 0) zigate_set_led(zigate_get_led_pref() != 0);
         break;
 
     default:

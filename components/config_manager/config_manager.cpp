@@ -268,6 +268,7 @@ esp_err_t cfg_init(void)
     g_general.coeff_production = 1.0f;
     g_general.time_offset = 1;
     g_general.enable_presence_graph = true;
+    g_general.zigate_led = -1;
     g_general.delestage_restore_min = 5;
     g_general.delestage_restore_pct = 80;
     strlcpy(g_general.ntp_server, "pool.ntp.org", sizeof(g_general.ntp_server));
@@ -467,6 +468,10 @@ esp_err_t cfg_load_general(void)
     // Presence
     json_get_str(doc, "Presence", g_general.presence, sizeof(g_general.presence), "");
     g_general.enable_presence_graph = json_get_bool(doc, "enablePresenceGraph", true);
+    {
+        const cJSON *zl = cJSON_GetObjectItem(doc, "zigateLed");
+        g_general.zigate_led = cJSON_IsNumber(zl) && zl->valueint >= 0 ? (zl->valueint ? 1 : 0) : -1;
+    }
 
     // Delestage
     json_get_str(doc, "delestage", g_general.delestage, sizeof(g_general.delestage), "");
@@ -701,6 +706,7 @@ static esp_err_t save_general_unlocked(void)
     // Presence
     put_str(doc, "Presence", g_general.presence);
     put_bool(doc, "enablePresenceGraph", g_general.enable_presence_graph);
+    if (g_general.zigate_led >= 0) cJSON_AddNumberToObject(doc, "zigateLed", g_general.zigate_led);
 
     // Delestage
     put_str(doc, "delestage", g_general.delestage);

@@ -1377,6 +1377,13 @@ static esp_err_t post_cmd(httpd_req_t *req, cJSON *j)
     } else if (!strcasecmp(cmd, "SetLed")) {
         if (!has_value) return send_bad(req, "value requis (0 ou 1)");
         err = zigate_set_led(value != 0);
+        // Retenue pour les redemarrages de la ZiGate et de la box
+        cfg_general_t *g = cfg_get_general_mut();
+        if (g->zigate_led != (value != 0)) {
+            g->zigate_led = value != 0;
+            cfg_save_general();
+        }
+        zigate_set_led_pref(g->zigate_led);
     } else if (!strcasecmp(cmd, "SetChannelMask")) {
         if (!has_value || value <= 0) return send_bad(req, "Canal (11 a 26) ou masque requis");
         err = zigate_set_channel_mask((uint32_t)value);
