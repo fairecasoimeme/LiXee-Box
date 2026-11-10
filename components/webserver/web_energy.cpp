@@ -12,6 +12,7 @@
 #include "config_manager.h"
 #include "zigate_devices.h"
 #include "device_data.h"
+#include "lora.h"
 #include "esp_log.h"
 #include "cJSON.h"
 
@@ -70,6 +71,38 @@ static esp_err_t send_json_owned(httpd_req_t *req, char *json)
     return err;
 }
 
+static bool is_zlinky_model(const char *m) { return m && strncmp(m, "ZLinky", 6) == 0; }
+
+/** Appareil Zigbee ou emetteur LoRa de modele ZLinky. */
+static bool is_zlinky(uint64_t ieee)
+{
+    const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
+    if (d) return is_zlinky_model(d->model);
+    int slot = lora_find_slot_by_ieee(ieee);
+    lora_emitter_info_t e;
+    return slot >= 0 && lora_get_emitter(slot, &e) && is_zlinky_model(e.model);
+}
+
+/**
+ * ?zl= : ZLinky affiche par le tableau de bord, s'il n'est pas celui de
+ * Config Energie (plusieurs compteurs Linky). Ignore si ce n'est pas un ZLinky.
+ */
+static void view_begin(httpd_req_t *req)
+{
+    char v[24];
+    query_param(req, "zl", v, sizeof(v), "");
+    uint64_t z = v[0] ? strtoull(v, NULL, 16) : 0;
+    if (z && is_zlinky(z)) energy_service_view_begin(z);
+}
+
+/** Reponse JSON calculee pour le ZLinky choisi (view_begin). */
+#define VIEW_JSON(req, call) do {                    \
+        view_begin(req);                             \
+        char *_json = (call);                        \
+        energy_service_view_end();                   \
+        return send_json_owned(req, _json);          \
+    } while (0)
+
 static esp_err_t send_csv_owned(httpd_req_t *req, char *csv, const char *basename)
 {
     if (!csv) {
@@ -123,14 +156,14 @@ static esp_err_t summary_handler(httpd_req_t *req)
 {
     char t[8];
     period_param(req, t, sizeof(t));
-    return send_json_owned(req, energy_summary_json(t));
+    VIEW_JSON(req, energy_summary_json(t));
 }
 
 static esp_err_t gauge_handler(httpd_req_t *req)
 {
     char t[8];
     period_param(req, t, sizeof(t));
-    return send_json_owned(req, energy_gauge_json(t));
+    VIEW_JSON(req, energy_gauge_json(t));
 }
 
 static esp_err_t distribution_handler(httpd_req_t *req)
@@ -138,14 +171,14 @@ static esp_err_t distribution_handler(httpd_req_t *req)
     char t[8], type[8];
     period_param(req, t, sizeof(t));
     query_param(req, "type", type, sizeof(type), "");
-    return send_json_owned(req, energy_distribution_json(t, strcmp(type, "euro") == 0));
+    VIEW_JSON(req, energy_distribution_json(t, strcmp(type, "euro") == 0));
 }
 
 static esp_err_t chart_handler(httpd_req_t *req)
 {
     char t[8];
     period_param(req, t, sizeof(t));
-    return send_json_owned(req, energy_chart_json(t, ieee_param(req)));
+    VIEW_JSON(req, energy_chart_json(t, ieee_param(req)));
 }
 
 /** /loadEnergyChart : format de la LiXee-Box (tableau de lignes). */
@@ -153,7 +186,7 @@ static esp_err_t legacy_chart_handler(httpd_req_t *req)
 {
     char t[8];
     period_param(req, t, sizeof(t));
-    return send_json_owned(req, energy_chart_legacy_json(t, ieee_param(req)));
+    VIEW_JSON(req, energy_chart_legacy_json(t, ieee_param(req)));
 }
 
 static esp_err_t chart_export_handler(httpd_req_t *req)
@@ -161,27 +194,71 @@ static esp_err_t chart_export_handler(httpd_req_t *req)
     char t[8], name[40];
     period_param(req, t, sizeof(t));
     snprintf(name, sizeof(name), "usage_electricite_%s", t);
-    return send_csv_owned(req, energy_chart_csv(t, ieee_param(req)), name);
+    view_begin(req);
+    char *csv = energy_chart_csv(t, ieee_param(req));
+    energy_service_view_end();
+    return send_csv_owned(req, csv, name);
 }
 
 static esp_err_t power_handler(httpd_req_t *req)
 {
-    return send_json_owned(req, energy_power_json());
+    VIEW_JSON(req, energy_power_json());
 }
 
 static esp_err_t power_export_handler(httpd_req_t *req)
 {
-    return send_csv_owned(req, energy_power_csv(), "puissance_apparente");
+    view_begin(req);
+    char *csv = energy_power_csv();
+    energy_service_view_end();
+    return send_csv_owned(req, csv, "puissance_apparente");
 }
 
 static esp_err_t tariff_handler(httpd_req_t *req)
 {
-    return send_json_owned(req, energy_tariff_json());
+    VIEW_JSON(req, energy_tariff_json());
 }
 
 static esp_err_t linky_handler(httpd_req_t *req)
 {
-    return send_json_owned(req, energy_linky_json());
+    VIEW_JSON(req, energy_linky_json());
+}
+
+/**
+ * GET /api/energy/zlinkys : ZLinky Zigbee et LoRa, pour le choix du compteur
+ * du tableau de bord. {"main":"<IEEE de Config Energie>","list":[{ieee,name}]}
+ */
+static esp_err_t zlinkys_handler(httpd_req_t *req)
+{
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "main", cfg_get_general()->zlinky);
+    cJSON *list = cJSON_AddArrayToObject(root, "list");
+    char ieee[20];
+    for (int i = 0; i < zigate_devices_count(); i++) {
+        const zigate_device_t *d = zigate_devices_get(i);
+        if (!d || !is_zlinky_model(d->model)) continue;
+        snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)d->ieee_addr);
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "ieee", ieee);
+        cJSON_AddStringToObject(o, "name", d->alias[0] ? d->alias : d->model);
+        cJSON_AddItemToArray(list, o);
+    }
+    lora_emitter_info_t lem[LORA_MAX_EMITTERS];
+    int nl = lora_get_emitters(lem, LORA_MAX_EMITTERS);
+    for (int i = 0; i < nl; i++) {
+        if (!is_zlinky_model(lem[i].model)) continue;
+        snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)lem[i].ieee);
+        const device_data_t *dd = device_data_find(lem[i].ieee);
+        char name[48];
+        if (dd && dd->info.alias[0]) strlcpy(name, dd->info.alias, sizeof(name));
+        else snprintf(name, sizeof(name), "%s (LoRa)", lem[i].model);
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "ieee", ieee);
+        cJSON_AddStringToObject(o, "name", name);
+        cJSON_AddItemToArray(list, o);
+    }
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return send_json_owned(req, json);
 }
 
 // ----------------------------------------------------------------------------
@@ -351,6 +428,7 @@ void web_energy_register(httpd_handle_t server)
         { "/api/energy/power/export",       HTTP_GET,  power_export_handler },
         { "/api/energy/tariff",             HTTP_GET,  tariff_handler },
         { "/api/energy/linky",              HTTP_GET,  linky_handler },
+        { "/api/energy/zlinkys",            HTTP_GET,  zlinkys_handler },
         { "/api/energy/presence",           HTTP_GET,  presence_handler },
         { "/api/delestage",                 HTTP_GET,  delestage_get_handler },
         { "/api/delestage/restore",         HTTP_POST, delestage_restore_handler },

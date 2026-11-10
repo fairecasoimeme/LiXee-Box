@@ -1299,9 +1299,65 @@ void mqtt_manager_publish_linky_tariff(uint64_t ieee_addr, const char *tarif, in
     }
 }
 
+static bool dd_hex_num(uint64_t ieee, uint16_t cl, uint16_t at, int64_t *out)
+{
+    char buf[DEVDATA_VALUE_LEN];
+    if (device_data_get_value(ieee, cl, at, buf, sizeof(buf)) != ESP_OK || !buf[0]) return false;
+    *out = (int64_t)strtoull(buf, NULL, 16);
+    return true;
+}
+
+/**
+ * Puissance apparente d'un ZLinky producteur qui injecte : le Linky donne alors
+ * SINSTS = 0 (0B04/050F, 090F, 0A0F, total 0306) alors que le courant passe.
+ * Comme la LiXee-Box et la page Energie, la valeur publiee est -U x I, par
+ * phase ou sommee pour le total, en mode standard et si une production est
+ * attendue (Linky producteur, ou production configuree pour ce ZLinky).
+ */
+static bool injected_va(uint64_t ieee, uint16_t attr, int64_t *out)
+{
+    static const uint16_t PAPP[3] = { 0x050F, 0x090F, 0x0A0F };
+    static const uint16_t VOLT[3] = { 0x0505, 0x0905, 0x0A05 };
+    static const uint16_t CURR[3] = { 0x0508, 0x0908, 0x0A08 };
+    const cfg_general_t *g = cfg_get_general();
+    bool main_zl = strtoull(g->zlinky, NULL, 16) == ieee;
+    int64_t mode;
+    if (!dd_hex_num(ieee, 0xFF66, 0x0300, &mode)) {
+        if (!main_zl) return false;
+        mode = g->linky_mode;
+    }
+    bool producer = mode == 5 || mode == 7 || (main_zl && g->production[0]);
+    if (!producer || mode == 0 || mode == 2) return false;   // historique : pas d'estimation
+
+    int first = -1, last = -1;
+    if (attr == 0x0306) {
+        first = 0; last = 2;
+    } else {
+        for (int p = 0; p < 3; p++) if (PAPP[p] == attr) first = last = p;
+    }
+    if (first < 0) return false;
+    int64_t sum = 0;
+    for (int p = first; p <= last; p++) {
+        int64_t va, i, u;
+        if (attr == 0x0306 && dd_hex_num(ieee, 0x0B04, PAPP[p], &va) && va != 0) continue;   // phase qui soutire
+        if (!dd_hex_num(ieee, 0x0B04, CURR[p], &i) || i <= 0) continue;
+        if (!dd_hex_num(ieee, 0x0B04, VOLT[p], &u) || u <= 0) continue;
+        sum += u * i;
+    }
+    if (sum <= 0) return false;
+    *out = -sum;
+    return true;
+}
+
 esp_err_t mqtt_manager_publish_attr(uint64_t ieee_addr, uint16_t cluster, uint16_t attr,
                                     const char *hex, uint8_t zcl_type, bool has_num, int64_t num)
 {
+    // SINSTS a 0 pendant l'injection : valeur calculee, negative (issue #35)
+    if (has_num && num == 0 && cluster == 0x0B04 &&
+        (attr == 0x050F || attr == 0x090F || attr == 0x0A0F || attr == 0x0306)) {
+        int64_t inj;
+        if (injected_va(ieee_addr, attr, &inj)) num = inj;
+    }
     char ieee[20], cl[8], at[16];
     mqtt_ieee_str(ieee_addr, ieee, sizeof(ieee));
     snprintf(cl, sizeof(cl), "%u", (unsigned)cluster);       // decimal, comme la LiXee-Box

@@ -292,6 +292,13 @@
   var energyCharts = {};      // instances Chart.js : power, energy, gaz, water
   var energyGauges = { sig: '', list: [] };
   var energyState = {};       // dernier resume recu (configured, tri, producer)
+  // ZLinky affiche ('' = celui de Config Energie) : site a plusieurs compteurs
+  // Linky. Retenu par navigateur.
+  var energyZl = '';
+  try { energyZl = localStorage.getItem('energyZl') || ''; } catch (e) {}
+  function energyUrl(url) {
+    return energyZl ? url + (url.indexOf('?') < 0 ? '?' : '&') + 'zl=' + encodeURIComponent(energyZl) : url;
+  }
   var donutChart = null;
   var donutEl = null;
   var donutEmpty = false;
@@ -321,7 +328,11 @@
       '<div class="container">' +
         '<h4>Tableau de bord &eacute;nerg&eacute;tique</h4>' +
         '<div class="row g-4"><div class="col-md-12">' +
-          '<div class="nav justify-content-end">' +
+          '<div class="nav justify-content-end align-items-center">' +
+            // Choix du ZLinky (affiche s'il y en a plusieurs)
+            '<div class="me-auto" id="energy-zl-wrap" style="display:none;">' +
+              '<select class="form-select form-select-sm" id="energy-zl" title="Compteur Linky affich&eacute;"></select>' +
+            '</div>' +
             '<div><a class="' + linkCls('hour') + '" href="javascript:void(0)" onclick="window._energyNav(\'hour\')" title="Heure">' + iconHour + '</a></div>&nbsp;' +
             '<div><a class="' + linkCls('day') + '" href="javascript:void(0)" onclick="window._energyNav(\'day\')" title="Jour">' + iconDay + '</a></div>&nbsp;' +
             '<div><a class="' + linkCls('month') + '" href="javascript:void(0)" onclick="window._energyNav(\'month\')" title="Mois">' + iconMonth + '</a></div>&nbsp;' +
@@ -440,13 +451,22 @@
           // Graphiques
           '<div class="row g-2 mt-2">' +
             // Puissance apparente (vue heure uniquement)
-            (isHour ?
+            (isHour && !energyZl ?
             '<div class="col-md-6">' +
               '<div class="card p-4">' +
                 '<h5 class="card-title">Puissance apparente (graphique temps r&eacute;el)</h5>' +
                 '<div class="card-body"><div style="position:relative;height:342px;"><canvas id="power-chart"></canvas></div></div>' +
                 helpLink('popupHelpApparentPower') +
                 '<a href="/api/energy/power/export" download class="position-absolute bottom-0 end-0 p-2 text-muted" title="Exporter en CSV">' + ENERGY_CSV_ICON + '</a>' +
+              '</div>' +
+            '</div>' : '') +
+            // Autre ZLinky : la courbe 24 h n'est enregistree que pour le principal
+            (isHour && energyZl ?
+            '<div class="col-md-6">' +
+              '<div class="card p-4">' +
+                '<h5 class="card-title">Puissance apparente (graphique temps r&eacute;el)</h5>' +
+                '<p class="text-muted mb-0">La courbe des derni&egrave;res 24 h est enregistr&eacute;e pour le ZLinky de ' +
+                  '<a href="#configEnergy">Config &Eacute;nergie</a> seulement.</p>' +
               '</div>' +
             '</div>' : '') +
 
@@ -456,7 +476,7 @@
                 '<h5 class="card-title">Usage d\'&eacute;lectricit&eacute;</h5>' +
                 '<div class="card-body"><div style="position:relative;height:342px;"><canvas id="energy-chart"></canvas></div></div>' +
                 helpLink('popupHelpElectricity') +
-                '<a href="/api/energy/chart/export?time=' + t + '" download class="position-absolute bottom-0 end-0 p-2 text-muted" title="Exporter en CSV">' + ENERGY_CSV_ICON + '</a>' +
+                '<a href="' + energyUrl('/api/energy/chart/export?time=' + t) + '" download class="position-absolute bottom-0 end-0 p-2 text-muted" title="Exporter en CSV">' + ENERGY_CSV_ICON + '</a>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -569,7 +589,7 @@
   // periode ou de page sont ignorees. Renvoie une promesse toujours resolue.
   function energyAlive(gen) { return gen === energyGen && !!document.getElementById('cadre_energy'); }
   function energyGet(url, gen, onData, onFail) {
-    return $.getJSON(url).then(function(d) {
+    return $.getJSON(energyUrl(url)).then(function(d) {
       if (!energyAlive(gen)) return;
       try { onData(d); } catch (e) { console.log('Energie : affichage ' + url, e); }
     }, function(xhr) {
@@ -614,7 +634,8 @@
     donutChart = null;
     donutEl = null;
 
-    if (isHour) energyCharts.power = createPowerChart();
+    if (isHour && !energyZl) energyCharts.power = createPowerChart();
+    loadZlinkyChoice(time, gen);
     energyCharts.energy = createEnergyChart('energy-chart', { fees: true, palette: ENERGY_COLORS, presence: true });
 
     // Barres de presence : vue heure (rafraichie chaque minute) et vue jour (5 min)
@@ -666,8 +687,41 @@
       linky(function() { return loadDistribution(time, gen); }),
       linky(function() { return loadMainEnergyChart(time, gen); })
     ];
-    if (isHour) steps.push(linky(function() { return loadPowerChart(gen); }));
+    if (isHour && !energyZl) steps.push(linky(function() { return loadPowerChart(gen); }));
     return steps;
+  }
+
+  // Choix du ZLinky affiche, propose quand plusieurs ZLinky sont appaires
+  function loadZlinkyChoice(time, gen) {
+    $.getJSON('/api/energy/zlinkys').done(function(d) {
+      if (!energyAlive(gen)) return;
+      var list = arr(d && d.list), main = String((d && d.main) || '').toUpperCase();
+      var known = list.some(function(z) { return String(z.ieee).toUpperCase() === energyZl.toUpperCase(); });
+      if (energyZl && (!known || energyZl.toUpperCase() === main)) {
+        // ZLinky retire, ou devenu celui de Config Energie : vue par defaut
+        energyZl = '';
+        try { localStorage.removeItem('energyZl'); } catch (e) {}
+        window._energyNav(time);
+        return;
+      }
+      if (list.length < 2) return;
+      var $s = $('#energy-zl').empty();
+      list.forEach(function(z) {
+        var id = String(z.ieee).toUpperCase(), isMain = id === main;
+        $s.append($('<option>').val(isMain ? '' : id)
+          .text((z.name || id) + (isMain ? ' (principal)' : '')));
+      });
+      $s.val(energyZl ? energyZl.toUpperCase() : '');
+      $('#energy-zl-wrap').show();
+      $s.off('change').on('change', function() {
+        energyZl = $(this).val() || '';
+        try {
+          if (energyZl) localStorage.setItem('energyZl', energyZl);
+          else localStorage.removeItem('energyZl');
+        } catch (e) {}
+        window._energyNav(time);
+      });
+    });
   }
 
   // --- Resume (/api/energy/summary) ---

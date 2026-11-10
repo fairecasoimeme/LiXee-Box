@@ -23,6 +23,8 @@
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "cJSON.h"
 
 #include <math.h>
@@ -127,13 +129,38 @@ typedef struct {
     uint64_t prod;    // compteur de production (peut etre le ZLinky)
     uint64_t gaz;
     uint64_t water;
+    bool     alt;     // autre ZLinky que celui de Config Energie (vue du tableau de bord)
 } roles_t;
+
+// Vue d'un autre ZLinky (energy_service_view_begin) : propre a une tache, le
+// serveur web, pour la duree d'une requete
+static uint64_t     s_view_zl;
+static TaskHandle_t s_view_task;
+
+void energy_service_view_begin(uint64_t zlinky)
+{
+    if (!zlinky || zlinky == parse_ieee(cfg_get_general()->zlinky)) return;
+    s_view_zl = zlinky;
+    s_view_task = xTaskGetCurrentTaskHandle();
+}
+
+void energy_service_view_end(void)
+{
+    s_view_task = NULL;
+    s_view_zl = 0;
+}
 
 static roles_t get_roles(void)
 {
     const cfg_general_t *g = cfg_get_general();
     roles_t r = { parse_ieee(g->zlinky), parse_ieee(g->production),
-                  parse_ieee(g->gaz), parse_ieee(g->water) };
+                  parse_ieee(g->gaz), parse_ieee(g->water), false };
+    if (s_view_zl && s_view_task == xTaskGetCurrentTaskHandle()) {
+        // Production et sous-compteurs : ceux du ZLinky principal
+        r.zl = s_view_zl;
+        r.prod = 0;
+        r.alt = true;
+    }
     return r;
 }
 
@@ -241,7 +268,10 @@ static void read_live(uint64_t zl, live_t *L)
     memset(L, 0, sizeof(*L));
     L->mode = linky_mode(zl);
     L->tri = mode_is_tri(L->mode);
-    L->producer = (L->mode == 5 || L->mode == 7) || cfg_get_general()->production[0];
+    // Production configuree : celle du site du ZLinky principal
+    const cfg_general_t *gc = cfg_get_general();
+    L->producer = (L->mode == 5 || L->mode == 7) ||
+                  (gc->production[0] && zl == parse_ieee(gc->zlinky));
 
     static const uint16_t PAPP[3] = { 1295, 2319, 2575 };
     static const uint16_t VOLT[3] = { 1285, 2309, 2565 };
@@ -592,7 +622,7 @@ static void aggregate(const roles_t *r, slot_ref_t s, slot_agg_t *a)
     }
 
     const cfg_general_t *g = cfg_get_general();
-    for (int i = 0; i < g->sub_meter_count && i < MAX_SUB; i++) {
+    for (int i = 0; i < g->sub_meter_count && i < MAX_SUB && !r->alt; i++) {
         const cfg_submeter_t *sm = &g->sub_meters[i];
         if (!sm->enabled || !sm->IEEE[0]) continue;
         uint64_t ieee = parse_ieee(sm->IEEE);
@@ -1726,6 +1756,11 @@ char *energy_power_json(void)
     roles_t r = get_roles();
     sbuf_t b;
     sb_init(&b, 64 * 1024);
+    if (r.alt) {
+        // Courbe 24 h : enregistree pour le ZLinky principal seulement
+        sb_printf(&b, "{\"configured\":true,\"other\":true}");
+        return sb_finish(&b);
+    }
     if (!r.zl || !s_pw) {
         sb_printf(&b, "{\"configured\":false}");
         return sb_finish(&b);
@@ -1812,6 +1847,10 @@ char *energy_power_csv(void)
     sbuf_t b;
     sb_init(&b, 64 * 1024);
     sb_printf(&b, "\xEF\xBB\xBF");
+    if (r.alt) {
+        sb_printf(&b, "Courbe 24 h enregistree pour le ZLinky principal seulement\r\n");
+        return sb_finish(&b);
+    }
     if (!r.zl || !s_pw) {
         sb_printf(&b, "Aucun ZLinky configure\r\n");
         return sb_finish(&b);

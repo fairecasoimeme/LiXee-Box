@@ -35,6 +35,18 @@ void energy_service_minute_tick(void);
 /** Ecrit la courbe 24 h en flash sans attendre (avant un redemarrage). */
 void energy_service_flush(void);
 
+/**
+ * Tableau de bord d'un autre ZLinky que celui de Config Energie (site a
+ * plusieurs compteurs Linky) : jusqu'a energy_service_view_end(), les calculs
+ * faits par la tache appelante portent sur ce ZLinky. Les sous-compteurs et
+ * le compteur de production, rattaches au ZLinky principal, n'y entrent pas,
+ * et la courbe de puissance 24 h n'existe que pour le ZLinky principal.
+ * 0 ou le ZLinky principal : sans effet. Les autres taches ne sont pas
+ * concernees (regles, alertes, MQTT gardent le ZLinky principal).
+ */
+void energy_service_view_begin(uint64_t zlinky);
+void energy_service_view_end(void);
+
 // ----------------------------------------------------------------------------
 // Valeurs pour les autres modules (alertes, regles, MQTT...)
 // ----------------------------------------------------------------------------
