@@ -1036,6 +1036,21 @@ static bool set_enabled_locked(zone_t *t, bool enabled)
     return save_locked();
 }
 
+static bool set_frost_locked(zone_t *t, bool on)
+{
+    if (on) {
+        if (!t->frost_mode) { t->setpoint_saved = t->setpoint; t->frost_mode = true; }
+        t->setpoint = t->frost_temp;
+        t->force_mode = 0;
+    } else if (t->frost_mode) {
+        t->setpoint = t->setpoint_saved;
+        t->frost_mode = false;
+    }
+    t->integral = 0.0f;
+    t->cycle_start_ms = 0;
+    return save_locked();
+}
+
 // ----------------------------------------------------------------------------
 // Matter : chaque zone est un thermostat ponte (endpoint virtuel). Les
 // ecritures d'un controleur arrivent dans la tache CHIP, qui ne prend jamais
@@ -1045,6 +1060,7 @@ static bool set_enabled_locked(zone_t *t, bool enabled)
 
 #define MSG_SYNC            1
 #define MSG_WRITE           2
+#define MSG_PRESET          3   // selection d'un preset Matter (issue #51) : value 0 confort, 1 hors-gel
 
 typedef struct {
     uint8_t  kind;
@@ -1072,6 +1088,17 @@ static esp_err_t matter_write_cb(int ep, uint32_t cluster, uint32_t attr, int32_
         thermo_msg_t m = { MSG_WRITE, ep, attr, value };
         if (s_q) xQueueSend(s_q, &m, 0);
     }
+    return ESP_OK;
+}
+
+/** SetActivePresetRequest d'un controleur (feature Presets, issue #51). */
+static esp_err_t matter_preset_cb(int ep, bool frost)
+{
+    bool ours = false;
+    for (int i = 0; i < THERMO_MAX_ZONES && !ours; i++) ours = (ep > 1 && s_vep[i] == ep);
+    if (!ours) return ESP_ERR_NOT_FOUND;
+    thermo_msg_t m = { MSG_PRESET, ep, 0, frost ? 1 : 0 };
+    if (s_q) xQueueSend(s_q, &m, 0);
     return ESP_OK;
 }
 
@@ -1116,6 +1143,7 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
         p->caps = MCAP_THERMOSTAT;
         p->heat = feat & 1;
         p->cool = (feat & 2) != 0;
+        p->presets = feat & 1;        // Confort/Hors-gel (issue #51) : chauffage uniquement
         p->link_count = 1;
         p->links[0].target = ML_TH_RUNNING;          // cree ThermostatRunningState
         int ep = matter_bridge_add_virtual_endpoint(MATTER_UID_BASE | t->uid, p, t->name,
@@ -1144,6 +1172,13 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
     }
     if (force || t->m_mode != mode) matter_bridge_set_number(ep, 0x0201, 0x001C, mode, false);
     if (force || t->m_run != run) matter_bridge_set_number(ep, 0x0201, 0x0029, run, false);
+    if (feat & 1) {
+        // Presets Matter (issue #51) : "Confort" suit la consigne hors bascule
+        // hors-gel (restauree a la sortie du hors-gel, cf. setpoint_saved).
+        int32_t comfort_sp = (int32_t)lroundf((t->frost_mode ? t->setpoint_saved : t->setpoint) * 100.0f);
+        int32_t frost_sp = (int32_t)lroundf(t->frost_temp * 100.0f);
+        matter_bridge_set_thermostat_presets(ep, comfort_sp, frost_sp, t->frost_mode);
+    }
     t->m_valid = t->sensor_valid;
     t->m_temp = temp;
     t->m_sp = sp;
@@ -1188,11 +1223,24 @@ static void matter_apply_write(const thermo_msg_t *m)
     t->m_pushed = false;                         // republier l'etat reel
 }
 
+/** SetActivePresetRequest applique a une zone (feature Presets, issue #51). */
+static void matter_apply_preset(const thermo_msg_t *m)
+{
+    zone_t *t = NULL;
+    for (int i = 0; i < s_count && !t; i++) if (s_z[i].m_created && s_z[i].matter_ep == m->ep) t = &s_z[i];
+    if (!t) return;
+    ESP_LOGI(TAG, "zone \"%s\" : preset Matter -> %s", t->name, m->value ? "Hors-gel" : "Confort");
+    set_frost_locked(t, m->value != 0);
+    refresh_sensors(t);
+    t->m_pushed = false;                         // republier l'etat reel (consigne, ActivePresetHandle...)
+}
+
 void thermostat_matter_refresh(void) { post_sync(); }
 
 void thermostat_matter_start(void)
 {
     matter_bridge_set_virtual_write_cb(matter_write_cb);
+    matter_bridge_set_thermostat_preset_cb(matter_preset_cb);
     s_matter_on = true;
     post_sync();
 }
@@ -1207,6 +1255,7 @@ static void regulation_task(void *arg)
         if (wait > 0 && xQueueReceive(s_q, &m, pdMS_TO_TICKS(wait)) == pdTRUE) {
             lock();
             if (m.kind == MSG_WRITE) matter_apply_write(&m);
+            else if (m.kind == MSG_PRESET) matter_apply_preset(&m);
             matter_sync_all();
             unlock();
             continue;
@@ -1254,20 +1303,7 @@ bool thermostat_set_frost(int id, bool on)
 {
     lock();
     zone_t *t = zone_get(id);
-    bool ok = t != NULL;
-    if (t) {
-        if (on) {
-            if (!t->frost_mode) { t->setpoint_saved = t->setpoint; t->frost_mode = true; }
-            t->setpoint = t->frost_temp;
-            t->force_mode = 0;
-        } else if (t->frost_mode) {
-            t->setpoint = t->setpoint_saved;
-            t->frost_mode = false;
-        }
-        t->integral = 0.0f;
-        t->cycle_start_ms = 0;
-        ok = save_locked();
-    }
+    bool ok = t && set_frost_locked(t, on);
     unlock();
     post_sync();
     return ok;
