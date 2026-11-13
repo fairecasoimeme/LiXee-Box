@@ -43,6 +43,20 @@ esp_err_t ntp_sync_apply_config(void);
 /** Regle l'heure a la main (epoch UTC), en attendant ou a defaut de NTP. */
 esp_err_t ntp_sync_set_time(time_t epoch);
 
+/** Origine de l'heure courante. */
+typedef enum {
+    NTP_SRC_NONE = 0,   // aucune heure
+    NTP_SRC_SAVED,      // heure memorisee reprise au demarrage : non fiable
+    NTP_SRC_MANUAL,     // reglee a la main
+    NTP_SRC_NTP,        // serveur NTP
+} ntp_time_source_t;
+
+ntp_time_source_t ntp_sync_source(void);
+/** Derniere synchronisation NTP acceptee (epoch, 0 = jamais). */
+time_t ntp_sync_last_ntp(void);
+/** Derniere heure NTP refusee car anterieure au firmware (epoch, 0 = aucune). */
+time_t ntp_sync_last_rejected(void);
+
 /**
  * Retourne true si l'heure a ete synchronisee au moins une fois.
  */

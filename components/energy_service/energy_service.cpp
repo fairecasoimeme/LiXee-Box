@@ -1586,6 +1586,14 @@ esp_err_t energy_service_init(void)
     return ESP_OK;
 }
 
+void energy_service_clear_power(void)
+{
+    if (!s_pw) return;
+    memset(s_pw, 0, sizeof(pw_slot_t) * PW_SLOTS);
+    s_pw_since_save = 0;
+    pw_save();
+}
+
 void energy_service_flush(void)
 {
     if (s_pw && s_pw_ieee) pw_save();
@@ -1768,13 +1776,16 @@ char *energy_power_json(void)
     live_t L;
     read_live(r.zl, &L);
     int nph = L.tri ? 3 : 1;
+    // Sans heure fiable, la courbe n'est pas alimentee (issue #65)
+    bool synced = ntp_sync_is_synced();
 
     pw_ctx_t st = {};
     pw_walk(&st, pw_stats);
     pw_ctx_t inj = {};
     pw_walk(&inj, pw_has_inj);
 
-    sb_printf(&b, "{\"configured\":true,\"tri\":%s,\"goal\":%ld,\"labels\":[",
+    sb_printf(&b, "{\"synced\":%s,", synced ? "true" : "false");
+    sb_printf(&b, "\"configured\":true,\"tri\":%s,\"goal\":%ld,\"labels\":[",
               L.tri ? "true" : "false", (long)L.goal_total);
     pw_ctx_t c = {};
     c.b = &b;

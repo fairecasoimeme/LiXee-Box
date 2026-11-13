@@ -455,6 +455,8 @@
             '<div class="col-md-6">' +
               '<div class="card p-4">' +
                 '<h5 class="card-title">Puissance apparente (graphique temps r&eacute;el)</h5>' +
+                '<div id="power-nosync" class="alert alert-warning py-2 small" style="display:none;">Heure de la box non synchronis&eacute;e : ' +
+                  'la courbe est en pause. V&eacute;rifiez le serveur NTP dans <a href="#configHorloge">Config horloge</a>.</div>' +
                 '<div class="card-body"><div style="position:relative;height:342px;"><canvas id="power-chart"></canvas></div></div>' +
                 helpLink('popupHelpApparentPower') +
                 '<a href="/api/energy/power/export" download class="position-absolute bottom-0 end-0 p-2 text-muted" title="Exporter en CSV">' + ENERGY_CSV_ICON + '</a>' +
@@ -1130,7 +1132,7 @@
         datasets: { bar: { barPercentage: 0.9, categoryPercentage: 0.95 } },
         scales: {
           x: { stacked: true, ticks: { maxRotation: 70, minRotation: 70, autoSkip: true, maxTicksLimit: 20 } },
-          y: { stacked: true, beginAtZero: false, suggestedMax: 100,
+          y: { stacked: true, beginAtZero: true, suggestedMax: 100,
                ticks: { callback: function(v) { return fmtNum(v, 0) + ' VA'; } } }
         },
         plugins: {
@@ -1208,6 +1210,7 @@
   function loadPowerChart(gen) {
     return energyGet('/api/energy/power', gen, function(p) {
       p = p || {};
+      $('#power-nosync').toggle(p.synced === false);
       fillPowerChart(energyCharts.power, p);
       renderPowerTrendHead(p.stats, num(p.priceKwh), num(p.cspe), num(p.aboDay));
     });
@@ -2632,6 +2635,13 @@
                 '</div>' +
                 '<button type="submit" class="btn btn-primary mt-3">Enregistrer</button>' +
               '</form>' +
+              '<h5 class="mt-4">Historique <button class="btn btn-link btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#histBox">+/-</button></h5>' +
+              '<div class="collapse" id="histBox">' +
+                '<p class="small text-muted">Efface l\'historique de consommation (heures, jours, mois, ann&eacute;es) et la courbe de puissance de tous les compteurs, ' +
+                  'par exemple apr&egrave;s des mesures enregistr&eacute;es &agrave; une mauvaise date. La configuration est conserv&eacute;e. ' +
+                  'Pensez &agrave; faire une sauvegarde avant (Maintenance).</p>' +
+                '<button type="button" class="btn btn-outline-danger" id="hist-clear">Effacer l\'historique</button>' +
+              '</div>' +
             '</div></div>' +
           '</div>' +
 
@@ -2800,6 +2810,10 @@
       g.delestageAnticipPct = parseInt($('#cfg-dlAnticip').val(), 10) || 0;
       // Les alertes se reglent dans Config -> Notifications
       postJSON('/api/config/general', g).then(saved('Configuration Linky enregistr&eacute;e'), failed);
+    });
+    $(document).off('click', '#hist-clear').on('click', '#hist-clear', function() {
+      if (!confirm('Effacer tout l\'historique de consommation et la courbe de puissance ? Cette action est d\u00e9finitive.')) return;
+      postJSON('/api/energy/history/clear', { confirm: true }).then(saved('Historique effac&eacute;'), failed);
     });
     function loadDelestage() {
       $.getJSON('/api/delestage').done(function(d) {
@@ -2981,7 +2995,8 @@
         '<div class="card p-4">' +
           '<form id="clock-form">' +
             // Current datetime display
-            '<div class="mb-3"><label class="form-label fw-bold">Date/Heure actuelle</label><div id="clock-current" class="form-control-plaintext fs-5">--</div></div>' +
+            '<div class="mb-3"><label class="form-label fw-bold">Date/Heure actuelle</label><div id="clock-current" class="form-control-plaintext fs-5">--</div>' +
+              '<div id="clock-source" class="small"></div></div>' +
 
             // NTP server
             '<div class="mb-3"><label class="form-label" for="cfg-ntp">NTP serveur URL</label><input type="text" class="form-control" id="cfg-ntp" value="pool.ntp.org"></div>' +
@@ -3016,6 +3031,19 @@
       $('#cfg-timezone').val(cfg.timezone != null ? cfg.timezone : 1);
       if (cfg.epoch) { $('#cfg-epoch').val(cfg.epoch); }
       if (cfg.datetime) { $('#clock-current').text(cfg.datetime); }
+      function fmtEpoch(e) {
+        var d = new Date(e * 1000);
+        return ('0'+d.getDate()).slice(-2)+'/'+('0'+(d.getMonth()+1)).slice(-2)+'/'+d.getFullYear()+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+      }
+      var src = cfg.source, h;
+      if (src === 'ntp') h = '<span class="text-success">Synchronis&eacute;e par NTP</span>' + (cfg.lastSync ? ' (derni&egrave;re synchronisation : ' + fmtEpoch(cfg.lastSync) + ')' : '');
+      else if (src === 'manual') h = '<span class="text-warning">R&eacute;gl&eacute;e &agrave; la main</span> : le serveur NTP n\'a pas encore r&eacute;pondu.';
+      else if (src === 'saved') h = '<span class="text-danger">Heure approximative</span> (reprise au d&eacute;marrage) : le serveur NTP ne r&eacute;pond pas. ' +
+        'L\'historique d\'&eacute;nergie est en pause jusqu\'&agrave; une synchronisation ou un r&eacute;glage manuel.';
+      else h = '<span class="text-danger">Heure inconnue</span> : le serveur NTP ne r&eacute;pond pas.';
+      if (cfg.rejected) h += '<br><span class="text-warning">Heure refus&eacute;e du serveur NTP : ' + fmtEpoch(cfg.rejected) +
+        ', ant&eacute;rieure au firmware (serveur pas encore &agrave; l\'heure ?).</span>';
+      $('#clock-source').html(h);
     }).fail(function() {
       // Show browser time as fallback
       $('#clock-current').text($('#FormattedDate').text());

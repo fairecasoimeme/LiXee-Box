@@ -1642,6 +1642,12 @@ static esp_err_t api_config_horloge_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "timeoffset", g->time_offset);
     cJSON_AddStringToObject(root, "timezone",   g->timezone);
     cJSON_AddBoolToObject(root,   "synced",     ntp_sync_is_synced());
+    // Origine de l'heure et derniere synchronisation (issue #65)
+    static const char *const SRC[] = { "none", "saved", "manual", "ntp" };
+    ntp_time_source_t src = ntp_sync_source();
+    cJSON_AddStringToObject(root, "source", SRC[src <= NTP_SRC_NTP ? src : 0]);
+    cJSON_AddNumberToObject(root, "lastSync", (double)ntp_sync_last_ntp());
+    cJSON_AddNumberToObject(root, "rejected", (double)ntp_sync_last_rejected());
     // Heure REELLE de l'appareil, et non epoch_time de la configuration, qui
     // n'est jamais remise a jour.
     cJSON_AddNumberToObject(root, "epoch", (double)ntp_sync_get_epoch());

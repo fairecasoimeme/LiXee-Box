@@ -7,6 +7,7 @@
 #include "web_energy.h"
 #include "web_server.h"
 #include "energy_service.h"
+#include "energy_history.h"
 #include "presence.h"
 #include "delestage.h"
 #include "config_manager.h"
@@ -224,6 +225,22 @@ static esp_err_t linky_handler(httpd_req_t *req)
 }
 
 /**
+ * POST /api/energy/history/clear {"confirm":true} : efface l'historique de
+ * consommation et la courbe de puissance (issue #65 : donnees enregistrees a
+ * une date fausse). La configuration est conservee.
+ */
+static esp_err_t history_clear_handler(httpd_req_t *req)
+{
+    cJSON *doc = read_body_json(req);
+    bool ok = doc && cJSON_IsTrue(cJSON_GetObjectItem(doc, "confirm"));
+    cJSON_Delete(doc);
+    if (!ok) return send_status(req, "400 Bad Request", "confirm requis");
+    energy_history_clear_all();
+    energy_service_clear_power();
+    return send_status(req, "200 OK", "Historique efface");
+}
+
+/**
  * GET /api/energy/zlinkys : ZLinky Zigbee et LoRa, pour le choix du compteur
  * du tableau de bord. {"main":"<IEEE de Config Energie>","list":[{ieee,name}]}
  */
@@ -429,6 +446,7 @@ void web_energy_register(httpd_handle_t server)
         { "/api/energy/tariff",             HTTP_GET,  tariff_handler },
         { "/api/energy/linky",              HTTP_GET,  linky_handler },
         { "/api/energy/zlinkys",            HTTP_GET,  zlinkys_handler },
+        { "/api/energy/history/clear",      HTTP_POST, history_clear_handler },
         { "/api/energy/presence",           HTTP_GET,  presence_handler },
         { "/api/delestage",                 HTTP_GET,  delestage_get_handler },
         { "/api/delestage/restore",         HTTP_POST, delestage_restore_handler },

@@ -135,6 +135,12 @@ power_history_t* power_history_get_or_create(uint64_t ieee_addr);
  */
 esp_err_t energy_history_remove(uint64_t ieee_addr);
 
+/**
+ * Efface l'historique de consommation de tous les compteurs (heures, jours,
+ * mois, annees), en RAM et en flash. La configuration n'est pas touchee.
+ */
+esp_err_t energy_history_clear_all(void);
+
 // ============================================================================
 // API publique - Lecture (service energie, pages web)
 // ============================================================================

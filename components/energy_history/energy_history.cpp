@@ -730,6 +730,45 @@ int32_t energy_history_slot_value(const energy_history_t *h, energy_gran_t gran,
     return 0;
 }
 
+esp_err_t energy_history_clear_all(void)
+{
+    // Effacement en place : les pointeurs deja rendus restent valides. Les
+    // index de reference (ref, last) sont gardes : la periode en cours
+    // continue d'etre comptee normalement.
+    data_lock();
+    entries_lock();
+    int n = 0;
+    for (int i = 0; i < s_entry_count; i++) {
+        energy_history_t *h = s_entries[i].energy;
+        if (h) {
+            energy_period_t *ps[4] = { &h->hours, &h->days, &h->months, &h->years };
+            for (int k = 0; k < 4; k++) {
+                memset(ps[k]->graph, 0, sizeof(ps[k]->graph));
+                memset(&ps[k]->trend, 0, sizeof(ps[k]->trend));
+            }
+            int y = ntp_sync_get_year();
+            if (y >= 2024) h->base_year = y;
+            h->dirty = true;
+            save_energy_history(h);
+            n++;
+        }
+        power_history_t *p = s_entries[i].power;
+        if (p) {
+            p->record_count = 0;
+            p->write_idx = 0;
+            memset(p->records, 0, sizeof(p->records));
+        }
+        // Courbe de puissance de la LiXee-Box Arduino : pas de reprise ensuite
+        char path[64];
+        make_power_path(s_entries[i].ieee_addr, path, sizeof(path));
+        remove(path);
+    }
+    entries_unlock();
+    data_unlock();
+    ESP_LOGW(TAG, "Historique d'energie efface (%d compteur(s))", n);
+    return ESP_OK;
+}
+
 esp_err_t energy_history_remove(uint64_t ieee_addr)
 {
     // Sous le verrou des entrees : le decalage ci-dessous ne doit pas croiser
@@ -968,8 +1007,11 @@ static esp_err_t add_measurement_locked(uint64_t ieee_addr, uint16_t attr_id,
     // et janvier : les valeurs reellement consommees de ces creneaux etaient
     // ecrasees puis persistees. Lecture atomique via struct tm, pour ne pas
     // melanger deux instants si l'on franchit une frontiere entre deux appels.
+    // Heure fiable seulement (NTP ou reglage manuel) : l'heure memorisee
+    // reprise au demarrage sans NTP rangeait les mesures a une date fausse
+    // (issue #65)
     struct tm now_tm;
-    if (ntp_sync_get_local_time(&now_tm) != ESP_OK) {
+    if (!ntp_sync_is_synced() || ntp_sync_get_local_time(&now_tm) != ESP_OK) {
         ESP_LOGW(TAG, "Heure non synchronisee, mesure d'energie ignoree");
         return ESP_ERR_INVALID_STATE;
     }

@@ -155,13 +155,12 @@ static esp_err_t load_poll_list_from_template(device_data_t *dd)
         return ESP_ERR_NOT_FOUND;
     }
 
-    // Si le device a deja une poll list chargee (depuis le JSON),
-    // ne pas ecraser (elle peut avoir ete personnalisee)
-    if (dd->poll_count > 0) {
-        ESP_LOGD(TAG, "Device 0x%016llX already has %d poll items, skipping template load",
-                 (unsigned long long)dd->ieee_addr, dd->poll_count);
-        return ESP_OK;
-    }
+    // Liste deja chargee (depuis le JSON, ou reprise d'une LiXee-Box
+    // Arduino) : gardee telle quelle, mais completee des lectures du template
+    // qui y manquent. Une liste reprise de la Box n'avait pas toujours celles
+    // du template v3 : la puissance souscrite (0B01) n'etait alors jamais
+    // relue apres un changement de contrat (issue #65).
+    const bool merge = dd->poll_count > 0;
 
     // Seuls les etats marques "poll" dans le template sont scrutes, a la
     // periode indiquee (en minutes, comme le cycle de 60 s de la passerelle
@@ -175,6 +174,13 @@ static esp_err_t load_poll_list_from_template(device_data_t *dd)
     for (int i = 0; i < tmpl->state_count; i++) {
         const devdata_template_state_t *s = &tmpl->states[i];
         if (s->poll == 0) continue;
+        if (merge) {
+            bool present = false;
+            for (int k = 0; k < dd->poll_count && !present; k++)
+                present = dd->poll_list[k].cluster_id == s->cluster &&
+                          dd->poll_list[k].attr_id == s->attribute;
+            if (present) continue;   // intervalle existant conserve
+        }
 
         uint32_t interval = (uint32_t)s->poll * 60000u;
         esp_err_t err = device_data_add_poll_item(dd->ieee_addr, s->cluster, s->attribute,
@@ -190,8 +196,11 @@ static esp_err_t load_poll_list_from_template(device_data_t *dd)
         ESP_LOGW(TAG, "Device 0x%016llX : %d element(s) de poll non ajoutes (liste pleine ?)",
                  (unsigned long long)dd->ieee_addr, skipped);
     }
-    ESP_LOGI(TAG, "Added %d poll items from template for device 0x%016llX",
-             added, (unsigned long long)dd->ieee_addr);
+    if (!merge || added > 0) {
+        ESP_LOGI(TAG, "Added %d poll items from template for device 0x%016llX",
+                 added, (unsigned long long)dd->ieee_addr);
+    }
+    if (merge && added > 0) device_data_save(dd->ieee_addr);
     return ESP_OK;
 }
 

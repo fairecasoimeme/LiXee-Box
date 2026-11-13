@@ -47,6 +47,9 @@ void energy_service_flush(void);
 void energy_service_view_begin(uint64_t zlinky);
 void energy_service_view_end(void);
 
+/** Efface la courbe de puissance 24 h (avec l'historique de consommation). */
+void energy_service_clear_power(void);
+
 // ----------------------------------------------------------------------------
 // Valeurs pour les autres modules (alertes, regles, MQTT...)
 // ----------------------------------------------------------------------------
