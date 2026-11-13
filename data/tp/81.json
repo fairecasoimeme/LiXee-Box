@@ -1692,5 +1692,101 @@
         }
       ]
     }
+  ],
+  "MINI-ZB1GP": [
+    {
+      "status": [
+        {
+          "name": "Puissance",
+          "cluster": "FC11",
+          "attribut": 28678,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.001,
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 4000,
+          "unit": "W",
+          "poll": 1
+        },
+        {
+          "name": "Tension",
+          "cluster": "FC11",
+          "attribut": 28677,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.001,
+          "visible": 1,
+          "unit": "V",
+          "poll": 10
+        },
+        {
+          "name": "Intensite",
+          "cluster": "FC11",
+          "attribut": 28676,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "float",
+          "coefficient": 0.001,
+          "visible": 1,
+          "unit": "A",
+          "poll": 10
+        },
+        {
+          "name": "Consommation",
+          "cluster": "0702",
+          "attribut": 0,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "text",
+          "unit": "Wh"
+        },
+        {
+          "name": "Energie du jour",
+          "cluster": "FC11",
+          "attribut": 28681,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "calendar-today",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "Wh",
+          "poll": 10
+        },
+        {
+          "name": "Energie injectee",
+          "cluster": "FC11",
+          "attribut": 28703,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "Wh",
+          "poll": 60
+        },
+        {
+          "name": "Index total",
+          "cluster": "FC11",
+          "attribut": 28702,
+          "type": "numeric",
+          "visible": 0,
+          "unit": "Wh",
+          "poll": 5
+        }
+      ],
+      "bind": "6;64529",
+      "report": [],
+      "action": []
+    }
   ]
 }

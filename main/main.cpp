@@ -452,6 +452,32 @@ static bool tuya_meter_report(const zigate_attribute_report_t *report)
 }
 
 /**
+ * SONOFF MINI-ZB1GP (compteur sans relais) : ses mesures arrivent dans le
+ * cluster eWeLink 0xFC11. Son index total (0x701E, Wh) est aussi remonte en
+ * index d'energie standard 0702/0000 : historique, sous-compteur de la page
+ * Energie et compteur Matter le reconnaissent ainsi.
+ */
+static void sonoff_pm_report(const zigate_attribute_report_t *report)
+{
+    static bool s_inside;
+    if (s_inside || report->cluster_id != 0xFC11 || report->attr_id != 0x701E ||
+        report->data_len < 4) return;
+    const zigate_device_t *d = zigate_devices_find_by_short(report->short_addr);
+    if (!d || strcmp(d->model, "MINI-ZB1GP") != 0) return;
+    static zigate_attribute_report_t r;          // tache de traitement ZiGate seule
+    r = *report;
+    r.cluster_id = 0x0702;
+    r.attr_id = 0x0000;
+    r.attr_type = 0x25;                          // uint48, comme un index Zigbee
+    r.data_len = 6;
+    r.data[0] = 0; r.data[1] = 0;
+    for (int i = 0; i < 4; i++) r.data[2 + i] = report->data[report->data_len - 4 + i];
+    s_inside = true;
+    on_zigbee_attribute_report(&r);
+    s_inside = false;
+}
+
+/**
  * Codes IR enregistres d'une telecommande : une action par code (commande 201,
  * valeur = numero du code), apres les actions du template. Ils apparaissent
  * ainsi sur la fiche de l'appareil, dans les regles, les groupes d'actions,
@@ -488,6 +514,7 @@ static void on_ir_codes_changed(uint64_t ieee)
 static void on_zigbee_attribute_report(const zigate_attribute_report_t *report)
 {
     if (tuya_meter_report(report)) return;
+    sonoff_pm_report(report);
 
     // SONOFF SNZB-01M (4 boutons) : FC12/0000 depuis l'endpoint du bouton, type
     // d'appui en valeur (1 simple, 2 double, 3 long, 4 triple). Action unique au

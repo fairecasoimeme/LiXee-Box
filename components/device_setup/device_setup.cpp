@@ -14,6 +14,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <dirent.h>
+#include "esp_heap_caps.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -77,10 +79,72 @@ static void wait_for_model(uint64_t ieee)
 
 // Charge le template de l'appareil : /littlefs/tp/<DeviceId>.json, modele
 // exact ou "default".
+/** true si le fichier de template declare ce modele (cle exacte). */
+static bool file_has_model(const char *path, const char *model)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n <= 0 || n > 256 * 1024) { fclose(f); return false; }
+    char *buf = (char *)heap_caps_malloc((size_t)n + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = (char *)malloc((size_t)n + 1);
+    if (!buf) { fclose(f); return false; }
+    size_t got = fread(buf, 1, (size_t)n, f);
+    fclose(f);
+    buf[got] = '\0';
+    char key[48];
+    snprintf(key, sizeof(key), "\"%s\"", model);
+    bool found = false;
+    for (const char *p = strstr(buf, key); p && !found; p = strstr(p + 1, key)) {
+        const char *q = p + strlen(key);
+        while (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n') q++;
+        found = (*q == ':');
+    }
+    free(buf);
+    return found;
+}
+
+/**
+ * Template du modele quand le fichier de son DeviceId ne le declare pas :
+ * un appareil dont le DeviceId n'est pas encore connu (nouveau modele) est
+ * ainsi reconnu par son nom, quel que soit le fichier qui le declare.
+ */
+static bool find_model_template(const char *model, const char *skip, char *out, size_t len)
+{
+    DIR *d = opendir(DEVDATA_TP_DIR);
+    if (!d) return false;
+    bool found = false;
+    struct dirent *e;
+    char path[sizeof(DEVDATA_TP_DIR) + 1 + sizeof(e->d_name)];
+    while (!found && (e = readdir(d)) != NULL) {
+        size_t n = strlen(e->d_name);
+        if (n < 6 || strcmp(e->d_name + n - 5, ".json") != 0 || strcmp(e->d_name, skip) == 0) continue;
+        snprintf(path, sizeof(path), DEVDATA_TP_DIR "/%s", e->d_name);
+        if (file_has_model(path, model)) {
+            strlcpy(out, e->d_name, len);
+            found = true;
+        }
+    }
+    closedir(d);
+    return found;
+}
+
 static bool load_template(const zigate_device_t *dev)
 {
-    char file[16];
+    char file[64];
     snprintf(file, sizeof(file), "%u.json", (unsigned)dev->device_id);
+    if (dev->model[0]) {
+        char path[96], other[64];
+        snprintf(path, sizeof(path), DEVDATA_TP_DIR "/%s", file);
+        if (!file_has_model(path, dev->model) &&
+            find_model_template(dev->model, file, other, sizeof(other))) {
+            ESP_LOGI(TAG, "Modele '%s' (DeviceId 0x%04X) : template %s",
+                     dev->model, dev->device_id, other);
+            strlcpy(file, other, sizeof(file));
+        }
+    }
 
     esp_err_t err = device_data_load_template(dev->ieee_addr, file, dev->model);
     if (err != ESP_OK && is_zlinky(dev) && strcmp(file, ZLINKY_FALLBACK_TEMPLATE) != 0) {

@@ -1587,6 +1587,16 @@ static int known_signed_width(uint16_t cl, uint16_t at)
     }
 }
 
+/**
+ * Attributs declares non signes par l'appareil mais qui portent une valeur
+ * signee : puissance du cluster eWeLink de SONOFF (0xFC11/0x7006, mW,
+ * negative en injection, MINI-ZB1GP). 0 = aucun.
+ */
+static int forced_signed_width(uint16_t cl, uint16_t at)
+{
+    return (cl == 0xFC11 && at == 0x7006) ? 4 : 0;
+}
+
 static bool is_hex_string(const char *s, size_t *len)
 {
     size_t n = 0;
@@ -1613,8 +1623,9 @@ bool device_data_hex_to_int64(const char *hex, uint8_t zcl_type,
     if (!hex || !out || !is_hex_string(hex, &n) || n > 16) return false;
 
     uint64_t u = strtoull(hex, NULL, 16);
-    int sw = 0;
-    if (zcl_type_is_signed_int(zcl_type))  sw = zcl_type - 0x27;
+    int sw = forced_signed_width(cluster_id, attr_id);
+    if (sw)                                ;
+    else if (zcl_type_is_signed_int(zcl_type))  sw = zcl_type - 0x27;
     else if (zcl_type == 0)                sw = known_signed_width(cluster_id, attr_id);
 
     if (sw > 0 && sw < 8) {
