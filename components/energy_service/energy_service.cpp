@@ -296,10 +296,15 @@ static void read_live(uint64_t zl, live_t *L)
         }
     }
 
-    // Puissance souscrite : ISOUSC x 200 VA (historique), PREF x 1000 (standard)
+    // Puissance souscrite : ISOUSC x 200 VA (historique), PREF x 1000 (standard).
+    // En historique triphase, ISOUSC est l'intensite souscrite d'UNE phase :
+    // total = ISOUSC x 200 x 3 (comme power_stats et le pont Matter). Pris
+    // pour le total, il donnait des jauges par phase limitees au tiers
+    // (1 333 VA au lieu de 4 000 VA en 12 kVA).
     int64_t isousc = 0, pref = 0;
     if (mode_is_histo(L->mode)) {
-        if (dd_num(zl, 0x0B01, 13, &isousc)) L->goal_total = (int32_t)(isousc * 200);
+        if (dd_num(zl, 0x0B01, 13, &isousc))
+            L->goal_total = (int32_t)(isousc * 200 * (L->tri ? 3 : 1));
     } else if (dd_num(zl, 0x0B01, 14, &pref)) {
         L->goal_total = (int32_t)(pref * 1000);
     }

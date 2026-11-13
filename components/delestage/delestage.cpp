@@ -243,9 +243,9 @@ static int minute_load_pct(const energy_live_t *L)
         int32_t a = minute_avg(0);
         return a < 0 ? -1 : (int)((int64_t)a * 100 / L->goal_va);
     }
-    // Limite par phase : Standard, PREF total / 3 ; Historique triphase, ISOUSC
-    // est deja l'intensite d'UNE phase (goal_va = ISOUSC x 200)
-    int32_t per = (L->mode == 2) ? L->goal_va : L->goal_va / 3;
+    // Limite par phase : le tiers de la puissance souscrite totale (goal_va,
+    // ISOUSC x 200 x 3 en historique triphase)
+    int32_t per = L->goal_va / 3;
     int best = -1;
     for (int p = 1; p <= 3 && per > 0; p++) {
         int32_t a = minute_avg(p);
@@ -371,7 +371,7 @@ char *delestage_json(void)
     cJSON_AddNumberToObject(root, "minuteVA", minute_avg(0));
     cJSON_AddNumberToObject(root, "minuteLoadPercent", live ? minute_load_pct(&L) : -1);
     // Puissance souscrite totale (Historique triphase : ISOUSC x 200 x 3, comme la Box)
-    cJSON_AddNumberToObject(root, "subscribedVA", live ? (L.mode == 2 ? L.goal_va * 3 : L.goal_va) : 0);
+    cJSON_AddNumberToObject(root, "subscribedVA", live ? L.goal_va : 0);
     cJSON *arr = cJSON_AddArrayToObject(root, "devices");
     auto add = [&](const char *id, bool cut) {
         const cJSON *o;
