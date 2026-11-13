@@ -730,28 +730,48 @@ int32_t energy_history_slot_value(const energy_history_t *h, energy_gran_t gran,
     return 0;
 }
 
+/**
+ * Efface en place l'historique de consommation d'une entree : les pointeurs
+ * deja rendus restent valides. Les index de reference (ref, last) sont
+ * gardes : la periode en cours continue d'etre comptee normalement.
+ * save : ecrit le fichier vide ; sinon rien n'est ecrit (fichier supprime
+ * par l'appelant, recree a la prochaine mesure). Verrous pris.
+ */
+static bool clear_energy_locked(int i, bool save)
+{
+    energy_history_t *h = s_entries[i].energy;
+    if (!h) return false;
+    energy_period_t *ps[4] = { &h->hours, &h->days, &h->months, &h->years };
+    for (int k = 0; k < 4; k++) {
+        memset(ps[k]->graph, 0, sizeof(ps[k]->graph));
+        memset(&ps[k]->trend, 0, sizeof(ps[k]->trend));
+    }
+    int y = ntp_sync_get_year();
+    if (y >= 2024) h->base_year = y;
+    h->dirty = save;
+    if (save) save_energy_history(h);
+    return true;
+}
+
+esp_err_t energy_history_clear(uint64_t ieee_addr, bool save)
+{
+    data_lock();
+    entries_lock();
+    int idx = find_entry(ieee_addr);
+    bool done = idx >= 0 && clear_energy_locked(idx, save);
+    entries_unlock();
+    data_unlock();
+    if (done) ESP_LOGW(TAG, "Historique d'energie %016llX efface", (unsigned long long)ieee_addr);
+    return done ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
 esp_err_t energy_history_clear_all(void)
 {
-    // Effacement en place : les pointeurs deja rendus restent valides. Les
-    // index de reference (ref, last) sont gardes : la periode en cours
-    // continue d'etre comptee normalement.
     data_lock();
     entries_lock();
     int n = 0;
     for (int i = 0; i < s_entry_count; i++) {
-        energy_history_t *h = s_entries[i].energy;
-        if (h) {
-            energy_period_t *ps[4] = { &h->hours, &h->days, &h->months, &h->years };
-            for (int k = 0; k < 4; k++) {
-                memset(ps[k]->graph, 0, sizeof(ps[k]->graph));
-                memset(&ps[k]->trend, 0, sizeof(ps[k]->trend));
-            }
-            int y = ntp_sync_get_year();
-            if (y >= 2024) h->base_year = y;
-            h->dirty = true;
-            save_energy_history(h);
-            n++;
-        }
+        if (clear_energy_locked(i, true)) n++;
         power_history_t *p = s_entries[i].power;
         if (p) {
             p->record_count = 0;

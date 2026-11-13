@@ -446,6 +446,15 @@ static esp_err_t files_delete_handler(httpd_req_t *req)
     char dir[16], name[72], path[128];
     if (!parse_target(req, true, dir, sizeof(dir), name, sizeof(name), path, sizeof(path))) return ESP_OK;
 
+    // Historique d'un compteur (hst/nrg_<IEEE>.json) : efface aussi en
+    // memoire, sinon la sauvegarde periodique recreait le fichier avec
+    // l'ancien contenu
+    if (strcmp(dir, "hst") == 0 && strncmp(name, "nrg_", 4) == 0 &&
+        strlen(name) == 4 + 16 + 5 && ends_with(name, ".json")) {
+        uint64_t ieee = strtoull(name + 4, NULL, 16);
+        if (ieee) energy_history_clear(ieee, false);
+    }
+
     if (unlink(path) != 0) return send_json_error(req, "404 Not Found", "Fichier introuvable");
     ESP_LOGI(TAG, "Fichier supprime : %s", path);
     httpd_resp_set_type(req, "application/json");

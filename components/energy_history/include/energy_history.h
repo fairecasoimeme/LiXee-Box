@@ -141,6 +141,13 @@ esp_err_t energy_history_remove(uint64_t ieee_addr);
  */
 esp_err_t energy_history_clear_all(void);
 
+/**
+ * Efface en memoire l'historique de consommation d'un compteur. save : ecrit
+ * aussi le fichier vide ; sinon rien n'est ecrit (fichier supprime par
+ * l'appelant, recree a la prochaine mesure). ESP_ERR_NOT_FOUND si absent.
+ */
+esp_err_t energy_history_clear(uint64_t ieee_addr, bool save);
+
 // ============================================================================
 // API publique - Lecture (service energie, pages web)
 // ============================================================================
