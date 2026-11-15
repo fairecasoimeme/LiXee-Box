@@ -15,4 +15,5 @@ idf_component_register(
         esp_driver_gpio
         esp_timer
         espressif__mdns
+        esp_app_format
 )

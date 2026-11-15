@@ -1360,6 +1360,7 @@ extern "C" void app_main(void)
 
     // 4. ZiGate driver (UART + reseau Zigbee)
     ESP_ERROR_CHECK(zigate_init());
+    wifi_mgr_mdns_update_board();       // carte identifiee par la sonde ISP
     ESP_ERROR_CHECK(zigate_devices_init());
 
     // 4b. Device Data (valeurs cluster/attribut, templates, persistence)

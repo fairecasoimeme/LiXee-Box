@@ -92,6 +92,12 @@ void wifi_mgr_set_mdns_shared(bool shared);
 void wifi_mgr_start_mdns(void);
 
 /**
+ * Met a jour l'enregistrement TXT "model" du service _http._tcp une fois la
+ * carte identifiee (zigate_init) : sans Matter, le mDNS demarre avant.
+ */
+void wifi_mgr_mdns_update_board(void);
+
+/**
  * Retourne true si WiFi est actuellement connecte.
  */
 bool wifi_mgr_is_connected(void);

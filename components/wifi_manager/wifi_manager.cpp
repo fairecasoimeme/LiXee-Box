@@ -19,6 +19,8 @@
 #include "esp_mac.h"
 #include "nvs_flash.h"
 #include "mdns.h"
+#include "esp_app_desc.h"
+#include "board.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -125,6 +127,30 @@ static bool any_ipv4(void)
 
 // Mode partage : LIXEEBOX-XXYY.local en nom d'hote delegue (adresse fournie
 // par le pont), le nom d'hote principal restant celui de Matter.
+/**
+ * Enregistrements TXT du service _http._tcp : identification de la box par
+ * un client qui la decouvre (integration Home Assistant par Zeroconf...),
+ * sans requete HTTP ni identifiants. mac = MAC WiFi complete (identifiant
+ * unique ; le nom d'instance n'en a que 2 octets). api = version de l'API
+ * REST, a incrementer sur un changement incompatible. Sans Matter, le mDNS
+ * demarre avant zigate_init (sonde ISP de la Pro) : "model" est alors
+ * corrige par wifi_mgr_mdns_update_board().
+ */
+static size_t mdns_txt(mdns_txt_item_t *txt, char *mac_buf, size_t mac_len)
+{
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(mac_buf, mac_len, "%02X%02X%02X%02X%02X%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    size_t n = 0;
+    txt[n++] = (mdns_txt_item_t){ "vendor", "LiXee" };
+    txt[n++] = (mdns_txt_item_t){ "model", board_id() };
+    txt[n++] = (mdns_txt_item_t){ "fw", esp_app_get_description()->version };
+    txt[n++] = (mdns_txt_item_t){ "mac", mac_buf };
+    txt[n++] = (mdns_txt_item_t){ "api", "1" };
+    return n;
+}
+
 static void start_mdns_shared(const char *hostname)
 {
     mdns_ip_addr_t addr;
@@ -157,8 +183,11 @@ static void start_mdns_shared(const char *hostname)
     // L'ajout du nom delegue est traite de facon asynchrone par la tache
     // mDNS : tant qu'il ne l'est pas, l'ajout du service echoue
     // (ESP_ERR_INVALID_ARG, observe au demarrage en Ethernet). On reessaie.
+    mdns_txt_item_t txt[5];
+    char mac_buf[13];
+    size_t ntxt = mdns_txt(txt, mac_buf, sizeof(mac_buf));
     for (int i = 0; i < 20; i++) {
-        ret = mdns_service_add_for_host(hostname, "_http", "_tcp", hostname, 80, NULL, 0);
+        ret = mdns_service_add_for_host(hostname, "_http", "_tcp", hostname, 80, txt, ntxt);
         if (ret != ESP_ERR_INVALID_ARG) break;
         vTaskDelay(pdMS_TO_TICKS(50));
     }
@@ -220,7 +249,10 @@ static void start_mdns(void)
     // Le nom de service DOIT etre le hostname (= nom BLE) pour que
     // LiXee-Assist puisse le trouver via mDNS-SD (_http._tcp.local)
     // L'app compare le PTR record avec le nom BLE (case-insensitive)
-    ret = mdns_service_add(hostname, "_http", "_tcp", 80, NULL, 0);
+    mdns_txt_item_t txt[5];
+    char mac_buf[13];
+    size_t ntxt = mdns_txt(txt, mac_buf, sizeof(mac_buf));
+    ret = mdns_service_add(hostname, "_http", "_tcp", 80, txt, ntxt);
     if (ret != ESP_OK) {
         ESP_LOGW(TAG, "mDNS service add failed: %s", esp_err_to_name(ret));
         // Pas fatal — le hostname fonctionne quand meme
@@ -653,6 +685,22 @@ void wifi_mgr_set_mdns_shared(bool shared)
 {
     s_mdns_shared = shared;
     s_mdns_allowed = !shared;
+}
+
+void wifi_mgr_mdns_update_board(void)
+{
+    if (!s_mdns_initialized) return;     // TXT construit plus tard, carte connue
+    esp_err_t ret;
+    if (s_mdns_shared) {
+        char hostname[20];
+        uint8_t mac[6];
+        esp_read_mac(mac, ESP_MAC_WIFI_STA);
+        snprintf(hostname, sizeof(hostname), "LIXEEBOX-%02X%02X", mac[4], mac[5]);
+        ret = mdns_service_txt_item_set_for_host(hostname, "_http", "_tcp", hostname, "model", board_id());
+    } else {
+        ret = mdns_service_txt_item_set("_http", "_tcp", "model", board_id());
+    }
+    if (ret != ESP_OK) ESP_LOGW(TAG, "mDNS TXT model: %s", esp_err_to_name(ret));
 }
 
 void wifi_mgr_start_mdns(void)
