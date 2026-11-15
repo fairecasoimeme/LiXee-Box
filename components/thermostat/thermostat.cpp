@@ -1175,8 +1175,16 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
     if (feat & 1) {
         // Presets Matter (issue #51) : "Confort" suit la consigne hors bascule
         // hors-gel (restauree a la sortie du hors-gel, cf. setpoint_saved).
-        int32_t comfort_sp = (int32_t)lroundf((t->frost_mode ? t->setpoint_saved : t->setpoint) * 100.0f);
-        int32_t frost_sp = (int32_t)lroundf(t->frost_temp * 100.0f);
+        int32_t comfort_sp = clamp32(
+            (int32_t)lroundf((t->frost_mode ? t->setpoint_saved : t->setpoint) * 100.0f),
+            700,
+            3000
+        );
+        int32_t frost_sp = clamp32(
+            (int32_t)lroundf(t->frost_temp * 100.0f),
+            700,
+            3000
+        );        
         matter_bridge_set_thermostat_presets(ep, comfort_sp, frost_sp, t->frost_mode);
     }
     t->m_valid = t->sensor_valid;
