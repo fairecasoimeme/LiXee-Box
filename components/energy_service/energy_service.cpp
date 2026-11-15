@@ -2171,7 +2171,10 @@ bool energy_service_get_live(energy_live_t *out)
     tariff_info(r.zl, L.mode, &ti);
     strlcpy(out->tariff, ti.tariff, sizeof(out->tariff));
     out->tariff_index = ti.index;
-    out->tariff_price = price_for_attr(ti.index);
+    // Tarif non identifie (libelle "---" juste apres le demarrage...) : pas
+    // de prix, plutot que celui de la premiere plage (issue #60)
+    out->tariff_known = ti.known;
+    out->tariff_price = ti.known ? price_for_attr(ti.index) : 0;
     out->tempo_today = ti.today;
     out->tempo_tomorrow = ti.tomorrow;
     return true;

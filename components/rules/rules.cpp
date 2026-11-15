@@ -1041,13 +1041,13 @@ static bool energy_value(eval_ctx_t *x, const char *m, double *num, char *text, 
         return fresh && l->has_voltage[p];
     }
     if (!strcmp(m, "overload"))       { *num = l->overload ? 1 : 0; return live; }
-    if (!strcmp(m, "tariff_price"))   { *num = l->tariff_price; return live; }
+    if (!strcmp(m, "tariff_price"))   { *num = l->tariff_price; return live && l->tariff_known; }
     if (!strcmp(m, "tempo_today"))    { *num = l->tempo_today; return live; }
     if (!strcmp(m, "tempo_tomorrow")) { *num = l->tempo_tomorrow; return live; }
     if (!strcmp(m, "tariff")) {
         *is_text = true;
         jcopy(text, tlen, l->tariff);
-        return live && l->tariff[0];
+        return live && l->tariff[0] && strcmp(l->tariff, "---") != 0;
     }
     if (!strcmp(m, "wh_today") || !strcmp(m, "eur_today") || !strcmp(m, "prod_today")) {
         if (!period_cost(x, ENERGY_COST_TODAY, &wh, &eur, &prod)) return false;

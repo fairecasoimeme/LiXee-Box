@@ -70,7 +70,8 @@ typedef struct {
     bool    overload;           // depassement de puissance souscrite (ADPS / STGE)
     char    tariff[24];         // tarif en cours (PTEC / LTARF)
     uint16_t tariff_index;      // attribut d'index en cours (256...)
-    double  tariff_price;       // EUR/kWh de l'index en cours
+    bool    tariff_known;       // tarif identifie : sinon index 256 par defaut, prix 0
+    double  tariff_price;       // EUR/kWh de l'index en cours, 0 si tarif non identifie
     int     tempo_today;        // 0 aucun, 1 bleu, 2 blanc, 3 rouge
     int     tempo_tomorrow;
 } energy_live_t;
