@@ -95,6 +95,7 @@ L'appairage se fait **toujours sur le canal 3**. Le récepteur assigne ensuite u
 | `0x0A` | OTA_STATUS | device → box | ✅ |
 | `0x0B` | POLL_REQUEST | box → device | ✅ |
 | `0x0C` | POLL_RESPONSE | device → box | ✅ |
+| `0x0D` | DATA_GENERIC | device → box | ✅ |
 
 Donc `byte[0]` vaut `0x11` pour ESSENTIAL, `0x12` pour EXTENDED, `0x13` pour
 PAIR_REQUEST, etc.
@@ -1202,6 +1203,9 @@ fois tous les 32 blocs : le récepteur doit alors reprendre à `OTA_START`.
 5. **Suivi de séquence par émetteur** (pas de compteur global) pour calculer un
    PDR correct.
 
+   Les trames DATA_GENERIC (§12) partagent ce compteur avec ESSENTIAL et
+   EXTENDED : ce sont des trames de données comme les autres.
+
 6. **Avant le premier POWER_MAX_CFG** (~3 min après le boot), l'option tarifaire
    Historique est inconnue : afficher des libellés génériques (`Tier1`, `Tier2`)
    plutôt que de masquer la donnée.
@@ -1259,3 +1263,76 @@ couple (cluster, attribut) — voir la liste en §8.
 | Fraîcheur | la valeur renvoyée est celle du dernier échantillonnage TIC (jusqu'à un cycle de retard), pas une lecture instantanée du compteur |
 | SF / canal | ne se changent PAS par ce canal — refaire un appairage (§4) |
 | Multi-émetteur | les fenêtres des différents ZLinky ne sont pas synchronisées, chacune se traite indépendamment |
+
+---
+
+## 12. DATA_GENERIC (type `0x0D`)
+
+Trame de données montante pour les émetteurs **non TIC** (ZiPulses LoRa…).
+Elle transporte un ou plusieurs attributs ZCL dans une seule émission, et le
+récepteur la traite comme une trame de données :
+
+- elle met à jour les statistiques de l'émetteur (dernière réception, RSSI,
+  SNR, trames manquées par la séquence) et le chien de garde radio du
+  récepteur ;
+- l'émetteur ouvre après elle la **fenêtre POLL de 300 ms** (§8), comme le
+  ZLinky après ESSENTIAL et EXTENDED ;
+- elle ne touche ni au mode Linky ni à une requête POLL en attente.
+
+> **Pourquoi** : sans elle, un émetteur non TIC devait envoyer une trame
+> ESSENTIAL de longueur invalide (keep-alive) puis une POLL_RESPONSE non
+> sollicitée par attribut : une émission par valeur, sans statistiques ni
+> fenêtre POLL, et chaque réponse non sollicitée effaçait la requête POLL en
+> attente du récepteur.
+
+### Format (clair, avant chiffrement) — 3..78 octets + MIC
+
+| Offset | Taille | Champ |
+|---|---|---|
+| 0 | 1 | `0x1D` (version 1, type `0x0D`) |
+| 1 | 1 | seq (compteur montant de l'émetteur, partagé avec ses autres trames de données) |
+| 2 | 1 | **N** : nombre d'enregistrements (1 à 15) |
+| 3.. | | N enregistrements à la suite |
+
+Chaque enregistrement :
+
+| Taille | Champ |
+|---|---|
+| 2 | cluster_id (uint16 BE) |
+| 2 | attribute_id (uint16 BE) |
+| 1 | type ZCL (mêmes codes que POLL_RESPONSE, §8) |
+| 1 | longueur **L** de la valeur |
+| L | valeur : big-endian pour les numériques, ASCII sans zéro final pour les chaînes (`0x41`, `0x42`) |
+
+- **Taille** : 78 octets en clair au plus, soit 80 en radio avec le MIC
+  (limite `SX_MAX_PAYLOAD` du récepteur).
+- **Chiffrement** : identique aux autres trames montantes (§3) : AES-128-CTR
+  sur les octets [2..], nonce = MAC de l'émetteur ‖ 7 octets à zéro ‖ seq, MIC
+  de 2 octets (CMAC du clair) en fin de trame.
+
+### Exemple : rapport complet du ZiPulses (37 octets en clair, 39 en radio)
+
+```
+1D 05 04                                  type, seq=5, 4 enregistrements
+07 02 00 00 25 06 00 00 00 00 30 39       0702/0000 uint48 = 12345 impulsions
+00 01 00 20 20 01 1E                      0001/0020 uint8  = 30  (3,0 V)
+00 01 00 21 20 01 C8                      0001/0021 uint8  = 200 (100 %)
+04 02 00 00 29 02 08 34                   0402/0000 int16  = 2100 (21,00 °C)
+```
+
+En dehors du rapport complet, la trame ne porte que le premier enregistrement
+(l'index).
+
+### Décodage côté récepteur
+
+1. Trouver l'émetteur par la clé dont le MIC valide, puis traiter la trame
+   comme ESSENTIAL / EXTENDED : séquence, statistiques, émission immédiate
+   d'une requête POLL en attente (§11.2), avant le décodage.
+2. Lire les N enregistrements en vérifiant les bornes à chaque étape, et
+   **s'arrêter au premier enregistrement tronqué** (moins de 6 octets d'en-tête,
+   ou moins de L octets de valeur).
+3. **Ignorer** (et passer au suivant) un enregistrement numérique de plus de
+   8 octets, une chaîne de plus de 32, ou une valeur vide.
+4. Injecter chaque valeur valide comme un attribut Zigbee reçu (cluster,
+   attribut, type, valeur) : la LiXee-Box l'applique au template de
+   l'appareil, à l'historique d'énergie (0702), à MQTT et à Matter.

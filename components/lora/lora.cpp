@@ -79,6 +79,7 @@ static const char *TAG = "LORA";
 #define T_OTA_ACK       0x09
 #define T_POLL_REQUEST  0x0B
 #define T_POLL_RESPONSE 0x0C
+#define T_DATA_GENERIC  0x0D
 
 #define POLL_OK           0x00
 #define POLL_UNKNOWN_ATTR 0x01
@@ -1347,16 +1348,48 @@ static void format_poll_value(uint8_t ztype, const uint8_t *v, uint8_t n, char *
 // Reception des donnees
 // ============================================================================
 
-// Retourne true si une requete POLL a ete emise : la radio est alors deja
-// revenue en reception (send_poll_request) et la reponse peut arriver pendant
-// le decodage de la trame, qui suit.
-static bool handle_data(uint8_t *buf, int len, float rssi, float snr)
+// DATA_GENERIC : [N] puis N enregistrements
+// [cluster(2)][attr(2)][type ZCL][L][valeur(L)], big-endian (LORA_PROTOCOL.md sect. 12).
+// Arret au premier enregistrement tronque ; un numerique de plus de 8 octets
+// ou une chaine de plus de 32 est ignore (les suivants restent lus).
+static void map_generic(emitter_t *e, const uint8_t *b, int len)
 {
+    if (len < 3) return;
+    int n = b[2];
+    int pos = 3;
+    for (int k = 0; k < n; k++) {
+        if (pos + 6 > len) break;
+        uint16_t cluster = getU16(&b[pos]);
+        uint16_t attr = getU16(&b[pos + 2]);
+        uint8_t ztype = b[pos + 4];
+        uint8_t vlen = b[pos + 5];
+        pos += 6;
+        if (pos + vlen > len) {
+            ESP_LOGW(TAG, "DATA_GENERIC : enregistrement %d/%d tronque (0x%04X/0x%04X)", k + 1, n, cluster, attr);
+            break;
+        }
+        const uint8_t *val = &b[pos];
+        pos += vlen;
+        bool is_str = (ztype == 0x41 || ztype == 0x42);
+        if (vlen == 0 || vlen > (is_str ? 32 : 8)) {
+            ESP_LOGW(TAG, "DATA_GENERIC : 0x%04X/0x%04X type 0x%02X longueur %u ignore", cluster, attr, ztype, vlen);
+            continue;
+        }
+        push_value(e, cluster, attr, ztype, val, vlen);
+    }
+}
+
+// Partie commune des trames de donnees (ESSENTIAL, EXTENDED, DATA_GENERIC) :
+// emetteur dont le MIC valide, statistiques, POLL en attente emis tout de
+// suite, fiche. Retourne l'emetteur (NULL si aucune cle ne valide) ;
+// *poll_sent indique qu'une requete POLL est partie (radio deja en reception).
+static emitter_t *accept_data_frame(uint8_t *buf, int len, float rssi, float snr, bool *poll_sent)
+{
+    *poll_sent = false;
     // On essaie chaque cle : le bon emetteur est celui dont le MIC valide
     uint8_t backup[SX_MAX_PAYLOAD];
-    if (len > (int)sizeof(backup)) return false;
+    if (len > (int)sizeof(backup)) return NULL;
     memcpy(backup, buf, (size_t)len);
-    bool poll_sent = false;
 
     for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
         if (!s_em[i].valid) continue;
@@ -1397,20 +1430,34 @@ static bool handle_data(uint8_t *buf, int len, float rssi, float snr)
                          e->poll_cluster, e->poll_attr, e->poll_retries);
             } else {
                 send_poll_request(e);
-                poll_sent = true;
+                *poll_sent = true;
             }
         }
 
         device_data_t *dd = device_data_find(mac_to_ieee(e->mac));
         if (!dd) ensure_device(e);                          // fiche supprimee entre-temps
-
-        int data_len = len - MIC_SIZE;
-        if ((buf[0] & 0x0F) == T_ESSENTIAL) map_essential(e, buf, data_len);
-        else                                map_extended(e, buf, data_len);
-        return poll_sent;
+        return e;
     }
     ESP_LOGD(TAG, "Trame chiffree non attribuee (MIC KO pour toutes les cles), len=%d", len);
-    return false;
+    return NULL;
+}
+
+// Retourne true si une requete POLL a ete emise : la radio est alors deja
+// revenue en reception (send_poll_request) et la reponse peut arriver pendant
+// le decodage de la trame, qui suit.
+static bool handle_data(uint8_t *buf, int len, float rssi, float snr)
+{
+    bool poll_sent;
+    emitter_t *e = accept_data_frame(buf, len, rssi, snr, &poll_sent);
+    if (!e) return false;
+    int data_len = len - MIC_SIZE;
+    switch (buf[0] & 0x0F) {
+    case T_ESSENTIAL:    map_essential(e, buf, data_len); break;
+    case T_EXTENDED:     map_extended(e, buf, data_len); break;
+    case T_DATA_GENERIC: map_generic(e, buf, data_len); break;
+    default: break;
+    }
+    return poll_sent;
 }
 
 static void handle_ident_response(int slot, uint16_t attr, uint8_t status, uint8_t ztype,
@@ -2060,7 +2107,8 @@ static void loop_once(void)
     if (len < 0) s_rx_errors++;
     if (len <= 0) { start_rx(); return; }
     s_rx_read_ms = millis();
-    if ((buf[0] & 0x0F) != T_ESSENTIAL && (buf[0] & 0x0F) != T_EXTENDED) {
+    if ((buf[0] & 0x0F) != T_ESSENTIAL && (buf[0] & 0x0F) != T_EXTENDED &&
+        (buf[0] & 0x0F) != T_DATA_GENERIC) {
         ESP_LOGD(TAG, "RX trame type 0x%02X, %d octets, RSSI %.0f dBm, SNR %.1f dB",
                  buf[0], len, rssi, snr);
     }
@@ -2072,6 +2120,7 @@ static void loop_once(void)
     case T_PAIR_CONFIRM:  handle_pair_confirm(buf, len); start_rx(); break;
     case T_ESSENTIAL:
     case T_EXTENDED:
+    case T_DATA_GENERIC:
         // Apres une requete POLL, ne PAS relancer la reception : la radio y
         // est deja, et la reponse du ZLinky (~100 ms d'emission a SF11) arrive
         // pendant le decodage de la trame (chemin commun : device_data,
