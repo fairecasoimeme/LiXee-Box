@@ -20,6 +20,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_system.h"
+#include "esp_attr.h"
 #include "esp_heap_caps.h"
 #include <sys/stat.h>
 #include <dirent.h>
@@ -80,6 +81,75 @@ static const char *TAG = "MAIN";
 // ============================================================================
 
 static bool matter_enabled = false;
+
+// Echec du demarrage de Matter : la passerelle continue sans Matter. Avant,
+// l'echec arretait le firmware (ESP_ERROR_CHECK) : redemarrages en boucle,
+// sans interface pour desactiver Matter (vu avec une NVS pleine).
+static char s_matter_error[160];
+
+extern "C" const char *main_matter_error(void)
+{
+    return s_matter_error[0] ? s_matter_error : NULL;
+}
+
+// Plantages en boucle : compteur en RTC, garde a travers les redemarrages
+// logiciels et les paniques (pas les coupures de courant). Au 3e plantage
+// avant un demarrage stable, Matter est saute pour ce demarrage : une
+// erreur fatale dans la pile Matter ne bloque plus la passerelle.
+#define CRASH_MAGIC       0x4C584D43u
+#define CRASH_LOOP_COUNT  3
+#define CRASH_STABLE_US   (90 * 1000000LL)
+
+static RTC_NOINIT_ATTR uint32_t s_crash_magic;
+static RTC_NOINIT_ATTR uint32_t s_crash_count;
+static bool s_crash_loop;
+
+static void crash_counter_clear(void *arg)
+{
+    (void)arg;
+    s_crash_count = 0;
+}
+
+static void crash_loop_check(void)
+{
+    esp_reset_reason_t r = esp_reset_reason();
+    if (s_crash_magic != CRASH_MAGIC) {
+        s_crash_magic = CRASH_MAGIC;
+        s_crash_count = 0;
+    }
+    bool crash = r == ESP_RST_PANIC || r == ESP_RST_INT_WDT ||
+                 r == ESP_RST_TASK_WDT || r == ESP_RST_WDT;
+    s_crash_count = crash ? s_crash_count + 1 : 0;
+    if (s_crash_count >= CRASH_LOOP_COUNT) {
+        s_crash_loop = true;
+        ESP_LOGE(TAG, "%u plantages de suite au demarrage : Matter saute pour ce demarrage",
+                 (unsigned)s_crash_count);
+    }
+    static esp_timer_handle_t t;
+    esp_timer_create_args_t a = {};
+    a.callback = crash_counter_clear;
+    a.name = "crash_rst";
+    if (esp_timer_create(&a, &t) == ESP_OK) esp_timer_start_once(t, CRASH_STABLE_US);
+}
+
+/** Matter non demarre : erreur gardee pour la page Matter, mDNS sans Matter. */
+static void matter_boot_failed(const char *why, esp_err_t err)
+{
+    int n = snprintf(s_matter_error, sizeof(s_matter_error), "%s", why);
+    if (err != ESP_OK && n > 0 && n < (int)sizeof(s_matter_error)) {
+        n += snprintf(s_matter_error + n, sizeof(s_matter_error) - n, " (%s)", esp_err_to_name(err));
+    }
+    nvs_stats_t ns = {};
+    if (nvs_get_stats(NULL, &ns) == ESP_OK && ns.available_entries < 16 &&
+        n > 0 && n < (int)sizeof(s_matter_error)) {
+        snprintf(s_matter_error + n, sizeof(s_matter_error) - n,
+                 " ; mémoire NVS pleine (%u entrées libres sur %u)",
+                 (unsigned)ns.available_entries, (unsigned)ns.total_entries);
+    }
+    ESP_LOGE(TAG, "Matter non demarre : %s. La passerelle continue sans Matter.", s_matter_error);
+    // Le mDNS de la passerelle attendait Matter (mode partage) : sans lui
+    wifi_mgr_mdns_standalone();
+}
 
 static void load_matter_enabled(void)
 {
@@ -1292,6 +1362,7 @@ extern "C" void app_main(void)
         }
         memset(&cur, 0, sizeof(cur));
     }
+    crash_loop_check();   // plantages en boucle : Matter saute
     boot_reset_check();   // 3 demarrages rapides : RAZ WiFi / Ethernet / securite HTTP
     debug_log_init();     // journal /debug (option Debug de Config General)
     {
@@ -1461,7 +1532,9 @@ extern "C" void app_main(void)
     // 5. Config Matter : lue avant le WiFi (partage du mDNS)
 
     // 6. Matter Bridge (conditionne a matter_enabled)
-    if (matter_enabled) {
+    if (matter_enabled && s_crash_loop) {
+        matter_boot_failed("Redémarrages en boucle au démarrage : Matter sauté pour ce démarrage", ESP_OK);
+    } else if (matter_enabled) {
         ESP_LOGI(TAG, "Matter is ENABLED — initializing bridge...");
         // L'initialisation de la pile CHIP remet l'horloge au 01/01/2000
         // (InitClock_RealTime, sans condition) : l'heure NTP deja obtenue
@@ -1471,13 +1544,19 @@ extern "C" void app_main(void)
         gettimeofday(&tv_before, NULL);
         const int64_t us_before = esp_timer_get_time();
 
-        ESP_ERROR_CHECK(matter_bridge_init());
-        ESP_ERROR_CHECK(matter_device_manager_init());
-        ESP_ERROR_CHECK(matter_bridge_start());
-        // CHIP a pu se connecter au WiFi enregistre avant de passer la main au
-        // pont : coupe tout de suite si l'Ethernet a deja son adresse
-        if (eth_mgr_has_ip()) wifi_mgr_disconnect();
-
+        // Un echec ne doit pas arreter la passerelle : elle continue sans Matter
+        const char *mstep = "Initialisation du pont Matter";
+        esp_err_t merr = matter_bridge_init();
+        if (merr == ESP_OK) {
+            mstep = "Gestionnaire d'appareils Matter";
+            merr = matter_device_manager_init();
+        }
+        if (merr == ESP_OK) {
+            mstep = "Démarrage de la pile Matter";
+            merr = matter_bridge_start();
+        }
+        // Horloge restauree aussi apres un echec : la pile a pu la remettre a
+        // 2000 avant d'echouer
         const time_t valid_epoch = 1577836800;  // 2020-01-01
         if (tv_before.tv_sec > valid_epoch && time(NULL) < valid_epoch) {
             int64_t us = (int64_t)tv_before.tv_sec * 1000000 + tv_before.tv_usec +
@@ -1487,47 +1566,55 @@ extern "C" void app_main(void)
             ESP_LOGI(TAG, "Heure NTP restauree apres le demarrage de Matter");
         }
 
-        // Matter a initialise le mDNS : le pont y ajoute LIXEEBOX-XXYY.local
-        wifi_mgr_start_mdns();
+        if (merr != ESP_OK) {
+            matter_boot_failed(mstep, merr);
+        } else {
+            // CHIP a pu se connecter au WiFi enregistre avant de passer la main au
+            // pont : coupe tout de suite si l'Ethernet a deja son adresse
+            if (eth_mgr_has_ip()) wifi_mgr_disconnect();
 
-        // Version materielle affichee par les controleurs : LiXeeBox_XXYY,
-        // meme suffixe que le nom mDNS (au lieu de TEST_VERSION)
-        {
-            char hn[24] = "", hw[48];
-            wifi_mgr_get_hostname(hn, sizeof(hn));
-            const char *dash = strrchr(hn, '-');
-            snprintf(hw, sizeof(hw), "LiXeeBox_%s", dash ? dash + 1 : hn);
-            matter_bridge_set_hardware_version_string(hw);
+            // Matter a initialise le mDNS : le pont y ajoute LIXEEBOX-XXYY.local
+            wifi_mgr_start_mdns();
+
+            // Version materielle affichee par les controleurs : LiXeeBox_XXYY,
+            // meme suffixe que le nom mDNS (au lieu de TEST_VERSION)
+            {
+                char hn[24] = "", hw[48];
+                wifi_mgr_get_hostname(hn, sizeof(hn));
+                const char *dash = strrchr(hn, '-');
+                snprintf(hw, sizeof(hw), "LiXeeBox_%s", dash ? dash + 1 : hn);
+                matter_bridge_set_hardware_version_string(hw);
+            }
+
+            // Re-creer les endpoints Matter des devices Zigbee deja connus APRES
+            // start() : esp-matter ne relit qu'au demarrage le compteur des
+            // endpoints deja attribues, et c'est ce qui permet de reprendre pour
+            // chaque device le meme endpoint qu'avant (un controleur comme Home
+            // Assistant identifie l'appareil ponte par ce numero).
+            // Le template est charge d'abord : il fixe les types d'appareil et les
+            // attributs Matter de l'endpoint (voir matter_profile.h).
+            for (int i = 0; i < zigate_devices_count(); i++) {
+                zigate_device_t *dev = zigate_devices_get(i);
+                if (!dev || !dev->active) continue;
+                zigate_device_t snap = *dev;        // copie : le tableau peut bouger
+                device_setup_load_template_now(snap.ieee_addr);
+                matter_device_manager_map_device(&snap);
+            }
+
+            // Puis les emetteurs LoRa identifies (ZLinky LoRa), sur leur endpoint
+            // memorise dans lora.json ; les autres le seront a leur premiere trame
+            lora_emitter_info_t lem[LORA_MAX_EMITTERS];
+            int nlem = lora_get_emitters(lem, LORA_MAX_EMITTERS);
+            for (int i = 0; i < nlem; i++) {
+                if (lem[i].identified) lora_map_to_matter(&lem[i]);
+            }
+
+            // Thermostats virtuels : un thermostat ponte par zone
+            thermostat_matter_start();
+            // Groupes d'actions publies : un interrupteur ponte par groupe
+            group_matter_start();
+            matter_device_manager_set_exposure_cb(on_matter_exposure);
         }
-
-        // Re-creer les endpoints Matter des devices Zigbee deja connus APRES
-        // start() : esp-matter ne relit qu'au demarrage le compteur des
-        // endpoints deja attribues, et c'est ce qui permet de reprendre pour
-        // chaque device le meme endpoint qu'avant (un controleur comme Home
-        // Assistant identifie l'appareil ponte par ce numero).
-        // Le template est charge d'abord : il fixe les types d'appareil et les
-        // attributs Matter de l'endpoint (voir matter_profile.h).
-        for (int i = 0; i < zigate_devices_count(); i++) {
-            zigate_device_t *dev = zigate_devices_get(i);
-            if (!dev || !dev->active) continue;
-            zigate_device_t snap = *dev;        // copie : le tableau peut bouger
-            device_setup_load_template_now(snap.ieee_addr);
-            matter_device_manager_map_device(&snap);
-        }
-
-        // Puis les emetteurs LoRa identifies (ZLinky LoRa), sur leur endpoint
-        // memorise dans lora.json ; les autres le seront a leur premiere trame
-        lora_emitter_info_t lem[LORA_MAX_EMITTERS];
-        int nlem = lora_get_emitters(lem, LORA_MAX_EMITTERS);
-        for (int i = 0; i < nlem; i++) {
-            if (lem[i].identified) lora_map_to_matter(&lem[i]);
-        }
-
-        // Thermostats virtuels : un thermostat ponte par zone
-        thermostat_matter_start();
-        // Groupes d'actions publies : un interrupteur ponte par groupe
-        group_matter_start();
-        matter_device_manager_set_exposure_cb(on_matter_exposure);
     } else {
         ESP_LOGI(TAG, "Matter is DISABLED — skipping bridge init");
         ESP_LOGI(TAG, "Enable Matter via web interface and reboot");

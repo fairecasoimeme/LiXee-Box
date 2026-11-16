@@ -222,8 +222,10 @@ static void start_mdns(void)
     }
 
     esp_err_t ret = mdns_init();
-    if (ret == ESP_ERR_INVALID_STATE && s_mdns_shared) {
-        ret = ESP_OK;   // deja initialise par Matter : attendu en mode partage
+    if (ret == ESP_ERR_INVALID_STATE) {
+        // Deja initialise par Matter : attendu en mode partage, possible aussi
+        // apres un echec du demarrage de Matter (wifi_mgr_mdns_standalone)
+        ret = ESP_OK;
     }
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "mDNS init failed: %s", esp_err_to_name(ret));
@@ -685,6 +687,14 @@ void wifi_mgr_set_mdns_shared(bool shared)
 {
     s_mdns_shared = shared;
     s_mdns_allowed = !shared;
+}
+
+void wifi_mgr_mdns_standalone(void)
+{
+    if (!s_mdns_shared || s_mdns_initialized) return;
+    s_mdns_shared = false;
+    s_mdns_allowed = true;
+    if (any_ipv4()) start_mdns();
 }
 
 void wifi_mgr_mdns_update_board(void)

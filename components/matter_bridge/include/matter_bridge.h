@@ -195,6 +195,13 @@ bool matter_bridge_commissioning_window_open(void);
 esp_err_t matter_bridge_factory_reset(void);
 
 /**
+ * Efface les donnees Matter de la NVS (fabrics, ACL, compteurs, etat des
+ * endpoints) sans la pile : pour une pile qui n'a pas pu demarrer (NVS
+ * pleine). Le code d'appairage (lx_matter) est garde. Redemarrage a faire.
+ */
+esp_err_t matter_bridge_erase_storage(void);
+
+/**
  * Structure pour exporter les donnees energy du ZLinky via C linkage
  * Permet a web_api.cpp de lire les valeurs sans inclure les headers Matter SDK
  */

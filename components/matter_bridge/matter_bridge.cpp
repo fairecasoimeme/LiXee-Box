@@ -1487,6 +1487,31 @@ bool matter_bridge_commissioning_window_open(void)
     return open;
 }
 
+esp_err_t matter_bridge_erase_storage(void)
+{
+    // Espaces de la pile CHIP (ESP32Config, KeyValueStoreManagerImpl) et
+    // d'esp-matter ; chip-factory (donnees d'usine) et lx_matter (code
+    // d'appairage de la passerelle) sont gardes.
+    static const char *const ns[] = { "chip-config", "chip-counters", "CHIP_KVS", "esp_matter_kvs" };
+    esp_err_t ret = ESP_OK;
+    for (size_t i = 0; i < sizeof(ns) / sizeof(ns[0]); i++) {
+        nvs_handle_t h;
+        esp_err_t e = nvs_open(ns[i], NVS_READWRITE, &h);
+        if (e == ESP_ERR_NVS_NOT_FOUND) continue;          // espace jamais cree
+        if (e == ESP_OK) {
+            e = nvs_erase_all(h);
+            if (e == ESP_OK) e = nvs_commit(h);
+            nvs_close(h);
+        }
+        if (e != ESP_OK) {
+            ESP_LOGE(TAG, "Effacement NVS %s : %s", ns[i], esp_err_to_name(e));
+            ret = e;
+        }
+    }
+    ESP_LOGW(TAG, "Donnees Matter effacees de la NVS");
+    return ret;
+}
+
 esp_err_t matter_bridge_factory_reset(void)
 {
     ESP_LOGW(TAG, "Factory reset requested");

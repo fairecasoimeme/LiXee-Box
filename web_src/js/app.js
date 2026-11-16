@@ -2272,6 +2272,14 @@
     var $box = $('#matter-qrcode').empty();
 
     if (!data.started) {
+      if (data.error) {
+        $box.append($('<div class="alert alert-danger text-start small">')
+          .append($('<strong>').text('Matter n’a pas pu démarrer : '))
+          .append(document.createTextNode(data.error + '. La passerelle fonctionne sans Matter. '))
+          .append(document.createTextNode('« Factory Reset Matter » ci-dessous efface les appairages Matter ' +
+            'et libère la mémoire NVS ; il faudra ensuite réappairer la passerelle.')));
+        return;
+      }
       $box.append($('<p class="text-muted">').text(
         'La pile Matter n’est pas démarrée : redémarrez la passerelle après activation.'));
       return;
@@ -2474,6 +2482,9 @@
           '<tr><td><strong>Commissionn&eacute;</strong></td><td>' + (data.commissioned ? '<span class="badge bg-success">Oui</span>' : '<span class="badge bg-warning">Non</span>') + '</td></tr>' +
           '<tr><td><strong>Appareils pont&eacute;s</strong></td><td>' +
             (data.bridgedDevices != null ? data.bridgedDevices + ' / ' + data.maxDevices + ' maximum' : '--') + '</td></tr>' +
+          (data.nvsTotal ? '<tr><td><strong>M&eacute;moire NVS</strong></td><td>' +
+            Math.round(100 * (data.nvsTotal - data.nvsAvailable) / data.nvsTotal) + ' % occup&eacute;e (' +
+            data.nvsAvailable + ' entr&eacute;es libres)</td></tr>' : '') +
           '</table>';
         $('#matter-status').html(html);
 

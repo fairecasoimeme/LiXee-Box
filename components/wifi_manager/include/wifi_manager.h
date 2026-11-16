@@ -98,6 +98,12 @@ void wifi_mgr_start_mdns(void);
 void wifi_mgr_mdns_update_board(void);
 
 /**
+ * Matter n'a pas demarre alors que le mDNS lui etait laisse (mode partage) :
+ * le mDNS de la passerelle demarre seul, comme sans Matter.
+ */
+void wifi_mgr_mdns_standalone(void);
+
+/**
  * Retourne true si WiFi est actuellement connecte.
  */
 bool wifi_mgr_is_connected(void);

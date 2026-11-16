@@ -54,6 +54,7 @@
 // Fonctions definies dans main.cpp pour le parametre Matter enable/disable
 extern "C" bool main_is_matter_enabled(void);
 extern "C" esp_err_t main_set_matter_enabled(bool enabled);
+extern "C" const char *main_matter_error(void);
 
 static const char *TAG = "WEB_API";
 
@@ -218,6 +219,16 @@ static esp_err_t api_matter_status_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "maxDevices", matter_bridge_bridged_max());
     cJSON_AddNumberToObject(root, "fabrics", matter_bridge_fabric_count());
     cJSON_AddBoolToObject(root, "windowOpen", matter_bridge_commissioning_window_open());
+    // Echec du demarrage (la passerelle a continue sans Matter)
+    const char *merr = main_matter_error();
+    if (merr) cJSON_AddStringToObject(root, "error", merr);
+    // Occupation de la NVS : fabrics et etat Matter y sont gardes
+    nvs_stats_t ns = {};
+    if (nvs_get_stats(NULL, &ns) == ESP_OK) {
+        cJSON_AddNumberToObject(root, "nvsUsed", ns.used_entries);
+        cJSON_AddNumberToObject(root, "nvsAvailable", ns.available_entries);
+        cJSON_AddNumberToObject(root, "nvsTotal", ns.total_entries);
+    }
 
     // Codes d'appairage : a saisir dans Home Assistant (ou tout controleur)
     const char *qr = NULL, *manual = NULL;
@@ -337,7 +348,13 @@ static esp_err_t api_matter_expose_handler(httpd_req_t *req)
 static esp_err_t api_matter_factory_reset_handler(httpd_req_t *req)
 {
     ESP_LOGW(TAG, "Factory reset requested via API");
-    matter_bridge_factory_reset();
+    if (matter_bridge_is_started()) {
+        matter_bridge_factory_reset();          // la pile redemarre d'elle-meme
+    } else {
+        // Pile non demarree (NVS pleine...) : effacement direct puis redemarrage
+        matter_bridge_erase_storage();
+        maintenance_request_reboot(1000);
+    }
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_sendstr(req, "{\"status\":\"ok\",\"message\":\"Rebooting...\"}");
