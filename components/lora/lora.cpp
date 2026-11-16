@@ -1240,6 +1240,10 @@ static void handle_pair_confirm(const uint8_t *buf, int len)
     e->poll_rx = 0;
     e->ident_step = s_pending_device_id[0] ? 0 : 1;     // identite inconnue : POLL
     e->ident_next_ms = millis();
+    // Version relue (le firmware a pu changer) : tout de suite si l'identite
+    // est connue, sinon apres l'identification (handle_ident_response)
+    e->ver_step = e->ident_step ? 0 : 1;
+    e->ver_next_ms = millis();
     e->short_addr = compute_short_addr(e->mac, slot);
     save_config();
     ensure_device(e);
