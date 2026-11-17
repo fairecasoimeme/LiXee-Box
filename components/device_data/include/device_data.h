@@ -34,7 +34,7 @@ extern "C" {
 #define DEVDATA_UNIT_LEN         20
 #define DEVDATA_MODE_LEN         20
 #define DEVDATA_ALIAS_LEN        33
-#define DEVDATA_MAX_POLL_ITEMS   32   // le template ZLinky en declare 21
+#define DEVDATA_MAX_POLL_ITEMS   64   // template ZLinky : 21, plus une liste reprise de la 2.x (PSRAM)
 
 #define DEVDATA_DB_DIR           "/littlefs/db"
 #define DEVDATA_TP_DIR           "/littlefs/tp"

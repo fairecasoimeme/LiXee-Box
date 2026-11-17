@@ -262,9 +262,19 @@ bool eth_mgr_start(const char *hostname)
     }
 
     // L'installation lit le registre de version de la puce : elle echoue si
-    // aucun W5500 ne repond.
+    // aucun W5500 ne repond. Sur une ZiWiFi32 (pas de W5500), c'est le cas
+    // normal : les erreurs du pilote ("reset timeout", "init mac failed")
+    // sont tues pendant la detection, le message ci-dessous suffit.
+    static const char *const DRV_TAGS[] = { "w5500.mac", "w5500.phy", "esp_eth" };
+    esp_log_level_t drv_lvl[3];
+    for (int i = 0; i < 3; i++) {
+        drv_lvl[i] = esp_log_level_get(DRV_TAGS[i]);
+        esp_log_level_set(DRV_TAGS[i], ESP_LOG_NONE);
+    }
     esp_eth_config_t eth_cfg = ETH_DEFAULT_CONFIG(s_mac_drv, s_phy_drv);
-    if (esp_eth_driver_install(&eth_cfg, &s_eth) != ESP_OK || !s_eth) {
+    esp_err_t inst = esp_eth_driver_install(&eth_cfg, &s_eth);
+    for (int i = 0; i < 3; i++) esp_log_level_set(DRV_TAGS[i], drv_lvl[i]);
+    if (inst != ESP_OK || !s_eth) {
         ESP_LOGI(TAG, "Aucun W5500 detecte : fonctionnement en WiFi");
         s_eth = NULL;
         release_driver();

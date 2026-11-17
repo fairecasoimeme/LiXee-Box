@@ -170,11 +170,19 @@ static inline bool zcl_type_is_signed(uint8_t zcl_type) {
  * mantisse de 24 bits arrondit un index d'energie uint48, cette conversion est
  * exacte sur toute la plage des types ZCL manipules.
  *
- * @return false si les donnees sont trop courtes pour le type annonce
+ * @return false si les donnees sont trop courtes pour le type annonce, ou si
+ *         le type n'est pas numerique (chaines, tableaux, structures)
  */
+static inline bool zcl_type_is_numeric(uint8_t zcl_type) {
+    // Chaines (octets / caracteres, courtes et longues), tableau, structure,
+    // ensembles : jamais lus comme un nombre (ex. numero de serie du compteur
+    // 0702/0x0308, octet string, lu auparavant comme ses 8 premiers octets)
+    return !(zcl_type >= 0x41 && zcl_type <= 0x51);
+}
+
 static inline bool zcl_to_int64(const uint8_t *data, int len,
                                 uint8_t zcl_type, int64_t *out) {
-    if (!data || !out || len <= 0) return false;
+    if (!data || !out || len <= 0 || !zcl_type_is_numeric(zcl_type)) return false;
 
     int w = zcl_type_width(zcl_type);
     if (w == 0) {

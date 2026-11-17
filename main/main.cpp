@@ -340,7 +340,7 @@ static void process_attribute(uint64_t ieee, const zigate_attribute_report_t *re
             } else {
                 int_value = (int32_t)num_value;
             }
-        } else {
+        } else if (zcl_type_is_numeric(report->attr_type)) {   // chaine : rien a historiser
             ESP_LOGW(TAG, "  donnees trop courtes (len=%u, type=0x%02X), historique ignore",
                      report->data_len, report->attr_type);
         }

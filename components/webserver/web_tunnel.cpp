@@ -241,10 +241,14 @@ static esp_err_t status_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(r, "securityOk", st.security_ok);
     cJSON_AddBoolToObject(r, "securityLocked", tunnel_security_locked());
     cJSON_AddBoolToObject(r, "viaTunnel", web_tunnel_req_is_tunnel(req));
-    cJSON_AddStringToObject(r, "clientId", st.client_id);
+    // Champs vides omis : LiXee-Assist batit l'adresse distante de la box a
+    // partir du sous-domaine, et un "subdomain":"" (tunnel jamais connecte)
+    // remplacait l'adresse locale par "https://.lixee-box..." (la LiXee-Box
+    // ne renvoyait que enabled, connected et url)
+    if (st.client_id[0]) cJSON_AddStringToObject(r, "clientId", st.client_id);
     cJSON_AddBoolToObject(r, "hasToken", st.has_token);
-    cJSON_AddStringToObject(r, "deviceId", st.device_id);
-    cJSON_AddStringToObject(r, "subdomain", st.subdomain);
+    if (st.device_id[0]) cJSON_AddStringToObject(r, "deviceId", st.device_id);
+    if (st.subdomain[0]) cJSON_AddStringToObject(r, "subdomain", st.subdomain);
     cJSON_AddStringToObject(r, "lastError", st.last_error);
     cJSON_AddNumberToObject(r, "upgradeStatus", st.upgrade_status);
     cJSON_AddNumberToObject(r, "connectedFor", st.connected_for_s);

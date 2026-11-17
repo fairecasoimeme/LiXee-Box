@@ -102,14 +102,17 @@ static bool basic_auth_ok(httpd_req_t *req, const char *user, const char *pass)
 // Sessions (cookie) et protection CSRF -- portage de checkAuth() LiXee-Box
 //
 // Un navigateur se connecte par la page /login et recoit un cookie de session
-// (24 h, 4 sessions au plus). Basic reste accepte pour les clients API et
+// (24 h, 16 sessions au plus). Basic reste accepte pour les clients API et
 // LiXee-Assist. Les requetes qui modifient l'etat (POST/PUT/DELETE) venant
 // d'un navigateur doivent provenir du pont lui-meme (Origin/Referer == Host) :
 // une page tierce ouverte par l'utilisateur ne peut donc pas les declencher
 // avec son cookie.
 // ============================================================================
 
-#define SESSION_MAX        4
+// 16 places : LiXee-Assist ouvre une session par usage (appli, kiosque,
+// widget, WebView) et se reconnecte sur 401. Avec 4 places, ces connexions
+// chassaient les sessions encore utilisees, d'ou des 401 en boucle.
+#define SESSION_MAX        16
 #define SESSION_TOKEN_LEN  32                      // hexadecimal
 #define SESSION_LIFETIME_US (24LL * 3600 * 1000000)
 
@@ -146,6 +149,9 @@ static const char *session_create(void)
         if (s_sessions[i].token[0] == '\0' || s_sessions[i].expires_us < now) { slot = i; break; }
         if (s_sessions[i].expires_us < s_sessions[slot].expires_us) slot = i;
     }
+    if (s_sessions[slot].token[0] && s_sessions[slot].expires_us >= now) {
+        ESP_LOGW(TAG, "Sessions pleines : la plus ancienne est remplacee");
+    }
     uint8_t rnd[SESSION_TOKEN_LEN / 2];
     esp_fill_random(rnd, sizeof(rnd));
     for (size_t i = 0; i < sizeof(rnd); i++) {
@@ -153,6 +159,23 @@ static const char *session_create(void)
     }
     s_sessions[slot].expires_us = now + SESSION_LIFETIME_US;
     return s_sessions[slot].token;
+}
+
+/**
+ * Connexion reussie, au niveau W : le journal de debug ne garde que W/E, et
+ * sans cette ligne un refus suivi d'une reconnexion normale ne se distingue
+ * pas d'un client bloque.
+ */
+static void log_login(httpd_req_t *req, const char *user)
+{
+    char ua[48] = "?";
+    httpd_req_get_hdr_value_str(req, "User-Agent", ua, sizeof(ua));
+    int64_t now = esp_timer_get_time();
+    int used = 0;
+    for (int i = 0; i < SESSION_MAX; i++) {
+        if (s_sessions[i].token[0] && s_sessions[i].expires_us > now) used++;
+    }
+    ESP_LOGW(TAG, "Connexion de '%s' (%s, %d/%d sessions)", user, ua, used, SESSION_MAX);
 }
 
 /** Index de la session portee par le cookie de la requete, -1 si aucune. */
@@ -343,7 +366,20 @@ static bool auth_check(httpd_req_t *req)
     bool by_session = session_find(req) >= 0;
     bool by_basic = !by_session && !via_tunnel && basic_auth_ok(req, gen->user_http, gen->pass_http);
     if (!by_session && !by_basic) {
-        ESP_LOGW(TAG, "Acces refuse sur %s", req->uri);
+        // Raison et client dans le journal : sans cela, le premier appel normal
+        // d'un client qui va se connecter ne se distingue pas d'un mot de passe
+        // errone (le journal de debug ne garde que W/E, pas "Connexion de").
+        {
+            char ua[48] = "?";
+            httpd_req_get_hdr_value_str(req, "User-Agent", ua, sizeof(ua));
+            char ck[SESSION_TOKEN_LEN + 8];
+            size_t cklen = sizeof(ck);
+            const char *why =
+                httpd_req_get_hdr_value_len(req, "Authorization") ? "identifiants Basic invalides" :
+                httpd_req_get_cookie_val(req, "session", ck, &cklen) != ESP_ERR_NOT_FOUND
+                    ? "session inconnue ou expiree" : "sans identifiants";
+            ESP_LOGW(TAG, "Acces refuse sur %s (%s, %s)", req->uri, why, ua);
+        }
         if (is_page_navigation(req)) {
             // Navigateur : page de connexion, avec retour a la page demandee
             static char loc[CONFIG_HTTPD_MAX_URI_LEN + 24];   // tache HTTP seule
@@ -525,6 +561,11 @@ static esp_err_t login_get_handler(httpd_req_t *req)
 
 static int64_t s_last_fail_us;          // dernier echec de connexion
 
+// Corps "chunked" (voir plus bas, avec chunked_body_end)
+static bool is_chunked(httpd_req_t *req);
+static int chunked_read(httpd_req_t *req, char *out, size_t cap, int timeout_ms);
+static bool s_chunk_consumed;
+
 static esp_err_t login_post_handler(httpd_req_t *req)
 {
     if (!auth_required()) {
@@ -540,20 +581,31 @@ static esp_err_t login_post_handler(httpd_req_t *req)
     }
     static char body[768];                  // tache HTTP seule
     int len = req->content_len;
-    if (len <= 0 || len >= (int)sizeof(body)) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad request");
-        return ESP_FAIL;
-    }
-    // Nombre d'attentes borne : un client qui annonce un corps puis se tait
-    // bloquait la seule tache du serveur (interface et tunnel), sans login
-    int got = 0, timeouts = 0;
-    while (got < len) {
-        int r = httpd_req_recv(req, body + got, len - got);
-        if (r <= 0) {
-            if (r == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts <= 3) continue;
+    int got = 0;
+    if (len == 0 && is_chunked(req)) {
+        // Corps "chunked" (LiXee-Assist, client Dart) : decode ici
+        s_chunk_consumed = true;
+        got = chunked_read(req, body, sizeof(body), 1000);
+        if (got <= 0 || got >= (int)sizeof(body) - 1) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad request");
             return ESP_FAIL;
         }
-        got += r;
+    } else {
+        if (len <= 0 || len >= (int)sizeof(body)) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad request");
+            return ESP_FAIL;
+        }
+        // Nombre d'attentes borne : un client qui annonce un corps puis se tait
+        // bloquait la seule tache du serveur (interface et tunnel), sans login
+        int timeouts = 0;
+        while (got < len) {
+            int r = httpd_req_recv(req, body + got, len - got);
+            if (r <= 0) {
+                if (r == HTTPD_SOCK_ERR_TIMEOUT && ++timeouts <= 3) continue;
+                return ESP_FAIL;
+            }
+            got += r;
+        }
     }
     body[got] = '\0';
 
@@ -593,7 +645,7 @@ static esp_err_t login_post_handler(httpd_req_t *req)
         strlcpy(dest, next, sizeof(dest));
         httpd_resp_set_hdr(req, "Set-Cookie", cookie);
         httpd_resp_set_hdr(req, "Location", dest);
-        ESP_LOGI(TAG, "Connexion de '%s'", gen->user_http);
+        log_login(req, gen->user_http);
         return httpd_resp_send(req, NULL, 0);
     }
 
@@ -620,7 +672,7 @@ static esp_err_t login_post_handler(httpd_req_t *req)
              "session=%s; Path=/; Max-Age=86400; HttpOnly; SameSite=Strict", session_create());
     httpd_resp_set_hdr(req, "Set-Cookie", cookie);
     httpd_resp_set_type(req, "application/json");
-    ESP_LOGI(TAG, "Connexion de '%s'", gen->user_http);
+    log_login(req, gen->user_http);
     return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
 }
 
@@ -657,24 +709,144 @@ static esp_err_t logout_handler(httpd_req_t *req)
  * session a deja ete fermee entre-temps, sa place reprise par une nouvelle
  * connexion etait fermee a tort (RST sans reponse, fichiers manquants).
  */
-static bool chunked_body_begin(httpd_req_t *req)
+static bool is_chunked(httpd_req_t *req)
 {
     char te[16];
-    if (httpd_req_get_hdr_value_str(req, "Transfer-Encoding", te, sizeof(te)) != ESP_OK ||
-        strncasecmp(te, "chunked", 7) != 0) {
-        return false;
-    }
+    return httpd_req_get_hdr_value_str(req, "Transfer-Encoding", te, sizeof(te)) == ESP_OK &&
+           strncasecmp(te, "chunked", 7) == 0;
+}
+
+static bool chunked_body_begin(httpd_req_t *req)
+{
+    if (!is_chunked(req)) return false;
     httpd_resp_set_hdr(req, "Connection", "close");
     return true;
 }
 
+// Lecture d'un corps "chunked", que le serveur de l'IDF ne sait pas lire
+// (content_len vaut 0). httpd_recv() (interne a esp_http_server, non statique)
+// rend d'abord les octets deja lus avec les en-tetes, puis la socket : un
+// recv() direct manquait ces octets, et le terminateur arrive parfois
+// apres l'attente de 20 ms d'avant (400 "parser error = 16" en rafale avec
+// LiXee-Assist). Socket non bloquante pendant la lecture, attente bornee.
+extern "C" int httpd_recv(httpd_req_t *r, char *buf, size_t buf_len);
+
+typedef struct {
+    httpd_req_t *req;
+    int fd;
+    int64_t deadline_us;
+    char buf[64];
+    int pos, len;
+} chunk_rd_t;
+
+static int chunk_getc(chunk_rd_t *c)
+{
+    while (c->pos >= c->len) {
+        int n = httpd_recv(c->req, c->buf, sizeof(c->buf));
+        if (n > 0) { c->pos = 0; c->len = n; break; }
+        if (n != HTTPD_SOCK_ERR_TIMEOUT) return -1;     // fermee ou erreur
+        int64_t left = c->deadline_us - esp_timer_get_time();
+        if (left <= 0) return -1;
+        fd_set rd;
+        FD_ZERO(&rd);
+        FD_SET(c->fd, &rd);
+        struct timeval tv = { (time_t)(left / 1000000), (suseconds_t)(left % 1000000) };
+        if (select(c->fd + 1, &rd, NULL, NULL, &tv) <= 0) return -1;
+    }
+    return (unsigned char)c->buf[c->pos++];
+}
+
+static bool chunk_line(chunk_rd_t *c, char *line, size_t cap)
+{
+    size_t n = 0;
+    for (;;) {
+        int ch = chunk_getc(c);
+        if (ch < 0) return false;
+        if (ch == '\n') break;
+        if (ch != '\r' && n + 1 < cap) line[n++] = (char)ch;
+    }
+    line[n] = '\0';
+    return true;
+}
+
+/**
+ * Lit et decode le corps chunked jusqu'au terminateur. Les octets au-dela de
+ * cap - 1 sont lus et jetes. @return longueur du corps, -1 si incomplet.
+ */
+static int chunked_read(httpd_req_t *req, char *out, size_t cap, int timeout_ms)
+{
+    chunk_rd_t c = {};
+    c.req = req;
+    c.fd = httpd_req_to_sockfd(req);
+    c.deadline_us = esp_timer_get_time() + (int64_t)timeout_ms * 1000;
+    // Socket non bloquante : httpd_recv rend alors la main sans attendre, et
+    // son avertissement "error in recv : 11" (EAGAIN, attendu ici) est tu
+    int fl = fcntl(c.fd, F_GETFL, 0);
+    fcntl(c.fd, F_SETFL, fl | O_NONBLOCK);
+    esp_log_level_t lvl = esp_log_level_get("httpd_txrx");
+    esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
+
+    int total = -1;
+    size_t n = 0;
+    char line[24];
+    // Le serveur a deja lu la ligne de taille du 1er bloc (son analyseur
+    // s'arrete au premier octet de donnees) : ce qui reste commence par les
+    // donnees de ce bloc, jusqu'au CRLF. Une premiere ligne faite seulement
+    // de chiffres hexa est au contraire une ligne de taille (donnees pas
+    // encore arrivees quand le serveur a lu les en-tetes).
+    bool first = true;
+    for (;;) {
+        unsigned long sz;
+        if (first) {
+            first = false;
+            static char head[256];          // tache HTTP seule
+            if (!chunk_line(&c, head, sizeof(head))) break;
+            size_t hl = strlen(head), k = 0;
+            while (k < hl && isxdigit((unsigned char)head[k])) k++;
+            if (hl == 0 || (k < hl && head[k] != ';')) {
+                for (size_t j = 0; j < hl; j++) if (out && n + 1 < cap) out[n++] = head[j];
+                continue;                   // donnees du 1er bloc lues, CRLF compris
+            }
+            sz = strtoul(head, NULL, 16);
+        } else {
+            if (!chunk_line(&c, line, sizeof(line))) break;
+            sz = strtoul(line, NULL, 16);                    // ";extension" ignoree
+        }
+        if (sz == 0) {
+            while (chunk_line(&c, line, sizeof(line)) && line[0]) {}   // en-tetes de fin
+            total = (int)n;
+            break;
+        }
+        bool ok = true;
+        for (unsigned long k = 0; k < sz; k++) {
+            int ch = chunk_getc(&c);
+            if (ch < 0) { ok = false; break; }
+            if (out && n + 1 < cap) out[n++] = (char)ch;
+        }
+        if (!ok || !chunk_line(&c, line, sizeof(line))) break;   // CRLF de fin de bloc
+    }
+    if (out && cap) out[n < cap ? n : cap - 1] = '\0';
+
+    esp_log_level_set("httpd_txrx", lvl);
+    fcntl(c.fd, F_SETFL, fl);
+    return total;
+}
+
+// s_chunk_consumed : corps deja lu par le handler (tache HTTP seule)
+
 static void chunked_body_end(httpd_req_t *req, bool chunked)
 {
     if (!chunked) return;
-    // Lire le terminateur reste dans la socket : sinon le serveur le prend
-    // pour une requete (400), et une socket fermee avec des octets non lus
-    // envoie un RST qui peut faire perdre la reponse au client. Il part juste
-    // apres les en-tetes : il est deja la, sinon une courte attente suffit.
+    if (s_chunk_consumed) { s_chunk_consumed = false; return; }
+    // Corps non lu par le handler (GET de LiXee-Assist : terminateur seul) :
+    // le lire, sinon le serveur le prend pour une requete (400), et une
+    // socket fermee avec des octets non lus envoie un RST qui peut faire
+    // perdre la reponse au client. Il part juste apres les en-tetes : deja la,
+    // ou deja lu par le serveur avec les en-tetes (rien a lire), sinon une
+    // courte attente suffit. Une attente plus longue retarderait chaque
+    // requete de l'application quand le serveur l'a deja lu ; un terminateur
+    // plus tardif donne un 400 sans consequence (Connection: close), dont
+    // l'avertissement est tu (web_server_start).
     int fd = httpd_req_to_sockfd(req);
     char buf[5];
     size_t got = 0;
@@ -683,7 +855,6 @@ static void chunked_body_end(httpd_req_t *req, bool chunked)
         int n = recv(fd, buf, 5 - got, MSG_DONTWAIT);   // rien au-dela du terminateur
         if (n > 0) { got += n; continue; }
         if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK) || waited) break;
-        // Rien encore (ou deja lu avec les en-tetes par le serveur) : 20 ms
         fd_set rd;
         FD_ZERO(&rd);
         FD_SET(fd, &rd);
@@ -983,6 +1154,15 @@ esp_err_t web_server_init(void)
     config.recv_wait_timeout = 20;   // Default=5s
 
     ESP_LOGI(TAG, "Starting web server on port %d", config.server_port);
+
+    // Avertissements du serveur IDF sur des requetes de client mal formees :
+    // le terminateur "0\r\n\r\n" tardif d'un GET chunked de LiXee-Assist
+    // ("parse_block: incomplete (0/5) with parser error = 16" puis
+    // "httpd_resp_send_err: 400"), sans consequence (Connection: close), en
+    // rafale a chaque rafraichissement de l'application. Ils remplissaient le
+    // journal de debug et en chassaient les autres lignes. Erreurs gardees.
+    esp_log_level_set("httpd_parse", ESP_LOG_ERROR);
+    esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
 
     esp_err_t ret = httpd_start(&s_server, &config);
     if (ret != ESP_OK) {

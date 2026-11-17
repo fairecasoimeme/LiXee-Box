@@ -104,10 +104,18 @@
 
   // Session expiree ou absente (protection HTTP active) : le serveur repond
   // 401 aux appels de l'application, qui renvoie vers la page de connexion.
-  $(document).ajaxError(function(ev, xhr) {
+  // statusCode de $.ajaxSetup s'applique a TOUS les appels, y compris ceux
+  // de fond en global:false (horloge, alertes, notifications) que ajaxError
+  // ne voit pas : sans cela, un onglet reste ouvert apres expiration de la
+  // session (redemarrage) interrogeait la box sans fin.
+  var goingToLogin = false;
+  function toLogin() {
+    if (goingToLogin) return;
+    goingToLogin = true;
     // Retour a la page courante apres reconnexion (comme la LiXee-Box)
-    if (xhr && xhr.status === 401) window.location.href = '/login?next=' + encodeURIComponent('/' + window.location.hash);
-  });
+    window.location.href = '/login?next=' + encodeURIComponent('/' + window.location.hash);
+  }
+  $.ajaxSetup({ statusCode: { 401: toLogin } });
 
   // API commune aux modules de pages (js/page_*.js, charges apres ce fichier
   // par index.html) : chaque lot du portage LiXee-Box ajoute ses pages par
