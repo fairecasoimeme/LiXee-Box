@@ -68,6 +68,7 @@ typedef struct {
     bool  frost_mode;                    // bascule hors-gel active (consigne = frost_temp)
     float setpoint_saved;                // consigne memorisee avant le hors-gel
     float unoccupied_temp;               // consigne d'absence (UnoccupiedHeatingSetpoint Matter, feature OCC)
+    bool  unoccupied_enabled;            // active la regulation sur unoccupied_temp (sinon coupure, defaut historique)
     int   tpi_cycle_s;
     float kp, ki;
     int   min_on_s, min_off_s;
@@ -505,11 +506,15 @@ static void regulation_tick(void)
             t->integral = 0.0f;
         } else {
             bool frost = t->heating && tc < t->frost_temp;
-            // Absence : consigne reduite (unoccupied_temp) plutot qu'arret total, comme un
-            // vrai thermostat connecte (feature OCC / UnoccupiedHeatingSetpoint Matter) ;
-            // fenetre ouverte / hors plage horaire restent des coupures franches.
-            float sp = t->occupied ? t->setpoint : t->unoccupied_temp;
-            bool inhibit = (t->window_open || !t->sched_active) && !frost;
+            // Absence : coupure franche par defaut (comportement historique, conserve pour
+            // les installations existantes). Option par zone (unoccupied_enabled, desactivee
+            // par defaut) : bascule sur une consigne reduite (unoccupied_temp /
+            // UnoccupiedHeatingSetpoint Matter) plutot qu'une coupure, uniquement en
+            // chauffage -- en froid, pas de UnoccupiedCoolingSetpoint, l'absence reste une
+            // coupure (refroidir davantage en l'absence du logement n'a pas de sens).
+            bool unocc_relax = t->heating && t->unoccupied_enabled && !t->occupied;
+            float sp = unocc_relax ? t->unoccupied_temp : t->setpoint;
+            bool inhibit = (t->window_open || !t->sched_active || (!t->occupied && !unocc_relax)) && !frost;
             if (frost) {
                 desired = true;
             } else if (t->force_mode == 1) {
@@ -619,6 +624,7 @@ static bool save_locked(void)
         cJSON_AddNumberToObject(o, "forceMode", t->force_mode);
         cJSON_AddNumberToObject(o, "setpointSaved", r3(t->setpoint_saved));
         cJSON_AddNumberToObject(o, "unoccupiedTemp", r3(t->unoccupied_temp));
+        cJSON_AddBoolToObject(o, "unoccupiedEnabled", t->unoccupied_enabled);
         cJSON_AddNumberToObject(o, "tpiCycleSec", t->tpi_cycle_s);
         cJSON_AddNumberToObject(o, "tpiKp", r3(t->kp));
         cJSON_AddNumberToObject(o, "tpiKi", r3(t->ki));
@@ -694,6 +700,7 @@ static void load_config(void)
         t->setpoint_saved = t->setpoint;
         j_num(o, "setpointSaved", &t->setpoint_saved);
         j_num(o, "unoccupiedTemp", &t->unoccupied_temp);
+        j_bool(o, "unoccupiedEnabled", &t->unoccupied_enabled);
         j_int(o, "tpiCycleSec", &t->tpi_cycle_s);
         j_num(o, "tpiKp", &t->kp);
         j_num(o, "tpiKi", &t->ki);
@@ -795,6 +802,7 @@ char *thermostat_config_json(void)
         cJSON_AddNumberToObject(o, "setpoint", round1(t->setpoint));
         cJSON_AddNumberToObject(o, "frostTemp", round1(t->frost_temp));
         cJSON_AddNumberToObject(o, "unoccupiedTemp", round1(t->unoccupied_temp));
+        cJSON_AddBoolToObject(o, "unoccupiedEnabled", t->unoccupied_enabled);
         cJSON_AddStringToObject(o, "sensorIEEE", t->sensor);
         device_label(t->sensor, lbl, sizeof(lbl));
         cJSON_AddStringToObject(o, "sensorLabel", lbl);
@@ -836,6 +844,7 @@ char *thermostat_config_json(void)
     cJSON_AddNumberToObject(def, "setpoint", d.setpoint);
     cJSON_AddNumberToObject(def, "frostTemp", d.frost_temp);
     cJSON_AddNumberToObject(def, "unoccupiedTemp", d.unoccupied_temp);
+    cJSON_AddBoolToObject(def, "unoccupiedEnabled", d.unoccupied_enabled);
     cJSON_AddNumberToObject(def, "operMode", 0);
     cJSON_AddNumberToObject(def, "tpiCycleSec", d.tpi_cycle_s);
     cJSON_AddNumberToObject(def, "tpiKp", r3(d.kp));
@@ -984,6 +993,7 @@ int thermostat_save_zone(int id, const cJSON *j)
     j_num(j, "setpoint", &t->setpoint);
     j_num(j, "frostTemp", &t->frost_temp);
     j_num(j, "unoccupiedTemp", &t->unoccupied_temp);
+    j_bool(j, "unoccupiedEnabled", &t->unoccupied_enabled);
     int cycle = 0;
     j_int(j, "tpiCycleSec", &cycle);
     if (cycle >= 60) t->tpi_cycle_s = cycle;

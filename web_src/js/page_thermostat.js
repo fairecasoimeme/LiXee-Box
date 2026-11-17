@@ -444,7 +444,13 @@
     h += "<label class='form-label'>" + IC_STOP + "Action Arr&ecirc;t</label><select class='form-select' id='aOff'>" + actionOptions([], '') + '</select>';
     h += "<div class='form-text mb-3'>Action au repos (ex : <b>OFF</b>, <b>ARRET</b>, <b>ECO</b>).</div>";
     h += "<label class='form-label'>" + IC_PERSON + "Capteur de pr&eacute;sence <span class='text-muted'>(optionnel)</span></label><select class='form-select' id='thPresence'>" + deviceOptions(opts.presence, t.presenceIEEE) + '</select>';
-    h += "<div class='form-text mb-3'>Si configur&eacute; : la chauffe est suspendue en cas d'absence (aucun mouvement depuis 30 min).</div>";
+    h += "<div class='form-text mb-3'>Si configur&eacute; : la chauffe est coup&eacute;e en cas d'absence (aucun mouvement depuis 30 min), sauf option ci-dessous.</div>";
+    h += "<div id='occRow' class='mb-3'><div class='form-check form-switch' style='font-size:15px;'>" +
+         "<input class='form-check-input' type='checkbox' role='switch' id='ckOcc' style='width:2.5em;height:1.3em;cursor:pointer;'" + (t.unoccupiedEnabled ? ' checked' : '') + '>' +
+         "<label class='form-check-label' for='ckOcc' style='padding-left:8px;'>Consigne r&eacute;duite en cas d'absence (au lieu d'une coupure)</label></div>";
+    h += "<label class='form-label mt-2'>" + IC_SNOW + "Consigne d'absence (&deg;C)</label>";
+    h += "<input class='form-control' type='number' step='0.5' id='thUnocc' value='" + Number(t.unoccupiedTemp).toFixed(1) + "'>";
+    h += "<div class='form-text'>Si activ&eacute; : en l'absence de pr&eacute;sence, la zone chauffe vers cette consigne r&eacute;duite au lieu d'&ecirc;tre coup&eacute;e. D&eacute;sactiv&eacute; par d&eacute;faut (comportement historique : coupure compl&egrave;te en l'absence de pr&eacute;sence). Reglable aussi via Matter (UnoccupiedHeatingSetpoint) ou l'API.</div></div>";
     h += "<label class='form-label'>" + IC_DOOR + "Capteurs d'ouverture <span class='text-muted'>(optionnel, plusieurs possibles)</span></label>" +
          "<div style='border:1px solid #dee2e6;border-radius:8px;padding:10px;'>" +
          deviceChecks(opts.contacts, 'open', t.openSensors, null, "Aucun capteur d'ouverture d&eacute;tect&eacute;.") + '</div>';
@@ -481,14 +487,24 @@
          '</div></form></div>';
     A.setContent(h);
 
-    // Hors-gel : mode chauffage seulement ; plages / tarif selon le fonctionnement
-    function upMode() { $('#frostRow').toggle($('#modeSel').val() === '1'); }
+    // Hors-gel et consigne d'absence : mode chauffage seulement (pas de
+    // UnoccupiedCoolingSetpoint) ; plages / tarif selon le fonctionnement
+    function upMode() {
+      var heating = $('#modeSel').val() === '1';
+      $('#frostRow').toggle(heating);
+      upOcc(heating);
+    }
+    function upOcc(heating) {
+      if (heating === undefined) heating = $('#modeSel').val() === '1';
+      $('#occRow').toggle(heating && !!$('#thPresence').val());
+    }
     function upOper() {
       var o = $('#operSel').val();
       $('#schedRow').toggle(o === '1');
       $('#tarifRow').toggle(o === '2');
     }
     $('#modeSel').on('change', upMode);
+    $('#thPresence').on('change', function() { upOcc(); });
     $('#operSel').on('change', upOper);
     upMode();
     upOper();
@@ -529,6 +545,8 @@
         heating: $('#modeSel').val() === '1',
         setpoint: parseFloat($('#thSetpoint').val()),
         frostTemp: parseFloat($('#thFrost').val()),
+        unoccupiedTemp: parseFloat($('#thUnocc').val()),
+        unoccupiedEnabled: $('#ckOcc').is(':checked'),
         operMode: parseInt($('#operSel').val(), 10),
         schedule: serializeSchedule(),
         tariffPeriods: $('.th-tp:checked').map(function() { return this.value; }).get().join(','),
@@ -548,7 +566,7 @@
         minOffSec: parseInt($('#thMinOff').val(), 10),
         sensorTimeoutSec: parseInt($('#thTimeout').val(), 10) * 60
       };
-      ['setpoint', 'frostTemp', 'tpiKp', 'tpiKi', 'tpiCycleSec', 'minOnSec', 'minOffSec', 'sensorTimeoutSec'].forEach(function(k) {
+      ['setpoint', 'frostTemp', 'unoccupiedTemp', 'tpiKp', 'tpiKi', 'tpiCycleSec', 'minOnSec', 'minOffSec', 'sensorTimeoutSec'].forEach(function(k) {
         if (!isFinite(body[k])) delete body[k];
       });
       var $b = $(this).find('button[type=submit]').prop('disabled', true);
