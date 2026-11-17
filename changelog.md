@@ -1,5 +1,66 @@
 # Changelog
 
+## v3.2
+
+### MQTT
+- **Connexion chiffrée (TLS)** : au choix, autorités publiques reconnues (Amazon MQ par exemple) ou certificat d'une autorité privée importé depuis la page MQTT. Port 8883 par défaut en TLS
+- **TLS mutuel** : authentification par certificat client et clé privée (en un ou deux fichiers), vérifiés avant enregistrement ; la clé n'est jamais renvoyée par l'interface. Protocole **ALPN** facultatif (`x-amzn-mqtt-ca` pour AWS IoT Core sur le port 443)
+- **Dernière erreur de connexion** affichée sous le statut de la page MQTT : certificat refusé, négociation TLS impossible, identifiant refusé, broker injoignable, nom introuvable
+- **Linky producteur** : SINSTS / PAPP valait 0 pendant l'injection ; la puissance publiée est désormais calculée (−U × I), comme sur la page Énergie ([#35](https://github.com/fairecasoimeme/LiXee-Box/issues/35))
+
+### Pont Matter
+- **Matter 1.5.1** (esp-matter 1.5.1)
+- **ZLinky** publié comme compteur électrique (Electrical Utility Meter), avec l'identification du compteur (ADSC, puissance souscrite, TIC standard ou historique) et ses index EASF01 à EASF10 en kWh. Ces deux clusters sont encore provisoires dans Matter 1.5
+- **Thermostat virtuel** : presets **Confort** et **Hors-gel** pilotables depuis Home Assistant (Apple Maison ne les gère pas) ([#51](https://github.com/fairecasoimeme/LiXee-Box/issues/51), [PR #53](https://github.com/fairecasoimeme/LiXee-Box/pull/53))
+- **Fabricant et modèle** d'un appareil Zigbee complétés dans Matter quand ils arrivent après sa publication ([PR #64](https://github.com/fairecasoimeme/LiXee-Box/pull/64))
+- **Plus de redémarrage en boucle** si Matter ne démarre pas (NVS pleine par exemple) : la box continue sans Matter et la page Matter en affiche la cause. Après 3 plantages au démarrage, Matter est sauté. Le Factory Reset Matter fonctionne aussi pile arrêtée et conserve le code d'appairage
+- Un compteur ajouté à chaud n'initialise plus deux fois sa mesure de puissance
+
+### Énergie
+- **Prix du tarif en cours** déduit du libellé du tarif (FF66/16), comme le bandeau : en mode standard, le prix restait celui du tarif précédent, voire figé
+- **Tarif non identifié** (« --- » juste après le démarrage) : plus de prix du kWh affiché ni utilisé par les règles « Prix du kWh en cours » et « Tarif en cours » ([#60](https://github.com/fairecasoimeme/LiXee-Box/issues/60))
+- **Plusieurs ZLinky** (Zigbee ou LoRa) : choix du compteur affiché sur le tableau de bord. Le ZLinky de Config Énergie reste le principal (sous-compteurs, production, courbe 24 h, règles, MQTT) ([#43](https://github.com/fairecasoimeme/LiXee-Box/issues/43))
+- **Historique triphasé** : la puissance souscrite vaut ISOUSC × 200 × 3 ; les jauges par phase étaient limitées au tiers et le délestage surestimait la charge
+- **Config Énergie** : effacement de l'historique de consommation et de la courbe 24 h, configuration conservée
+- **Outils → Historique** : un fichier supprimé n'est plus recréé avec son ancien contenu par la sauvegarde suivante
+- **ZLinky en mode standard** : plus de valeurs perdues au-delà de 24 attributs dans le cluster 0xFF66 (STGE, NTARF…)
+
+### Heure
+- **Heure NTP filtrée** : une date antérieure au firmware (serveur qui vient de redémarrer) est refusée et redemandée chaque minute ([#65](https://github.com/fairecasoimeme/LiXee-Box/issues/65))
+- Sans heure fiable, l'historique d'énergie est mis en pause au lieu d'enregistrer à une date fausse ; bandeau sur le graphique de puissance
+- **Config horloge** : origine de l'heure (NTP, manuelle, approximative), dernière synchronisation et dernière heure NTP refusée
+
+### Zigbee
+- **SONOFF MINI-ZB1GP (MINI PM)** : puissance (négative en injection), tension, intensité, énergie du jour, énergie injectée et index total (historique, sous-compteur, Matter)
+- Template d'un appareil retrouvé par son **nom de modèle** quand son identifiant n'est pas connu
+- **Poll list reprise d'une LiXee-Box 2.x** : clusters mal relus (attributs du ZLinky comme OPTARIF ou LinkyMode jamais rafraîchis), complétée par les lectures du template (puissance souscrite) ([#49](https://github.com/fairecasoimeme/LiXee-Box/issues/49)) ; jusqu'à 64 lectures par appareil
+- **LED de la ZiGate** : l'état ON / OFF choisi dans Config Zigbee est conservé aux redémarrages
+- Bouton « Autoriser l'appairage (60 s) » retiré de la carte Réseau Zigbee (doublon de l'assistant d'appairage)
+- Les valeurs texte (modèle, libellés) ne sont plus lues comme des nombres : plus de fausses alertes de l'historique
+
+### LoRa
+- **Trame DATA_GENERIC** : plusieurs attributs dans une seule trame, pour les émetteurs autres que TIC (ZiPulses LoRa)
+- La **version du firmware** d'un émetteur est relue après un réappairage, sans attendre le redémarrage de la box
+
+### LiXee-Box Pro
+- **Même firmware** pour la ZiWiFi32 et la LiXee-Box Pro, carte détectée au démarrage
+- **Mise à jour du module Zigbee** depuis Zigbee → Config Zigbee, réseau et appareils conservés
+- **LED RGB d'état** (Bluetooth en bleu, appairage LoRa en vert, réinitialisation en rouge) et pilotable par l'API `/api/led`, les règles et les groupes d'actions : allumée, clignotante ou en respiration, couleur, luminosité, durée
+
+### Accès et LiXee-Assist
+- **Connexion de LiXee-Assist** refusée (400) sur une box protégée par mot de passe : le formulaire de connexion envoyé en blocs (chunked) est maintenant lu
+- **Adresse locale réécrite** dans LiXee-Assist (« https://.lixee… ») quand le tunnel n'était pas configuré
+- Une page ouverte dont la session a expiré renvoie une seule fois vers la page de connexion
+- **16 sessions** au lieu de 4 : les connexions de l'appli, du kiosque et du navigateur ne se chassent plus entre elles
+- Journal de debug : raison de chaque accès refusé et connexions réussies, sans les erreurs de requêtes mal formées qui le remplissaient
+
+### Réseau
+- **mDNS** : le service `_http._tcp` publie le fabricant, le modèle (ziwifi32 ou pro), la version, l'adresse MAC et la version de l'API, pour la découverte automatique (Home Assistant…) même avec l'authentification active ([#66](https://github.com/fairecasoimeme/LiXee-Box/issues/66))
+- ZiWiFi32 : l'absence de module Ethernet W5500 ne remplit plus le journal au démarrage
+
+### Sauvegarde
+- Les **codes infrarouges appris** (`ir/`) font partie de la sauvegarde et de la restauration ; ils étaient perdus jusqu'ici
+
 ## v3.1
 
 ### Énergie
