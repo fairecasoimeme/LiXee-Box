@@ -254,9 +254,9 @@ Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START
 #### En mode console
 
 1. Ouvrir une console ou powershell et se placer dans le répertoire où se trouvent les fichiers
-2. Taper la commande suivante :
+2. Taper la commande suivante en remplaçant COMxx par le nom du port COM utilisé :
 
-   ```esptool.exe --chip esp32s3 --port COMXX --baud 460800 write-flash -z --flash-mode dio --flash-freq 80m --flash-size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin```
+   ```esptool.exe --chip esp32s3 --port COMxx --baud 460800 write-flash -z --flash-mode dio --flash-freq 80m --flash-size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin```
    
    Si le flash échoue à 460800 bauds, relancez avec `--baud 115200`.
 
