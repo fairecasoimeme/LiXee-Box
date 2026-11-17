@@ -165,6 +165,7 @@ typedef struct {
     float    last_snr;
     uint32_t last_seen_ms;
     time_t   last_seen_epoch;
+    bool     live;              // trame recue depuis le demarrage (last_seen_ms valide)
     uint16_t short_addr;        // synthetique, unique (affichage)
     // Lecture d'attribut a la demande (sect. 8)
     bool     poll_pending;
@@ -197,6 +198,8 @@ typedef struct {
 } emitter_t;
 
 static emitter_t s_em[LORA_MAX_EMITTERS];
+static bool     s_state_dirty;          // etat radio a enregistrer (lora_state.json)
+static uint32_t s_state_saved_ms;
 
 static SemaphoreHandle_t s_lock = NULL;
 static TaskHandle_t      s_task = NULL;
@@ -667,6 +670,85 @@ static esp_err_t save_config(void)
     return err;
 }
 
+/**
+ * Etat radio repris au demarrage : sans lui, trames, RSSI, SNR, version et
+ * derniere activite repartaient de zero a chaque redemarrage, et l'emetteur
+ * paraissait muet jusqu'a sa trame suivante (plusieurs minutes).
+ */
+static void load_state(void)
+{
+    char *txt = read_text_file(LORA_STATE_PATH, 4096);
+    if (!txt) return;
+    cJSON *doc = cJSON_Parse(txt);
+    free(txt);
+    if (!doc) { ESP_LOGW(TAG, LORA_STATE_PATH " illisible"); return; }
+    for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
+        emitter_t *e = &s_em[i];
+        if (!e->valid) continue;
+        char mh[17];
+        mac_hex(e->mac, mh);
+        const cJSON *o = cJSON_GetObjectItem(doc, mh);
+        if (!cJSON_IsObject(o)) continue;
+        const cJSON *v;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "rx")))     e->rx_count = (uint32_t)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "missed"))) e->missed = (uint32_t)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "rssi")))   e->last_rssi = (float)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "snr")))    e->last_snr = (float)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "seen")))   e->last_seen_epoch = (time_t)v->valuedouble;
+        if (cJSON_IsString(v = cJSON_GetObjectItem(o, "version")))
+            strlcpy(e->version, v->valuestring, sizeof(e->version));
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "fw"))) {
+            e->fw_version = (uint16_t)v->valueint;
+            e->fw_known = true;
+        }
+    }
+    cJSON_Delete(doc);
+}
+
+void lora_save_state(bool force)
+{
+    if (!s_inited || !s_lock || !s_state_dirty) return;
+    if (!force && s_state_saved_ms && millis() - s_state_saved_ms < 10UL * 60 * 1000) return;
+    if (!lock(LORA_LOCK_WAIT_MS)) return;
+    cJSON *doc = cJSON_CreateObject();
+    for (int i = 0; doc && i < LORA_MAX_EMITTERS; i++) {
+        const emitter_t *e = &s_em[i];
+        if (!e->valid) continue;
+        char mh[17];
+        mac_hex(e->mac, mh);
+        cJSON *o = cJSON_AddObjectToObject(doc, mh);
+        if (!o) continue;
+        cJSON_AddNumberToObject(o, "rx", e->rx_count);
+        cJSON_AddNumberToObject(o, "missed", e->missed);
+        cJSON_AddNumberToObject(o, "rssi", e->last_rssi);
+        cJSON_AddNumberToObject(o, "snr", e->last_snr);
+        cJSON_AddNumberToObject(o, "seen", (double)e->last_seen_epoch);
+        cJSON_AddStringToObject(o, "version", e->version);
+        if (e->fw_known) cJSON_AddNumberToObject(o, "fw", e->fw_version);
+    }
+    s_state_dirty = false;
+    unlock();
+    char *txt = doc ? cJSON_PrintUnformatted(doc) : NULL;
+    cJSON_Delete(doc);
+    if (!txt) { s_state_dirty = true; return; }
+    if (cfg_write_file(LORA_STATE_PATH, txt) != ESP_OK) s_state_dirty = true;
+    free(txt);
+    s_state_saved_ms = millis() ? millis() : 1;
+}
+
+/**
+ * Secondes depuis la derniere trame, -1 si inconnue. Apres un redemarrage,
+ * d'apres l'heure de la derniere trame enregistree (horloge plausible).
+ */
+static long emitter_age_s(const emitter_t *e)
+{
+    if (e->live) return (long)((millis() - e->last_seen_ms) / 1000);
+    time_t now = time(NULL);
+    if (e->rx_count && e->last_seen_epoch > 1600000000 && now >= e->last_seen_epoch)
+        return (long)(now - e->last_seen_epoch);
+    return -1;
+}
+
 // ============================================================================
 // Injection des valeurs (equivalent de readZigbeeDatas())
 // ============================================================================
@@ -1130,6 +1212,7 @@ static void set_device_version(emitter_t *e, const char *ver)
 {
     if (strcmp(e->version, ver) == 0) return;
     strlcpy(e->version, ver, sizeof(e->version));
+    s_state_dirty = true;
     uint64_t ieee = mac_to_ieee(e->mac);
     set_basic_string(ieee, 0x4000, ver);                    // SWBuildID, comme le ZLinky Zigbee
     device_data_save(ieee);
@@ -1234,6 +1317,9 @@ static void handle_pair_confirm(const uint8_t *buf, int len)
     e->seq_init = false;
     e->rx_count = 0;
     e->missed = 0;
+    e->live = false;
+    e->last_seen_epoch = 0;
+    s_state_dirty = true;
     e->poll_pending = false;
     e->poll_setting = 0;
     e->poll_tx = 0;
@@ -1413,6 +1499,8 @@ static emitter_t *accept_data_frame(uint8_t *buf, int len, float rssi, float snr
         e->last_snr = snr;
         e->last_seen_ms = millis();
         e->last_seen_epoch = time(NULL);
+        e->live = true;
+        s_state_dirty = true;
         s_last_radio_rx = millis();
 
         // Identification puis version (cluster Basic), si rien d'autre n'attend
@@ -2175,6 +2263,7 @@ esp_err_t lora_init(void)
     // lora.json est lu meme sans module : les fiches LoRa de /littlefs/db
     // restent reconnues (filtres Zigbee) si le module est retire
     load_config();
+    load_state();
 
     if (!sx_detect(&s_chip_ver)) return ESP_ERR_NOT_FOUND;
     s_detected = true;
@@ -2247,7 +2336,7 @@ static void fill_info(int slot, lora_emitter_info_t *o)
     o->missed = e->missed;
     o->rssi = e->last_rssi;
     o->snr = e->last_snr;
-    o->age_s = e->rx_count ? (int32_t)((millis() - e->last_seen_ms) / 1000) : -1;
+    o->age_s = (int32_t)emitter_age_s(e);
     o->last_seen = (uint32_t)e->last_seen_epoch;
     o->short_addr = e->short_addr;
     o->matter_ep = e->matter_ep;
@@ -2560,7 +2649,7 @@ static void sb_emitter(sb_t *s, int slot)
     char mh[17];
     mac_hex(e->mac, mh);
     const device_data_t *dd = device_data_find(ieee);
-    long age = e->rx_count ? (long)((millis() - e->last_seen_ms) / 1000) : -1;
+    long age = emitter_age_s(e);
     sb_addf(s, "{\"slot\":%d,\"ieee\":\"%s\",\"mac\":\"%s\",\"shortAddr\":%u,\"deviceId\":", slot, mh, mh, e->short_addr);
     sb_str(s, e->device_id);
     sb_add(s, ",\"model\":");
@@ -2677,7 +2766,7 @@ char *lora_devices_json(void)
         const device_data_t *dd = device_data_find(ieee);
         char mh[17];
         mac_hex(e->mac, mh);
-        long age = e->rx_count ? (long)((millis() - e->last_seen_ms) / 1000) : -1;
+        long age = emitter_age_s(e);
         if (!first) sb_add(&s, ",");
         first = false;
         sb_addf(&s, "{\"ieee\":\"%s\",\"shortAddr\":%u,\"deviceId\":%d,\"manufacturer\":\"LiXee\",\"model\":",
@@ -2715,7 +2804,7 @@ void lora_add_devices_json(struct cJSON *array)
         const device_data_t *dd = device_data_find(ieee);
         char mh[17];
         mac_hex(e->mac, mh);
-        long age = e->rx_count ? (long)((millis() - e->last_seen_ms) / 1000) : -1;
+        long age = emitter_age_s(e);
         cJSON *o = cJSON_CreateObject();
         if (!o) break;
         cJSON_AddStringToObject(o, "ieee", mh);

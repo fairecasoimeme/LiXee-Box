@@ -1673,6 +1673,7 @@ extern "C" void app_main(void)
             energy_history_save_all();
             energy_service_flush();
             power_stats_flush();
+            lora_save_state(true);
             esp_restart();
         }
 
@@ -1771,6 +1772,7 @@ extern "C" void app_main(void)
             device_data_save_all();
             energy_history_save_all();
             energy_service_minute_tick();
+            lora_save_state(false);
 
             // Reset periodique de l'historique d'energie (equivalent ScanDevicesToRAZ)
             if (ntp_sync_is_synced()) {

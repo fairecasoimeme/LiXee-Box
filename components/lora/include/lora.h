@@ -41,6 +41,9 @@ extern "C" {
 #define LORA_PAIR_WINDOW_S    30
 #define LORA_CHANNEL_COUNT    8
 #define LORA_CONFIG_PATH      "/littlefs/config/lora.json"
+// Etat radio des emetteurs (trames, RSSI, SNR, derniere activite, version),
+// a part de lora.json : une ecriture interrompue n'y perd que des statistiques
+#define LORA_STATE_PATH       "/littlefs/config/lora_state.json"
 #define LORA_OTA_DIR          "/littlefs/ota"
 #define LORA_OTA_MAX_FILE     (1024u * 1024u)
 
@@ -57,6 +60,13 @@ extern "C" {
  *         s'initialise pas.
  */
 esp_err_t lora_init(void);
+
+/**
+ * Enregistre l'etat radio des emetteurs s'il a change : au plus toutes les
+ * 10 min, ou tout de suite avec force (redemarrage prevu). Appele par la
+ * boucle principale avec la sauvegarde des fiches appareils.
+ */
+void lora_save_state(bool force);
 
 /** true si un SX128x a repondu au demarrage (modules.lora de /api/system/info). */
 bool lora_is_detected(void);
