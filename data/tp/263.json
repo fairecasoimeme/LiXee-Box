@@ -75,6 +75,51 @@
       "action": []
     }
   ],
+  "SNZB-06P24": [
+    {
+      "status": [
+        {
+          "name": "occupancy",
+          "cluster": "0406",
+          "attribut": 0,
+          "poll": 1
+        },
+        {
+          "name": "occupancy_timeout",
+          "cluster": "0406",
+          "attribut": 32,
+          "type": "numeric",
+          "writable": true,
+          "typewritable": 33
+        },
+        {
+          "name": "occupancy_sensitivity",
+          "cluster": "0406",
+          "attribut": 34,
+          "type": "numeric",
+          "writable": true,
+          "typewritable": 32
+        },
+        {
+          "name": "illumination",
+          "cluster": "FC11",
+          "attribut": 0
+        }
+      ],
+      "bind": "1030",
+      "report": [
+        {
+          "cluster": "0406",
+          "attribut": 0,
+          "type": 24,
+          "min": 20,
+          "max": 60,
+          "change": 1
+        }
+      ],
+      "action": []
+    }
+  ],
   "ZiPulses": [
     {
       "status": [
