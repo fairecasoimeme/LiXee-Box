@@ -59,6 +59,7 @@ typedef struct {
     char  action_cool[40];               // action "refroidit" (clim reversible)
     char  action_off[40];                // action au repos
     char  presence[20];                  // capteur de presence 0406 (optionnel)
+    int   presence_window_s;             // delai sans mouvement avant absence (PRESENCE_WINDOW_S par defaut)
     char  open[THERMO_MAX_OPEN][20];     // contacts d'ouverture IAS 0500 (optionnels)
     int   open_count;
     bool  enabled;
@@ -192,6 +193,7 @@ static void zone_defaults(zone_t *t)
     t->frost_temp = 7.0f;
     t->setpoint_saved = 19.0f;
     t->unoccupied_temp = 16.0f;
+    t->presence_window_s = PRESENCE_WINDOW_S;
     t->tpi_cycle_s = 900;
     t->kp = 0.8f;
     t->ki = 0.1f;
@@ -247,7 +249,7 @@ static bool zone_occupied(const zone_t *t)
     bool occ = false;
     portENTER_CRITICAL(&s_pres_mux);
     for (int i = 0; i < PRESENCE_SLOTS; i++) {
-        if (s_pres[i].ieee == ieee) { occ = (now - s_pres[i].last_s) < PRESENCE_WINDOW_S; break; }
+        if (s_pres[i].ieee == ieee) { occ = (now - s_pres[i].last_s) < t->presence_window_s; break; }
     }
     portEXIT_CRITICAL(&s_pres_mux);
     return occ;
@@ -631,6 +633,7 @@ static bool save_locked(void)
         cJSON_AddNumberToObject(o, "minOnSec", t->min_on_s);
         cJSON_AddNumberToObject(o, "minOffSec", t->min_off_s);
         cJSON_AddNumberToObject(o, "sensorTimeoutSec", t->sensor_timeout_s);
+        cJSON_AddNumberToObject(o, "presenceWindowSec", t->presence_window_s);
         cJSON_AddNumberToObject(o, "operMode", t->oper_mode);
         cJSON_AddStringToObject(o, "schedule", t->schedule);
         cJSON_AddStringToObject(o, "tariffPeriods", t->tariff_periods);
@@ -708,6 +711,7 @@ static void load_config(void)
         j_int(o, "minOffSec", &t->min_off_s);
         j_int(o, "sensorTimeoutSec", &t->sensor_timeout_s);
         if (t->sensor_timeout_s == SENSOR_TIMEOUT_OLD_DEFAULT) t->sensor_timeout_s = SENSOR_TIMEOUT_DEFAULT_SEC;
+        j_int(o, "presenceWindowSec", &t->presence_window_s);
         j_int(o, "operMode", &t->oper_mode);
         j_str(o, "schedule", t->schedule, sizeof(t->schedule));
         j_str(o, "tariffPeriods", t->tariff_periods, sizeof(t->tariff_periods));
@@ -828,6 +832,7 @@ char *thermostat_config_json(void)
         cJSON_AddNumberToObject(o, "minOnSec", t->min_on_s);
         cJSON_AddNumberToObject(o, "minOffSec", t->min_off_s);
         cJSON_AddNumberToObject(o, "sensorTimeoutSec", t->sensor_timeout_s);
+        cJSON_AddNumberToObject(o, "presenceWindowSec", t->presence_window_s);
         cJSON_AddNumberToObject(o, "matterEndpoint", t->m_created ? t->matter_ep : -1);
         char uid[20];
         snprintf(uid, sizeof(uid), "%016llX", (unsigned long long)(MATTER_UID_BASE | t->uid));
@@ -852,6 +857,7 @@ char *thermostat_config_json(void)
     cJSON_AddNumberToObject(def, "minOnSec", d.min_on_s);
     cJSON_AddNumberToObject(def, "minOffSec", d.min_off_s);
     cJSON_AddNumberToObject(def, "sensorTimeoutSec", d.sensor_timeout_s);
+    cJSON_AddNumberToObject(def, "presenceWindowSec", d.presence_window_s);
     return json_out(root);
 }
 
@@ -1006,6 +1012,9 @@ int thermostat_save_zone(int id, const cJSON *j)
     int timeout = 0;
     j_int(j, "sensorTimeoutSec", &timeout);
     if (timeout >= 60) t->sensor_timeout_s = timeout;
+    int pwin = 0;
+    j_int(j, "presenceWindowSec", &pwin);
+    if (pwin >= 60) t->presence_window_s = pwin;
     j_int(j, "operMode", &t->oper_mode);
     if (t->oper_mode < 0 || t->oper_mode > 2) t->oper_mode = 0;
     t->schedule[0] = '\0';

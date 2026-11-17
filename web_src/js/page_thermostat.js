@@ -444,7 +444,11 @@
     h += "<label class='form-label'>" + IC_STOP + "Action Arr&ecirc;t</label><select class='form-select' id='aOff'>" + actionOptions([], '') + '</select>';
     h += "<div class='form-text mb-3'>Action au repos (ex : <b>OFF</b>, <b>ARRET</b>, <b>ECO</b>).</div>";
     h += "<label class='form-label'>" + IC_PERSON + "Capteur de pr&eacute;sence <span class='text-muted'>(optionnel)</span></label><select class='form-select' id='thPresence'>" + deviceOptions(opts.presence, t.presenceIEEE) + '</select>';
-    h += "<div class='form-text mb-3'>Si configur&eacute; : la chauffe est coup&eacute;e en cas d'absence (aucun mouvement depuis 30 min), sauf option ci-dessous.</div>";
+    h += "<div class='form-text mb-3'>Si configur&eacute; : la chauffe est coup&eacute;e en cas d'absence, sauf option ci-dessous.</div>";
+    h += "<div id='presTimeoutRow' class='mb-3'>";
+    h += "<label class='form-label'>D&eacute;lai avant absence (minutes)</label>";
+    h += "<input class='form-control' type='number' id='thPresTimeout' value='" + Math.round(t.presenceWindowSec / 60) + "'>";
+    h += "<div class='form-text'>Temps sans mouvement d&eacute;tect&eacute; par ce capteur avant de consid&eacute;rer la zone vide. D&eacute;faut : <b>30 min</b>.</div></div>";
     h += "<div id='occRow' class='mb-3'><div class='form-check form-switch' style='font-size:15px;'>" +
          "<input class='form-check-input' type='checkbox' role='switch' id='ckOcc' style='width:2.5em;height:1.3em;cursor:pointer;'" + (t.unoccupiedEnabled ? ' checked' : '') + '>' +
          "<label class='form-check-label' for='ckOcc' style='padding-left:8px;'>Consigne r&eacute;duite en cas d'absence (au lieu d'une coupure)</label></div>";
@@ -498,15 +502,22 @@
       if (heating === undefined) heating = $('#modeSel').val() === '1';
       $('#occRow').toggle(heating && !!$('#thPresence').val());
     }
+    // Delai d'absence : visible des qu'un capteur de presence est choisi,
+    // quel que soit le mode (chauffage ou rafraichissement).
+    function upPresence() {
+      $('#presTimeoutRow').toggle(!!$('#thPresence').val());
+      upOcc();
+    }
     function upOper() {
       var o = $('#operSel').val();
       $('#schedRow').toggle(o === '1');
       $('#tarifRow').toggle(o === '2');
     }
     $('#modeSel').on('change', upMode);
-    $('#thPresence').on('change', function() { upOcc(); });
+    $('#thPresence').on('change', upPresence);
     $('#operSel').on('change', upOper);
     upMode();
+    upPresence();
     upOper();
 
     // Plages horaires : une ligne par plage (jours + debut + fin)
@@ -564,9 +575,10 @@
         tpiKi: parseFloat($('#thKi').val()),
         minOnSec: parseInt($('#thMinOn').val(), 10),
         minOffSec: parseInt($('#thMinOff').val(), 10),
-        sensorTimeoutSec: parseInt($('#thTimeout').val(), 10) * 60
+        sensorTimeoutSec: parseInt($('#thTimeout').val(), 10) * 60,
+        presenceWindowSec: parseInt($('#thPresTimeout').val(), 10) * 60
       };
-      ['setpoint', 'frostTemp', 'unoccupiedTemp', 'tpiKp', 'tpiKi', 'tpiCycleSec', 'minOnSec', 'minOffSec', 'sensorTimeoutSec'].forEach(function(k) {
+      ['setpoint', 'frostTemp', 'unoccupiedTemp', 'tpiKp', 'tpiKi', 'tpiCycleSec', 'minOnSec', 'minOffSec', 'sensorTimeoutSec', 'presenceWindowSec'].forEach(function(k) {
         if (!isFinite(body[k])) delete body[k];
       });
       var $b = $(this).find('button[type=submit]').prop('disabled', true);
