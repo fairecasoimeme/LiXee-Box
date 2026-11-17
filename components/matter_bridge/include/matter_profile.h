@@ -81,6 +81,11 @@ typedef enum {
 #define MCAP_ELECTRICAL   (1u << 12)   // puissance, tension, courant
 #define MCAP_ENERGY       (1u << 13)   // energie cumulee importee
 #define MCAP_SWITCH       (1u << 14)
+// Cluster standard CommodityPrice (0x0095, device type compose Electrical
+// Energy Tariff 0x0513) sur l'EP Linky : prix courant du kWh d'apres la
+// configuration tarifaire de la page Energie (energy_service_get_live()).
+// Issue #67.
+#define MCAP_LINKY_PRICE  (1u << 15)
 
 #define MATTER_PROFILE_MAX_LINKS  32
 

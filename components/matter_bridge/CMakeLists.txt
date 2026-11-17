@@ -13,6 +13,7 @@ idf_component_register(
     PRIV_REQUIRES
         nvs_flash
         config_manager
+        energy_service
         json
         esp_matter
 )

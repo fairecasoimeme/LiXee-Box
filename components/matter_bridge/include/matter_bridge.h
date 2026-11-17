@@ -92,6 +92,21 @@ bool matter_bridge_get_onboarding_codes(const char **qr_code, const char **manua
 esp_err_t matter_bridge_report_energy_index(int endpoint_id, uint16_t attr_id, uint64_t wh);
 
 /**
+ * Publie le prix courant du kWh (cluster standard CommodityPrice, 0x0095) sur
+ * l'EP Linky, d'apres la configuration tarifaire de la page Energie (voir
+ * energy_service_get_live()). Sans effet si l'endpoint n'a pas la capacite
+ * MCAP_LINKY_PRICE (voir matter_profile.h).
+ * @param endpoint_id  Endpoint Matter du ZLinky
+ * @param price_eur_per_kwh  Prix EUR/kWh de la periode tarifaire en cours ;
+ *                           <= 0 efface le prix courant (valeur Nullable null,
+ *                           tarif pas encore configure sur la page Energie)
+ * @param tariff_name  Libelle de la periode en cours ("Heures Creuses"...),
+ *                      peut etre NULL
+ */
+esp_err_t matter_bridge_report_tariff_price(int endpoint_id, double price_eur_per_kwh,
+                                            const char *tariff_name);
+
+/**
  * Supprime un endpoint dynamique
  */
 esp_err_t matter_bridge_remove_endpoint(int endpoint_id);

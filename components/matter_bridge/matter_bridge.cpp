@@ -19,6 +19,7 @@
 #include "matter_device_manager.h"
 #include "elec_power_delegate.h"
 #include "thermostat_presets_delegate.h"
+#include "linky_price_delegate.h"
 #include "zigate_devices.h"
 #include "device_data.h"
 #include "esp_log.h"
@@ -26,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 // esp-matter SDK
 #include <esp_matter.h>
@@ -33,9 +35,14 @@
 #include <esp_matter_endpoint.h>
 #include <esp_matter_feature.h>
 #include <esp_matter_event.h>
+#include <esp_matter_delegate_callbacks.h>
 #include <app/clusters/electrical-energy-measurement-server/ElectricalEnergyMeasurementCluster.h>
+#include <app/clusters/electrical-energy-measurement-server/electrical-energy-measurement-server.h>
 #include <app/clusters/meter-identification-server/meter-identification-server.h>
 #include <app/clusters/commodity-metering-server/commodity-metering-server.h>
+#include <app/clusters/commodity-price-server/commodity-price-server.h>
+#include <lib/support/BitMask.h>
+#include <lib/support/TimeUtils.h>
 #include <app/reporting/reporting.h>
 #include <app/server/Server.h>
 #include <setup_payload/OnboardingCodesUtil.h>
@@ -121,6 +128,18 @@ CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
     }
     return CHIP_NO_ERROR;
 }
+
+// Instances CommodityPrice pour l'EP Linky (un par endpoint max). Pas de
+// convenience wrapper esp-matter pour ce cluster standard sur la version
+// d'esp_matter verrouillee ici (1.4.2 : pas de endpoint::electrical_energy_tariff
+// ni de cluster::get_delegate_managed_instance) : l'Instance est creee et
+// retrouvee a la main (compteurs ep_id/delegate dedies). A revoir si la
+// montee de version esp_matter en cours (voir memoire esp_matter_version_bump)
+// apporte ces helpers.
+static LinkyPriceDelegate *s_price_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static CommodityPrice::Instance *s_price_instances[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static int s_price_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static int s_price_count = 0;
 
 // Energie cumulee : un acces partage pour tous les endpoints compteur, et
 // l'etat des index Zigbee par endpoint.
@@ -603,6 +622,35 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         endpoint::contact_sensor::config_t cfg;
         endpoint::contact_sensor::add(ep, &cfg);
     }
+    if (caps & MCAP_LINKY_PRICE) {
+        // Cluster standard CommodityPrice (0x0095), device type compose
+        // Electrical Energy Tariff (0x0513, superset d'Electrical Meter deja
+        // porte par cet EP) sur l'EP Linky. Pas de convenience wrapper
+        // esp-matter pour ce cluster en 1.4.2 : coquille generique
+        // (cluster::create) + globals, meme recette que
+        // cluster::boolean_state::create -- MAIS AttributeAccessInterface
+        // (l'Instance, creee plus tard par price_endpoint_init() une fois
+        // l'endpoint actif) n'a pas d'equivalent "EnumerateAttributes" pour
+        // les donnees du cluster (contrairement a CommandHandlerInterface,
+        // qui a bien EnumerateAcceptedCommands) : sans ces attributs ember
+        // placeholder, AttributeList ne les liste pas et le chemin de
+        // lecture n'atteint jamais Instance::Read() (observe en test : toutes
+        // les valeurs cote firmware correctes, mais "no values returned" cote
+        // controleur). Valeur par defaut NULL/0 : jamais lue, Instance::Read()
+        // intercepte toujours ces IDs avant le stockage ember.
+        endpoint::add_device_type(ep, 0x0513 /* Electrical Energy Tariff */, 1);
+        cluster_t *price_cluster = cluster::create(ep, CommodityPrice::Id, CLUSTER_FLAG_SERVER);
+        if (price_cluster) {
+            cluster::global::attribute::create_feature_map(price_cluster, 0);
+            cluster::global::attribute::create_cluster_revision(price_cluster, 4);
+            attribute::create(price_cluster, CommodityPrice::Attributes::TariffUnit::Id,
+                              ATTRIBUTE_FLAG_NONE, esp_matter_enum8(0));
+            attribute::create(price_cluster, CommodityPrice::Attributes::Currency::Id,
+                              ATTRIBUTE_FLAG_NULLABLE, esp_matter_octet_str(NULL, 0));
+            attribute::create(price_cluster, CommodityPrice::Attributes::CurrentPrice::Id,
+                              ATTRIBUTE_FLAG_NULLABLE, esp_matter_octet_str(NULL, 0));
+        }
+    }
     if (caps & MCAP_COVER) {
         endpoint::window_covering::config_t cfg(0);
         cfg.window_covering.feature_flags =
@@ -687,6 +735,48 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         }
     }
     return ESP_OK;
+}
+
+// ============================================================================
+// Prix courant (CommodityPrice)
+// ============================================================================
+
+// Appele verrou de la pile tenu, une fois l'endpoint active : Instance::Init()
+// enregistre l'Instance aupres de AttributeAccessInterfaceRegistry/
+// CommandHandlerInterfaceRegistry, qui echoue silencieusement si l'endpoint
+// n'est pas encore actif dans le modele de donnees (meme regle que
+// energy_endpoint_init ci-dessous).
+static void price_endpoint_init(uint16_t ep_id)
+{
+    for (int i = 0; i < s_price_count; i++) {
+        if (s_price_ep_ids[i] == ep_id) return;   // deja initialise (resume)
+    }
+    cluster_t *price_cluster = cluster::get(ep_id, CommodityPrice::Id);
+    if (!price_cluster) return;
+
+    LinkyPriceDelegate *delegate = new LinkyPriceDelegate();
+    chip::BitMask<CommodityPrice::Feature, uint32_t> no_features(0u);
+    CommodityPrice::Instance *inst = new CommodityPrice::Instance(
+        (chip::EndpointId)ep_id, *delegate, no_features);
+    if (inst->Init() != CHIP_NO_ERROR) {
+        ESP_LOGE(TAG, "CommodityPrice: echec d'initialisation (ep=%d)", ep_id);
+        delete inst;
+        delete delegate;
+        return;
+    }
+
+    Globals::Structs::CurrencyStruct::Type eur;
+    eur.currency = 978;          // EUR (ISO 4217)
+    eur.decimalPoints = 4;       // price_for_attr() arrondi au 1/10000e d'euro
+    inst->SetCurrency(eur);
+    inst->SetTariffUnit(Globals::TariffUnitEnum::kKWh);
+
+    if (s_price_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
+        s_price_delegates[s_price_count] = delegate;
+        s_price_instances[s_price_count] = inst;
+        s_price_ep_ids[s_price_count] = ep_id;
+        s_price_count++;
+    }
 }
 
 // ============================================================================
@@ -1012,6 +1102,59 @@ out:
     return ret;
 }
 
+static CommodityPrice::Instance *price_instance_for(int endpoint_id)
+{
+    for (int i = 0; i < s_price_count; i++) {
+        if (s_price_ep_ids[i] == endpoint_id) return s_price_instances[i];
+    }
+    return nullptr;
+}
+
+esp_err_t matter_bridge_report_tariff_price(int endpoint_id, double price_eur_per_kwh,
+                                            const char *tariff_name)
+{
+    if (!s_matter_started) return ESP_ERR_INVALID_STATE;
+
+    bool held;
+    if (!stack_lock(&held)) return ESP_FAIL;
+
+    esp_err_t ret = ESP_OK;
+    CommodityPrice::Instance *inst = price_instance_for(endpoint_id);
+    if (!inst) {
+        ret = ESP_ERR_NOT_FOUND;
+        goto out;
+    }
+
+    {
+        chip::app::DataModel::Nullable<CommodityPrice::Structs::CommodityPriceStruct::Type> value;
+        if (price_eur_per_kwh > 0) {
+            CommodityPrice::Structs::CommodityPriceStruct::Type price;
+            uint32_t chip_epoch;
+            chip::UnixEpochToChipEpochTime((uint32_t)time(NULL), chip_epoch);
+            price.periodStart = chip_epoch;
+            // periodEnd inconnu (pas de calendrier tarifaire complet cote
+            // TIC) : la prochaine periode re-ecrit la valeur a son propre
+            // changement.
+            price.price.SetValue((int64_t)llround(price_eur_per_kwh * 10000.0));  // decimalPoints = 4
+            static char s_desc[32];
+            if (tariff_name && tariff_name[0]) {
+                strlcpy(s_desc, tariff_name, sizeof(s_desc));
+                price.description.SetValue(chip::CharSpan::fromCharString(s_desc));
+            }
+            value.SetNonNull(price);
+        }
+        CHIP_ERROR err = inst->SetCurrentPrice(value);
+        if (err != CHIP_NO_ERROR) {
+            ESP_LOGW(TAG, "CommodityPrice ep=%d : %" CHIP_ERROR_FORMAT, endpoint_id, err.Format());
+            ret = ESP_FAIL;
+        }
+    }
+
+out:
+    stack_unlock(held);
+    return ret;
+}
+
 // ============================================================================
 // API publique
 // ============================================================================
@@ -1325,6 +1468,9 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
         }
         if (profile ? (profile->zlinky && (profile->caps & MCAP_ENERGY)) : device_type == MATTER_DEV_ENERGY_METER) {
             linky_endpoint_init(new_ep_id, zigbee_ieee);
+        }
+        if (profile && (profile->caps & MCAP_LINKY_PRICE)) {
+            price_endpoint_init(new_ep_id);
         }
     }
 

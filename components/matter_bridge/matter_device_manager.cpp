@@ -12,6 +12,7 @@
 #include "zigate_actions.h"
 #include "device_data.h"
 #include "config_manager.h"
+#include "energy_service.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -637,6 +638,16 @@ static void apply_link(bridge_device_mapping_t *m, const matter_link_t *l, doubl
 static void replay_stored_values(bridge_device_mapping_t *m)
 {
     const matter_profile_t *p = m->profile;
+
+    // Prix courant du kWh (CommodityPrice), valeur courante des maintenant,
+    // sans attendre le prochain changement de tarif (issue #67).
+    if (p && (p->caps & MCAP_LINKY_PRICE)) {
+        energy_live_t live;
+        if (energy_service_get_live(&live)) {
+            matter_bridge_report_tariff_price(m->matter_endpoint, live.tariff_price, live.tariff);
+        }
+    }
+
     if (!p) return;
     for (int i = 0; i < p->link_count; i++) {
         const matter_link_t *l = &p->links[i];
@@ -735,6 +746,18 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
 
     // Profil du template : liaisons etat -> attribut Matter. Les entrees du
     // tableau des mappings ne bougent jamais : ecriture de last_lift100 sure.
+    // CommodityPrice (issue #67) : avant apply_profile, qui ne connait que les
+    // liaisons du template. Le ZLinky renvoie l'attribut 0x0010 (PTEC/LTARF,
+    // cluster Zigbee 0xFF66) a chaque changement de tarif, dans les deux modes
+    // TIC.
+    if (mapping->profile && (mapping->profile->caps & MCAP_LINKY_PRICE) &&
+        report->cluster_id == 0xFF66 && report->attr_id == 0x0010) {
+        energy_live_t live;
+        if (energy_service_get_live(&live)) {
+            matter_bridge_report_tariff_price(mapping->matter_endpoint, live.tariff_price, live.tariff);
+        }
+    }
+
     if (mapping->profile) return apply_profile((bridge_device_mapping_t *)mapping, report);
 
     // Convertir le cluster/attribut ZCL -> Matter et mettre a jour
