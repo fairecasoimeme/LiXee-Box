@@ -48,7 +48,7 @@
 #include <string.h>
 
 #ifndef VERSION
-#define VERSION "3.2"
+#define VERSION "3.3"
 #endif
 
 // Fonctions definies dans main.cpp pour le parametre Matter enable/disable
