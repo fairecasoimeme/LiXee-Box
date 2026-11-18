@@ -2118,9 +2118,27 @@ static void ota_tick(void)
 // Boucle radio (equivalent de loraReceiverLoop)
 // ============================================================================
 
-// Chien de garde de la reception : un emetteur parle toutes les 5 s, un
-// silence d'une minute signifie une radio sortie de RX. Re-armer est sans
-// effet de bord si tout va bien.
+/**
+ * true si un emetteur parle en continu : le ZLinky emet toutes les 5 s (modele
+ * vide = ZLinky par defaut), contrairement aux emetteurs sur evenement
+ * (ZiPulses), qui peuvent se taire des heures.
+ */
+static bool has_chatty_emitter(void)
+{
+    for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
+        const emitter_t *e = &s_em[i];
+        if (e->valid && (!e->model[0] || strcmp(e->model, LORA_ZLINKY_MODEL) == 0)) return true;
+    }
+    return false;
+}
+
+// Chien de garde de la reception. Avec un ZLinky (une trame toutes les 5 s),
+// une minute de silence signifie une radio sortie de RX : re-armement toutes
+// les 15 s, puis toutes les minutes si le silence dure (ZLinky debranche).
+// Sans ZLinky, le silence est normal : re-armement de precaution toutes les
+// 5 min. Re-armer est sans effet de bord si tout va bien ; un seul
+// avertissement par periode de silence (le journal en recevait un toutes les
+// 15 s avec un ZiPulses seul).
 static void rx_watchdog(void)
 {
     if (s_pairing_mode || s_awaiting_confirm) return;
@@ -2128,14 +2146,24 @@ static void rx_watchdog(void)
     if (lora_count_emitters() == 0) return;
     if (s_last_radio_rx == 0) return;
     uint32_t now = millis();
-    if (now - s_last_radio_rx < 60000) return;
-    if (now - s_last_wd_rearm < 15000) return;
+    uint32_t silence = now - s_last_radio_rx;
+    bool chatty = has_chatty_emitter();
+    uint32_t period = !chatty ? 300000 : (silence < 300000 ? 15000 : 60000);
+    if (silence < (chatty ? 60000u : 300000u)) return;
+    if (now - s_last_wd_rearm < period) return;
     s_last_wd_rearm = now;
     set_channel(s_op_channel);
     set_sf(s_op_sf);
     start_rx();
-    ESP_LOGW(TAG, "Silence de %lu s -> re-armement RX (canal %d, SF%d)",
-             (unsigned long)((now - s_last_radio_rx) / 1000), s_op_channel, s_op_sf);
+    static uint32_t s_warned_for = 0;          // periode de silence deja signalee
+    if (chatty && s_warned_for != s_last_radio_rx) {
+        s_warned_for = s_last_radio_rx;
+        ESP_LOGW(TAG, "Silence de %lu s -> re-armement RX (canal %d, SF%d)",
+                 (unsigned long)(silence / 1000), s_op_channel, s_op_sf);
+    } else {
+        ESP_LOGD(TAG, "Silence de %lu s -> re-armement RX (canal %d, SF%d)",
+                 (unsigned long)(silence / 1000), s_op_channel, s_op_sf);
+    }
 }
 
 static void loop_once(void)
