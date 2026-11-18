@@ -445,7 +445,15 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
         break;
     }
     case MATTER_DEV_OCCUPANCY_SENSOR: {
+        // Appareil sans template : au moins une feature de detection est
+        // obligatoire, sinon esp_matter echoue sur une assertion et la box
+        // redemarre en boucle (issue #74). Meme reglage que le chemin par
+        // profil (MCAP_OCCUPANCY plus bas) : PIR, le type le plus courant.
         endpoint::occupancy_sensor::config_t cfg;
+        cfg.occupancy_sensing.occupancy_sensor_type = 0;          // PIR
+        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x01;
+        cfg.occupancy_sensing.feature_flags =
+            cluster::occupancy_sensing::feature::passive_infrared::get_id();
         endpoint::occupancy_sensor::add(ep, &cfg);
         break;
     }

@@ -776,7 +776,10 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
 
     case 0x0406:  // Occupancy Sensing
         if (report->attr_id == 0x0000) {
-            val.type = ESP_MATTER_VAL_TYPE_UINT8;
+            // Attribut bitmap8 : un uint8 est refuse par esp_matter (type
+            // different de celui de l'attribut), sans autre trace qu'un log
+            // (issue #75)
+            val.type = ESP_MATTER_VAL_TYPE_BITMAP8;
             val.val.u8 = report->data[0];
             matter_bridge_update_attribute(mapping->matter_endpoint, 0x0406, 0x0000, &val, sizeof(val));
         }
