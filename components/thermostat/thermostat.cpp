@@ -514,7 +514,7 @@ static void regulation_tick(void)
             // UnoccupiedHeatingSetpoint Matter) plutot qu'une coupure, uniquement en
             // chauffage -- en froid, pas de UnoccupiedCoolingSetpoint, l'absence reste une
             // coupure (refroidir davantage en l'absence du logement n'a pas de sens).
-            bool unocc_relax = t->heating && t->unoccupied_enabled && !t->occupied;
+            bool unocc_relax = t->heating && t->unoccupied_enabled && !t->occupied && !t->frost_mode;
             float sp = unocc_relax ? t->unoccupied_temp : t->setpoint;
             bool inhibit = (t->window_open || !t->sched_active || (!t->occupied && !unocc_relax)) && !frost;
             if (frost) {
