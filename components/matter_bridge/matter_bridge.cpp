@@ -121,6 +121,14 @@ bool matter_bridge_get_thermostat_custom_presets(int endpoint_id, matter_preset_
     return true;
 }
 
+int matter_bridge_list_thermostat_preset_endpoints(int *out, int max_out)
+{
+    int n = s_thermo_preset_delegate_count;
+    if (n > max_out) n = max_out;
+    for (int i = 0; i < n; i++) out[i] = s_thermo_preset_delegate_ep_ids[i];
+    return n;
+}
+
 // Appelee par le serveur CHIP quand un controleur invoque SetActivePresetRequest :
 // repercute le choix sur la zone via le callback enregistre par thermostat.cpp
 // (definie ici, et non dans thermostat_presets_delegate.h, pour acceder a

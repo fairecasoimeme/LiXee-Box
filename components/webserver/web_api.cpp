@@ -248,6 +248,53 @@ static esp_err_t api_matter_status_handler(httpd_req_t *req)
 }
 
 // ============================================================================
+// GET /api/matter/debug/presets - Debug (triage issue #80, edition des
+// presets perso du thermostat virtuel) : etat du delegate Presets tel qu'il
+// est reellement vu par la pile Matter, independamment de ce qu'affiche un
+// controleur (qui peut mettre en cache PresetTypes/NumberOfPresets).
+// ============================================================================
+
+static esp_err_t api_matter_debug_presets_handler(httpd_req_t *req)
+{
+    int eps[MATTER_BRIDGE_MAX_ENDPOINTS];
+    int ep_count = matter_bridge_list_thermostat_preset_endpoints(eps, MATTER_BRIDGE_MAX_ENDPOINTS);
+
+    cJSON *root = cJSON_CreateArray();
+    for (int i = 0; i < ep_count; i++) {
+        matter_preset_t custom[MATTER_PRESET_MAX_CUSTOM];
+        int custom_count = 0;
+        matter_bridge_get_thermostat_custom_presets(eps[i], custom, MATTER_PRESET_MAX_CUSTOM, &custom_count);
+
+        cJSON *item = cJSON_CreateObject();
+        cJSON_AddNumberToObject(item, "endpoint", eps[i]);
+        // currentPresetCount : nombre REEL de presets definis (2 fixes + custom_count).
+        // A ne pas confondre avec l'attribut Matter NumberOfPresets, qui annonce la
+        // capacite MAX supportee (constante), pas le compte courant (voir
+        // thermostat_presets_delegate.h, GetNumberOfPresets()).
+        cJSON_AddNumberToObject(item, "currentPresetCount", 2 + custom_count);
+        cJSON *customs = cJSON_CreateArray();
+        for (int c = 0; c < custom_count; c++) {
+            cJSON *p = cJSON_CreateObject();
+            cJSON_AddNumberToObject(p, "handle", custom[c].handle);
+            cJSON_AddStringToObject(p, "name", custom[c].name);
+            cJSON_AddNumberToObject(p, "heatingSetpoint", custom[c].heating_setpoint);
+            cJSON_AddNumberToObject(p, "scenario", custom[c].scenario);
+            cJSON_AddItemToArray(customs, p);
+        }
+        cJSON_AddItemToObject(item, "custom", customs);
+        cJSON_AddItemToArray(root, item);
+    }
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, json);
+    free(json);
+    return ESP_OK;
+}
+
+// ============================================================================
 // POST /api/matter/open-window {"seconds":900} - fenetre d'appairage
 // (ajout d'un second controleur avec le code habituel du pont)
 // ============================================================================
@@ -1881,6 +1928,10 @@ esp_err_t web_api_register_handlers(httpd_handle_t server)
     // --- Matter API ---
     uri = { .uri = "/api/matter/status", .method = HTTP_GET,
             .handler = api_matter_status_handler, .user_ctx = NULL };
+    web_server_register_uri(server, &uri);
+
+    uri = { .uri = "/api/matter/debug/presets", .method = HTTP_GET,
+            .handler = api_matter_debug_presets_handler, .user_ctx = NULL };
     web_server_register_uri(server, &uri);
 
     uri = { .uri = "/api/matter/open-window", .method = HTTP_POST,

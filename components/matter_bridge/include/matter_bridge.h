@@ -203,6 +203,19 @@ bool matter_bridge_get_thermostat_custom_presets(int endpoint_id, matter_preset_
                                                  int max_out, int *out_count);
 
 /**
+ * Debug (triage issue #80, edition des presets perso) : identifiants des
+ * endpoints ayant un delegate Presets (thermostats virtuels avec
+ * matter_profile_t.presets actif). out rempli jusqu'a max_out ; retourne le
+ * nombre ecrit. Comme matter_bridge_get_thermostat_custom_presets(), peut
+ * s'appeler depuis n'importe quelle tache qui ne detient pas s_lock
+ * (thermostat.cpp) : seul lixee_chip_lock() est pris en interne, jamais
+ * s_lock, donc pas de risque d'inversion de l'ordre des verrous (voir
+ * commentaire en tete de thermostat_presets_delegate.h) -- utilise par
+ * l'API web de debug (web_api.cpp), qui tourne sur la tache du serveur HTTP.
+ */
+int matter_bridge_list_thermostat_preset_endpoints(int *out, int max_out);
+
+/**
  * Met a jour le contenu des presets Matter "Confort"/"Hors-gel" et des
  * presets personnalises (issue #80) d'une zone de thermostat virtuel, ainsi
  * que le handle actif courant, pour qu'un controleur Matter les lise a jour.
