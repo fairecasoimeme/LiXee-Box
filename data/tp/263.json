@@ -54,11 +54,6 @@
           "type": "numeric",
           "writable": true,
           "typewritable": 32
-        },
-        {
-          "name": "illumination",
-          "cluster": "FC11",
-          "attribut": 0
         }
       ],
       "bind": "1030",
@@ -99,11 +94,6 @@
           "type": "numeric",
           "writable": true,
           "typewritable": 32
-        },
-        {
-          "name": "illumination",
-          "cluster": "FC11",
-          "attribut": 0
         }
       ],
       "bind": "1030",
