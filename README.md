@@ -91,6 +91,7 @@ L'appareil peut être configuré via un site web local
 - Appareils **Zigbee**, **LoRa** (ZLinky LoRa), **thermostats virtuels** et **groupes d'actions**
 - Compatible **Home Assistant**, **Apple Maison**, **Amazon Alexa** et les contrôleurs Matter qui acceptent les appareils non certifiés
 - Code d'appairage **propre à chaque box**, choix des appareils publiés appareil par appareil
+- **Matter 1.5** (à partir de la v3.2) : le ZLinky est publié comme compteur électrique, avec l'identification du compteur et ses index par période tarifaire
 
 ### 📊 Surveillance et Tableau de Bord
 - Tableau de bord énergétique avec jauges et graphiques
@@ -102,9 +103,11 @@ L'appareil peut être configuré via un site web local
 - **Ethernet** (W5500, à partir de la v2.26) prioritaire, **WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté (v3.0), et relancé si le câble reste débranché 30 s
 - **Matter** : voir [Pont Matter](#-pont-matter-à-partir-de-la-v30) (à partir de la v3.0)
 - **MQTT** : Serveur/port/utilisateur/mot de passe personnalisables
+- **MQTT chiffré (TLS)** (à partir de la v3.2) : autorités publiques ou certificat d'une autorité privée, **TLS mutuel** par certificat client, ALPN (AWS IoT Core sur le port 443)
 - **MQTT Discovery** compatible avec Home Assistant
 - **WebPush API** : URL/utilisateur/mot de passe
 - **Tunnel d'accès distant** : Accès sécurisé à la LiXee-Box depuis Internet sans ouverture de ports (reverse proxy WebSocket)
+- **Découverte mDNS** : service `_http._tcp` (instance `LIXEEBOX-XXXX`) avec le fabricant, le modèle, la version, l'adresse MAC et la version de l'API (à partir de la v3.2)
 
 ### ⚡ Gestion de l'Énergie
 - Règles automatisées pour le délestage de charge et le routage énergétique
@@ -120,7 +123,7 @@ L'appareil peut être configuré via un site web local
 - Hors-gel, forçage manuel, cadran temps réel — guide détaillé : [THERMOSTATS.md](THERMOSTATS.md)
 
 ### 🔒 Sécurité
-- Authentification par sessions (token 32 caractères, durée 24h, max 4 sessions simultanées)
+- Authentification par sessions (token 32 caractères, durée 24h, max 16 sessions simultanées à partir de la v3.2, 4 avant)
 - Page de connexion dédiée avec redirection automatique, et retour sur la page demandée après connexion
 - Compatibilité Basic Auth pour les clients API
 - Tunnel d'accès distant autorisé uniquement si l'accès sécurisé est activé **avec un identifiant et un mot de passe** (à partir de la v2.23)
@@ -132,7 +135,7 @@ L'appareil peut être configuré via un site web local
 - Mise à jour **automatique** depuis les releases GitHub de la LiXee-Box (source fixe, non modifiable), sans le mode développeur (à partir de la v3.0)
 - Mise à jour **manuelle** par fichier `update.tar` (firmware + pages web)
 - Contrôle de l'image avant installation : un firmware qui n'est pas celui de la LiXee-Box v3 est refusé (à partir de la v3.0)
-- Sauvegarde/restauration de configuration
+- Sauvegarde/restauration de configuration (avec les codes infrarouges appris à partir de la v3.2)
 - Mode développeur pour le débogage
 
 ## 🚀 Installation et Configuration
@@ -185,7 +188,7 @@ Une LiXee-Box en **v2.x** (Arduino) passe en v3 **sans ordinateur**, par sa page
 ### Avant de commencer
 - Faites une **sauvegarde** : **A propos → Sauvegarde**. Elle sert si vous voulez un jour revenir en v2.x.
 - Faites la mise à jour depuis le **réseau local** (adresse IP de la box), plutôt que par l'accès distant (tunnel).
-- La box doit avoir environ **4,5 Mo libres** pendant l'installation : le paquet (3,4 Mo) et les fichiers qu'il installe cohabitent un moment. La v2.x ne vérifie pas cette place lors d'un envoi manuel : une box très chargée (nombreuses sauvegardes, historiques, journaux de debug) peut se retrouver en v3 avec une interface incomplète.
+- La box doit avoir environ **4,5 Mo libres** pendant l'installation : le paquet (3,5 Mo) et les fichiers qu'il installe cohabitent un moment. La v2.x ne vérifie pas cette place lors d'un envoi manuel : une box très chargée (nombreuses sauvegardes, historiques, journaux de debug) peut se retrouver en v3 avec une interface incomplète.
 
 ### Mise à jour
 - **Manuelle** : téléchargez le fichier `update.tar` de la [release v3](https://github.com/fairecasoimeme/LiXee-Box/releases), puis **A propos → Mise à jour** et envoyez-le
@@ -230,7 +233,6 @@ Une mise à jour remplace les **templates livrés** (dossier `tp/`) : une modifi
 - Les templates personnels sont inclus dans la sauvegarde
 
 ⚠️ La mise à jour **vers la v3.3** est encore faite par la version installée : sauvegardez une dernière fois vos templates modifiés avant, puis recopiez vos modèles dans les templates personnels.
-
 
 ⚠️ **Si la mise à jour ne fonctionne pas, veuillez passer avec la méthode suivante (avec un ordinateur)**
 
@@ -288,6 +290,8 @@ Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START
 
 Le code d'appairage est **propre à chaque box** : il est tiré au hasard au premier démarrage de Matter, puis conservé.
 
+Si Matter ne peut pas démarrer (mémoire NVS pleine, par exemple), la box continue de fonctionner sans Matter et la page Matter en affiche la cause (à partir de la v3.2). Le **Factory Reset Matter** reste alors possible.
+
 ### Appairer la box
 
 #### Home Assistant
@@ -316,18 +320,19 @@ Chaque appareil Matter est construit à partir des états de son template :
 | Capteurs d'ouverture | contact, batterie |
 | Prises, relais, contacteurs | marche/arrêt, puissance, tension, courant, énergie selon le template |
 | Compteurs d'énergie (Tuya TS0601, SEM-4…) | puissance, tension, courant, énergie |
-| **ZLinky** (Zigbee et LoRa) | compteur : index, puissance apparente, tension et courant (phase 1) |
+| **ZLinky** (Zigbee et LoRa) | compteur : index, puissance apparente, tension et courant (phase 1) ; à partir de la v3.2, compteur électrique (Electrical Utility Meter) avec identification (ADSC, puissance souscrite, TIC standard ou historique) et index EASF01 à EASF10 en kWh |
 | Volets roulants (TS130F…) | volet : monter, descendre, stop, position |
 | Têtes thermostatiques (TRVZB, Tuya) | thermostat chauffage, batterie |
 | Climatiseurs (AC201A, IRB-4) | thermostat chaud/froid, ventilation |
 | Boutons (SNZB-01P, Aqara) | bouton : appui simple, multiple, long ; batterie |
-| **Thermostats virtuels** | thermostat |
+| **Thermostats virtuels** | thermostat ; presets **Confort** et **Hors-gel** en chauffage (à partir de la v3.2, Home Assistant) |
 | **Groupes d'actions** publiés dans Matter | interrupteur virtuel |
 
 ### Limites
 - **Certificat de développement** : la box utilise le certificat de test d'Espressif, pas une certification de la CSA. Home Assistant (avec Test DCL), Apple Maison et Amazon Alexa (essayé avec un Echo) l'acceptent ; **Google Home n'accepte que les appareils certifiés**
 - **Amazon Alexa** : un volet ne peut pas être ajouté à une routine. Créez deux groupes d'actions (ouvrir, fermer) et publiez-les dans Matter comme interrupteurs en **mode impulsion** : ils s'utilisent dans les routines
-- **Apple Maison** n'affiche pas les compteurs et mesures d'énergie (ZLinky, puissance des prises)
+- **Apple Maison** n'affiche pas les compteurs et mesures d'énergie (ZLinky, puissance des prises), ni les presets des thermostats virtuels
+- L'identification du compteur et les index par période (v3.2) utilisent des clusters encore **provisoires** dans Matter 1.5 : peu de contrôleurs les affichent
 - **Appareils à plusieurs voies** : une seule voie est publiée
 - **Triphasé** : les phases 2 et 3 ne sont pas publiées
 - **Sans équivalent Matter** : énergie injectée, modes fil pilote, vanne d'arrosage, champs TIC propres au Linky
@@ -904,6 +909,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | Marque | Modèles | Mesures | Notes | Template | Testé |
 |--------|---------|---------|-------|:--------:|:-----:|
 | **NodOn** | SEM-4-1-00 | Tension, intensité, puissances, facteur de puissance | Module de mesure | 📋 | |
+| **Sonoff** | MINI-ZB1GP (MINI PM) | Puissance, tension, intensité, énergie du jour, énergie injectée, index total | Micromodule, puissance négative en injection (à partir de la v3.2) | 📋 | |
 
 ---
 
@@ -1279,6 +1285,8 @@ Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, 
 | `/api/energy/submeters` | GET | Sous-compteurs | `/getSubMeters` |
 | `/api/energy/chart?ieee=&time=` | GET | Données du graphe d'énergie (`time` : `hour`, `day`, `month`, `year`) | `/loadEnergyChart` |
 | `/api/energy/chart/export?ieee=&time=` | GET | Même chose en CSV | `/exportEnergyChart` |
+| `/api/energy/zlinkys` | GET | ZLinky appairés (Zigbee et LoRa) ; les routes `/api/energy/*` acceptent `?zl=<ieee>` pour en afficher un autre que celui de Config Énergie | v3.2 |
+| `/api/energy/history/clear` | POST | Effacer l'historique de consommation et la courbe 24 h (configuration conservée) | v3.2 |
 | **Puissance** (v2.26) | | | |
 | [`/api/power/peaks?days=90`](#apipowerpeaks) | GET | Puissance par jour : pic instantané, sur 1 min, plateau sur 10 min, temps passé près de la coupure | v2.26 |
 | [`/api/power/floor?days=30`](#apipowerfloor) | GET | Consommation plancher de la nuit | v2.26 |
@@ -1304,8 +1312,11 @@ Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, 
 | `/api/rules/add`, `/edit`, `/delete`, `/toggle` | POST | Gérer les règles | |
 | `/api/actiongroups/list`, `/devices` | GET | Groupes d'actions et appareils utilisables | |
 | `/api/actiongroups/run`, `/save`, `/delete` | POST | Lancer, enregistrer, supprimer un groupe | |
+| **MQTT** (v3.2) | | | |
+| `/api/config/mqtt/ca` | POST | Certificat PEM de l'autorité privée du broker (corps brut) | v3.2 |
+| `/api/config/mqtt/client` | POST | Certificat client et clé privée non chiffrée, en PEM (TLS mutuel) | v3.2 |
 | **Matter** (v3.0) | | | |
-| `/api/matter/status` | GET | Activation, appairage, codes d'appairage, nombre d'appareils publiés | v3.0 |
+| `/api/matter/status` | GET | Activation, appairage, codes d'appairage, nombre d'appareils publiés ; erreur de démarrage et occupation de la NVS (v3.2) | v3.0 |
 | `/api/matter/config` | POST | Activer ou désactiver Matter (`{"enabled":true}`, redémarrage nécessaire) | v3.0 |
 | `/api/matter/excluded` | GET | Appareils retirés de Matter | v3.0 |
 | `/api/matter/expose` | POST | Publier ou retirer un appareil (`{"ieee":"...","expose":true}`) | v3.0 |
@@ -1693,7 +1704,7 @@ curl -X POST 'https://<HOST>/api/delestage/restore'\
 Réponse `202 {"status":"pending"}` : la commande part au tour de boucle suivant, relire `/api/delestage` pour l'état. En accès direct, la requête POST doit porter un en-tête `Origin` ou `Referer` du même hôte (protection CSRF).
 
 #### api/energy/tariff
-Tarif en cours (bandeau de la page Énergie). Depuis la v2.26 : `index` (attribut de l'index en cours, 256…272), `price` (prix du kWh en cours, `null` s'il n'est pas saisi) et `nextChange` (prochain changement `HH:MM` : 06:00 / 22:00 en Tempo, heures de bascule observées en HC/HP et EJP, `null` en Base ou tant qu'une journée complète n'a pas été observée).
+Tarif en cours (bandeau de la page Énergie). Depuis la v2.26 : `index` (attribut de l'index en cours, 256…272), `price` (prix du kWh en cours, `null` s'il n'est pas saisi) et `nextChange` (prochain changement `HH:MM` : 06:00 / 22:00 en Tempo, heures de bascule observées en HC/HP et EJP, `null` en Base ou tant qu'une journée complète n'a pas été observée). À partir de la v3.2, `index` et `price` valent `null` tant que le tarif en cours n'est pas identifié (`"tariff": "---"`, juste après le démarrage).
 
 ##### Requête
 ```bash
@@ -1773,6 +1784,7 @@ Remplissez le formulaire :
   * Port MQTT
   * Nom d'utilisateur MQTT
   * Mot de passe MQTT
+  * Sécurité (à partir de la v3.2) : aucune, TLS avec les autorités publiques, ou TLS avec le certificat de votre autorité, et en option un certificat client (TLS mutuel)
 
 Puis choisissez **Home Assistant (auto-discovery)** et cliquez sur **Sauvegarder**  
 Attendez un moment et si tout est correct, l'icône de connexion deviendra verte.
@@ -1807,6 +1819,7 @@ Version 3 (ESP-IDF) :
 * [espressif / esp-matter](https://github.com/espressif/esp-matter) et [project-chip / connectedhomeip](https://github.com/project-chip/connectedhomeip)
 * [joltwallet / esp_littlefs](https://github.com/joltwallet/esp_littlefs)
 * [espressif / mdns](https://github.com/espressif/esp-protocols)
+* [espressif / led_strip](https://github.com/espressif/idf-extra-components)
 * [DaveGamble / cJSON](https://github.com/DaveGamble/cJSON)
 
 Version 2.x (Arduino) :
