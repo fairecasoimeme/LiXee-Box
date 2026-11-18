@@ -268,6 +268,7 @@ Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START
    esptool.exe --chip esp32s3 --port "COMxx" --baud 460800 write_flash -z --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin
    
    Si le flash échoue à 460800 bauds, relancez avec `--baud 115200`.
+   ```
 
 ## 🔗 Pont Matter (à partir de la v3.0)
 
