@@ -1012,9 +1012,14 @@
     $('#zb-tab').html(
       '<h4>Config Zigbee</h4>' +
       '<div align="right">' +
-        '<button type="button" class="btn btn-primary zb-cmd" data-cmd="Network">Réseau</button> ' +
-        '<button type="button" class="btn btn-primary zb-cmd" data-cmd="Reset">Redémarrer</button> ' +
-        '<button type="button" class="btn btn-danger zb-cmd" data-cmd="ErasePDM" data-confirm="Effacer la PDM ? Tout le réseau Zigbee sera perdu et les appareils devront être réappairés.">RAZ</button> ' +
+        // Libelles et bulles d'aide explicites (issue #86)
+        '<button type="button" class="btn btn-primary zb-cmd" data-cmd="Network" ' +
+          'title="Relit l\'état du réseau Zigbee auprès de la ZiGate (adresse, PAN, canal). Ne modifie rien.">Lire l\'état du réseau</button> ' +
+        '<button type="button" class="btn btn-primary zb-cmd" data-cmd="Reset" ' +
+          'title="Redémarre le module ZiGate, pas la box. Le réseau Zigbee et les appareils sont conservés.">Redémarrer la ZiGate</button> ' +
+        '<button type="button" class="btn btn-danger zb-cmd" data-cmd="ErasePDM" ' +
+          'title="Efface la mémoire réseau de la ZiGate (PDM) : le réseau Zigbee est perdu et tous les appareils devront être réappairés." ' +
+          'data-confirm="Effacer la PDM ? Tout le réseau Zigbee sera perdu et les appareils devront être réappairés.">Effacer le réseau Zigbee</button> ' +
       '</div>' +
       '<h5 class="card-title mb-4">Paramètres</h5>' +
       '<div class="card mx-auto shadow-sm"><div class="card-body"><div class="mb-3">' +
@@ -1045,7 +1050,9 @@
       // Complement du pont : nettoyage de la table (l'appairage a sa propre page)
       '<h5 class="card-title mb-4 mt-4">Réseau Zigbee</h5>' +
       '<div class="card mx-auto shadow-sm"><div class="card-body">' +
-        '<div><button class="btn btn-outline-secondary zb-cmd" data-cmd="CleanGhosts" data-confirm="Effacer de la table de la ZiGate les appareils inconnus de la passerelle ?">Nettoyer la table de la ZiGate</button> ' +
+        '<div><button class="btn btn-secondary zb-cmd" data-cmd="CleanGhosts" ' +
+          'title="Efface de la table de la ZiGate les appareils qu\'elle connaît encore mais que la box ne connaît plus (appareils supprimés, fantômes)." ' +
+          'data-confirm="Effacer de la table de la ZiGate les appareils inconnus de la passerelle ?">Nettoyer la table de la ZiGate</button> ' +
         '<span id="zb-ghost" class="small text-muted"></span></div>' +
       '</div></div>' +
       // Outil de lecture d'attribut a la demande
@@ -1084,7 +1091,9 @@
         if (c.channel && !$ch.data('prefilled') && !$ch.val() && document.activeElement !== $ch[0]) {
           $ch.val(c.channel).data('prefilled', true);
         }
-        $('#zb-ghost').text(c.ghostPending ? 'en cours...' : (c.ghostResult >= 0 ? c.ghostResult + ' entr\u00e9e(s) effac\u00e9e(s)' : ''));
+        $('#zb-ghost').text(c.ghostPending ? 'en cours...' :
+          c.ghostResult === -2 ? 'pas de r\u00e9ponse de la ZiGate' :
+          (c.ghostResult >= 0 ? c.ghostResult + ' entr\u00e9e(s) effac\u00e9e(s)' : ''));
       }).fail(function() { $('#zb-coord').html('<div class="text-danger">Erreur de chargement.</div>'); });
     }
 

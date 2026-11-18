@@ -739,6 +739,7 @@ esp_err_t zigate_clean_ghosts(void)
 {
     // La reponse 0x8602 n'est traitee que si une demande est en cours
     g_zigate_coord.ghost_pending = true;
+    g_zigate_coord.ghost_since_s = zigate_uptime_s();
     esp_err_t err = zigate_send_command(ZIGATE_CMD_NWK_RECOVERY_EXTRACT, NULL, 0);
     if (err != ESP_OK) g_zigate_coord.ghost_pending = false;
     return err;
