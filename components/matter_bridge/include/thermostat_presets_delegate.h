@@ -130,42 +130,48 @@ public:
         return chip::System::Clock::Milliseconds16(5000);   // edition des presets perso (issue #80)
     }
 
-    uint8_t GetNumberOfPresets() override { return (uint8_t)(kPresetCount + m_custom_count); }
+    // Capacite MAXIMALE supportee (voir thermostat-delegate.h : "The max number of
+    // presets supported"), PAS le nombre de presets actuellement definis : deuxieme
+    // bug de la meme famille que GetPresetTypeAtIndex() ci-dessous. L'ancien calcul
+    // (kPresetCount + m_custom_count) renvoyait le compte courant -- 2 tant qu'aucun
+    // preset perso n'existe -- ce qui faisait croire a un controleur (confirme avec
+    // Home Assistant) que la capacite max etait deja atteinte, bloquant le tout
+    // premier ajout avant meme d'essayer.
+    uint8_t GetNumberOfPresets() override { return (uint8_t)(kPresetCount + MATTER_PRESET_MAX_CUSTOM); }
 
     CHIP_ERROR GetPresetTypeAtIndex(size_t index,
         chip::app::Clusters::Thermostat::Structs::PresetTypeStruct::Type &presetType) override
     {
         using chip::app::Clusters::Thermostat::PresetScenarioEnum;
         using chip::app::Clusters::Thermostat::PresetTypeFeaturesBitmap;
-        if (index < kPresetCount) {
-            presetType.presetScenario = (index == 1) ? PresetScenarioEnum::kVacation : PresetScenarioEnum::kOccupied;
-            presetType.numberOfPresets = 1;
-            // SupportsNames : sans ca, certains controleurs (Home Assistant) n'exposent
-            // pas le preset faute de nom a afficher.
-            presetType.presetTypeFeatures = chip::BitMask<PresetTypeFeaturesBitmap>(PresetTypeFeaturesBitmap::kSupportsNames);
-            return CHIP_NO_ERROR;
-        }
-        // Une entree par scenario distinct utilise par au moins un preset personnalise
-        // (issue #80) : seule facon d'autoriser plusieurs presets perso sur un meme
-        // scenario (NumberOfPresets > 1), voir thermostat-server-presets.cpp,
-        // MaximumPresetScenarioCount().
-        size_t want = index - kPresetCount;
-        PresetScenarioEnum seen[MATTER_PRESET_MAX_CUSTOM];
-        size_t seen_n = 0;
-        for (uint8_t i = 0; i < m_custom_count; i++) {
-            PresetScenarioEnum sc = (PresetScenarioEnum)m_custom[i].scenario;
-            bool dup = false;
-            for (size_t j = 0; j < seen_n; j++) if (seen[j] == sc) { dup = true; break; }
-            if (dup) continue;
-            if (seen_n == want) {
-                presetType.presetScenario = sc;
-                presetType.numberOfPresets = MATTER_PRESET_MAX_CUSTOM;
-                presetType.presetTypeFeatures = chip::BitMask<PresetTypeFeaturesBitmap>(PresetTypeFeaturesBitmap::kSupportsNames);
-                return CHIP_NO_ERROR;
-            }
-            seen[seen_n++] = sc;
-        }
-        return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
+        // UNE SEULE entree par scenario (jamais deux pour le meme), quota perso inclus
+        // pour Occupied/Vacation : thermostat-server-presets.cpp (MaximumPresetScenarioCount)
+        // ne regarde que la PREMIERE entree dont le scenario correspond, pas la somme de
+        // toutes -- confirme sur materiel reel (issue #80 bis) : avec deux entrees Occupied
+        // separees (built-in quota=1, perso quota=3), demander un preset perso de scenario
+        // Occupied trouvait l'entree built-in en premier (quota=1, deja consomme par
+        // Confort) et echouait en ResourceExhausted, meme avec de la place reelle.
+        struct Entry { PresetScenarioEnum scenario; uint8_t count; };
+        static constexpr Entry kTypes[] = {
+            // Occupied/Vacation : le preset fixe (Confort/Hors-gel) + jusqu'a
+            // MATTER_PRESET_MAX_CUSTOM presets perso du meme scenario.
+            { PresetScenarioEnum::kOccupied,     1 + MATTER_PRESET_MAX_CUSTOM },
+            { PresetScenarioEnum::kVacation,     1 + MATTER_PRESET_MAX_CUSTOM },
+            // Les autres scenarios n'ont pas de preset fixe : juste la capacite perso.
+            { PresetScenarioEnum::kUnoccupied,   MATTER_PRESET_MAX_CUSTOM },
+            { PresetScenarioEnum::kSleep,        MATTER_PRESET_MAX_CUSTOM },
+            { PresetScenarioEnum::kWake,         MATTER_PRESET_MAX_CUSTOM },
+            { PresetScenarioEnum::kGoingToSleep, MATTER_PRESET_MAX_CUSTOM },
+            { PresetScenarioEnum::kUserDefined,  MATTER_PRESET_MAX_CUSTOM },
+        };
+        constexpr size_t kTypeCount = sizeof(kTypes) / sizeof(kTypes[0]);
+        if (index >= kTypeCount) return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
+        presetType.presetScenario = kTypes[index].scenario;
+        presetType.numberOfPresets = kTypes[index].count;
+        // SupportsNames : sans ca, certains controleurs (Home Assistant) n'exposent
+        // pas le preset faute de nom a afficher.
+        presetType.presetTypeFeatures = chip::BitMask<PresetTypeFeaturesBitmap>(PresetTypeFeaturesBitmap::kSupportsNames);
+        return CHIP_NO_ERROR;
     }
 
     CHIP_ERROR GetPresetAtIndex(size_t index,
