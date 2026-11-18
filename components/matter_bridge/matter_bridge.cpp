@@ -280,13 +280,18 @@ static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *labe
     if (!bdbi) return;
 
     // UniqueID : identifiant stable de l'appareil ponte (son IEEE Zigbee).
-    // esp-matter le cree vide.
+    // esp-matter le cree vide. Ecrit sans callback (issue #71) : le callback
+    // PRE_UPDATE renverrait la valeur vers matter_device_manager, qui ne
+    // connait pas encore cet endpoint (mapping enregistre apres) et repond
+    // ESP_ERR_NOT_FOUND ; esp-matter abandonnait alors l'ecriture et
+    // l'UniqueID restait vide.
     char uid[17];
     snprintf(uid, sizeof(uid), "%016llX", (unsigned long long)ieee);
     attribute_t *uid_attr = attribute::get(bdbi, BridgedDeviceBasicInformation::Attributes::UniqueID::Id);
     if (uid_attr) {
         esp_matter_attr_val_t v = esp_matter_char_str(uid, (uint16_t)strlen(uid));
-        attribute::set_val(uid_attr, &v);
+        esp_err_t err = attribute::set_val(uid_attr, &v, false);
+        if (err != ESP_OK) ESP_LOGW(TAG, "UniqueID %s : %s", uid, esp_err_to_name(err));
     }
 
     // NodeLabel : nom affiche par le controleur. Attribut persistant : un nom
