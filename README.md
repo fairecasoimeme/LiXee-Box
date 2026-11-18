@@ -496,6 +496,24 @@ Les zones de présence sont affichées en transparence sur le graphique de conso
 ##### Compatibilité
 Tout device Zigbee reportant le cluster **Occupancy (0x0406)** avec l'attribut **0x0000** est compatible.
 
+#### Température sur le graphe d'usage (à partir de la v3.3)
+
+Le graphe « Usage d'électricité » peut afficher la température de une à quatre sondes Zigbee, une courbe par sonde sur un axe à droite. Utile pour relier la consommation de chauffage ou de climatisation à la température intérieure ou extérieure.
+
+* **Vue heure** : température moyenne de chaque heure des dernières 24 h (l'heure en cours est une moyenne partielle).
+* **Vue jour** : moyenne de chaque jour des 30 derniers jours ; l'infobulle donne aussi le minimum et le maximum des moyennes horaires.
+
+La box relève chaque minute la dernière température connue de chaque sonde et en fait la moyenne sur l'heure. Une sonde silencieuse depuis plus de 3 h n'est plus comptée. L'historique est conservé dans `hst/temperature.json` (inclus dans la sauvegarde).
+
+##### Configuration
+
+1. Accédez à la page **Config** --> **Énergie**
+2. Dans l'onglet **Température**, cochez les sondes à afficher (4 au plus)
+3. Laissez **Afficher sur le graphique** coché et enregistrez
+
+##### Compatibilité
+Tout device Zigbee reportant le cluster **Temperature Measurement (0x0402)**, attribut **0x0000**. Les sondes LoRa ne sont pas encore prises en charge.
+
 ### Production d'énergie et Injection
 
 #### Mode Producteur

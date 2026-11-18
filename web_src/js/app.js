@@ -646,13 +646,20 @@
 
     if (isHour && !energyZl) energyCharts.power = createPowerChart();
     loadZlinkyChoice(time, gen);
-    energyCharts.energy = createEnergyChart('energy-chart', { fees: true, palette: ENERGY_COLORS, presence: true });
+    energyCharts.energy = createEnergyChart('energy-chart', { fees: true, palette: ENERGY_COLORS, presence: true, temperature: true });
 
     // Barres de presence : vue heure (rafraichie chaque minute) et vue jour (5 min)
     presenceState = { period: '', hour: [], day: {} };
     if (time === 'hour' || time === 'day') {
       loadPresence(time, gen);
       pageInterval(function() { loadPresence(time, gen); }, time === 'hour' ? 60000 : 300000);
+    }
+
+    // Courbes de temperature : memes vues et meme rafraichissement que la presence
+    tempState = { period: '', sensors: [] };
+    if (time === 'hour' || time === 'day') {
+      loadTemperature(time, gen);
+      pageInterval(function() { loadTemperature(time, gen); }, time === 'hour' ? 60000 : 300000);
     }
 
     // Bascule Wh / euros de la repartition
@@ -1124,6 +1131,7 @@
   }
   function tooltipKeep(item) {
     var meta = item.dataset.lixee || {};
+    if (meta.temp) return item.parsed.y != null;          // 0 °C est une vraie valeur
     return !meta.ref && item.parsed.y != null && Number(item.parsed.y) !== 0;
   }
 
@@ -1276,7 +1284,11 @@
         scales: {
           x: { stacked: true, ticks: { maxRotation: 70, minRotation: 70, autoSkip: true } },
           y: { stacked: true, beginAtZero: true, grace: '10%',
-               ticks: { callback: function(v) { return fmtQty(v) + ' ' + info.unit; } } }
+               ticks: { callback: function(v) { return fmtQty(v) + ' ' + info.unit; } } },
+          // Temperatures (courbes) : axe de droite, affiche seulement s'il sert ;
+          // beginAtZero explicite, le type 'bar' le force a true sur les axes de valeurs
+          yT: { display: 'auto', position: 'right', beginAtZero: false, grace: '10%', grid: { drawOnChartArea: false },
+                ticks: { callback: function(v) { return fmtNum(v, Math.round(v) === v ? 0 : 1) + ' °C'; } } }
         },
         plugins: {
           legend: { display: true, position: 'top' },
@@ -1292,7 +1304,47 @@
       plugins: opts.presence ? [PRESENCE_OVERLAY] : []
     });
     chart.lixeeInfo = info;
+    chart.lixeeTemp = !!opts.temperature;
     return chart;
+  }
+
+  // Courbes de temperature (Config Energie > Temperature) : une par sonde,
+  // moyenne horaire (vue heure) ou journaliere (vue jour)
+  var tempState = { period: '', sensors: [] };
+  var TEMP_COLORS = ['#e67e22', '#c0392b', '#8e44ad', '#16a085'];
+  function tempDatasets(labels) {
+    var p = tempState.period, out = [];
+    if (p !== 'hour' && p !== 'day') return out;
+    tempState.sensors.forEach(function(s, k) {
+      if (!s) return;
+      var stats = [];
+      var data = arr(labels).map(function(l, i) {
+        var e = null, v = null;
+        if (p === 'hour') v = arr(s.hour)[i];
+        else { e = (s.day || {})[String(l)] || null; v = e ? e.avg : null; }
+        stats.push(e);
+        var n = Number(v);
+        return (v == null || !isFinite(n)) ? null : n;
+      });
+      if (!data.some(function(v) { return v != null; })) return;     // aucune mesure : omise
+      var c = TEMP_COLORS[k % TEMP_COLORS.length], name = String(s.name || s.ieee || ('Sonde ' + (k + 1)));
+      out.push({ type: 'line', label: name + ' (°C)', data: data, yAxisID: 'yT', stack: 'temp_' + k,
+                 borderColor: c, backgroundColor: c, borderWidth: 2, pointRadius: 2, pointHoverRadius: 4,
+                 fill: false, tension: 0.3, order: -1, lixee: { temp: true, name: name, stats: stats } });
+    });
+    return out;
+  }
+  // Recharge les courbes, sans attendre le cycle suivant du graphe
+  function loadTemperature(time, gen) {
+    return energyGet('/api/energy/temperature?time=' + time, gen, function(d) {
+      d = d || {};
+      tempState = { period: d.enabled ? time : '', sensors: arr(d.sensors) };
+      var ch = energyCharts.energy;
+      if (!ch || !ch.lixeeTemp) return;
+      var labels = ch.data.labels || [];
+      var sets = (ch.data.datasets || []).filter(function(ds) { return !(ds.lixee && ds.lixee.temp); });
+      setChartData(ch, labels, sets.concat(tempDatasets(labels)));
+    });
   }
 
   // Barres de presence (getPresenceJavaScript de la LiXee-Box) : sous les
@@ -1389,6 +1441,7 @@
     if (budget > 0 && labels.length) {
       datasets.push(refLine('Budget', budget, labels.length, '#8e44ad', [6, 4]));
     }
+    if (chart.lixeeTemp) datasets = datasets.concat(tempDatasets(labels));
     setChartData(chart, labels, datasets);
   }
 
@@ -1400,6 +1453,12 @@
 
   function energyTooltipLabel(chart, ctx) {
     var info = chart.lixeeInfo, meta = ctx.dataset.lixee || {};
+    if (meta.temp) {
+      var st = meta.stats && meta.stats[ctx.dataIndex];
+      var tl = meta.name + ' : ' + fmtNum(ctx.parsed.y, 1) + ' °C';
+      if (st && st.min != null && st.max != null) tl += ' (min ' + fmtNum(st.min, 1) + ' / max ' + fmtNum(st.max, 1) + ')';
+      return tl;
+    }
     var costs = info.costs || {};
     var v = Math.abs(num(ctx.parsed.y));
     var line = ctx.dataset.label + ' : ' + fmtQty(v) + ' ' + info.unit;
@@ -1425,7 +1484,7 @@
     var prodQty = 0, consoQty = 0, prodEur = 0, consoEnergy = 0, consoTax = 0;
     items.forEach(function(it) {
       var meta = it.dataset.lixee || {};
-      if (meta.ref) return;
+      if (meta.ref || meta.temp) return;
       var v = num(it.parsed.y);
       if (!v) return;
       var a = Math.abs(v), q = a * info.qtyScale;
@@ -1440,6 +1499,8 @@
     });
     // Abonnement et CTA : une seule fois pour le creneau
     var abo = 0;
+    // Temperature seule sous le curseur : pas de pied (le separateur resterait seul)
+    if (!prodQty && !consoQty) return '';
     if (consoQty > 0 && info.fees) {
       abo = num(costs.abo) * f;
       consoTax += num(costs.cta) * f;
@@ -2597,7 +2658,7 @@
   }
 
   // ============================================================================
-  // PAGE: Config Energie (6 onglets: Linky, Production, Gaz, Eau, Sous-compteurs, Presence)
+  // PAGE: Config Energie (7 onglets: Linky, Production, Gaz, Eau, Sous-compteurs, Presence, Temperature)
   // ============================================================================
   function pageConfigEnergy() {
     setContent(
@@ -2610,6 +2671,7 @@
           '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#water" type="button">Eau</button></li>' +
           '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#submeters" type="button">Sous-compteurs</button></li>' +
           '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#presence" type="button">Pr&eacute;sence</button></li>' +
+          '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#temperature" type="button">Temp&eacute;rature</button></li>' +
         '</ul>' +
         '<div class="tab-content">' +
 
@@ -2742,6 +2804,19 @@
             '</div></div>' +
           '</div>' +
 
+          // === Onglet Temperature ===
+          '<div class="tab-pane fade" id="temperature">' +
+            '<div class="card mx-auto shadow-sm"><div class="card-body">' +
+              '<form id="form-temperature">' +
+                '<h5>Temp&eacute;rature</h5>' +
+                '<div class="form-text mb-2">La temp&eacute;rature moyenne de chaque sonde s&#39;affiche en courbe sur le graphe &laquo; Usage d&#39;&eacute;lectricit&eacute; &raquo; de la page &Eacute;nergie, une courbe par sonde (vues heure et jour). Quatre sondes au plus.</div>' +
+                '<div class="mb-3" id="temp-sensors"></div>' +
+                '<div class="form-check"><input type="checkbox" class="form-check-input" id="cfg-tempGraph"><label class="form-check-label" for="cfg-tempGraph">Afficher sur le graphique</label></div>' +
+                '<button type="submit" class="btn btn-primary mt-3">Enregistrer</button>' +
+              '</form>' +
+            '</div></div>' +
+          '</div>' +
+
         '</div>' +
       '</div>'
     );
@@ -2768,6 +2843,16 @@
       plugs.forEach(function(d) {
         var id = 'dl-' + d.ieee;
         $('#dl-plugs').append('<div class="form-check"><input type="checkbox" class="form-check-input dl-plug" id="' + escHtml(id) +
+          '" value="' + escHtml(d.ieee) + '"><label class="form-check-label" for="' + escHtml(id) + '">' +
+          escHtml((d.alias || d.model || d.ieee) + ' (' + d.ieee + ')') + '</label></div>');
+      });
+
+      // Temperature : seuls les appareils dotes du cluster Temperature Measurement (0x0402)
+      var temps = zb.filter(function(d) { return d && d.temperature; });
+      $('#temp-sensors').html(temps.length ? '' : '<span class="text-muted">Aucune sonde de temp&eacute;rature d&eacute;tect&eacute;e.</span>');
+      temps.forEach(function(d) {
+        var id = 'ts-' + d.ieee;
+        $('#temp-sensors').append('<div class="form-check"><input type="checkbox" class="form-check-input temp-sensor" id="' + escHtml(id) +
           '" value="' + escHtml(d.ieee) + '"><label class="form-check-label" for="' + escHtml(id) + '">' +
           escHtml((d.alias || d.model || d.ieee) + ' (' + d.ieee + ')') + '</label></div>');
       });
@@ -2810,6 +2895,10 @@
         $('#cfg-dlRestorePct').val(cfg.delestageRestorePct != null ? cfg.delestageRestorePct : 80);
         $('#cfg-dlAnticip').val(cfg.delestageAnticipPct != null ? cfg.delestageAnticipPct : 0);
         $('#cfg-presenceGraph').prop('checked', !!cfg.enablePresenceGraph);
+        var ts = ',' + String(cfg.Temperature || '').toUpperCase().replace(/\s/g, '') + ',';
+        $('.temp-sensor').each(function() { this.checked = ts.indexOf(',' + String(this.value).toUpperCase() + ',') >= 0; });
+        limitTempSensors();
+        $('#cfg-tempGraph').prop('checked', cfg.enableTemperatureGraph !== false);
       });
     });
 
@@ -2880,6 +2969,19 @@
         Water: $('#cfg-water').val() || '', coeffWater: parseFloat(dec('#cfg-coeffWater')) || 1,
         unitWater: $.trim($('#cfg-unitWater').val()) || 'L', tarifWater: dec('#cfg-tarifWater')
       }).then(saved('Configuration Eau enregistr&eacute;e'), failed);
+    });
+    // Quatre sondes au plus : les autres cases sont grisees une fois la limite atteinte
+    function limitTempSensors() {
+      var full = $('.temp-sensor:checked').length >= 4;
+      $('.temp-sensor').each(function() { this.disabled = full && !this.checked; });
+    }
+    $(document).off('change', '.temp-sensor').on('change', '.temp-sensor', limitTempSensors);
+    $(document).off('submit','#form-temperature').on('submit','#form-temperature', function(e) {
+      e.preventDefault();
+      postJSON('/api/config/general', {
+        Temperature: $('.temp-sensor:checked').map(function() { return this.value; }).get().slice(0, 4).join(','),
+        enableTemperatureGraph: $('#cfg-tempGraph').is(':checked')
+      }).then(saved('Configuration Temp&eacute;rature enregistr&eacute;e'), failed);
     });
     $(document).off('submit','#form-presence').on('submit','#form-presence', function(e) {
       e.preventDefault();

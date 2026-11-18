@@ -9,6 +9,7 @@
 #include "energy_service.h"
 #include "energy_history.h"
 #include "presence.h"
+#include "temp_history.h"
 #include "delestage.h"
 #include "config_manager.h"
 #include "zigate_devices.h"
@@ -414,6 +415,14 @@ static esp_err_t presence_handler(httpd_req_t *req)
     return send_json_owned(req, presence_chart_json(t));
 }
 
+// GET /api/energy/temperature?time=hour|day : courbes de temperature du graphe d'usage
+static esp_err_t temperature_handler(httpd_req_t *req)
+{
+    char t[8];
+    period_param(req, t, sizeof(t));
+    return send_json_owned(req, temp_history_chart_json(t));
+}
+
 // GET /api/delestage : etat du delestage ; POST /api/delestage/restore : rallumage manuel
 static esp_err_t delestage_get_handler(httpd_req_t *req)
 {
@@ -448,6 +457,7 @@ void web_energy_register(httpd_handle_t server)
         { "/api/energy/zlinkys",            HTTP_GET,  zlinkys_handler },
         { "/api/energy/history/clear",      HTTP_POST, history_clear_handler },
         { "/api/energy/presence",           HTTP_GET,  presence_handler },
+        { "/api/energy/temperature",        HTTP_GET,  temperature_handler },
         { "/api/delestage",                 HTTP_GET,  delestage_get_handler },
         { "/api/delestage/restore",         HTTP_POST, delestage_restore_handler },
         { "/api/energy/submeters",          HTTP_GET,  submeters_get_handler },

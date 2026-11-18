@@ -230,6 +230,10 @@ typedef struct {
     char presence[20];
     bool enable_presence_graph;
 
+    // Temperature du graphe d'usage : sondes 0x0402 (4 au plus)
+    char temperature[18 * 4];          // IEEE des sondes, separes par des virgules
+    bool enable_temperature_graph;
+
     // LED de la ZiGate (Set Led) : -1 jamais reglee, 0 eteinte, 1 allumee.
     // Renvoyee a chaque redemarrage de la ZiGate, qui la rallume sinon.
     int  zigate_led;

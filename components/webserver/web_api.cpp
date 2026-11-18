@@ -877,6 +877,8 @@ static esp_err_t api_config_general_get_handler(httpd_req_t *req)
     cJSON_AddStringToObject(root, "tarifWater", g->tarif_water);
     cJSON_AddStringToObject(root, "Presence",   g->presence);
     cJSON_AddBoolToObject(root,   "enablePresenceGraph", g->enable_presence_graph);
+    cJSON_AddStringToObject(root, "Temperature", g->temperature);
+    cJSON_AddBoolToObject(root,   "enableTemperatureGraph", g->enable_temperature_graph);
     cJSON_AddStringToObject(root, "delestage",           g->delestage);
     cJSON_AddNumberToObject(root, "delestageRestoreMin", g->delestage_restore_min);
     cJSON_AddNumberToObject(root, "delestageRestorePct", g->delestage_restore_pct);
@@ -932,6 +934,7 @@ static esp_err_t api_config_general_post_handler(httpd_req_t *req)
     json_take_str(doc, "Gaz",      g->gaz,      sizeof(g->gaz));
     json_take_str(doc, "Water",    g->water,    sizeof(g->water));
     json_take_str(doc, "Presence", g->presence, sizeof(g->presence));
+    json_take_str(doc, "Temperature", g->temperature, sizeof(g->temperature));
 
     // Delestage (bornes de la LiXee-Box)
     json_take_str(doc, "delestage", g->delestage, sizeof(g->delestage));
@@ -949,6 +952,8 @@ static esp_err_t api_config_general_post_handler(httpd_req_t *req)
     }
     if ((item = cJSON_GetObjectItem(doc, "enablePresenceGraph")))
         g->enable_presence_graph = cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint);
+    if ((item = cJSON_GetObjectItem(doc, "enableTemperatureGraph")))
+        g->enable_temperature_graph = cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint);
 
     static const char *const tarif_keys[10] = {
         "tarifIdx1","tarifIdx2","tarifIdx3","tarifIdx4","tarifIdx5",

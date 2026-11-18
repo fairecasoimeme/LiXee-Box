@@ -6,6 +6,7 @@
 
 #include "thermostat.h"
 #include "presence.h"
+#include "temp_history.h"
 #include "zigate_devices.h"
 #include "zigate_driver.h"
 #include "zigate_actions.h"
@@ -1273,6 +1274,7 @@ static void regulation_task(void *arg)
         matter_sync_all();
         unlock();
         presence_tick();                         // remise a zero horaire, enregistrement differe
+        temp_history_tick();                     // releve minute des sondes du graphe d'usage
         next_tick = now_ms() + TICK_MS;
     }
 }
@@ -1287,6 +1289,7 @@ esp_err_t thermostat_init(void)
     if (!s_z || !s_lock || !s_q) return ESP_ERR_NO_MEM;
     load_config();
     presence_init();
+    temp_history_init();
     // Pile en RAM interne : la tache envoie des trames ZiGate, publie vers
     // Matter et enregistre la configuration apres une commande Matter
     if (xTaskCreate(regulation_task, "thermo", 6144, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;

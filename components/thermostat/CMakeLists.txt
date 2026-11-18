@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "thermostat.cpp"
         "presence.cpp"
+        "temp_history.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES

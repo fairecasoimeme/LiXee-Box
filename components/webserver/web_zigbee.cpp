@@ -402,6 +402,16 @@ static bool has_occupancy(const zigate_device_t *d)
     return false;
 }
 
+/** Sonde de temperature (0x0402) : declaree, deja remontee ou decrite par le template. */
+static bool has_temperature(const zigate_device_t *d)
+{
+    for (int i = 0; i < d->in_cluster_count && i < 32; i++) if (d->in_clusters[i] == 0x0402) return true;
+    if (device_data_get_attr(d->ieee_addr, 0x0402, 0x0000)) return true;
+    const devdata_template_t *t = device_data_get_template(d->ieee_addr);
+    for (int i = 0; t && i < t->state_count; i++) if (t->states[i].cluster == 0x0402) return true;
+    return false;
+}
+
 /** Prise / relais pilotable en marche-arret (delestage) : prise declaree ou cluster 0x0006. */
 static bool has_onoff(const zigate_device_t *d)
 {
@@ -440,6 +450,7 @@ static void write_device_header(jw_t *w, const zigate_device_t *d)
     jw_kint(w, "lastSeen", d->last_seen);
     jw_kint(w, "ago", d->last_rx_s ? (long long)(zigate_uptime_s() - d->last_rx_s) : -1);
     jw_kbool(w, "occupancy", has_occupancy(d));
+    jw_kbool(w, "temperature", has_temperature(d));
     jw_kbool(w, "onoff", has_onoff(d));
     jw_kbool(w, "ir", has_ir(d));
 }
