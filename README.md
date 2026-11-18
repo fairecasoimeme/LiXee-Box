@@ -72,6 +72,7 @@ L'appareil peut être configuré via un site web local
 ### 🔧 Gestion des Appareils Zigbee
 - Création et gestion d'objets Zigbee
 - Modèles personnalisables pour différents types d'appareils
+- **Templates personnels** (à partir de la v3.3) : un modèle modifié avec **Personnaliser** est conservé à part et n'est plus écrasé par les mises à jour (voir [Templates personnels](#templates-personnels-à-partir-de-la-v33))
 - Gestion des états et actions
 - **Groupes d'actions** : un bouton pour déclencher plusieurs actions sur des appareils différents (à partir de la v2.23)
 - **Volets roulants** : position 0–100 % par curseur, avec retour d'état en temps réel (à partir de la v2.23)
@@ -218,6 +219,18 @@ Cliquer sur "A propos" puis "Mise à jour"
 ![Mise à Jour du Firmware](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Update.png)
 
 L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour avec les dernières fonctionnalités.
+
+#### Templates personnels (à partir de la v3.3)
+
+Une mise à jour remplace les **templates livrés** (dossier `tp/`) : une modification faite directement dans l'un d'eux est perdue. Les templates livrés sont donc en **lecture seule** dans l'interface. Pour modifier un modèle, ouvrez son template dans **Outils → Templates** (mode développeur), choisissez le modèle et cliquez sur **Personnaliser** : il est copié dans les **templates personnels** (dossier `tpu/`), où vous le modifiez. Les mises à jour ne touchent jamais ce dossier.
+
+- Un modèle personnel remplace celui du fichier livré de **même nom**, modèle par modèle : les autres modèles du fichier continuent de profiter des corrections des nouvelles versions
+- Les nouveaux templates (création, import) vont directement dans les templates personnels
+- Supprimer un template personnel fait revenir les appareils au template livré
+- Les templates personnels sont inclus dans la sauvegarde
+
+⚠️ La mise à jour **vers la v3.3** est encore faite par la version installée : sauvegardez une dernière fois vos templates modifiés avant, puis recopiez vos modèles dans les templates personnels.
+
 
 ⚠️ **Si la mise à jour ne fonctionne pas, veuillez passer avec la méthode suivante (avec un ordinateur)**
 

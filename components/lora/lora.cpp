@@ -1178,15 +1178,13 @@ static void ensure_device(emitter_t *e)
     if (e->version[0]) set_basic_string(ieee, 0x4000, e->version);
 
     if (e->device_id[0]) {
-        char file[16], path[48];
+        char file[16];
         snprintf(file, sizeof(file), "%s.json", e->device_id);
-        snprintf(path, sizeof(path), DEVDATA_TP_DIR "/%s", file);
-        struct stat st;
-        if (stat(path, &st) != 0) {
+        if (!device_data_template_exists(file)) {      // tpu/ ou tp/
             ESP_LOGW(TAG, "Template %s introuvable : la fiche de %016llX restera vide",
-                     path, (unsigned long long)ieee);
+                     file, (unsigned long long)ieee);
         } else if (device_data_load_template(ieee, file, e->model) != ESP_OK) {
-            ESP_LOGW(TAG, "Template %s : modele '%s' non charge", path, e->model);
+            ESP_LOGW(TAG, "Template %s : modele '%s' non charge", file, e->model);
         }
     } else {
         ESP_LOGI(TAG, "%016llX : identite pas encore lue, template applique apres le POLL",

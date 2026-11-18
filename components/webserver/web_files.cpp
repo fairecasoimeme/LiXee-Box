@@ -42,7 +42,7 @@ static const char *TAG = "WEB_FILES";
 #define PASS_MASK        "********"
 
 static const char *const ALLOWED_DIRS[] = {
-    "config", "db", "hst", "tp", "debug", "bk", "web/js",
+    "config", "db", "hst", "tp", "tpu", "debug", "bk", "web/js",
 };
 
 // ----------------------------------------------------------------------------
@@ -429,7 +429,7 @@ static esp_err_t files_write_handler(httpd_req_t *req)
             return httpd_resp_sendstr(req, "{\"status\":\"ok\",\"rebootRequired\":false,\"reloaded\":1}");
         }
     }
-    if (strcmp(dir, "tp") == 0) {
+    if (strcmp(dir, "tp") == 0 || strcmp(dir, "tpu") == 0) {
         // Template modifie : recharge a chaud des appareils (comme la LiXee-Box)
         int n = reload_templates();
         char msg[96];
@@ -458,6 +458,12 @@ static esp_err_t files_delete_handler(httpd_req_t *req)
     if (unlink(path) != 0) return send_json_error(req, "404 Not Found", "Fichier introuvable");
     ESP_LOGI(TAG, "Fichier supprime : %s", path);
     httpd_resp_set_type(req, "application/json");
+    // Template supprime : les appareils reprennent l'autre dossier (tpu/ -> tp/)
+    if ((strcmp(dir, "tp") == 0 || strcmp(dir, "tpu") == 0) && ends_with(name, ".json")) {
+        char msg[64];
+        snprintf(msg, sizeof(msg), "{\"status\":\"ok\",\"reloaded\":%d}", reload_templates());
+        return httpd_resp_sendstr(req, msg);
+    }
     return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
 }
 

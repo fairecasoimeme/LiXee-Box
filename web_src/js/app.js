@@ -3297,6 +3297,7 @@
     { dir: 'db',     label: 'Base des appareils' },
     { dir: 'hst',    label: 'Historiques' },
     { dir: 'tp',     label: 'Templates' },
+    { dir: 'tpu',    label: 'Templates personnels' },
     { dir: 'debug',  label: 'Debug' },
     { dir: 'bk',     label: 'Sauvegardes' },
     { dir: 'web/js', label: 'JavaScript' }
@@ -3307,7 +3308,14 @@
   // barre d'outils, editeur sombre, validation JSON et previsualisation.
   // Une variante par dossier, comme les pages de la Box.
   var FILE_EDITORS = {
-    tp:     { title: 'Templates', item: 'template', search: true, create: true, importFile: true, exportFile: true,
+    // Templates livres (tp/) : remplaces a chaque mise a jour, donc en lecture
+    // seule ici (locked : JSON valide et previsualise, mais pas d'edition).
+    // Un modele se modifie apres copie dans tpu/ (bouton Personnaliser), qui
+    // l'emporte modele par modele (issue #84). L'API /api/files/write accepte
+    // toujours tp/ (essais de templates).
+    tp:     { title: 'Templates', item: 'template', search: true, exportFile: true,
+              preview: 'template', locked: true, customize: true, stock: true },
+    tpu:    { title: 'Templates personnels', item: 'template', search: true, create: true, importFile: true, exportFile: true,
               preview: 'template', format: true, save: true, del: true },
     db:     { title: 'Appareils', search: true, importFile: true, exportFile: true, preview: 'device', format: true, save: true, del: true },
     hst:    { title: 'Historique', search: true, importFile: true, exportFile: true, preview: 'history', format: true, save: true, del: true },
@@ -3412,6 +3420,17 @@
             '</div>' +
             (cfg.search ? '<div class="fe-search">' + FE_ICONS.search + '<input type="text" id="fe-search" placeholder="Rechercher..."></div>' : '') +
           '</div>' +
+          (dir === 'tp' || dir === 'tpu' ?
+            '<div class="px-3 pt-2 small">' +
+              '<div class="btn-group btn-group-sm w-100 mb-2">' +
+                '<a class="btn btn-' + (dir === 'tp' ? '' : 'outline-') + 'secondary" href="#files?dir=tp">Livrés</a>' +
+                '<a class="btn btn-' + (dir === 'tpu' ? '' : 'outline-') + 'secondary" href="#files?dir=tpu">Personnels</a>' +
+              '</div>' +
+              '<div class="text-muted">' + (dir === 'tp'
+                ? 'Lecture seule : remplacés à chaque mise à jour. Pour modifier un modèle, ouvrez son fichier et cliquez sur « Personnaliser » : il est copié dans vos templates personnels.'
+                : 'Jamais modifiés par une mise à jour. Un modèle présent ici remplace celui du fichier livré de même nom.') +
+              '</div>' +
+            '</div>' : '') +
           '<div class="fe-list" id="fe-list"></div>' +
           (cfg.importFile ? '<div class="p-2 border-top"><button class="btn btn-outline-secondary btn-sm w-100" id="fe-import">' + FE_ICONS.upload + 'Importer</button></div>' : '') +
           (cfg.delAll ? '<div class="p-2 border-top"><button class="btn btn-danger btn-sm w-100" id="fe-delall">Tout supprimer</button></div>' : '') +
@@ -3423,14 +3442,16 @@
               (cfg.preview ? '<button class="btn btn-outline-secondary btn-sm" id="fe-btn-preview" title="Prévisualisation">' + FE_ICONS.eye + '</button> ' : '') +
               (cfg.format ? '<button class="btn btn-outline-secondary btn-sm" id="fe-btn-format" title="Formater JSON">' + FE_ICONS.code + '</button> ' : '') +
               (cfg.exportFile ? '<button class="btn btn-outline-secondary btn-sm" id="fe-btn-export" title="Exporter">' + FE_ICONS.download + '</button> ' : '') +
+              (cfg.customize ? '<select class="form-select form-select-sm d-inline-block w-auto fe-hidden" id="fe-model" title="Modèle à personnaliser"></select> ' +
+                '<button class="btn btn-outline-primary btn-sm" id="fe-btn-custom" title="Copier le modèle dans les templates personnels">Personnaliser</button> ' : '') +
               (cfg.save ? '<button class="btn btn-warning btn-sm" id="fe-btn-save">Enregistrer</button> ' : '') +
               (cfg.del ? '<button class="btn btn-danger btn-sm" id="fe-btn-delete">Supprimer</button>' : '') +
             '</div>' +
           '</div>' +
           '<div class="fe-editor-container">' +
             '<div class="fe-editor-pane" id="fe-editor-pane">' +
-              '<div class="fe-pane-header">' + (cfg.readonly ? 'Contenu' : 'Éditeur JSON') + '</div>' +
-              '<div class="fe-editor-wrapper"><textarea id="fe-file" spellcheck="false"' + (cfg.readonly ? ' readonly' : '') +
+              '<div class="fe-pane-header">' + (cfg.readonly ? 'Contenu' : cfg.locked ? 'Template livré (lecture seule)' : 'Éditeur JSON') + '</div>' +
+              '<div class="fe-editor-wrapper"><textarea id="fe-file" spellcheck="false"' + (cfg.readonly || cfg.locked ? ' readonly' : '') +
                 ' placeholder="Sélectionnez un ' + what + ' dans la liste..."></textarea></div>' +
               '<div class="fe-validation" id="fe-validation"><span id="fe-status"></span></div>' +
             '</div>' +
@@ -3463,6 +3484,15 @@
             .append($('<span class="name">').text(f.name), $('<span class="size">').text(f.size + ' o'))
             .on('click', function() { selectFile(f.name); }));
         });
+        // Templates livres personnalises (fichier de meme nom dans tpu/)
+        if (cfg.stock) {
+          $.getJSON('/api/files?dir=tpu').done(function(u) {
+            (u.files || []).forEach(function(uf) {
+              $l.find('.fe-item').filter(function() { return $(this).attr('data-file') === uf.name; })
+                .find('.name').append(' ', $('<span class="badge bg-primary">').text('perso'));
+            });
+          });
+        }
         filter();
         if (select) selectFile(select, true);
       }).fail(function(xhr) {
@@ -3491,9 +3521,16 @@
       $.ajax({ url: '/api/files/read?' + q(name), dataType: 'text' }).done(function(txt) {
         $('#fe-loader').remove();
         $('#fe-file').val(txt).removeClass('is-invalid');
-        validate();
+        var parsed = validate();
         if (previewVisible) updatePreview();
         hasChanges = false;
+        // Templates livres : liste des modeles a personnaliser (si plusieurs)
+        if (cfg.customize) {
+          var models = parsed ? Object.keys(parsed) : [];
+          var $m = $('#fe-model').empty();
+          models.forEach(function(m) { $m.append($('<option>').val(m).text(m)); });
+          $m.toggleClass('fe-hidden', models.length < 2);
+        }
       }).fail(function(xhr) {
         $('#fe-loader').remove();
         status('<span class="validation-error">' + escHtml(apiErrorText(xhr) || 'Erreur de chargement') + '</span>');
@@ -3638,6 +3675,41 @@
         loadList();
       }).fail(function(xhr) { alert('Erreur: ' + apiErrorText(xhr)); });
     });
+    // Copie d'un modele livre, tel quel, dans tpu/<meme fichier> : il y est
+    // ensuite modifie, l'emporte sur le template livre et survit aux mises a jour
+    $c.on('click.fe', '#fe-btn-custom', function() {
+      var json = validate();
+      if (!json) { alert('Template livré illisible : impossible de le personnaliser'); return; }
+      var models = Object.keys(json);
+      if (!models.length) return;
+      var model = models.length > 1 ? $('#fe-model').val() : models[0];
+      if (!Object.prototype.hasOwnProperty.call(json, model)) return;
+      var dst = cur, uq = 'dir=tpu&name=' + encodeURIComponent(dst);
+      function save(user) {
+        if (Object.prototype.hasOwnProperty.call(user, model) &&
+            !confirm('Le modèle ' + model + ' est déjà personnalisé. Le remplacer ?')) return;
+        user[model] = json[model];
+        $.ajax({ url: '/api/files/write?' + uq, method: 'POST', contentType: 'text/plain', data: JSON.stringify(user, null, 2) })
+          .done(function() {
+            hasChanges = false;
+            showAlert('Modèle ' + model + ' personnalisé (tpu/' + dst + ')');
+            location.hash = '#files?' + uq;
+          })
+          .fail(function(xhr) { alert('Erreur: ' + apiErrorText(xhr)); });
+      }
+      $.ajax({ url: '/api/files/read?' + uq, dataType: 'text' }).done(function(txt) {
+        var user;
+        try { user = JSON.parse(txt); } catch (e) { user = null; }
+        if (!user || typeof user !== 'object' || Array.isArray(user)) {
+          alert('Le template personnel ' + dst + ' est invalide : corrigez-le d\'abord.');
+          return;
+        }
+        save(user);
+      }).fail(function(xhr) {
+        if (xhr.status === 404) save({});
+        else alert('Erreur: ' + apiErrorText(xhr));
+      });
+    });
     $c.on('click.fe', '#fe-btn-delete', function() {
       if (!cur || !confirm('Supprimer ' + cur + ' ?')) return;
       $.ajax({ url: '/api/files/delete?' + q(cur), method: 'POST' }).done(function() {
@@ -3683,7 +3755,7 @@
       e.target.value = '';
     });
 
-    loadList();
+    loadList(routeParams.name);
   }
 
   // Texte brut d'une erreur d'API (pour .text(), sans echappement HTML)

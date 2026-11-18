@@ -843,6 +843,7 @@ esp_err_t cfg_ensure_directories(void)
         "/littlefs/config",
         "/littlefs/db",
         "/littlefs/hst",
+        "/littlefs/tpu",     // templates de l'utilisateur (issue #84)
         "/littlefs/debug",
         "/littlefs/bk",
         "/littlefs/rt",

@@ -37,7 +37,8 @@ extern "C" {
 #define DEVDATA_MAX_POLL_ITEMS   64   // template ZLinky : 21, plus une liste reprise de la 2.x (PSRAM)
 
 #define DEVDATA_DB_DIR           "/littlefs/db"
-#define DEVDATA_TP_DIR           "/littlefs/tp"
+#define DEVDATA_TP_DIR           "/littlefs/tp"    // templates livres (remplaces a chaque mise a jour)
+#define DEVDATA_TPU_DIR          "/littlefs/tpu"   // templates de l'utilisateur (jamais livres)
 
 // ============================================================================
 // Structures - Attribut/Cluster/Device
@@ -313,10 +314,29 @@ esp_err_t device_data_update_poll_timestamp(uint64_t ieee_addr, uint16_t cluster
 // API publique - Templates
 // ============================================================================
 
+/**
+ * Charge le template <device_id_file> (ex. "263.json") de l'appareil.
+ * Deux dossiers (issue #84) : tpu/ (templates de l'utilisateur, jamais
+ * touches par une mise a jour) l'emporte sur tp/ (templates livres), modele
+ * par modele : 1) modele exact dans tpu/, 2) modele exact dans tp/,
+ * 3) "default" de tpu/, 4) "default" de tp/.
+ */
 esp_err_t device_data_load_template(uint64_t ieee_addr,
                                      const char *device_id_file,
                                      const char *model_name);
 const devdata_template_t* device_data_get_template(uint64_t ieee_addr);
+
+/** true si <file> existe dans tpu/ ou tp/. */
+bool device_data_template_exists(const char *file);
+
+/** true si <file> (tpu/ ou tp/) declare le modele (cle exacte). */
+bool device_data_template_has_model(const char *file, const char *model);
+
+/**
+ * Cherche le fichier de template qui declare le modele, hors <skip>
+ * (tpu/ d'abord, puis tp/). Nom du fichier dans out.
+ */
+bool device_data_template_find_model(const char *model, const char *skip, char *out, size_t len);
 
 /**
  * Actions propres a un appareil, ajoutees apres celles de son template (codes

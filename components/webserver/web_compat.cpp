@@ -53,6 +53,7 @@ static const char *TAG = "WEB_COMPAT";
 
 #define DB_DIR     "/littlefs/db"
 #define TP_DIR     "/littlefs/tp"
+#define TPU_DIR    "/littlefs/tpu"
 #define PRES_PATH  "/littlefs/hst/presence.json"
 #define FILE_MAX   (256 * 1024)
 
@@ -398,7 +399,101 @@ static esp_err_t send_dir_object(httpd_req_t *req, const char *dir, bool db)
 }
 
 static esp_err_t devices_handler(httpd_req_t *req)   { return send_dir_object(req, DB_DIR, true); }
-static esp_err_t templates_handler(httpd_req_t *req) { return send_dir_object(req, TP_DIR, false); }
+
+static bool is_json_name(const char *name)
+{
+    size_t nl = strlen(name);
+    return nl >= 6 && strcasecmp(name + nl - 5, ".json") == 0;
+}
+
+/** Entree "<nom sans .json>" : <texte> de l'objet envoye par morceaux. */
+static void send_tp_entry(httpd_req_t *req, int *n, const char *name, const char *txt, size_t len)
+{
+    char key[48];
+    size_t kl = strlen(name) - 5;
+    if (kl >= sizeof(key)) kl = sizeof(key) - 1;
+    memcpy(key, name, kl);
+    key[kl] = '\0';
+    char head[64];
+    snprintf(head, sizeof(head), "%s\"%s\" : ", (*n)++ ? "," : "", key);
+    httpd_resp_sendstr_chunk(req, head);
+    httpd_resp_send_chunk(req, txt, len);
+}
+
+/**
+ * Template livre complete par celui de l'utilisateur (tpu/, issue #84) :
+ * chaque modele de tpu/ remplace ou s'ajoute a celui de tp/, comme pour le
+ * chargement des appareils. Texte a liberer, NULL si rien a fusionner.
+ */
+static char *merge_user_template(const char *stock_txt, const char *name)
+{
+    char path[300];
+    snprintf(path, sizeof(path), TPU_DIR "/%s", name);
+    char *user_txt = read_file(path, NULL);
+    if (!user_txt) return NULL;
+    char *out = NULL;
+    cJSON *stock = cJSON_Parse(stock_txt), *user = cJSON_Parse(user_txt);
+    heap_caps_free(user_txt);
+    if (cJSON_IsObject(stock) && cJSON_IsObject(user)) {
+        while (user->child) {
+            cJSON *m = cJSON_DetachItemViaPointer(user, user->child);
+            char key[64];
+            strlcpy(key, m->string ? m->string : "", sizeof(key));
+            cJSON_DeleteItemFromObjectCaseSensitive(stock, key);
+            cJSON_AddItemToObject(stock, key, m);
+        }
+        out = cJSON_PrintUnformatted(stock);
+    }
+    cJSON_Delete(stock);
+    cJSON_Delete(user);
+    return out;
+}
+
+/** Templates : tp/ fusionne avec tpu/, puis les fichiers propres a tpu/. */
+static esp_err_t templates_handler(httpd_req_t *req)
+{
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_sendstr_chunk(req, "{");
+    int n = 0;
+    char path[300];
+    struct dirent *de;
+    DIR *d = opendir(TP_DIR);
+    while (d && (de = readdir(d)) != NULL) {
+        if (!is_json_name(de->d_name)) continue;
+        snprintf(path, sizeof(path), TP_DIR "/%s", de->d_name);
+        size_t len = 0;
+        char *buf = read_file(path, &len);
+        if (!buf) continue;
+        if (json_object_text(buf, len)) {
+            char *merged = merge_user_template(buf, de->d_name);
+            if (merged) {
+                send_tp_entry(req, &n, de->d_name, merged, strlen(merged));
+                cJSON_free(merged);
+            } else {
+                send_tp_entry(req, &n, de->d_name, buf, len);
+            }
+        }
+        heap_caps_free(buf);
+    }
+    if (d) closedir(d);
+    d = opendir(TPU_DIR);
+    while (d && (de = readdir(d)) != NULL) {
+        if (!is_json_name(de->d_name)) continue;
+        struct stat st;
+        snprintf(path, sizeof(path), TP_DIR "/%s", de->d_name);
+        if (stat(path, &st) == 0) continue;           // deja envoye, fusionne
+        snprintf(path, sizeof(path), TPU_DIR "/%s", de->d_name);
+        size_t len = 0;
+        char *buf = read_file(path, &len);
+        if (!buf) continue;
+        if (json_object_text(buf, len)) send_tp_entry(req, &n, de->d_name, buf, len);
+        heap_caps_free(buf);
+    }
+    if (d) closedir(d);
+    httpd_resp_sendstr_chunk(req, "}");
+    return httpd_resp_sendstr_chunk(req, NULL);
+}
 
 /** {"<IEEE>" : <fichier>} ; ieee absent : {} (comme la Box). */
 static esp_err_t send_one_file(httpd_req_t *req, const char *fmt, bool db)
