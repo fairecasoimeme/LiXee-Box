@@ -358,7 +358,7 @@ static void refresh_sensors(zone_t *t)
             long timeout = (t->sensor_timeout_s > 0 ? t->sensor_timeout_s : SENSOR_TIMEOUT_DEFAULT_SEC) + 60;
             time_t now = time(NULL);
             long age = -1;
-            if (ntp_sync_is_synced() && last_seen > 1600000000 && now >= (time_t)last_seen) age = (long)(now - last_seen);
+            if (last_rx && ntp_sync_is_synced() && last_seen > 1600000000 && now >= (time_t)last_seen) age = (long)(now - last_seen);
             else if (last_rx) age = (long)(zigate_uptime_s() - last_rx);
             if (age >= 0) {
                 t->sensor_age_s = age;

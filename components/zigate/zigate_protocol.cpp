@@ -87,7 +87,7 @@ static void touch_device(uint16_t short_addr, uint8_t lqi)
     dev->radio_status = 0;
     if (lqi) dev->lqi = lqi;
     time_t now = time(NULL);
-    if (now > 1600000000) dev->last_seen = (uint32_t)now;
+    if (now > 1600000000) zigate_devices_mark_seen(dev, (uint32_t)now);
 }
 
 // --- Nettoyage des fantomes (reponse 0x8602) ---

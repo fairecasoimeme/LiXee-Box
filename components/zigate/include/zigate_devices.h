@@ -26,7 +26,7 @@ typedef struct {
     char     model[33];        // Modele
     char     alias[33];        // Alias utilisateur
     bool     active;           // Device present sur le reseau
-    uint32_t last_seen;        // Epoch timestamp derniere communication
+    uint32_t last_seen;        // Epoch derniere trame (zigbee_seen.json, voir zigate_devices_save_seen)
     // Clusters supportes
     uint16_t in_clusters[32];
     uint8_t  in_cluster_count;
@@ -104,6 +104,20 @@ esp_err_t zigate_devices_load(void);
  * Assigne un endpoint Matter a un device Zigbee
  */
 esp_err_t zigate_devices_set_matter_endpoint(uint64_t ieee_addr, int matter_ep);
+
+/**
+ * Note la date de la derniere trame d'un appareil (enregistree plus tard par
+ * zigate_devices_save_seen)
+ */
+void zigate_devices_mark_seen(zigate_device_t *dev, uint32_t epoch);
+
+/**
+ * Enregistre la derniere activite des appareils si elle a change : au plus
+ * toutes les 10 min, ou tout de suite avec force (redemarrage prevu). Fichier
+ * a part de zigbee_devices.json : une ecriture interrompue n'y perd que des
+ * dates. Appele par la boucle principale avec la sauvegarde des fiches.
+ */
+void zigate_devices_save_seen(bool force);
 
 #ifdef __cplusplus
 }
