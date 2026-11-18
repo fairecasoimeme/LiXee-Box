@@ -408,7 +408,8 @@
     });
 
     $('#up-auto-btn').on('click', function() {
-      if (!confirm('Télécharger et installer la mise à jour ? L\'appareil redémarrera.')) return;
+      var ask = $(this).data('ask') || 'Télécharger et installer la mise à jour ?';
+      if (!confirm(ask + ' L\'appareil redémarrera.')) return;
       var btn = $(this).prop('disabled', true);
       setProgress('up-auto-p', 0, 'Démarrage...');
       $.ajax({ url: '/api/maint/auto/start', method: 'POST' })
@@ -464,8 +465,13 @@
       box.append($('<div class="fw-semibold">').text((rel.name || tag) + (tag ? ' (' + tag + ')' : '')));
       if (rel.published_at) box.append($('<div class="small text-muted">').text('Publiée le ' + new Date(rel.published_at).toLocaleDateString('fr-FR')));
       if (rel.body) box.append($('<pre class="small mt-2 p-2 bg-light rounded" style="white-space:pre-wrap;max-height:240px;overflow:auto">').text(rel.body));
-      if (tag && cmpVer(tag, current) <= 0) {
+      var cmp = tag ? cmpVer(tag, current) : 1;
+      if (cmp <= 0) {
         box.append($('<div class="alert alert-success small mt-2 mb-0">').text('Le firmware est à jour.'));
+        // Deja a jour : le bouton reinstalle la version publiee (issue #60),
+        // plus ancienne que l'installee sur une version de developpement
+        if (cmp === 0) $('#up-auto-btn').text('Réinstaller').data('ask', 'Réinstaller la version actuelle ?');
+        else $('#up-auto-btn').text('Rétrograder vers la ' + tag).data('ask', 'Rétrograder vers la ' + tag + ', plus ancienne que la version installée (' + current + ') ?');
       } else if (tag) {
         box.append($('<div class="alert alert-info small mt-2 mb-0">').text('Nouvelle version disponible : ' + tag + ' (installée : ' + current + ').'));
       }
