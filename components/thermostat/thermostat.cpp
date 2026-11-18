@@ -68,6 +68,9 @@ typedef struct {
     float frost_temp;
     bool  frost_mode;                    // bascule hors-gel active (consigne = frost_temp)
     float setpoint_saved;                // consigne memorisee avant le hors-gel
+    matter_preset_t custom_presets[MATTER_PRESET_MAX_CUSTOM];   // presets perso Matter (issue #80)
+    int   custom_preset_count;
+    uint8_t active_custom_handle;        // 0 : Confort/Hors-gel actif (voir frost_mode)
     int   tpi_cycle_s;
     float kp, ki;
     int   min_on_s, min_off_s;
@@ -612,6 +615,19 @@ static bool save_locked(void)
         cJSON_AddBoolToObject(o, "frostMode", t->frost_mode);
         cJSON_AddNumberToObject(o, "forceMode", t->force_mode);
         cJSON_AddNumberToObject(o, "setpointSaved", r3(t->setpoint_saved));
+        // Presets personnalises Matter (issue #80) : a plat, pas de helper generique
+        // pour un tableau de structs (contrairement a actuatorsExtra/openSensors, de
+        // simples tableaux de chaines).
+        cJSON *cp = cJSON_AddArrayToObject(o, "customPresets");
+        for (int k = 0; k < t->custom_preset_count; k++) {
+            cJSON *po = cJSON_CreateObject();
+            cJSON_AddNumberToObject(po, "handle", t->custom_presets[k].handle);
+            cJSON_AddStringToObject(po, "name", t->custom_presets[k].name);
+            cJSON_AddNumberToObject(po, "heatingSetpoint", t->custom_presets[k].heating_setpoint);
+            cJSON_AddNumberToObject(po, "scenario", t->custom_presets[k].scenario);
+            cJSON_AddItemToArray(cp, po);
+        }
+        cJSON_AddNumberToObject(o, "activeCustomHandle", t->active_custom_handle);
         cJSON_AddNumberToObject(o, "tpiCycleSec", t->tpi_cycle_s);
         cJSON_AddNumberToObject(o, "tpiKp", r3(t->kp));
         cJSON_AddNumberToObject(o, "tpiKi", r3(t->ki));
@@ -686,6 +702,32 @@ static void load_config(void)
         j_int(o, "forceMode", &t->force_mode);
         t->setpoint_saved = t->setpoint;
         j_num(o, "setpointSaved", &t->setpoint_saved);
+        t->custom_preset_count = 0;
+        const cJSON *cp = cJSON_GetObjectItem(o, "customPresets");
+        const cJSON *po;
+        cJSON_ArrayForEach(po, cp) {
+            if (t->custom_preset_count >= MATTER_PRESET_MAX_CUSTOM) break;
+            matter_preset_t *p = &t->custom_presets[t->custom_preset_count];
+            int h = 0, hs = 0, sc = 0;
+            j_int(po, "handle", &h);
+            j_str(po, "name", p->name, sizeof(p->name));
+            j_int(po, "heatingSetpoint", &hs);
+            j_int(po, "scenario", &sc);
+            if (h < 0x03 || h > 0xFF || !p->name[0]) continue;   // entree corrompue : ignoree
+            p->handle = (uint8_t)h;
+            p->heating_setpoint = hs;
+            p->scenario = (uint8_t)sc;
+            t->custom_preset_count++;
+        }
+        int active_custom = 0;
+        j_int(o, "activeCustomHandle", &active_custom);
+        t->active_custom_handle = (uint8_t)active_custom;
+        if (t->active_custom_handle) {
+            bool found = false;
+            for (int k = 0; k < t->custom_preset_count && !found; k++)
+                found = (t->custom_presets[k].handle == t->active_custom_handle);
+            if (!found) t->active_custom_handle = 0;
+        }
         j_int(o, "tpiCycleSec", &t->tpi_cycle_s);
         j_num(o, "tpiKp", &t->kp);
         j_num(o, "tpiKi", &t->ki);
@@ -1006,6 +1048,7 @@ static bool set_setpoint_locked(zone_t *t, float value)
     if (!isfinite(value)) value = t->setpoint;
     t->setpoint = value < 0.0f ? 0.0f : (value > 40.0f ? 40.0f : value);
     t->frost_mode = false;                       // reglage manuel : sortie du hors-gel
+    t->active_custom_handle = 0;                  // ...et d'un preset personnalise (issue #80)
     t->integral = 0.0f;
     t->cycle_start_ms = 0;
     return save_locked();
@@ -1014,6 +1057,7 @@ static bool set_setpoint_locked(zone_t *t, float value)
 static bool set_mode_locked(zone_t *t, bool heating)
 {
     if (t->frost_mode) { t->setpoint = t->setpoint_saved; t->frost_mode = false; }
+    t->active_custom_handle = 0;                  // changement de mode : sort d'un preset personnalise
     t->heating = heating;
     t->integral = 0.0f;
     t->cycle_start_ms = 0;
@@ -1039,6 +1083,7 @@ static bool set_enabled_locked(zone_t *t, bool enabled)
 
 static bool set_frost_locked(zone_t *t, bool on)
 {
+    t->active_custom_handle = 0;   // Confort/Hors-gel et preset personnalise sont exclusifs
     if (on) {
         if (!t->frost_mode) { t->setpoint_saved = t->setpoint; t->frost_mode = true; }
         t->setpoint = t->frost_temp;
@@ -1061,7 +1106,8 @@ static bool set_frost_locked(zone_t *t, bool on)
 
 #define MSG_SYNC            1
 #define MSG_WRITE           2
-#define MSG_PRESET          3   // selection d'un preset Matter (issue #51) : value 0 confort, 1 hors-gel
+#define MSG_PRESET          3   // selection d'un preset Matter (issue #51/#80) : handle dans attr
+#define MSG_PRESET_COMMIT   4   // edition des presets perso validee par un controleur (issue #80)
 
 typedef struct {
     uint8_t  kind;
@@ -1092,13 +1138,24 @@ static esp_err_t matter_write_cb(int ep, uint32_t cluster, uint32_t attr, int32_
     return ESP_OK;
 }
 
-/** SetActivePresetRequest d'un controleur (feature Presets, issue #51). */
-static esp_err_t matter_preset_cb(int ep, bool frost)
+/** SetActivePresetRequest d'un controleur (feature Presets, issue #51/#80). */
+static esp_err_t matter_preset_cb(int ep, uint8_t handle)
 {
     bool ours = false;
     for (int i = 0; i < THERMO_MAX_ZONES && !ours; i++) ours = (ep > 1 && s_vep[i] == ep);
     if (!ours) return ESP_ERR_NOT_FOUND;
-    thermo_msg_t m = { MSG_PRESET, ep, 0, frost ? 1 : 0 };
+    thermo_msg_t m = { MSG_PRESET, ep, handle, 0 };
+    if (s_q) xQueueSend(s_q, &m, 0);
+    return ESP_OK;
+}
+
+/** Edition des presets perso validee (AtomicRequest CommitWrite, issue #80). */
+static esp_err_t matter_preset_commit_cb(int ep)
+{
+    bool ours = false;
+    for (int i = 0; i < THERMO_MAX_ZONES && !ours; i++) ours = (ep > 1 && s_vep[i] == ep);
+    if (!ours) return ESP_ERR_NOT_FOUND;
+    thermo_msg_t m = { MSG_PRESET_COMMIT, ep, 0, 0 };
     if (s_q) xQueueSend(s_q, &m, 0);
     return ESP_OK;
 }
@@ -1175,7 +1232,7 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
     if (force || t->m_mode != mode) matter_bridge_set_number(ep, 0x0201, 0x001C, mode, false);
     if (force || t->m_run != run) matter_bridge_set_number(ep, 0x0201, 0x0029, run, false);
     if (feat & 1) {
-        // Presets Matter (issue #51) : "Confort" suit la consigne hors bascule
+        // Presets Matter (issue #51/#80) : "Confort" suit la consigne hors bascule
         // hors-gel (restauree a la sortie du hors-gel, cf. setpoint_saved).
         int32_t comfort_sp = clamp32(
             (int32_t)lroundf((t->frost_mode ? t->setpoint_saved : t->setpoint) * 100.0f),
@@ -1186,8 +1243,9 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
             (int32_t)lroundf(t->frost_temp * 100.0f),
             700,
             3000
-        );        
-        matter_bridge_set_thermostat_presets(ep, comfort_sp, frost_sp, t->frost_mode);
+        );
+        matter_bridge_set_thermostat_presets(ep, comfort_sp, frost_sp, t->frost_mode,
+            t->custom_presets, t->custom_preset_count, t->active_custom_handle);
     }
     t->m_valid = t->sensor_valid;
     t->m_temp = temp;
@@ -1233,16 +1291,71 @@ static void matter_apply_write(const thermo_msg_t *m)
     t->m_pushed = false;                         // republier l'etat reel
 }
 
-/** SetActivePresetRequest applique a une zone (feature Presets, issue #51). */
+/** SetActivePresetRequest applique a une zone (feature Presets, issue #51/#80). */
 static void matter_apply_preset(const thermo_msg_t *m)
 {
     zone_t *t = NULL;
     for (int i = 0; i < s_count && !t; i++) if (s_z[i].m_created && s_z[i].matter_ep == m->ep) t = &s_z[i];
     if (!t) return;
-    ESP_LOGI(TAG, "zone \"%s\" : preset Matter -> %s", t->name, m->value ? "Hors-gel" : "Confort");
-    set_frost_locked(t, m->value != 0);
+    uint8_t handle = (uint8_t)m->attr;
+    if (handle == 0x01 || handle == 0x02) {
+        ESP_LOGI(TAG, "zone \"%s\" : preset Matter -> %s", t->name, handle == 0x02 ? "Hors-gel" : "Confort");
+        set_frost_locked(t, handle == 0x02);
+    } else {
+        const matter_preset_t *p = NULL;
+        for (int i = 0; i < t->custom_preset_count; i++)
+            if (t->custom_presets[i].handle == handle) { p = &t->custom_presets[i]; break; }
+        if (!p) {
+            ESP_LOGW(TAG, "zone \"%s\" : preset Matter personnalise 0x%02X introuvable", t->name, handle);
+            return;
+        }
+        ESP_LOGI(TAG, "zone \"%s\" : preset Matter -> \"%s\"", t->name, p->name);
+        set_setpoint_locked(t, p->heating_setpoint / 100.0f);
+        t->active_custom_handle = handle;        // set_setpoint_locked() vient de le remettre a 0
+    }
     refresh_sensors(t);
     t->m_pushed = false;                         // republier l'etat reel (consigne, ActivePresetHandle...)
+}
+
+/**
+ * Edition des presets personnalises validee par un controleur (AtomicRequest
+ * CommitWrite, issue #80) : le contenu a deja ete valide a l'ajout (voir
+ * thermostat_presets_delegate.h, AppendToPendingPresetList) et range cote
+ * delegate Matter (CommitPendingPresets) ; on le relit ici pour le persister
+ * dans la configuration de la zone.
+ */
+static void matter_apply_preset_commit(const thermo_msg_t *m)
+{
+    zone_t *t = NULL;
+    for (int i = 0; i < s_count && !t; i++) if (s_z[i].m_created && s_z[i].matter_ep == m->ep) t = &s_z[i];
+    if (!t) return;
+    matter_preset_t fresh[MATTER_PRESET_MAX_CUSTOM];
+    int count = 0;
+    if (!matter_bridge_get_thermostat_custom_presets(m->ep, fresh, MATTER_PRESET_MAX_CUSTOM, &count)) return;
+
+    const matter_preset_t *active = NULL;
+    if (t->active_custom_handle) {
+        for (int i = 0; i < count; i++)
+            if (fresh[i].handle == t->active_custom_handle) { active = &fresh[i]; break; }
+        if (!active) t->active_custom_handle = 0;   // preset actif supprime par l'edition : repli sur Confort
+    }
+
+    memcpy(t->custom_presets, fresh, sizeof(matter_preset_t) * count);
+    t->custom_preset_count = count;
+
+    bool reapplied = false;
+    if (active) {
+        // Preset actif toujours present : si sa consigne a change, la reappliquer en
+        // direct (set_setpoint_locked() sauvegarde alors aussi le tableau qu'on vient
+        // de copier ci-dessus, pas besoin d'un second save_locked()).
+        float sp = active->heating_setpoint / 100.0f;
+        if (fabsf(sp - t->setpoint) > 0.001f) { set_setpoint_locked(t, sp); reapplied = true; }
+        t->active_custom_handle = active->handle;   // set_setpoint_locked() vient de le remettre a 0
+    }
+    if (!reapplied) save_locked();
+    ESP_LOGI(TAG, "zone \"%s\" : %d preset(s) personnalise(s) Matter mis a jour", t->name, count);
+    refresh_sensors(t);
+    t->m_pushed = false;                         // republier l'etat reel (Presets, ActivePresetHandle...)
 }
 
 void thermostat_matter_refresh(void) { post_sync(); }
@@ -1251,6 +1364,7 @@ void thermostat_matter_start(void)
 {
     matter_bridge_set_virtual_write_cb(matter_write_cb);
     matter_bridge_set_thermostat_preset_cb(matter_preset_cb);
+    matter_bridge_set_thermostat_preset_commit_cb(matter_preset_commit_cb);
     s_matter_on = true;
     post_sync();
 }
@@ -1266,6 +1380,7 @@ static void regulation_task(void *arg)
             lock();
             if (m.kind == MSG_WRITE) matter_apply_write(&m);
             else if (m.kind == MSG_PRESET) matter_apply_preset(&m);
+            else if (m.kind == MSG_PRESET_COMMIT) matter_apply_preset_commit(&m);
             matter_sync_all();
             unlock();
             continue;
