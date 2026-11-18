@@ -629,6 +629,39 @@ static void apply_link(bridge_device_mapping_t *m, const matter_link_t *l, doubl
     }
 }
 
+// ============================================================================
+// Prix courant du kWh (CommodityPrice, issue #67)
+// ============================================================================
+
+// Prix non publie faute d'heure synchronisee : republie par
+// matter_device_manager_tariff_price_tick() des que l'heure est connue.
+static volatile bool s_price_pending = false;
+
+static void publish_tariff_price(const bridge_device_mapping_t *m)
+{
+    if (!m || !m->active || !m->profile || !(m->profile->caps & MCAP_LINKY_PRICE)) return;
+    energy_live_t live;
+    if (!energy_service_get_live(&live)) return;
+    if (matter_bridge_report_tariff_price(m->matter_endpoint, live.tariff_price, live.tariff)
+            == ESP_ERR_INVALID_STATE) {
+        s_price_pending = true;
+    }
+}
+
+void matter_device_manager_refresh_tariff_price(void)
+{
+    if (!matter_bridge_is_started()) return;
+    s_price_pending = false;
+    map_lock();
+    for (int i = 0; i < s_mapping_count; i++) publish_tariff_price(&s_mappings[i]);
+    map_unlock();
+}
+
+void matter_device_manager_tariff_price_tick(void)
+{
+    if (s_price_pending) matter_device_manager_refresh_tariff_price();
+}
+
 /**
  * Publie les dernieres valeurs connues (device_data) des attributs lies, des
  * la creation de l'endpoint. Sans cela, apres un redemarrage du pont, Matter
@@ -641,12 +674,7 @@ static void replay_stored_values(bridge_device_mapping_t *m)
 
     // Prix courant du kWh (CommodityPrice), valeur courante des maintenant,
     // sans attendre le prochain changement de tarif (issue #67).
-    if (p && (p->caps & MCAP_LINKY_PRICE)) {
-        energy_live_t live;
-        if (energy_service_get_live(&live)) {
-            matter_bridge_report_tariff_price(m->matter_endpoint, live.tariff_price, live.tariff);
-        }
-    }
+    publish_tariff_price(m);
 
     if (!p) return;
     for (int i = 0; i < p->link_count; i++) {
@@ -752,10 +780,7 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
     // TIC.
     if (mapping->profile && (mapping->profile->caps & MCAP_LINKY_PRICE) &&
         report->cluster_id == 0xFF66 && report->attr_id == 0x0010) {
-        energy_live_t live;
-        if (energy_service_get_live(&live)) {
-            matter_bridge_report_tariff_price(mapping->matter_endpoint, live.tariff_price, live.tariff);
-        }
+        publish_tariff_price(mapping);
     }
 
     if (mapping->profile) return apply_profile((bridge_device_mapping_t *)mapping, report);

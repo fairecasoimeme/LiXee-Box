@@ -102,6 +102,9 @@ esp_err_t matter_bridge_report_energy_index(int endpoint_id, uint16_t attr_id, u
  *                           tarif pas encore configure sur la page Energie)
  * @param tariff_name  Libelle de la periode en cours ("Heures Creuses"...),
  *                      peut etre NULL
+ * @return ESP_ERR_INVALID_STATE si Matter n'est pas demarre ou si l'heure
+ *         n'est pas encore synchronisee (rien n'est publie : periodStart
+ *         serait faux), ESP_ERR_NOT_FOUND si l'EP n'a pas le cluster
  */
 esp_err_t matter_bridge_report_tariff_price(int endpoint_id, double price_eur_per_kwh,
                                             const char *tariff_name);

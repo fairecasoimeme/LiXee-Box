@@ -1772,6 +1772,7 @@ extern "C" void app_main(void)
             device_data_save_all();
             energy_history_save_all();
             energy_service_minute_tick();
+            matter_device_manager_tariff_price_tick();   // prix en attente de l'heure
             lora_save_state(false);
 
             // Reset periodique de l'historique d'energie (equivalent ScanDevicesToRAZ)

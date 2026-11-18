@@ -35,7 +35,6 @@
 #include <esp_matter_endpoint.h>
 #include <esp_matter_feature.h>
 #include <esp_matter_event.h>
-#include <esp_matter_delegate_callbacks.h>
 #include <app/clusters/electrical-energy-measurement-server/ElectricalEnergyMeasurementCluster.h>
 #include <app/clusters/electrical-energy-measurement-server/electrical-energy-measurement-server.h>
 #include <app/clusters/meter-identification-server/meter-identification-server.h>
@@ -129,13 +128,8 @@ CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
     return CHIP_NO_ERROR;
 }
 
-// Instances CommodityPrice pour l'EP Linky (un par endpoint max). Pas de
-// convenience wrapper esp-matter pour ce cluster standard sur la version
-// d'esp_matter verrouillee ici (1.4.2 : pas de endpoint::electrical_energy_tariff
-// ni de cluster::get_delegate_managed_instance) : l'Instance est creee et
-// retrouvee a la main (compteurs ep_id/delegate dedies). A revoir si la
-// montee de version esp_matter en cours (voir memoire esp_matter_version_bump)
-// apporte ces helpers.
+// Instances CommodityPrice pour l'EP Linky (une par endpoint max), creees par
+// price_endpoint_init() et retrouvees par endpoint pour publier le prix.
 static LinkyPriceDelegate *s_price_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static CommodityPrice::Instance *s_price_instances[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static int s_price_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
@@ -623,33 +617,18 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         endpoint::contact_sensor::add(ep, &cfg);
     }
     if (caps & MCAP_LINKY_PRICE) {
-        // Cluster standard CommodityPrice (0x0095), device type compose
+        // Cluster standard CommodityPrice (0x0095) et device type compose
         // Electrical Energy Tariff (0x0513, superset d'Electrical Meter deja
-        // porte par cet EP) sur l'EP Linky. Pas de convenience wrapper
-        // esp-matter pour ce cluster en 1.4.2 : coquille generique
-        // (cluster::create) + globals, meme recette que
-        // cluster::boolean_state::create -- MAIS AttributeAccessInterface
-        // (l'Instance, creee plus tard par price_endpoint_init() une fois
-        // l'endpoint actif) n'a pas d'equivalent "EnumerateAttributes" pour
-        // les donnees du cluster (contrairement a CommandHandlerInterface,
-        // qui a bien EnumerateAcceptedCommands) : sans ces attributs ember
-        // placeholder, AttributeList ne les liste pas et le chemin de
-        // lecture n'atteint jamais Instance::Read() (observe en test : toutes
-        // les valeurs cote firmware correctes, mais "no values returned" cote
-        // controleur). Valeur par defaut NULL/0 : jamais lue, Instance::Read()
-        // intercepte toujours ces IDs avant le stockage ember.
-        endpoint::add_device_type(ep, 0x0513 /* Electrical Energy Tariff */, 1);
-        cluster_t *price_cluster = cluster::create(ep, CommodityPrice::Id, CLUSTER_FLAG_SERVER);
-        if (price_cluster) {
-            cluster::global::attribute::create_feature_map(price_cluster, 0);
-            cluster::global::attribute::create_cluster_revision(price_cluster, 4);
-            attribute::create(price_cluster, CommodityPrice::Attributes::TariffUnit::Id,
-                              ATTRIBUTE_FLAG_NONE, esp_matter_enum8(0));
-            attribute::create(price_cluster, CommodityPrice::Attributes::Currency::Id,
-                              ATTRIBUTE_FLAG_NULLABLE, esp_matter_octet_str(NULL, 0));
-            attribute::create(price_cluster, CommodityPrice::Attributes::CurrentPrice::Id,
-                              ATTRIBUTE_FLAG_NULLABLE, esp_matter_octet_str(NULL, 0));
-        }
+        // porte par cet EP) sur l'EP Linky.
+        // config.delegate laisse a nullptr : avec un delegate, esp_matter
+        // cree lui-meme l'Instance (CommodityPriceDelegateInitCB) sans la
+        // rendre accessible, alors qu'il faut l'appeler pour publier le prix
+        // (SetCurrentPrice). L'Instance est donc creee par
+        // price_endpoint_init() une fois l'endpoint actif.
+        endpoint::electrical_energy_tariff::config_t tariff_cfg;
+        endpoint::electrical_energy_tariff::add(ep, &tariff_cfg);
+        cluster::commodity_price::config_t price_cfg;
+        cluster::commodity_price::create(ep, &price_cfg, CLUSTER_FLAG_SERVER);
     }
     if (caps & MCAP_COVER) {
         endpoint::window_covering::config_t cfg(0);
@@ -1128,9 +1107,17 @@ esp_err_t matter_bridge_report_tariff_price(int endpoint_id, double price_eur_pe
     {
         chip::app::DataModel::Nullable<CommodityPrice::Structs::CommodityPriceStruct::Type> value;
         if (price_eur_per_kwh > 0) {
+            // periodStart obligatoire : rien n'est publie tant que l'heure
+            // n'est pas synchronisee (juste apres le demarrage), l'appelant
+            // republie plus tard (voir matter_device_manager_tariff_price_tick)
+            uint32_t chip_epoch = 0;
+            time_t now = time(NULL);
+            if (now < 1577836800 /* 2020-01-01 */ ||
+                !chip::UnixEpochToChipEpochTime((uint32_t)now, chip_epoch)) {
+                ret = ESP_ERR_INVALID_STATE;
+                goto out;
+            }
             CommodityPrice::Structs::CommodityPriceStruct::Type price;
-            uint32_t chip_epoch;
-            chip::UnixEpochToChipEpochTime((uint32_t)time(NULL), chip_epoch);
             price.periodStart = chip_epoch;
             // periodEnd inconnu (pas de calendrier tarifaire complet cote
             // TIC) : la prochaine periode re-ecrit la valeur a son propre
