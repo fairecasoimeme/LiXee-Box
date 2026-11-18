@@ -162,6 +162,20 @@ typedef enum {
 /** Historique d'energie deja en memoire, sans le creer. NULL si absent. */
 const energy_history_t* energy_history_find(uint64_t ieee_addr);
 
+/** IEEE des appareils ayant un historique d'energie en memoire (max au plus). */
+int energy_history_list(uint64_t *out, int max);
+
+/**
+ * Efface les creneaux perimes (ecoules pendant un arret, gardant la valeur du
+ * cycle precedent), une fois par chargement de chaque historique. Heure fiable
+ * requise ; fait aussi a la premiere mesure de chaque appareil.
+ */
+void energy_history_expire_stale_all(void);
+
+/** Verrou des donnees (recursif), pour lire plusieurs creneaux de facon coherente. */
+void energy_history_lock(void);
+void energy_history_unlock(void);
+
 /**
  * Energie consommee (Wh) dans un creneau pour un attribut.
  * Creneaux : heure 0-23, jour 0-30 (jour du mois - 1), mois 0-11, annee

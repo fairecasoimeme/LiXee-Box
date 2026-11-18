@@ -37,6 +37,7 @@ typedef struct {
     uint64_t         ieee_addr;
     energy_history_t *energy;
     power_history_t  *power;
+    bool             fresh;            // creneaux perimes effaces depuis le chargement
 } history_entry_t;
 
 static history_entry_t s_entries[MAX_HISTORY_DEVICES] = {};
@@ -681,8 +682,10 @@ esp_err_t energy_history_reload(uint64_t ieee_addr)
             // Copie en place : les lecteurs gardent un pointeur valide, aucune
             // mesure ni sauvegarde n'est a mi-chemin
             memcpy(s_entries[idx].energy, tmp, sizeof(*tmp));
+            s_entries[idx].fresh = false;
         } else {
             __atomic_store_n(&s_entries[idx].energy, tmp, __ATOMIC_RELEASE);
+            s_entries[idx].fresh = false;
             tmp = NULL;
         }
         entries_unlock();
@@ -994,6 +997,144 @@ static void years_roll(energy_history_t *h, int year)
     }
 }
 
+// ----------------------------------------------------------------------------
+// Creneaux perimes
+//
+// Les anneaux ne sont remis a zero qu'en marche (remises periodiques, premiere
+// mesure d'un creneau). Apres un arret, les creneaux ecoules depuis la derniere
+// mesure gardent la valeur du cycle precedent (heure de la veille, jour du mois
+// precedent...) et seraient pris pour ceux de la date courante, par le graphe
+// 24 h comme par l'archive. On les efface, attribut par attribut, une fois par
+// chargement : creneau strictement posterieur a la derniere mesure de
+// l'attribut et anterieur au creneau courant.
+// ----------------------------------------------------------------------------
+
+/** Cle comparable d'un instant a une granularite (debut d'heure, aaaammjj, mois, annee). */
+static int64_t gran_key(const struct tm *t, time_t epoch, hist_gran_t g)
+{
+    switch (g) {
+    case G_HOUR:  return (int64_t)slot_start(epoch, G_HOUR);
+    case G_DAY:   return (int64_t)(t->tm_year + 1900) * 10000 + (t->tm_mon + 1) * 100 + t->tm_mday;
+    case G_MONTH: return (int64_t)(t->tm_year + 1900) * 12 + t->tm_mon;
+    default:      return t->tm_year + 1900;
+    }
+}
+
+/** Cle du creneau 'slot' d'une granularite : sa periode la plus recente, au plus maintenant. */
+static int64_t slot_key(const energy_history_t *h, int slot, const struct tm *now, time_t now_t, hist_gran_t g)
+{
+    switch (g) {
+    case G_HOUR: {
+        int back = (now->tm_hour - slot + 24) % 24;
+        return (int64_t)slot_start(now_t, G_HOUR) - (int64_t)back * 3600;
+    }
+    case G_DAY:
+        for (int b = 0; b < 62; b++) {
+            struct tm d = *now;
+            d.tm_mday -= b;
+            d.tm_hour = 12;
+            d.tm_min = d.tm_sec = 0;
+            d.tm_isdst = -1;
+            mktime(&d);
+            if (d.tm_mday == slot + 1) return (int64_t)(d.tm_year + 1900) * 10000 + (d.tm_mon + 1) * 100 + d.tm_mday;
+        }
+        return 0;
+    case G_MONTH: {
+        int back = (now->tm_mon - slot + 12) % 12;
+        return (int64_t)(now->tm_year + 1900) * 12 + now->tm_mon - back;
+    }
+    default:
+        return h->base_year + slot;
+    }
+}
+
+/** Efface les creneaux perimes d'un historique (verrou des donnees tenu, heure valide). */
+static void expire_stale_locked(energy_history_t *h, const struct tm *now, time_t now_t)
+{
+    energy_period_t *ps[4] = { &h->hours, &h->days, &h->months, &h->years };
+    static const hist_gran_t G[4] = { G_HOUR, G_DAY, G_MONTH, G_YEAR };
+    static const int N[4] = { ENERGY_HOURS, ENERGY_DAYS, ENERGY_MONTHS, ENERGY_YEARS };
+    int cleared = 0;
+    for (int ai = 0; ai < h->attr_count; ai++) {
+        time_t tl = (time_t)h->last_ts[ai];
+        if (tl <= 0 || tl > now_t) continue;            // derniere mesure inconnue : rien d'efface
+        struct tm tlt;
+        localtime_r(&tl, &tlt);
+        for (int k = 0; k < 4; k++) {
+            int64_t kl = gran_key(&tlt, tl, G[k]), kn = gran_key(now, now_t, G[k]);
+            if (kn <= kl) continue;
+            for (int s = 0; s < N[k]; s++) {
+                int64_t ks = slot_key(h, s, now, now_t, G[k]);
+                if (ks > kl && ks < kn && ps[k]->graph[s].values[ai]) {
+                    ps[k]->graph[s].values[ai] = 0;
+                    cleared++;
+                }
+            }
+        }
+    }
+    // Creneau courant encore celui du cycle precedent (meme heure la veille,
+    // meme jour le mois dernier) : changement de periode, comme period_update
+    for (int k = 0; k < 4; k++) {
+        int cur;
+        switch (G[k]) {
+        case G_HOUR:  cur = now->tm_hour; break;
+        case G_DAY:   cur = now->tm_mday - 1; break;
+        case G_MONTH: cur = now->tm_mon; break;
+        default:      cur = now->tm_year + 1900 - h->base_year; break;
+        }
+        if (cur < 0 || cur >= N[k] || ps[k]->ref_slot != cur) continue;
+        int64_t kl_max = 0;
+        for (int ai = 0; ai < h->attr_count; ai++) {
+            time_t tl = (time_t)h->last_ts[ai];
+            if (tl <= 0 || tl > now_t) continue;
+            struct tm tlt;
+            localtime_r(&tl, &tlt);
+            int64_t kl = gran_key(&tlt, tl, G[k]);
+            if (kl > kl_max) kl_max = kl;
+        }
+        if (!kl_max || kl_max >= gran_key(now, now_t, G[k])) continue;
+        ps[k]->ref      = ps[k]->last;
+        ps[k]->ref_mask = ps[k]->last_mask;
+        memset(&ps[k]->graph[cur], 0, sizeof(ps[k]->graph[cur]));
+        cleared++;
+    }
+    if (cleared) {
+        h->dirty = true;
+        ESP_LOGW(TAG, "%016llX : %d creneau(x) perime(s) efface(s)", (unsigned long long)h->ieee_addr, cleared);
+    }
+}
+
+/** Une fois par chargement, des que l'heure est fiable. Verrou des donnees tenu. */
+static void ensure_fresh_locked(int idx)
+{
+    if (idx < 0 || s_entries[idx].fresh || !s_entries[idx].energy) return;
+    struct tm now;
+    if (!ntp_sync_is_synced() || ntp_sync_get_local_time(&now) != ESP_OK) return;
+    expire_stale_locked(s_entries[idx].energy, &now, time(NULL));
+    s_entries[idx].fresh = true;
+}
+
+void energy_history_expire_stale_all(void)
+{
+    data_lock();
+    for (int i = 0; i < s_entry_count; i++) ensure_fresh_locked(i);
+    data_unlock();
+}
+
+int energy_history_list(uint64_t *out, int max)
+{
+    entries_lock();
+    int n = 0;
+    for (int i = 0; i < s_entry_count && n < max; i++) {
+        if (s_entries[i].energy) out[n++] = s_entries[i].ieee_addr;
+    }
+    entries_unlock();
+    return n;
+}
+
+void energy_history_lock(void)   { data_lock(); }
+void energy_history_unlock(void) { data_unlock(); }
+
 esp_err_t energy_history_add_measurement(uint64_t ieee_addr,
                                           uint16_t attr_id,
                                           int32_t value)
@@ -1018,6 +1159,11 @@ static esp_err_t add_measurement_locked(uint64_t ieee_addr, uint16_t attr_id,
 {
     energy_history_t *h = energy_history_get_or_create(ieee_addr);
     if (!h) return ESP_ERR_NO_MEM;
+    // Creneaux ecoules pendant un arret : effaces avant de repartir le trou
+    entries_lock();
+    int eidx = find_entry(ieee_addr);
+    entries_unlock();
+    ensure_fresh_locked(eidx);
 
     int ai = find_or_add_attr(h->attr_ids, &h->attr_count, attr_id);
     if (ai < 0) return ESP_ERR_NO_MEM;

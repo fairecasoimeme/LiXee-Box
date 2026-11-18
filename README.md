@@ -514,6 +514,29 @@ La box relève chaque minute la dernière température connue de chaque sonde et
 ##### Compatibilité
 Tout device Zigbee reportant le cluster **Temperature Measurement (0x0402)**, attribut **0x0000**. Les sondes LoRa ne sont pas encore prises en charge.
 
+#### Historique détaillé (à partir de la v3.3)
+
+La page **Mesures** --> **Energie** --> **Historique** (ou le lien « Historique détaillé » du graphe d'usage) donne accès à tout l'historique enregistré par la box, alors que le tableau de bord reste sur les 24 dernières heures, les 30 derniers jours, les 12 derniers mois et les années.
+
+* **Granularités** : heure (un jour), jour (un mois), semaine (12 semaines), mois (une année), année (10 ans).
+* **Navigation** : flèches ‹ › pour la période précédente ou suivante, bouton **Aujourd'hui**, calendrier pour choisir un jour (les jours sans données sont grisés), et **période libre** du … au … (31 jours au plus en vue heure).
+* **Electricité, production et gaz** sur le même graphe : index tarifaires, sous-compteurs, production (sous l'axe) et gaz (dans la pile s'il est compté en Wh ou kWh, sinon sur son propre axe). L'eau a son propre graphe.
+* **Outils** : affichage en kWh ou en €, barres empilées ou séparées, comparaison avec la période précédente ou la même période de l'année précédente, zoom (molette, pincement, sélection), température et présence, export CSV de la période affichée.
+* **Statistiques de la période** : consommation et coût (abonnement compris), moyenne, pic, consommation de fond la nuit (vue heure), part des heures creuses, production, gaz, écart avec la période comparée, température moyenne et extrêmes, heures de présence.
+
+##### Conservation
+
+La box recopie ses compteurs dans `hst/` toutes les 15 minutes et à chaque changement d'heure (un fichier n'est réécrit que si son contenu change) :
+
+| Fichier | Contenu | Conservation |
+|---|---|---|
+| `hr_aaaammjj.json` | une journée heure par heure (énergie, température, présence) | 400 jours (13 mois) |
+| `dy_aaaamm.json` | un mois jour par jour | sans limite |
+| `mo_aaaa.json` | une année mois par mois | sans limite |
+| `yr.json` | les années | sans limite |
+
+Environ 2 Mo pour 13 mois, inclus dans la sauvegarde. Le détail heure par heure commence à la mise à jour en v3.3 ; les 30 derniers jours, 12 derniers mois et les années déjà connus de la box sont repris dès le premier enregistrement. **Effacer l'historique** (Config Energie) retire aussi l'énergie de ces fichiers (température et présence restent).
+
 ### Production d'énergie et Injection
 
 #### Mode Producteur

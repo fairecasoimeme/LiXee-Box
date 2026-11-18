@@ -101,6 +101,15 @@ char *energy_chart_json(const char *period, uint64_t ieee);
 char *energy_chart_csv(const char *period, uint64_t ieee);
 
 /**
+ * Page Energie > Historique : energie de l'archive (energy_archive.h) par
+ * heure, jour, semaine, mois ou annee, de la date from a la date to (aaaammjj,
+ * plafonnees : 31 jours en heures, 400 jours, 106 semaines, 120 mois, 20 ans).
+ * ieee = 0 : ZLinky (index, sous-compteurs, production, gaz, temperature,
+ * presence) ; sinon un compteur de gaz ou d'eau seul. A liberer par free().
+ */
+char *energy_history_page_json(const char *gran, uint32_t from, uint32_t to, uint64_t ieee);
+
+/**
  * Format historique de /loadEnergyChart (LiXee-Box) : tableau de lignes
  * {"y":"14H","256":120,...,"sub_0":45,"_psub":0.1834,"1":-200}. Index en Wh
  * (part des sous-compteurs retiree), production en negatif, "0" pour un

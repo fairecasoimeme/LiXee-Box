@@ -14,6 +14,7 @@
 // ============================================================================
 
 #include "energy_service.h"
+#include "energy_archive.h"
 #include "power_stats.h"
 #include "energy_history.h"
 #include "device_data.h"
@@ -473,10 +474,34 @@ static double gran_factor(energy_gran_t g, const struct tm *now)
     }
 }
 
-/** Creneau : granularite + cle (heure, jour du mois - 1, mois 0-11, annee civile). */
+/** Point de l'archive : energie brute (Wh) de chaque compteur et attribut. */
+typedef struct {
+    uint64_t ieee;
+    uint16_t attr;
+    int32_t  v;
+} arch_e_t;
+
+typedef struct {
+    int       n, cap;
+    arch_e_t *e;
+} arch_pt_t;
+
+static int32_t arch_value(const arch_pt_t *p, uint64_t ieee, uint16_t attr)
+{
+    for (int i = 0; i < p->n; i++) {
+        if (p->e[i].ieee == ieee && p->e[i].attr == attr) return p->e[i].v;
+    }
+    return 0;
+}
+
+/**
+ * Creneau : granularite + cle (heure, jour du mois - 1, mois 0-11, annee
+ * civile) ; ap : point de l'archive a la place des anneaux (page Historique).
+ */
 typedef struct {
     energy_gran_t g;
     int key;
+    const arch_pt_t *ap = nullptr;
 } slot_ref_t;
 
 static int resolve_slot(const energy_history_t *h, slot_ref_t s)
@@ -491,6 +516,7 @@ static int resolve_slot(const energy_history_t *h, slot_ref_t s)
 
 static int32_t slot_val(const energy_history_t *h, slot_ref_t s, uint16_t attr)
 {
+    if (s.ap) return h ? arch_value(s.ap, h->ieee_addr, attr) : 0;
     int i = resolve_slot(h, s);
     return i < 0 ? 0 : energy_history_slot_value(h, s.g, i, attr);
 }
@@ -1385,6 +1411,463 @@ char *energy_chart_json(const char *period, uint64_t ieee)
     cJSON_AddNumberToObject(root, "budgetWh", round(budget_wh));
     free(c);
     return json_out(root);
+}
+
+// ============================================================================
+// /api/energy/history : page Energie > Historique (archive, voir energy_archive.h)
+// ============================================================================
+
+enum { HG_HOUR = 0, HG_DAY, HG_WEEK, HG_MONTH, HG_YEAR };
+
+#define HIST_TEMP_MAX 4
+#define HIST_NONE     INT32_MIN
+
+static void pt_add(arch_pt_t *p, uint64_t ieee, uint16_t attr, int32_t v)
+{
+    for (int i = 0; i < p->n; i++) {
+        if (p->e[i].ieee == ieee && p->e[i].attr == attr) { p->e[i].v += v; return; }
+    }
+    if (p->n == p->cap) {
+        int nc = p->cap ? p->cap * 2 : 8;
+        arch_e_t *ne = (arch_e_t *)heap_caps_realloc(p->e, nc * sizeof(arch_e_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!ne) return;
+        p->e = ne;
+        p->cap = nc;
+    }
+    p->e[p->n++] = (arch_e_t){ ieee, attr, v };
+}
+
+/** Ajoute au point le creneau 'slot' de chaque appareil d'un fichier d'archive. */
+static void pt_add_file(arch_pt_t *p, const cJSON *root, int slot)
+{
+    char k[8];
+    snprintf(k, sizeof(k), "%d", slot);
+    const cJSON *dev;
+    cJSON_ArrayForEach(dev, cJSON_GetObjectItem(root, "e")) {
+        const cJSON *o = cJSON_GetObjectItem(dev, k);
+        if (!o || !dev->string) continue;
+        uint64_t ieee = strtoull(dev->string, NULL, 16);
+        const cJSON *a;
+        cJSON_ArrayForEach(a, o) {
+            if (a->string && cJSON_IsNumber(a)) pt_add(p, ieee, (uint16_t)atoi(a->string), (int32_t)a->valuedouble);
+        }
+    }
+}
+
+/** Petit cache des fichiers d'archive lus pour une requete. */
+typedef struct {
+    struct { char kind; uint32_t key; cJSON *root; } e[6];
+    int next;
+} fcache_t;
+
+static const cJSON *fc_get(fcache_t *c, char kind, uint32_t key)
+{
+    for (int i = 0; i < 6; i++) {
+        if (c->e[i].kind == kind && c->e[i].key == key) return c->e[i].root;
+    }
+    int i = c->next;
+    c->next = (c->next + 1) % 6;
+    cJSON_Delete(c->e[i].root);
+    c->e[i].kind = kind;
+    c->e[i].key = key;
+    c->e[i].root = energy_archive_load(kind, key);
+    return c->e[i].root;
+}
+
+static void fc_free(fcache_t *c)
+{
+    for (int i = 0; i < 6; i++) cJSON_Delete(c->e[i].root);
+    memset(c, 0, sizeof(*c));
+}
+
+/** Sondes de temperature de Config Energie (IEEE separes par des virgules). */
+static int temp_sensors(uint64_t out[HIST_TEMP_MAX])
+{
+    char buf[sizeof(((cfg_general_t *)0)->temperature)];
+    strlcpy(buf, cfg_get_general()->temperature, sizeof(buf));
+    int n = 0;
+    for (char *save = NULL, *tok = strtok_r(buf, ", ", &save); tok && n < HIST_TEMP_MAX; tok = strtok_r(NULL, ", ", &save)) {
+        uint64_t v = strtoull(tok, NULL, 16);
+        bool dup = !v || strlen(tok) != 16;
+        for (int i = 0; i < n; i++) if (out[i] == v) dup = true;
+        if (!dup) out[n++] = v;
+    }
+    return n;
+}
+
+/** Chaine JSON echappee. */
+static void sb_jstr(sbuf_t *b, const char *s)
+{
+    sb_printf(b, "\"");
+    for (; s && *s; s++) {
+        unsigned char c = (unsigned char)*s;
+        if (c == '"' || c == '\\') sb_printf(b, "\\%c", c);
+        else if (c < 0x20) sb_printf(b, "\\u%04x", c);
+        else sb_printf(b, "%c", c);
+    }
+    sb_printf(b, "\"");
+}
+
+typedef struct {
+    char        key[12];
+    char        name[40];
+    const char *color;
+    const char *type;
+    double      price;
+    int64_t    *data;
+    double     *prices;                     // sous-compteurs : prix moyen du creneau
+    bool        nonzero;
+} hseries_t;
+
+static void sb_series_data(sbuf_t *b, const int64_t *data, const bool *future, int n)
+{
+    sb_printf(b, "[");
+    for (int i = 0; i < n; i++) {
+        if (future[i]) sb_printf(b, "%snull", i ? "," : "");
+        else sb_printf(b, "%s%lld", i ? "," : "", (long long)data[i]);
+    }
+    sb_printf(b, "]");
+}
+
+/** Valeur en 0,1 °C -> texte JSON. */
+static void sb_tenth(sbuf_t *b, int32_t v, bool comma)
+{
+    if (v == HIST_NONE) sb_printf(b, "%snull", comma ? "," : "");
+    else sb_printf(b, "%s%.1f", comma ? "," : "", v / 10.0);
+}
+
+char *energy_history_page_json(const char *gran_s, uint32_t from, uint32_t to, uint64_t ieee)
+{
+    int gran = HG_DAY;
+    static const char *const GN[5] = { "hour", "day", "week", "month", "year" };
+    for (int i = 0; gran_s && i < 5; i++) if (!strcmp(gran_s, GN[i])) gran = i;
+
+    struct tm now;
+    local_now(&now);
+    const uint32_t today = (uint32_t)((now.tm_year + 1900) * 10000 + (now.tm_mon + 1) * 100 + now.tm_mday);
+    const int32_t dnow = energy_archive_daynum(today);
+    if (from < 20000101 || from > 21001231) from = today;
+    if (to < 20000101 || to > 21001231) to = from;
+    int32_t d0 = energy_archive_daynum(from), d1 = energy_archive_daynum(to);
+    if (d1 < d0) { int32_t t = d0; d0 = d1; d1 = t; }
+
+    // Points de la periode, avec leurs bornes en jours (temperature, presence)
+    int n = 0;
+    int m0 = 0, y0 = 0;
+    switch (gran) {
+    case HG_HOUR:
+        if (d1 - d0 > 30) d1 = d0 + 30;
+        n = (d1 - d0 + 1) * 24;
+        break;
+    case HG_DAY:
+        if (d1 - d0 > 399) d1 = d0 + 399;
+        n = d1 - d0 + 1;
+        break;
+    case HG_WEEK:
+        d0 -= (d0 + 3) % 7;                                  // lundi (le 01/01/1970 etait un jeudi)
+        d1 += 6 - (d1 + 3) % 7;                              // dimanche
+        if (d1 - d0 > 7 * 106 - 1) d1 = d0 + 7 * 106 - 1;
+        n = (d1 - d0 + 1) / 7;
+        break;
+    case HG_MONTH: {
+        uint32_t a = energy_archive_ymd(d0), z = energy_archive_ymd(d1);
+        m0 = (int)(a / 10000) * 12 + (int)(a / 100 % 100) - 1;
+        int m1 = (int)(z / 10000) * 12 + (int)(z / 100 % 100) - 1;
+        if (m1 - m0 > 119) m1 = m0 + 119;
+        n = m1 - m0 + 1;
+        break;
+    }
+    default: {
+        y0 = (int)(energy_archive_ymd(d0) / 10000);
+        int y1 = (int)(energy_archive_ymd(d1) / 10000);
+        if (y1 - y0 > 19) y1 = y0 + 19;
+        n = y1 - y0 + 1;
+        break;
+    }
+    }
+    if (n <= 0) n = 1;
+
+    roles_t r = get_roles();
+    if (!ieee) ieee = r.zl;
+    if (!ieee) return strdup("{\"configured\":false}");
+    const cfg_general_t *gc = cfg_get_general();
+    const bool meter = (ieee != r.zl);
+    uint64_t ts[HIST_TEMP_MAX];
+    const int nt = meter ? 0 : temp_sensors(ts);
+    const bool with_presence = !meter && gc->presence[0];
+
+    // Tableaux en PSRAM
+    size_t bytes = (size_t)n * (sizeof(arch_pt_t) + sizeof(bool) + 2 * sizeof(int32_t) + sizeof(int32_t) * 3 * HIST_TEMP_MAX + 24);
+    uint8_t *mem = (uint8_t *)heap_caps_calloc(1, bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!mem) return NULL;
+    arch_pt_t *pts = (arch_pt_t *)mem;
+    bool *future = (bool *)(pts + n);
+    int32_t *pres = (int32_t *)(((uintptr_t)(future + n) + 3) & ~(uintptr_t)3);
+    int32_t *tavg = pres + n, *tmin = tavg + n * HIST_TEMP_MAX, *tmax = tmin + n * HIST_TEMP_MAX;
+    char (*keys)[20] = (char (*)[20])heap_caps_calloc(n, 20, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!keys) { free(mem); return NULL; }
+
+    fcache_t fc = {};
+    char ik[20];
+    for (int i = 0; i < n; i++) {
+        pres[i] = HIST_NONE;
+        for (int k = 0; k < HIST_TEMP_MAX; k++) tavg[k * n + i] = tmin[k * n + i] = tmax[k * n + i] = HIST_NONE;
+        int32_t da = 0, db = -1;                              // jours couverts (temperature, presence)
+        if (gran == HG_HOUR) {
+            int32_t d = d0 + i / 24;
+            int h = i % 24;
+            uint32_t ymd = energy_archive_ymd(d);
+            snprintf(keys[i], 20, "%04lu-%02lu-%02lu %02d", (unsigned long)(ymd / 10000), (unsigned long)(ymd / 100 % 100),
+                     (unsigned long)(ymd % 100), h);
+            future[i] = d > dnow || (d == dnow && h > now.tm_hour);
+            if (future[i]) continue;
+            const cJSON *root = fc_get(&fc, 'h', ymd);
+            pt_add_file(&pts[i], root, h);
+            const cJSON *p = cJSON_GetArrayItem(cJSON_GetObjectItem(root, "p"), h);
+            if (with_presence && cJSON_IsNumber(p)) pres[i] = p->valueint;
+            for (int k = 0; k < nt; k++) {
+                snprintf(ik, sizeof(ik), "%016llX", (unsigned long long)ts[k]);
+                const cJSON *v = cJSON_GetArrayItem(cJSON_GetObjectItem(cJSON_GetObjectItem(root, "t"), ik), h);
+                if (cJSON_IsNumber(v)) tavg[k * n + i] = v->valueint;
+            }
+            continue;
+        }
+        if (gran == HG_DAY || gran == HG_WEEK) {
+            int span = gran == HG_DAY ? 1 : 7;
+            da = d0 + i * span;
+            db = da + span - 1;
+            uint32_t ymd = energy_archive_ymd(da);
+            snprintf(keys[i], 20, "%04lu-%02lu-%02lu", (unsigned long)(ymd / 10000), (unsigned long)(ymd / 100 % 100),
+                     (unsigned long)(ymd % 100));
+            future[i] = da > dnow;
+            for (int32_t d = da; d <= db && d <= dnow; d++) {
+                uint32_t y = energy_archive_ymd(d);
+                pt_add_file(&pts[i], fc_get(&fc, 'd', y / 100), (int)(y % 100));
+            }
+        } else if (gran == HG_MONTH) {
+            int mm = m0 + i, y = mm / 12, m = mm % 12 + 1;
+            snprintf(keys[i], 20, "%04d-%02d", y, m);
+            future[i] = mm > (now.tm_year + 1900) * 12 + now.tm_mon;
+            if (!future[i]) pt_add_file(&pts[i], fc_get(&fc, 'm', (uint32_t)y), m);
+            da = energy_archive_daynum((uint32_t)(y * 10000 + m * 100 + 1));
+            db = energy_archive_daynum((uint32_t)((m == 12 ? y + 1 : y) * 10000 + (m == 12 ? 1 : m + 1) * 100 + 1)) - 1;
+        } else {
+            int y = y0 + i;
+            snprintf(keys[i], 20, "%04d", y);
+            future[i] = y > now.tm_year + 1900;
+            if (!future[i]) pt_add_file(&pts[i], fc_get(&fc, 'y', 0), y);
+            da = energy_archive_daynum((uint32_t)(y * 10000 + 101));
+            db = energy_archive_daynum((uint32_t)(y * 10000 + 1231));
+        }
+        if (future[i] || (!nt && !with_presence)) continue;
+        // Temperature (moyenne des moyennes journalieres, extremes) et heures de presence
+        int64_t tsum[HIST_TEMP_MAX] = {};
+        int tcnt[HIST_TEMP_MAX] = {};
+        for (int32_t d = da; d <= db && d <= dnow; d++) {
+            uint32_t y = energy_archive_ymd(d);
+            const cJSON *root = fc_get(&fc, 'd', y / 100);
+            if (!root) continue;
+            char dk[4];
+            snprintf(dk, sizeof(dk), "%d", (int)(y % 100));
+            const cJSON *p = cJSON_GetObjectItem(cJSON_GetObjectItem(root, "p"), dk);
+            if (with_presence && cJSON_IsNumber(p)) pres[i] = (pres[i] == HIST_NONE ? 0 : pres[i]) + p->valueint;
+            for (int k = 0; k < nt; k++) {
+                snprintf(ik, sizeof(ik), "%016llX", (unsigned long long)ts[k]);
+                const cJSON *t = cJSON_GetObjectItem(cJSON_GetObjectItem(cJSON_GetObjectItem(root, "t"), ik), dk);
+                const cJSON *va = cJSON_GetArrayItem(t, 0), *vn = cJSON_GetArrayItem(t, 1), *vx = cJSON_GetArrayItem(t, 2);
+                if (!cJSON_IsNumber(va)) continue;
+                tsum[k] += va->valueint;
+                tcnt[k]++;
+                if (cJSON_IsNumber(vn) && (tmin[k * n + i] == HIST_NONE || vn->valueint < tmin[k * n + i])) tmin[k * n + i] = vn->valueint;
+                if (cJSON_IsNumber(vx) && (tmax[k * n + i] == HIST_NONE || vx->valueint > tmax[k * n + i])) tmax[k * n + i] = vx->valueint;
+            }
+        }
+        for (int k = 0; k < nt; k++) {
+            if (tcnt[k]) tavg[k * n + i] = (int32_t)(tsum[k] >= 0 ? (tsum[k] + tcnt[k] / 2) / tcnt[k] : (tsum[k] - tcnt[k] / 2) / tcnt[k]);
+        }
+    }
+    fc_free(&fc);
+
+    // Series, comme le graphe d'usage (chart_build)
+    hseries_t *ser = (hseries_t *)heap_caps_calloc(CHART_MAX_SERIES + 1, sizeof(hseries_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    int ns = 0;
+    int64_t *gas = NULL;
+    double coeff = 1, meter_price = 0;
+    const char *display_unit = "kWh";
+    bool oom = !ser;
+    #define NEW_SERIES(KEY, NAME, COLOR, TYPE, PRICE, WITH_PRICES) ({                                     \
+        hseries_t *_s = NULL;                                                                             \
+        if (!oom && ns < CHART_MAX_SERIES + 1) {                                                          \
+            _s = &ser[ns];                                                                                \
+            strlcpy(_s->key, KEY, sizeof(_s->key));                                                       \
+            strlcpy(_s->name, NAME, sizeof(_s->name));                                                    \
+            _s->color = COLOR; _s->type = TYPE; _s->price = PRICE;                                        \
+            _s->data = (int64_t *)heap_caps_calloc(n, sizeof(int64_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); \
+            if (WITH_PRICES) _s->prices = (double *)heap_caps_calloc(n, sizeof(double), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT); \
+            if (!_s->data || ((WITH_PRICES) && !_s->prices)) { oom = true; _s = NULL; } else ns++;       \
+        }                                                                                                 \
+        _s; })
+
+    if (!oom && meter) {
+        const energy_history_t *h = energy_history_find(ieee);
+        const char *name = "Consommation", *color = "#e67e22";
+        if (ieee == r.gaz) {
+            coeff = gc->coeff_gaz > 0 ? gc->coeff_gaz : 1;
+            display_unit = gc->unit_gaz;
+            meter_price = parse_num(gc->tarif_gaz);
+            name = "Gaz";
+        } else if (ieee == r.water) {
+            coeff = gc->coeff_water > 0 ? gc->coeff_water : 1;
+            display_unit = gc->unit_water;
+            meter_price = parse_num(gc->tarif_water);
+            name = "Eau";
+            color = "#2e86c1";
+        }
+        hseries_t *s = NEW_SERIES("0", name, color, "meter", meter_price, false);
+        for (int i = 0; s && i < n; i++) {
+            slot_ref_t sr = { ENERGY_GRAN_HOUR, 0, &pts[i] };
+            s->data[i] = meter_slot_raw(h, sr);
+            if (s->data[i]) s->nonzero = true;
+        }
+    } else if (!oom) {
+        const energy_history_t *zh = energy_history_find(r.zl);
+        int mode = linky_mode(r.zl);
+        slot_agg_t *a = (slot_agg_t *)heap_caps_malloc(sizeof(slot_agg_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        slot_ref_t s0 = { ENERGY_GRAN_HOUR, 0, &pts[0] };
+        if (a) aggregate(&r, s0, a);
+        hseries_t *idx[10] = {}, *sub[MAX_SUB] = {}, *prod = NULL;
+        int n_idx = a ? a->n_idx : 0, n_sub = a ? a->n_sub : 0;
+        for (int k = 0; k < n_idx; k++) {
+            char key[8], name[24];
+            snprintf(key, sizeof(key), "%u", a->idx_attr[k]);
+            index_name(r.zl, mode, a->idx_attr[k], name, sizeof(name));
+            idx[k] = NEW_SERIES(key, name, index_color(a->idx_attr[k]), "index", price_for_attr(a->idx_attr[k]), false);
+        }
+        int sub_cfg[MAX_SUB];
+        for (int k = 0; k < n_sub; k++) {
+            sub_cfg[k] = a->sub_cfg[k];
+            const cfg_submeter_t *sm = &gc->sub_meters[sub_cfg[k]];
+            char key[12];
+            snprintf(key, sizeof(key), "sub_%d", sub_cfg[k]);
+            sub[k] = NEW_SERIES(key, sm->alias[0] ? sm->alias : sm->IEEE, sm->color[0] ? sm->color : "#3498db",
+                                "submeter", price_for_attr(256), true);
+        }
+        prod = NEW_SERIES("prod", "Production", "#27ae60", "prod", parse_num(gc->tarif_idx_prod), false);
+        const energy_history_t *gh = r.gaz ? energy_history_find(r.gaz) : NULL;
+        if (r.gaz) gas = (int64_t *)heap_caps_calloc(n, sizeof(int64_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        for (int i = 0; a && !oom && i < n; i++) {
+            slot_ref_t sr = { ENERGY_GRAN_HOUR, 0, &pts[i] };
+            aggregate(&r, sr, a);
+            for (int k = 0; k < n_idx && k < a->n_idx; k++) {
+                if (!idx[k]) continue;
+                idx[k]->data[i] = a->idx_adj[k];
+                if (a->idx_adj[k]) idx[k]->nonzero = true;
+            }
+            double avg = slot_avg_price(a);
+            for (int k = 0; k < n_sub && k < a->n_sub; k++) {
+                if (!sub[k]) continue;
+                sub[k]->data[i] = a->sub_wh[k];
+                sub[k]->prices[i] = avg;
+                if (a->sub_wh[k]) sub[k]->nonzero = true;
+            }
+            if (prod) {
+                prod->data[i] = a->prod_wh;
+                if (a->prod_wh) prod->nonzero = true;
+            }
+            if (gas) gas[i] = meter_slot_raw(gh, sr);
+        }
+        (void)zh;
+        free(a);
+    }
+    #undef NEW_SERIES
+
+    // Reponse
+    sbuf_t b;
+    sb_init(&b, 16384 + (size_t)n * (ns + 2 + nt * 3) * 8);
+    static const double FACTOR[5] = { 1.0 / 720.0, 1.0 / 30.0, 7.0 / 30.0, 1.0, 12.0 };
+    sb_printf(&b, "{\"configured\":true,\"gran\":\"%s\",\"from\":%lu,\"to\":%lu,\"today\":%lu,\"device\":\"%s\",\"unit\":\"Wh\"",
+              GN[gran], (unsigned long)energy_archive_ymd(d0), (unsigned long)energy_archive_ymd(d1),
+              (unsigned long)today, meter ? "meter" : "zlinky");
+    sb_printf(&b, ",\"keys\":[");
+    for (int i = 0; i < n; i++) sb_printf(&b, "%s\"%s\"", i ? "," : "", keys[i]);
+    sb_printf(&b, "],\"series\":[");
+    bool first = true;
+    for (int k = 0; k < ns; k++) {
+        const hseries_t *s = &ser[k];
+        if (!s->nonzero) continue;
+        sb_printf(&b, "%s{\"key\":", first ? "" : ",");
+        first = false;
+        sb_jstr(&b, s->key);
+        sb_printf(&b, ",\"name\":");
+        sb_jstr(&b, s->name);
+        sb_printf(&b, ",\"type\":\"%s\",\"color\":", s->type);
+        sb_jstr(&b, s->color);
+        sb_printf(&b, ",\"price\":%.5f", s->price);
+        if (s->prices) {
+            sb_printf(&b, ",\"prices\":[");
+            for (int i = 0; i < n; i++) sb_printf(&b, "%s%.4f", i ? "," : "", s->prices[i]);
+            sb_printf(&b, "]");
+        }
+        sb_printf(&b, ",\"data\":");
+        sb_series_data(&b, s->data, future, n);
+        sb_printf(&b, "}");
+    }
+    sb_printf(&b, "]");
+    bool gas_any = false;
+    for (int i = 0; gas && i < n; i++) if (gas[i]) gas_any = true;
+    if (gas_any) {
+        double gcoef = gc->coeff_gaz > 0 ? gc->coeff_gaz : 1;
+        sb_printf(&b, ",\"gas\":{\"name\":\"Gaz\",\"unit\":");
+        sb_jstr(&b, gc->unit_gaz);
+        sb_printf(&b, ",\"whFactor\":%g,\"price\":%.5f,\"color\":\"#e67e22\",\"data\":[", gaz_wh_factor(), parse_num(gc->tarif_gaz));
+        for (int i = 0; i < n; i++) {
+            if (future[i]) sb_printf(&b, "%snull", i ? "," : "");
+            else sb_printf(&b, "%s%.3f", i ? "," : "", gas[i] * gcoef);
+        }
+        sb_printf(&b, "]}");
+    }
+    if (nt) {
+        sb_printf(&b, ",\"temp\":[");
+        for (int k = 0; k < nt; k++) {
+            snprintf(ik, sizeof(ik), "%016llX", (unsigned long long)ts[k]);
+            const zigate_device_t *z = zigate_devices_find_by_ieee(ts[k]);
+            sb_printf(&b, "%s{\"ieee\":\"%s\",\"name\":", k ? "," : "", ik);
+            sb_jstr(&b, z && z->alias[0] ? z->alias : (z && z->model[0] ? z->model : ik));
+            int32_t *arrs[3] = { tavg + k * n, tmin + k * n, tmax + k * n };
+            static const char *const TN[3] = { "avg", "min", "max" };
+            for (int j = 0; j < (gran == HG_HOUR ? 1 : 3); j++) {
+                sb_printf(&b, ",\"%s\":[", TN[j]);
+                for (int i = 0; i < n; i++) sb_tenth(&b, arrs[j][i], i > 0);
+                sb_printf(&b, "]");
+            }
+            sb_printf(&b, "}");
+        }
+        sb_printf(&b, "]");
+    }
+    if (with_presence) {
+        sb_printf(&b, ",\"presence\":{\"enabled\":%s,\"data\":[", gc->enable_presence_graph ? "true" : "false");
+        for (int i = 0; i < n; i++) {
+            if (pres[i] == HIST_NONE) sb_printf(&b, "%snull", i ? "," : "");
+            else sb_printf(&b, "%s%ld", i ? "," : "", (long)pres[i]);
+        }
+        sb_printf(&b, "]}");
+    }
+    sb_printf(&b, ",\"tempEnabled\":%s", gc->enable_temperature_graph ? "true" : "false");
+    sb_printf(&b, ",\"coeff\":%g,\"displayUnit\":", coeff);
+    sb_jstr(&b, display_unit);
+    sb_printf(&b, ",\"meterPrice\":%.5f", meter_price);
+    sb_printf(&b, ",\"costs\":{\"abo\":%.5f,\"cspe\":%.5f,\"cta\":%.5f,\"prodPrice\":%.5f},\"periodFactor\":%.6f}",
+              parse_num(gc->tarif_abo), parse_num(gc->tarif_cspe), parse_num(gc->tarif_cta),
+              parse_num(gc->tarif_idx_prod), FACTOR[gran]);
+
+    for (int k = 0; ser && k < ns; k++) { free(ser[k].data); free(ser[k].prices); }
+    free(ser);
+    free(gas);
+    for (int i = 0; i < n; i++) free(pts[i].e);
+    free(keys);
+    free(mem);
+    if (oom) { free(b.p); return NULL; }
+    return sb_finish(&b);
 }
 
 char *energy_chart_legacy_json(const char *period, uint64_t ieee)

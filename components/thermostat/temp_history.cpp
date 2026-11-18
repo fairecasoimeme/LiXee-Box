@@ -8,6 +8,7 @@
 #include "device_data.h"
 #include "config_manager.h"
 #include "ntp_sync.h"
+#include "energy_archive.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -173,8 +174,64 @@ static void store_current(th_dev_t *d)
     d->v[idx][h] = (int16_t)(s >= 0 ? (s + n / 2) / n : (s - n / 2) / n);
 }
 
+/**
+ * Archive (page Historique) : moyennes horaires du jour ymd sous "t" du fichier
+ * de la journee, moyenne/min/max du jour sous "t" du fichier du mois (0,1 °C).
+ */
+static void archive_provider(uint32_t day, cJSON *hf, cJSON *df)
+{
+    if (!s_dev || !s_lock) return;
+    int idx = (int)(day % 100) - 1;
+    if (idx < 0 || idx > 30) return;
+    uint64_t ids[TH_MAX_DEV];
+    int16_t vals[TH_MAX_DEV][24];
+    int n = 0;
+    xSemaphoreTake(s_lock, portMAX_DELAY);
+    for (int i = 0; i < s_count; i++) {
+        if (s_dev[i].date[idx] != day) continue;
+        ids[n] = s_dev[i].ieee;
+        memcpy(vals[n], s_dev[i].v[idx], sizeof(vals[n]));
+        n++;
+    }
+    xSemaphoreGive(s_lock);
+    char dk[4];
+    snprintf(dk, sizeof(dk), "%d", (int)(day % 100));
+    for (int i = 0; i < n; i++) {
+        char id[20];
+        snprintf(id, sizeof(id), "%016llX", (unsigned long long)ids[i]);
+        int32_t sum = 0;
+        int cnt = 0, mn = INT16_MAX, mx = INT16_MIN;
+        cJSON *arr = cJSON_CreateArray();
+        for (int h = 0; h < 24; h++) {
+            int16_t v = vals[i][h];
+            cJSON_AddItemToArray(arr, v == TH_NONE ? cJSON_CreateNull() : cJSON_CreateNumber(v));
+            if (v == TH_NONE) continue;
+            sum += v;
+            cnt++;
+            if (v < mn) mn = v;
+            if (v > mx) mx = v;
+        }
+        if (!cnt) { cJSON_Delete(arr); continue; }
+        cJSON *ht = cJSON_GetObjectItem(hf, "t");
+        if (!ht) ht = cJSON_AddObjectToObject(hf, "t");
+        cJSON_DeleteItemFromObject(ht, id);
+        cJSON_AddItemToObject(ht, id, arr);
+        cJSON *dt = cJSON_GetObjectItem(df, "t");
+        if (!dt) dt = cJSON_AddObjectToObject(df, "t");
+        cJSON *ds = cJSON_GetObjectItem(dt, id);
+        if (!ds) ds = cJSON_AddObjectToObject(dt, id);
+        cJSON_DeleteItemFromObject(ds, dk);
+        cJSON *e = cJSON_AddArrayToObject(ds, dk);
+        int avg = sum >= 0 ? (sum + cnt / 2) / cnt : (sum - cnt / 2) / cnt;
+        cJSON_AddItemToArray(e, cJSON_CreateNumber(avg));
+        cJSON_AddItemToArray(e, cJSON_CreateNumber(mn));
+        cJSON_AddItemToArray(e, cJSON_CreateNumber(mx));
+    }
+}
+
 void temp_history_init(void)
 {
+    energy_archive_register(archive_provider);
     if (s_dev) return;
     s_lock = xSemaphoreCreateMutex();
     s_dev = (th_dev_t *)heap_caps_calloc(TH_MAX_DEV, sizeof(th_dev_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

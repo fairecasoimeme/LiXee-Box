@@ -483,7 +483,8 @@
             // Usage electricite
             '<div class="col-md-6">' +
               '<div class="card p-4">' +
-                '<h5 class="card-title">Usage d\'&eacute;lectricit&eacute;</h5>' +
+                '<h5 class="card-title d-flex align-items-center">Usage d\'&eacute;lectricit&eacute;' +
+                  '<a href="#energyHistory" class="ms-auto small fw-normal">Historique d&eacute;taill&eacute; &rsaquo;</a></h5>' +
                 '<div class="card-body"><div style="position:relative;height:342px;"><canvas id="energy-chart"></canvas></div></div>' +
                 helpLink('popupHelpElectricity') +
                 '<a href="' + energyUrl('/api/energy/chart/export?time=' + t) + '" download class="position-absolute bottom-0 end-0 p-2 text-muted" title="Exporter en CSV">' + ENERGY_CSV_ICON + '</a>' +

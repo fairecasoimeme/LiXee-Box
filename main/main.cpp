@@ -54,6 +54,7 @@
 #include "wifi_manager.h"
 #include "eth_manager.h"
 #include "energy_service.h"
+#include "energy_archive.h"
 #include "power_stats.h"
 #include "zigate_ir.h"
 #include "group_matter.h"
@@ -1454,6 +1455,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(energy_history_init());
     energy_history_load_all();  // Charge /littlefs/hst/ (non-fatal si vide)
     energy_service_init();      // Courbe de puissance 24 h, calculs de la page Energie
+    energy_archive_init();      // Archive datee (page Energie > Historique)
     power_stats_init();         // Pics, plateaux et tranches de charge (/api/power/*)
     zigate_ir_set_change_cb(on_ir_codes_changed);   // codes appris = actions de l'appareil
     zigate_ir_init();           // Codes des telecommandes infrarouges (/littlefs/ir)
@@ -1670,6 +1672,7 @@ extern "C" void app_main(void)
         if (maintenance_reboot_due()) {
             ESP_LOGW(TAG, "Redemarrage demande : sauvegarde des donnees");
             device_data_save_all();
+            energy_archive_flush();
             energy_history_save_all();
             energy_service_flush();
             power_stats_flush();
@@ -1776,15 +1779,19 @@ extern "C" void app_main(void)
             lora_save_state(false);
             zigate_devices_save_seen(false);
 
+            // Archive datee des anneaux : avant leur remise a zero
+            energy_archive_tick();
+
             // Reset periodique de l'historique d'energie (equivalent ScanDevicesToRAZ)
             if (ntp_sync_is_synced()) {
                 int cur_hour  = ntp_sync_get_hour();
                 int cur_day   = ntp_sync_get_day();
                 int cur_month = ntp_sync_get_month();
-                int cur_minute = ntp_sync_get_minute();
 
-                // Reset horaire: quand minute == 0 et heure differente
-                if (cur_minute == 0 && cur_hour != last_reset_hour) {
+                // Reset horaire : a chaque nouvelle heure. Attendre la minute 0
+                // sautait la remise a zero quand ce passage de la boucle tombait
+                // a la minute 1 : le creneau suivant gardait la veille.
+                if (cur_hour != last_reset_hour) {
                     energy_history_reset_hourly(cur_hour);
                     last_reset_hour = cur_hour;
 
