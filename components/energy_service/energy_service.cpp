@@ -279,19 +279,52 @@ static void read_live(uint64_t zl, live_t *L)
     static const uint16_t CURR[3] = { 1288, 2312, 2568 };
     int nph = L->tri ? 3 : 1;
     int64_t v, u, i;
-    for (int p = 0; p < nph; p++) {
-        if (L->mode == 2) {
-            // Historique triphase : pas de puissance par phase, IINST x 200 V
-            if (dd_num(zl, 0x0B04, CURR[p], &i)) { L->phase[p] = (int32_t)(i * 200); L->has_phase[p] = true; }
-        } else if (dd_num(zl, 0x0B04, PAPP[p], &v)) {
-            L->phase[p] = (int32_t)v;
-            L->has_phase[p] = true;
+    if (L->mode == 2) {
+        // Historique triphase : le compteur ne donne que la puissance totale
+        // (PAPP) et l'intensite de chaque phase (IINST1..3). PAPP est repartie
+        // au prorata des intensites : la somme des phases vaut toujours PAPP.
+        // Intensites toutes nulles : parts egales. Sans PAPP : IINST x 200 V.
+        int64_t cur[3] = { 0, 0, 0 }, isum = 0, papp = 0;
+        bool has_i[3];
+        int last = -1, nh = 0;
+        for (int p = 0; p < 3; p++) {
+            has_i[p] = dd_num(zl, 0x0B04, CURR[p], &cur[p]);
+            if (!has_i[p]) continue;
+            if (cur[p] < 0) cur[p] = 0;
+            isum += cur[p];
+            last = p;
+            nh++;
+        }
+        bool has_papp = dd_num(zl, 0x0B04, PAPP[0], &papp) && papp >= 0;
+        if (has_papp && nh) {
+            int64_t rest = papp;
+            for (int p = 0; p < 3; p++) {
+                if (!has_i[p]) continue;
+                int64_t share = (p == last) ? rest : (isum > 0 ? papp * cur[p] / isum : papp / nh);
+                rest -= share;
+                L->phase[p] = (int32_t)share;
+                L->has_phase[p] = true;
+            }
+        } else if (has_papp) {
+            L->total = (int32_t)papp;             // phases inconnues : total seul
+            L->has_total = true;
+        } else {
+            for (int p = 0; p < 3; p++) {
+                if (has_i[p]) { L->phase[p] = (int32_t)(cur[p] * 200); L->has_phase[p] = true; }
+            }
+        }
+    } else {
+        for (int p = 0; p < nph; p++) {
+            if (dd_num(zl, 0x0B04, PAPP[p], &v)) {
+                L->phase[p] = (int32_t)v;
+                L->has_phase[p] = true;
+            }
         }
     }
     if (L->tri && dd_num(zl, 0x0B04, 0x0306, &v)) {
         L->total = (int32_t)v;           // SINSTS total (standard triphase)
         L->has_total = true;
-    } else {
+    } else if (!L->has_total) {
         for (int p = 0; p < nph; p++) {
             if (L->has_phase[p]) { L->total += L->phase[p]; L->has_total = true; }
         }

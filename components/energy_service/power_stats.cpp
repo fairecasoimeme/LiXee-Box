@@ -90,6 +90,9 @@ static SemaphoreHandle_t s_mx;
 static long     s_subVA;
 static long     s_phaseLast[PS_CH];
 static uint32_t s_phaseLastMs[PS_CH];
+// Historique triphase : derniers PAPP (0) et IINST1..3 (1..3), et leur date
+static long     s_histLast[4];
+static uint32_t s_histLastMs[4];
 static uint32_t s_lastAvgMs, s_minuteMs;
 static bool     s_dirty;
 static uint32_t s_lastSave, s_lastTick;
@@ -324,10 +327,28 @@ void power_stats_on_attribute(uint64_t ieee, uint16_t cluster, uint16_t attr, in
             if (fresh) push_sample(0, sum);
         }
     } else {
-        // Historique triphase : PAPP totale, phases d'apres IINST1..3 (200 VA/A)
-        if (attr == 1295) push_sample(0, (long)value);
-        int ph = (attr == 1288) ? 1 : (attr == 2312) ? 2 : (attr == 2568) ? 3 : 0;
-        if (ph) push_sample(ph, (long)value * 200);
+        // Historique triphase : PAPP totale ; par phase, PAPP repartie au
+        // prorata des intensites IINST1..3 (somme des phases = PAPP), comme
+        // energy_service. Intensites toutes nulles : parts egales.
+        int k = (attr == 1295) ? 0 : (attr == 1288) ? 1 : (attr == 2312) ? 2 : 3;
+        if (k == 0) push_sample(0, (long)value);
+        uint32_t now = now_ms();
+        s_histLast[k] = (long)value;
+        s_histLastMs[k] = now ? now : 1;
+        bool fresh = true;
+        long isum = 0;
+        for (int i = 0; i < 4; i++) {
+            if (s_histLastMs[i] == 0 || now - s_histLastMs[i] > PS_PHASE_FRESH_MS) { fresh = false; break; }
+            if (i) isum += s_histLast[i];
+        }
+        if (fresh) {
+            long papp = s_histLast[0], rest = papp;
+            for (int p = 1; p <= 3; p++) {
+                long va = (p == 3) ? rest : (isum > 0 ? (long)((long long)papp * s_histLast[p] / isum) : papp / 3);
+                rest -= va;
+                push_sample(p, va);
+            }
+        }
     }
     unlock();
 }
