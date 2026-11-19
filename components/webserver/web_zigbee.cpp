@@ -412,7 +412,15 @@ static bool has_temperature(const zigate_device_t *d)
     return false;
 }
 
-/** Prise / relais pilotable en marche-arret (delestage) : prise declaree ou cluster 0x0006. */
+/**
+ * Prise / relais pilotable en marche-arret (delestage) : prise declaree,
+ * cluster 0x0006, ou action "ON" du template (ZCL On/Off ou datapoint Tuya
+ * booleen, ZB_ACT_TUYA_BOOL - ex. relais Tuya TS0601 sans cluster OnOff
+ * standard, issue #58). Le cluster proprietaire Tuya 0xEF00 seul n'est PAS
+ * un critere : il est partage par des appareils qui ne sont pas des relais
+ * (vannes, capteurs de presence, tetes thermostatiques...), d'ou le test sur
+ * une action nommee plutot que sur la simple presence du cluster.
+ */
 static bool has_onoff(const zigate_device_t *d)
 {
     const device_data_t *dd = device_data_find(d->ieee_addr);
@@ -420,7 +428,13 @@ static bool has_onoff(const zigate_device_t *d)
     for (int i = 0; i < d->in_cluster_count && i < 32; i++) if (d->in_clusters[i] == 0x0006) return true;
     if (device_data_get_attr(d->ieee_addr, 0x0006, 0x0000)) return true;
     const devdata_template_t *t = device_data_get_template(d->ieee_addr);
-    for (int i = 0; t && i < t->state_count; i++) if (t->states[i].cluster == 0x0006) return true;
+    if (!t) return false;
+    for (int i = 0; i < t->state_count; i++) if (t->states[i].cluster == 0x0006) return true;
+    for (int i = 0; i < t->action_count; i++) {
+        const devdata_template_action_t *a = &t->actions[i];
+        if (!strcasecmp(a->name, "ON") &&
+            (a->command == ZB_ACT_ONOFF || a->command == ZB_ACT_TUYA_BOOL)) return true;
+    }
     return false;
 }
 
