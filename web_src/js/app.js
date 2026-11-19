@@ -1137,17 +1137,20 @@
     return !meta.ref && item.parsed.y != null && Number(item.parsed.y) !== 0;
   }
 
-  // Puissance apparente des dernieres 24 h (createPowerGraph)
+  // Puissance apparente des dernieres 24 h (createPowerGraph) : aires empilees.
+  // En barres, les 1440 minutes font moins d'un pixel chacune : les phases
+  // empilees se melangeaient et semblaient cote a cote. Chaque phase est ici
+  // une bande posee sur la precedente, le bord superieur donne le total.
   function createPowerChart() {
     var canvas = document.getElementById('power-chart');
     if (!canvas || typeof Chart === 'undefined') return null;
     return new Chart(canvas.getContext('2d'), {
-      type: 'bar',
+      type: 'line',
       data: { labels: [], datasets: [] },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
         interaction: { mode: 'index', intersect: false },
-        datasets: { bar: { barPercentage: 0.9, categoryPercentage: 0.95 } },
+        elements: { point: { radius: 0, hoverRadius: 3, hitRadius: 2 }, line: { borderWidth: 1, tension: 0 } },
         scales: {
           x: { stacked: true, ticks: { maxRotation: 70, minRotation: 70, autoSkip: true, maxTicksLimit: 20 } },
           y: { stacked: true, beginAtZero: true, suggestedMax: 100,
@@ -1239,7 +1242,13 @@
     var labels = arr(p.labels).map(String);
     var cons = arr(p.consumption), inj = arr(p.injection);
     var tri = (p.tri != null) ? !!p.tri : cons.length > 1;
-    var BLUES = ['#1e88e5', '#5dade2', '#85c1e9'], GREENS = ['#27ae60', '#0ed160', '#08612d'];
+    // Phases bien distinctes (bleu, sarcelle, violet) ; injection en verts
+    var BLUES = ['#1e88e5', '#00897b', '#7e57c2'], GREENS = ['#27ae60', '#0ed160', '#08612d'];
+    // Aire empilee : remplie jusqu'a la phase precedente de la meme pile
+    function area(label, data, color, stack) {
+      return { label: label, data: data, borderColor: color, backgroundColor: color + 'b3',
+               fill: 'stack', stack: stack, spanGaps: false };
+    }
     // null = minute sans mesure ; injection affichee en negatif
     function clean(a, sign) {
       return arr(a).map(function(v) {
@@ -1251,12 +1260,10 @@
     inj.slice(0, 3).forEach(function(a, i) {
       var data = clean(a, -1);
       if (!data.some(function(v) { return v; })) return;     // injection vide : omise
-      sets.push({ label: tri ? 'Injection Ph' + (i + 1) : 'Injection', data: data,
-                  backgroundColor: GREENS[i], stack: 'Stack0' });
+      sets.push(area(tri ? 'Injection Ph' + (i + 1) : 'Injection', data, GREENS[i], 'inj'));
     });
     cons.slice(0, 3).forEach(function(a, i) {
-      sets.push({ label: tri ? 'Puissance Ph' + (i + 1) : 'Puissance', data: clean(a, 1),
-                  backgroundColor: BLUES[i], stack: 'Stack0' });
+      sets.push(area(tri ? 'Puissance Ph' + (i + 1) : 'Puissance', clean(a, 1), BLUES[i], 'cons'));
     });
     var goal = num(p.goal);
     chart.lixeeGoal = goal;
