@@ -113,6 +113,7 @@ typedef struct {
     bool          heat;             // MCAP_THERMOSTAT : consigne de chauffage
     bool          cool;             //                   consigne de refroidissement
     bool          presets;          // MCAP_THERMOSTAT : feature Matter Presets (zones virtuelles uniquement)
+    bool          occ;              //                   feature OCC (capteur de presence assigne)
     bool          cover_inverted;   // volet dont la position remontee est l'ouverture (252)
     bool          zlinky;
     int           link_count;
