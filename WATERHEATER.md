@@ -72,7 +72,7 @@ Contrairement au thermostat virtuel (réglages libres), le chauffe-eau a **3 mod
 
 Température cible du ballon, **0 à 70 °C** (55 °C par défaut — valeur usuelle anti-légionellose). Réglable au formulaire et directement sur la vignette avec les boutons **−/+** (pas de 1 °C).
 
-> Contrairement au thermostat virtuel, il n'y a **pas de hors-gel** : un ballon d'eau chaude n'a pas cette notion. La sécurité correspondante est l'**arrêt** du mode Arrêt et la coupure si le capteur est HS (voir §12).
+> Contrairement au thermostat virtuel, il n'y a **pas de hors-gel** : un ballon d'eau chaude n'a pas cette notion. La sécurité correspondante est l'**arrêt** du mode Arrêt ; un ballon dispose par ailleurs de son propre thermostat interne, la box ne cherche donc pas à couper par elle-même si sa sonde tombe en panne (voir §12).
 
 ---
 
@@ -82,6 +82,8 @@ En mode **Programme**, la régulation n'est autorisée **que** pendant les crén
 
 - **Plages horaires** : une ou plusieurs plages `HH:MM-HH:MM`, avec des jours cochables individuellement (gère le passage de minuit, ex. `22:00-06:00` pour des heures creuses nocturnes). Laissez-les vides pour ne pas restreindre par horaire.
 - **Périodes tarifaires Linky** (si un **ZLinky** est configuré) : cochez les périodes pendant lesquelles le chauffe-eau **doit** chauffer (Heures Creuses, Tempo Bleu HC…). Les périodes proposées dépendent de l'abonnement détecté (Base / HC-HP / EJP / Tempo).
+
+**À la création d'un chauffe-eau**, la période **Heures Creuses** est **présélectionnée automatiquement** si le compteur la donne de façon fiable (TIC **Historique**, abonnement HC/HP). En TIC **Standard**, ou sans abonnement HC/HP détecté, rien n'est présélectionné et la page affiche un avertissement : sans plage ni période choisie, le mode Programme chauffe **en continu**.
 
 Les deux peuvent se cumuler : le chauffe-eau chauffe si l'une **ou** l'autre condition est remplie. Si seul un filtre tarifaire est configuré (sans plage horaire) et qu'on est hors période tarifaire autorisée, la régulation est **suspendue**, sans repli silencieux sur l'horaire.
 
@@ -100,7 +102,7 @@ Beaucoup de ballons d'eau chaude n'ont pas de sonde Zigbee dédiée ; la sonde e
 
 **Sans sonde** : pilotage « en ouvert" — le contacteur suit simplement le mode / la plage horaire, sans savoir si l'eau est déjà chaude.
 
-Si aucune mesure n'est reçue depuis un certain délai (**180 min** par défaut, configurable), le capteur est marqué **HS** et le contacteur est coupé par sécurité.
+Si aucune mesure n'est reçue depuis un certain délai (**180 min** par défaut, configurable), le capteur est marqué **HS** : la régulation **ne coupe pas** le contacteur pour autant, elle repasse en pilotage « en ouvert » comme si aucune sonde n'était configurée (le ballon dispose de son propre thermostat interne, une coupure côté box n'ajoute pas de sécurité et priverait d'eau chaude jusqu'à ce qu'on s'en aperçoive). Une **notification** signale l'absence de mesure, pour que l'utilisateur puisse intervenir sur la sonde.
 
 ---
 
@@ -170,7 +172,7 @@ Repliés dans **« Paramètres avancés de régulation (TPI) »**, sans effet si
 | **Ki** | 0,1 | Gain intégral (élimine l'erreur résiduelle, borné anti-windup) |
 | **Temps ON minimal** | 180 s | Anti-court-cycle |
 | **Temps OFF minimal** | 180 s | Anti-court-cycle |
-| **Délai capteur HS** | 180 min | Sans mesure au-delà → capteur « HS », contacteur coupé |
+| **Délai capteur HS** | 180 min | Sans mesure au-delà → capteur « HS », pilotage en ouvert + notification |
 
 ---
 
@@ -222,11 +224,11 @@ Chaque chauffe-eau est publié comme un endpoint **Water Heater** (device type `
 1. **Boost en cours** → chauffe (continue, ou jusqu'à consigne atteinte en one-shot).
 2. **Mode Arrêt** → coupure.
 3. **Mode Programme, hors plage/tarif** → coupure.
-4. **Régulation normale** (Marche forcée, ou Programme en plage) : TPI si sonde valide, pilotage en ouvert si **aucune sonde n'est configurée**, coupure par sécurité si une sonde **est** configurée mais HS (voir ci-dessous) — ne pas confondre les deux cas.
+4. **Régulation normale** (Marche forcée, ou Programme en plage) : TPI si sonde valide, pilotage en ouvert sinon — **aucune sonde configurée** ou sonde configurée mais **HS**, même traitement dans les deux cas.
 
 Sécurités complémentaires :
 
-- **Capteur HS** (sonde configurée, mais pas de mesure depuis le délai configuré ou appareil introuvable) → contacteur coupé, pour ne pas chauffer « à l'aveugle » un ballon dont on a perdu la mesure.
+- **Capteur HS** (sonde configurée, mais pas de mesure depuis le délai configuré ou appareil introuvable) → pas de coupure (le ballon a son propre thermostat interne, une coupure côté box n'ajoute pas de sécurité et priverait d'eau chaude) : la régulation repasse en pilotage en ouvert, et une **notification** signale le problème.
 - **Anti-court-cycle** sur tous les basculements (`minOn`/`minOff`).
 - L'état réel lu sur le contacteur (`actualOn`) peut diverger de la commande (`output`) si l'appareil a été actionné en dehors de la box (bouton physique, autre automatisation) : la régulation **corrige** au cycle suivant, sans attendre une action de l'utilisateur.
 
@@ -248,7 +250,7 @@ Sécurités complémentaires :
 Vérifiez le mode (pas sur Arrêt), et si Programme : qu'on est bien **dans la plage horaire / période tarifaire** configurée.
 
 **Le capteur est marqué « HS ».**
-Aucune mesure reçue depuis le délai configuré (180 min par défaut). Vérifiez la pile / la portée du capteur, ou augmentez le délai dans les paramètres avancés. Sans sonde du tout, ce statut n'apparaît pas : le pilotage passe en mode « ouvert ».
+Aucune mesure reçue depuis le délai configuré (180 min par défaut) : une **notification** est envoyée, et la régulation continue en pilotage « en ouvert » (comme sans sonde du tout), sans couper le contacteur. Vérifiez la pile / la portée du capteur, ou augmentez le délai dans les paramètres avancés.
 
 **L'état du contacteur (`actualOn`) ne se met jamais à jour tout seul.**
 Le contacteur a besoin d'un **bind + reporting** Zigbee configuré sur le cluster `0x0006` (bouton **Configurer** sur sa fiche, Réseau → Zigbee). Sans ça, la box ne peut connaître l'état réel qu'en le relisant manuellement, et `actualOn` recopie simplement la dernière commande envoyée.

@@ -14,6 +14,7 @@
 #include "ntp_sync.h"
 #include "matter_bridge.h"
 #include "matter_device_manager.h"
+#include "notifications.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -22,6 +23,7 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include "freertos/queue.h"
+#include "freertos/idf_additions.h"
 
 #include <ctype.h>
 #include <math.h>
@@ -65,6 +67,7 @@ typedef struct {
     bool    sensor_valid;
     uint8_t sensor_reason;                 // 0 OK, 1 introuvable, 2 sans temperature, 3 trop ancien
     long    sensor_age_s;
+    bool    sensor_hs_notified;            // notification "sans mesure" deja envoyee pour cet episode HS
     bool    sched_active;                  // mode Programme : dans une plage active
     float   duty;
     bool    output;                        // etat commande
@@ -342,12 +345,31 @@ static void start_boost_locked(wh_t *t, uint32_t duration_s, bool one_shot, bool
     t->boost_setpoint = sp < 0.0f ? 0.0f : (sp > 70.0f ? 70.0f : sp);   // meme plage que set_setpoint_locked
 }
 
+// Notifie une fois par episode HS (pas a chaque tick de 30 s) qu'une sonde
+// *configuree* ne remonte plus de mesure : la regulation continue en pilotage
+// ouvert (voir regulation_tick), la notification est le seul signal que
+// quelque chose cloche (revue PR #57, suite).
+static void notify_sensor_state(wh_t *t)
+{
+    if (!t->sensor[0]) return;             // pas de sonde configuree : rien a signaler
+    if (t->sensor_valid) { t->sensor_hs_notified = false; return; }
+    if (t->sensor_hs_notified) return;
+    int timeout_min = (t->sensor_timeout_s > 0 ? t->sensor_timeout_s : SENSOR_TIMEOUT_DEFAULT_SEC) / 60;
+    char msg[160];      // marge large : t->name (31 car. max) + %d (int, pire cas 11 car.) + texte fixe
+    snprintf(msg, sizeof(msg), "\"%s\" : sonde sans mesure depuis plus de %d min, chauffe en pilotage simple",
+             t->name, timeout_min);
+    notifications_add_alert("\U0001F321️ Chauffe-eau", msg, NOTIF_WARNING,
+                            "water_heater_sensor", 0, 0);
+    t->sensor_hs_notified = true;
+}
+
 static void regulation_tick(void)
 {
     int64_t now = now_ms();
     for (int i = 0; i < s_count; i++) {
         wh_t *t = &s_z[i];
         refresh_sensors(t);
+        notify_sensor_state(t);
 
         bool boosting = t->boost_until_ms != 0;
         if (boosting && now >= t->boost_until_ms) { end_boost_locked(t); boosting = false; }
@@ -369,19 +391,14 @@ static void regulation_tick(void)
             t->duty = 0.0f;
             t->integral = 0.0f;
         } else if (!t->sensor_valid) {
-            if (t->sensor[0]) {
-                // Sonde configuree mais HS (pas de mesure depuis sensor_timeout_s,
-                // ou appareil introuvable) : coupure par securite, voir
-                // WATERHEATER.md §5/§14 ("le contacteur est coupe par securite").
-                // A ne pas confondre avec "pas de sonde du tout" (revue PR #57).
-                desired = false;
-                t->duty = 0.0f;
-            } else {
-                // Pas de sonde configuree : pilotage ouvert, le contacteur suit
-                // simplement le mode / la plage horaire.
-                desired = true;
-                t->duty = 1.0f;
-            }
+            // Pas de sonde, ou sonde configuree mais HS : pilotage ouvert, le
+            // contacteur suit simplement le mode / la plage horaire. Le
+            // ballon a son propre thermostat interne : une coupure cote box
+            // n'ajoute pas de securite et prive d'eau chaude jusqu'a ce qu'on
+            // s'en apercoive (revue PR #57, suite - avis revise de l'owner,
+            // notify_sensor_state() signale le probleme a la place).
+            desired = true;
+            t->duty = 1.0f;
         } else {
             float error = target - t->current_temp;
             if (boosting) {
@@ -635,6 +652,11 @@ char *water_heater_config_json(void)
     zone_defaults(&d);
     cJSON *def = cJSON_AddObjectToObject(root, "defaults");
     cJSON_AddNumberToObject(def, "mode", d.mode);
+    // Heures Creuses presequelectionnee a la creation si le compteur la
+    // donne de facon fiable (TIC Historique, abonnement HC/HP) ; en TIC
+    // Standard, on laisse vide et la page avertit (revue PR #57, suite).
+    uint16_t hc = 0;
+    cJSON_AddStringToObject(def, "tariffPeriods", energy_tariff_hc_index(&hc) ? "256" : "");
     cJSON_AddNumberToObject(def, "setpoint", d.setpoint);
     cJSON_AddNumberToObject(def, "tpiCycleSec", d.tpi_cycle_s);
     cJSON_AddNumberToObject(def, "tpiKp", r3(d.kp));
@@ -1012,7 +1034,10 @@ esp_err_t water_heater_init(void)
     s_z = (wh_t *)heap_caps_calloc(WATERHEATER_MAX_ZONES, sizeof(wh_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_z) s_z = (wh_t *)calloc(WATERHEATER_MAX_ZONES, sizeof(wh_t));
     s_lock = xSemaphoreCreateMutex();
-    s_q = xQueueCreate(16, sizeof(wh_msg_t));
+    // En PSRAM si possible (RAM interne la plus tendue avec Matter, voir
+    // revue PR #57) : meme repli que s_z ci-dessus si l'allocation echoue.
+    s_q = xQueueCreateWithCaps(16, sizeof(wh_msg_t), MALLOC_CAP_SPIRAM);
+    if (!s_q) s_q = xQueueCreate(16, sizeof(wh_msg_t));
     if (!s_z || !s_lock || !s_q) return ESP_ERR_NO_MEM;
     load_config();
     return ESP_OK;

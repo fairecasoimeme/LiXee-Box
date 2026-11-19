@@ -2570,6 +2570,16 @@ void energy_tariff_label(uint16_t attr, char *out, size_t len)
     else snprintf(out, len, "P%u", attr);
 }
 
+bool energy_tariff_hc_index(uint16_t *out)
+{
+    roles_t r = get_roles();
+    if (!r.zl || !device_data_find(r.zl)) return false;
+    if (!mode_is_histo(linky_mode(r.zl))) return false;   // TIC Standard : pas fiable (revue PR #57)
+    if (tariff_family(r.zl) != 1) return false;           // pas un abonnement HC/HP
+    if (out) *out = 256;                                  // HCHP[0], voir energy_tariff_periods()
+    return true;
+}
+
 char *energy_tariff_json(void)
 {
     roles_t r = get_roles();

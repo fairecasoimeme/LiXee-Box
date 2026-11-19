@@ -325,6 +325,8 @@
     h += "<label class='form-label'>P&eacute;riodes tarifaires actives</label>" +
          "<div style='border:1px solid #dee2e6;border-radius:8px;padding:10px;'>" + tariffChecks(opts, t.tariffPeriods) + '</div>' +
          "<div class='form-text'>R&eacute;gule aussi pendant les p&eacute;riodes <b>coch&eacute;es</b> (en plus des plages horaires ci-dessus).</div>";
+    h += "<div id='whContinuousWarn' class='alert alert-warning mt-3' style='display:none;font-size:13px;padding:8px 12px;'>" +
+         "Aucune plage horaire ni p&eacute;riode tarifaire choisie : en mode Programme, le chauffe-eau va chauffer <b>en continu</b> tant qu'aucune des deux n'est renseign&eacute;e.</div>";
     h += '</div></div>';
 
     // Bloc 3 : capteur / contacteur
@@ -372,7 +374,12 @@
          '</div></form></div>';
     A.setContent(h);
 
-    function upMode() { $('#whProgRow').toggle($('#whModeSel').val() === '2'); }
+    function upContinuousWarn() {
+      var hasSched = $('#whSchedList .sched-row').length > 0;
+      var hasTariff = $('.wh-tp:checked').length > 0;
+      $('#whContinuousWarn').toggle($('#whModeSel').val() === '2' && !hasSched && !hasTariff);
+    }
+    function upMode() { $('#whProgRow').toggle($('#whModeSel').val() === '2'); upContinuousWarn(); }
     $('#whModeSel').on('change', upMode);
     upMode();
 
@@ -393,9 +400,12 @@
     parseSchedule(t.schedule).forEach(function(p) { $('#whSchedList').append(schedRowHtml(p)); });
     $('#whSchedAdd').on('click', function() {
       $('#whSchedList').append(schedRowHtml({ days: '1234567', a: '22:00', b: '06:00' }));
+      upContinuousWarn();
     });
     $('#whSchedList').on('click', '.sched-day', function() { $(this).toggleClass('active'); });
-    $('#whSchedList').on('click', '.sched-del', function() { $(this).closest('.sched-row').remove(); });
+    $('#whSchedList').on('click', '.sched-del', function() { $(this).closest('.sched-row').remove(); upContinuousWarn(); });
+    $('.wh-tp').on('change', upContinuousWarn);
+    upContinuousWarn();
 
     $('#whForm').on('submit', function(e) {
       e.preventDefault();
