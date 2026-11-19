@@ -516,7 +516,7 @@ Tout device Zigbee reportant le cluster **Temperature Measurement (0x0402)**, at
 
 #### Historique détaillé (à partir de la v3.3)
 
-La page **Mesures** --> **Energie** --> **Historique** (ou l'icône d'agrandissement, deux flèches, à droite du titre du graphe d'usage) donne accès à tout l'historique enregistré par la box, alors que le tableau de bord reste sur les 24 dernières heures, les 30 derniers jours, les 12 derniers mois et les années.
+Le bouton **Historique** en haut du tableau de bord **Mesures** --> **Energie** (ou l'icône d'agrandissement, deux flèches, à droite du titre du graphe d'usage) donne accès à tout l'historique enregistré par la box, alors que le tableau de bord reste sur les 24 dernières heures, les 30 derniers jours, les 12 derniers mois et les années.
 
 * **Granularités** : heure (un jour), jour (un mois), semaine (12 semaines), mois (une année), année (10 ans).
 * **Navigation** : flèches ‹ › pour la période précédente ou suivante, bouton **Aujourd'hui**, calendrier pour choisir un jour (les jours sans données sont grisés), et **période libre** du … au … (31 jours au plus en vue heure).

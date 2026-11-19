@@ -320,13 +320,20 @@
     var isHour = (t === 'hour');
     var gen = ++energyGen;
 
-    // Icones de periode
-    var iconHour = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z"/><path d="M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z"/><path d="M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5"/></svg>';
-    var iconDay = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z"/><path d="M12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg>';
-    var iconMonth = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z"/><path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg>';
-    var iconYear = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z"/><text x="8" y="11" font-size="6" text-anchor="middle" fill="white" font-family="Arial">12</text></svg>';
-
-    function linkCls(p) { return t === p ? 'link active' : 'link'; }
+    // Bandeau : periodes glissantes du tableau de bord (meme groupe de boutons
+    // que la page Historique) et acces a l'historique detaille
+    var PERIODS = [
+      { id: 'hour',  label: 'Heure', title: '24 derni&egrave;res heures, heure par heure' },
+      { id: 'day',   label: 'Jour',  title: '30 derniers jours, jour par jour' },
+      { id: 'month', label: 'Mois',  title: '12 derniers mois, mois par mois' },
+      { id: 'year',  label: 'Ann&eacute;e', title: 'Ann&eacute;es, ann&eacute;e par ann&eacute;e' }
+    ];
+    var periodBtns = PERIODS.map(function(o) {
+      var on = t === o.id;
+      return '<button type="button" class="btn flex-fill ' + (on ? 'btn-dark' : 'btn-outline-dark') + '"' +
+             ' aria-pressed="' + on + '" title="' + o.title + '"' +
+             ' onclick="window._energyNav(\'' + o.id + '\')">' + o.label + '</button>';
+    }).join('');
 
     var iconBolt = '<svg xmlns="http://www.w3.org/2000/svg" style="width:40px;" width="28" height="28" fill="currentColor" class="me-2" viewBox="0 0 16 16"><path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/></svg>';
     var iconGear = '<svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
@@ -336,15 +343,21 @@
       '<div class="container">' +
         '<h4>Tableau de bord &eacute;nerg&eacute;tique</h4>' +
         '<div class="row g-4"><div class="col-md-12">' +
-          '<div class="nav justify-content-end align-items-center">' +
+          '<div class="d-flex flex-wrap align-items-center gap-2 energy-toolbar">' +
             // Choix du ZLinky (affiche s'il y en a plusieurs)
             '<div class="me-auto" id="energy-zl-wrap" style="display:none;">' +
               '<select class="form-select form-select-sm" id="energy-zl" title="Compteur Linky affich&eacute;"></select>' +
             '</div>' +
-            '<div><a class="' + linkCls('hour') + '" href="javascript:void(0)" onclick="window._energyNav(\'hour\')" title="Heure">' + iconHour + '</a></div>&nbsp;' +
-            '<div><a class="' + linkCls('day') + '" href="javascript:void(0)" onclick="window._energyNav(\'day\')" title="Jour">' + iconDay + '</a></div>&nbsp;' +
-            '<div><a class="' + linkCls('month') + '" href="javascript:void(0)" onclick="window._energyNav(\'month\')" title="Mois">' + iconMonth + '</a></div>&nbsp;' +
-            '<div><a class="' + linkCls('year') + '" href="javascript:void(0)" onclick="window._energyNav(\'year\')" title="Ann&eacute;e">' + iconYear + '</a></div>' +
+            '<div class="btn-group btn-group-sm ms-auto flex-grow-1 flex-sm-grow-0 energy-periods" role="group" aria-label="P&eacute;riode affich&eacute;e">' +
+              periodBtns +
+            '</div>' +
+            // Historique detaille (13 mois heure par heure, page a part)
+            '<a class="btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1" href="#energyHistory" ' +
+              'title="Historique d&eacute;taill&eacute; : 13 mois heure par heure, puis jours, semaines, mois et ann&eacute;es">' +
+              '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
+                '<path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z"/>' +
+                '<path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/>' +
+              '</svg>Historique</a>' +
           '</div>' +
         '</div></div>' +
       '</div>' +

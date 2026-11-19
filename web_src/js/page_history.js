@@ -1,5 +1,5 @@
 // ============================================================================
-// LiXee MatterBridge - Mesures -> Energie -> Historique (#energyHistory)
+// LiXee MatterBridge - Historique energie (#energyHistory), bouton du tableau de bord Energie
 //
 // Historique detaille de la consommation : archive datee de la box (13 mois
 // heure par heure, jours, semaines, mois, annees), navigation par fleches et
@@ -209,37 +209,37 @@
       '<div class="container-fluid" id="hist-page" style="max-width:1400px;">' +
         '<div class="d-flex align-items-center gap-2 hist-head" style="margin:1rem 0;">' +
           '<h3 class="mb-0 me-auto">Historique de consommation</h3>' +
-          '<a href="#energy" class="btn btn-sm btn-outline-secondary">&larr; &Eacute;nergie</a>' +
+          '<a href="#energy" class="btn btn-sm btn-outline-dark">&larr; &Eacute;nergie</a>' +
         '</div>' +
         // Barre d'outils
         '<div class="card p-3 mb-3 hist-card"><div class="d-flex flex-wrap align-items-center gap-2">' +
           '<div class="btn-group btn-group-sm" role="group" id="hist-gran">' +
-            GRANS.map(function(g) { return '<button type="button" class="btn btn-outline-primary" data-g="' + g.id + '">' + g.label + '</button>'; }).join('') +
+            GRANS.map(function(g) { return '<button type="button" class="btn btn-outline-dark" data-g="' + g.id + '">' + g.label + '</button>'; }).join('') +
           '</div>' +
           '<div class="d-flex align-items-center gap-1 position-relative hist-nav">' +
-            '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-prev" title="Période précédente">&lsaquo;</button>' +
-            '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-cal-btn" title="Choisir une date">&#128197; <span id="hist-title"></span></button>' +
-            '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-next" title="Période suivante">&rsaquo;</button>' +
-            '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-today" title="Aujourd&#39;hui">' +
+            '<button type="button" class="btn btn-sm btn-outline-dark" id="hist-prev" title="Période précédente">&lsaquo;</button>' +
+            '<button type="button" class="btn btn-sm btn-outline-dark" id="hist-cal-btn" title="Choisir une date">&#128197; <span id="hist-title"></span></button>' +
+            '<button type="button" class="btn btn-sm btn-outline-dark" id="hist-next" title="Période suivante">&rsaquo;</button>' +
+            '<button type="button" class="btn btn-sm btn-outline-dark" id="hist-today" title="Aujourd&#39;hui">' +
               '<span class="d-none d-md-inline">Aujourd&#39;hui</span><span class="d-md-none">Auj.</span></button>' +
             '<div id="hist-cal" class="card shadow p-2" style="display:none;position:absolute;top:100%;left:0;z-index:1050;width:290px;"></div>' +
           '</div>' +
-          '<details id="hist-custom-box" class="ms-1"><summary class="small text-primary" style="cursor:pointer;">P&eacute;riode libre</summary>' +
+          '<details id="hist-custom-box" class="ms-1"><summary class="small text-dark" style="cursor:pointer;">P&eacute;riode libre</summary>' +
             '<div class="d-flex flex-wrap align-items-center gap-1 mt-1">' +
               '<input type="date" class="form-control form-control-sm" id="hist-from" style="width:auto;">' +
               '<span class="small">au</span>' +
               '<input type="date" class="form-control form-control-sm" id="hist-to" style="width:auto;">' +
-              '<button type="button" class="btn btn-sm btn-primary" id="hist-custom-go">Afficher</button>' +
+              '<button type="button" class="btn btn-sm btn-dark" id="hist-custom-go">Afficher</button>' +
               '<button type="button" class="btn btn-sm btn-link" id="hist-custom-clear" style="display:none;">Annuler</button>' +
             '</div></details>' +
           '<div class="ms-lg-auto d-flex flex-wrap align-items-center gap-2 hist-opts">' +
             '<div class="btn-group btn-group-sm" role="group" id="hist-mode">' +
-              '<button type="button" class="btn btn-outline-secondary" data-m="kwh">kWh</button>' +
-              '<button type="button" class="btn btn-outline-secondary" data-m="eur">€</button>' +
+              '<button type="button" class="btn btn-outline-dark" data-m="kwh">kWh</button>' +
+              '<button type="button" class="btn btn-outline-dark" data-m="eur">€</button>' +
             '</div>' +
             '<div class="btn-group btn-group-sm" role="group" id="hist-stack">' +
-              '<button type="button" class="btn btn-outline-secondary" data-s="1">Empilé</button>' +
-              '<button type="button" class="btn btn-outline-secondary" data-s="0">Séparé</button>' +
+              '<button type="button" class="btn btn-outline-dark" data-s="1">Empilé</button>' +
+              '<button type="button" class="btn btn-outline-dark" data-s="0">Séparé</button>' +
             '</div>' +
             '<select class="form-select form-select-sm" id="hist-compare" style="width:auto;">' +
               '<option value="none">Sans comparaison</option>' +
@@ -290,9 +290,9 @@
   function syncControls() {
     $('#hist-gran [data-g]').each(function() {
       var on = $(this).data('g') === S.gran;
-      $(this).toggleClass('btn-primary', on).toggleClass('btn-outline-primary', !on);
+      $(this).toggleClass('btn-dark', on).toggleClass('btn-outline-dark', !on);
     });
-    function onOff($b, on) { $b.toggleClass('btn-secondary', on).toggleClass('btn-outline-secondary', !on); }
+    function onOff($b, on) { $b.toggleClass('btn-dark', on).toggleClass('btn-outline-dark', !on); }
     $('#hist-mode [data-m]').each(function() { onOff($(this), $(this).data('m') === S.mode); });
     $('#hist-stack [data-s]').each(function() { onOff($(this), String($(this).data('s')) === (S.stacked ? '1' : '0')); });
     $('#hist-compare').val(S.compare);
