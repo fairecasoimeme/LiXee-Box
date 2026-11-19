@@ -1412,16 +1412,10 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
         if (profile ? (profile->zlinky && (profile->caps & MCAP_ENERGY)) : device_type == MATTER_DEV_ENERGY_METER) {
             linky_endpoint_init(new_ep_id, zigbee_ieee);
         }
-        WaterHeaterManagementDelegate *wh_mgmt = matter_bridge_get_wh_mgmt_delegate(new_ep_id);
-        if (wh_mgmt) {
-            ESP_LOGD(TAG, "Manually initializing WaterHeaterManagement delegate for ep=%d", new_ep_id);
-            cluster::delegate_cb::WaterHeaterManagementDelegateInitCB((void *)wh_mgmt, new_ep_id);
-        }
-        WaterHeaterModeDelegate *wh_mode = matter_bridge_get_wh_mode_delegate(new_ep_id);
-        if (wh_mode) {
-            ESP_LOGD(TAG, "Manually initializing WaterHeaterMode delegate for ep=%d", new_ep_id);
-            cluster::delegate_cb::WaterHeaterModeDelegateInitCB((void *)wh_mode, new_ep_id);
-        }
+        // Delegates WaterHeaterManagement/WaterHeaterMode : deja initialises par
+        // endpoint::enable() ci-dessus (esp-matter 1.5, voir commit 10180ed pour
+        // ElectricalPowerMeasurement) ; un second appel manuel creerait une
+        // deuxieme instance dont Init() echouerait (interface deja enregistree).
     }
 
     ret_ep = endpoint::get_id(ep);

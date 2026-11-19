@@ -32,6 +32,7 @@
 #include <app/reporting/reporting.h>
 #include <esp_matter_core.h>
 #include "matter_bridge.h"
+#include "elec_power_delegate.h"   // lixee_chip_lock()/lixee_chip_unlock() : esp-matter 1.5 ne publie plus lock::chip_stack_lock()
 
 namespace lixee_whm = chip::app::Clusters::WaterHeaterManagement;
 namespace lixee_mode = chip::app::Clusters::ModeBase;
@@ -109,17 +110,19 @@ public:
 
 private:
     // Meme schema que ElecPowerDelegate::Update() (elec_power_delegate.h) :
-    // mutation + signalement sous le verrou de la pile CHIP.
+    // mutation + signalement sous le verrou de la pile CHIP. esp-matter 1.5
+    // ne publie plus lock::chip_stack_lock() : lixee_chip_lock()/
+    // lixee_chip_unlock() (elec_power_delegate.h) le remplacent via PlatformMgr.
     template <typename F>
     void Report(F mutate, chip::AttributeId attr)
     {
         if (!matter_bridge_is_started()) { mutate(); return; }
-        esp_matter::lock::status_t st = esp_matter::lock::chip_stack_lock(portMAX_DELAY);
+        bool held = lixee_chip_lock();
         mutate();
         if (mEndpointId != 0 && mEndpointId != chip::kInvalidEndpointId) {
             MatterReportingAttributeChangeCallback(mEndpointId, lixee_whm::Id, attr);
         }
-        if (st == esp_matter::lock::SUCCESS) esp_matter::lock::chip_stack_unlock();
+        lixee_chip_unlock(held);
     }
 
     chip::BitMask<lixee_whm::WaterHeaterHeatSourceBitmap> m_heat_demand{};
@@ -166,9 +169,11 @@ public:
             ? lixee_mode::StatusCode::kSuccess
             : lixee_mode::StatusCode::kUnsupportedMode);
         // ModeBase::Delegate n'a pas de mEndpointId (contrairement a
-        // WaterHeaterManagement::Delegate) : seul mInstance->GetEndpointId() le donne.
-        if (known && mInstance) {
-            matter_bridge_dispatch_virtual_command(mInstance->GetEndpointId(), MATTER_VCMD_WH_CHANGE_MODE,
+        // WaterHeaterManagement::Delegate) : seul GetInstance()->GetEndpointId()
+        // le donne. mInstance est prive dans esp-matter 1.5 (accessible
+        // seulement via l'accesseur protege GetInstance()).
+        if (known && GetInstance()) {
+            matter_bridge_dispatch_virtual_command(GetInstance()->GetEndpointId(), MATTER_VCMD_WH_CHANGE_MODE,
                                                    newMode, nullptr);
         }
     }
