@@ -136,6 +136,17 @@ int energy_tariff_periods(uint16_t *out, int max);
 
 /** Libelle d'une periode selon l'abonnement ("Heures Creuses", "HP Blanc"...), "P<id>" sinon. */
 void energy_tariff_label(uint16_t attr, char *out, size_t len);
+
+/**
+ * Index Heures Creuses (256) a presequelectionner pour une regulation
+ * automatique (chauffe-eau, issue PR #57) : uniquement si c'est fiable, donc
+ * en TIC Historique (PTEC standardise) et abonnement HC/HP. En TIC Standard,
+ * la box ne peut pas garantir que cet index correspond bien aux heures
+ * creuses (libelle NGTF/EASFxx moins normalise) : renvoie false, l'appelant
+ * doit alors laisser le choix a l'utilisateur (et l'avertir).
+ * @return true et *out = 256 si disponible, false sinon.
+ */
+bool energy_tariff_hc_index(uint16_t *out);
 char *energy_linky_json(void);
 
 #ifdef __cplusplus

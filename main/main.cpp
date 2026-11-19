@@ -45,6 +45,7 @@
 #include "zigate_driver.h"
 #include "zigate_actions.h"
 #include "thermostat.h"
+#include "water_heater.h"
 #include "delestage.h"
 #include "web_zigbee_remove.h"
 #include "zigate_devices.h"
@@ -1464,7 +1465,16 @@ extern "C" void app_main(void)
     rules_set_command_executor(rules_zigbee_exec);
     zigate_actions_set_setpoint_source(hvac_setpoint_source);
     rules_set_notify_cb(rules_notify);
-    thermostat_init();          // thermostats virtuels (lit thermostats.json, regulation 30 s)
+    // water_heater_init() avant thermostat_init() : sa file doit exister pour
+    // entrer dans le queue set construit par thermostat_init() (pas de tache
+    // dediee pour la regulation du chauffe-eau, voir thermostat.cpp).
+    // Echec non fatal (ex. allocation de s_z/s_q) : pas d'ESP_ERROR_CHECK ici,
+    // meme logique que matter_bridge_init() ci-dessous (voir s_matter_error) -
+    // le reste de la box doit continuer sans chauffe-eau plutot que redemarrer
+    // en boucle (revue PR #57, "codes de retour ignores").
+    esp_err_t wh_err = water_heater_init();   // chauffe-eau virtuels (lit waterheaters.json)
+    if (wh_err != ESP_OK) ESP_LOGE(TAG, "water_heater_init() echoue : %s", esp_err_to_name(wh_err));
+    thermostat_init();          // thermostats virtuels (lit thermostats.json, regulation 30 s, inclut le chauffe-eau)
     delestage_init();           // delestage des prises sur depassement de puissance souscrite
     {
         // Module LoRa : absent sur la plupart des cartes (ESP_ERR_NOT_FOUND, sans gravite)
@@ -1613,6 +1623,8 @@ extern "C" void app_main(void)
 
             // Thermostats virtuels : un thermostat ponte par zone
             thermostat_matter_start();
+            // Chauffe-eau virtuels : un endpoint Water Heater ponte par zone
+            water_heater_matter_start();
             // Groupes d'actions publies : un interrupteur ponte par groupe
             group_matter_start();
             matter_device_manager_set_exposure_cb(on_matter_exposure);

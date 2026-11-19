@@ -19,6 +19,7 @@
 #include "matter_device_manager.h"
 #include "elec_power_delegate.h"
 #include "thermostat_presets_delegate.h"
+#include "water_heater_delegate.h"
 #include "zigate_devices.h"
 #include "device_data.h"
 #include "esp_log.h"
@@ -122,6 +123,19 @@ CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
     return CHIP_NO_ERROR;
 }
 
+// Delegates pour les endpoints Water Heater (un par endpoint max). Borne par
+// WATERHEATER_MAX_ZONES (components/water_heater/include/water_heater.h),
+// pas par MATTER_BRIDGE_MAX_ENDPOINTS (32) : il ne peut jamais y avoir plus de
+// 4 chauffe-eau virtuels, inutile de reserver 32 entrees en RAM interne pour
+// ces 4 tableaux (revue PR #57).
+#define MATTER_WH_DELEGATE_MAX 4
+static WaterHeaterManagementDelegate *s_wh_mgmt_delegates[MATTER_WH_DELEGATE_MAX] = {};
+static int s_wh_mgmt_delegate_ep_ids[MATTER_WH_DELEGATE_MAX] = {};
+static int s_wh_mgmt_delegate_count = 0;
+static WaterHeaterModeDelegate *s_wh_mode_delegates[MATTER_WH_DELEGATE_MAX] = {};
+static int s_wh_mode_delegate_ep_ids[MATTER_WH_DELEGATE_MAX] = {};
+static int s_wh_mode_delegate_count = 0;
+
 // Energie cumulee : un acces partage pour tous les endpoints compteur, et
 // l'etat des index Zigbee par endpoint.
 static ElectricalEnergyMeasurement::ElectricalEnergyMeasurementAttrAccess *s_eem_access = nullptr;
@@ -178,6 +192,30 @@ void matter_bridge_set_virtual_write_cb(matter_virtual_write_cb_t cb)
         if (!s_virtual_cb[i]) { s_virtual_cb[i] = cb; return; }
     }
     ESP_LOGE(TAG, "Trop de modules d'endpoints virtuels");
+}
+
+// Memes modules, pour les commandes invoquees (Boost/CancelBoost/ChangeToMode) :
+// contrairement aux ecritures d'attribut, elles n'ont pas de (cluster, attr)
+// cible, donc un type de commande dedie (voir matter_bridge.h).
+static matter_virtual_command_cb_t s_virtual_cmd_cb[VIRTUAL_CB_MAX];
+
+void matter_bridge_set_virtual_command_cb(matter_virtual_command_cb_t cb)
+{
+    for (int i = 0; i < VIRTUAL_CB_MAX; i++) {
+        if (s_virtual_cmd_cb[i] == cb) return;
+        if (!s_virtual_cmd_cb[i]) { s_virtual_cmd_cb[i] = cb; return; }
+    }
+    ESP_LOGE(TAG, "Trop de modules d'endpoints virtuels (commandes)");
+}
+
+esp_err_t matter_bridge_dispatch_virtual_command(int endpoint_id, matter_virtual_cmd_t cmd,
+                                                 int32_t value, const matter_wh_boost_t *boost)
+{
+    for (int i = 0; i < VIRTUAL_CB_MAX && s_virtual_cmd_cb[i]; i++) {
+        esp_err_t r = s_virtual_cmd_cb[i](endpoint_id, cmd, value, boost);
+        if (r != ESP_ERR_NOT_FOUND) return r;
+    }
+    return ESP_ERR_NOT_FOUND;
 }
 
 /** Valeur numerique d'un attribut Matter (entiers, enum, bitmap, nullable). */
@@ -660,6 +698,59 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
             } else {
                 ESP_LOGE(TAG, "Trop de thermostats avec presets Matter");
             }
+        }
+    }
+    if (caps & MCAP_WATER_HEATER) {
+        // Water Heater (0x050F) : Thermostat (HEAT seul) + WaterHeaterManagement
+        // + WaterHeaterMode en un seul appel (voir esp_matter_endpoint.h,
+        // namespace water_heater). Les deux delegates sont obligatoires (la
+        // specification ne prevoit pas d'attributs passifs pour ces clusters).
+        WaterHeaterManagementDelegate *mgmt_delegate = new WaterHeaterManagementDelegate();
+        WaterHeaterModeDelegate *mode_delegate = new WaterHeaterModeDelegate();
+
+        endpoint::water_heater::config_t cfg;
+        cfg.thermostat.feature_flags = cluster::thermostat::feature::heating::get_id();
+        cfg.thermostat.control_sequence_of_operation = 2;     // chauffage seul
+        cfg.thermostat.system_mode = 4;                       // Heat
+        cfg.water_heater_management.delegate = mgmt_delegate;
+        cfg.water_heater_mode.delegate = mode_delegate;
+        cfg.water_heater_mode.current_mode = WH_MODE_MANUAL;  // reecrase tout de suite par le module appelant
+
+        endpoint::water_heater::add(ep, &cfg);
+
+        // esp_matter borne OccupiedHeatingSetpoint via MinHeatSetpointLimit/
+        // MaxHeatSetpointLimit (0x0015/0x0016, voir
+        // esp_matter_attribute_bounds.cpp, case OccupiedHeatingSetpoint), PAS
+        // via les limites absolues (0x0012/0x0013) : ces deux premiers
+        // attributs n'existant pas par defaut sur le cluster, les bornes
+        // retombent sur 700-3000 (7-30 degC, pensee pour une piece) et toute
+        // consigne > 30 degC publiee par la box est rejetee silencieusement
+        // (retour ignore). Un ballon d'eau chaude monte plus haut (jusqu'a 70
+        // degC ici, voir water_heater.cpp) : il faut creer les 4 attributs
+        // (Abs* bornent Min/MaxHeatSetpointLimit eux-memes si un controleur
+        // les ecrit ; Min/MaxHeatSetpointLimit bornent la consigne) avant
+        // endpoint::enable() (revue PR #57, point bloquant).
+        cluster_t *wh_th = cluster::get(ep, Thermostat::Id);
+        if (wh_th) {
+            cluster::thermostat::attribute::create_abs_min_heat_setpoint_limit(wh_th, 0);
+            cluster::thermostat::attribute::create_abs_max_heat_setpoint_limit(wh_th, 7000);
+            cluster::thermostat::attribute::create_min_heat_setpoint_limit(wh_th, 0);
+            cluster::thermostat::attribute::create_max_heat_setpoint_limit(wh_th, 7000);
+            // Publie par water_heater.cpp (attribut 0x0029) mais pas cree par
+            // endpoint::water_heater::add() : sans ca, la valeur part dans le
+            // vide (l'attribut n'existe pas sur ce cluster).
+            cluster::thermostat::attribute::create_thermostat_running_state(wh_th, 0);
+        }
+
+        if (s_wh_mgmt_delegate_count < MATTER_WH_DELEGATE_MAX) {
+            s_wh_mgmt_delegates[s_wh_mgmt_delegate_count] = mgmt_delegate;
+            s_wh_mgmt_delegate_ep_ids[s_wh_mgmt_delegate_count] = endpoint::get_id(ep);
+            s_wh_mgmt_delegate_count++;
+        }
+        if (s_wh_mode_delegate_count < MATTER_WH_DELEGATE_MAX) {
+            s_wh_mode_delegates[s_wh_mode_delegate_count] = mode_delegate;
+            s_wh_mode_delegate_ep_ids[s_wh_mode_delegate_count] = endpoint::get_id(ep);
+            s_wh_mode_delegate_count++;
         }
     }
     if (caps & MCAP_FAN) {
@@ -1339,6 +1430,10 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
         if (profile ? (profile->zlinky && (profile->caps & MCAP_ENERGY)) : device_type == MATTER_DEV_ENERGY_METER) {
             linky_endpoint_init(new_ep_id, zigbee_ieee);
         }
+        // Delegates WaterHeaterManagement/WaterHeaterMode : deja initialises par
+        // endpoint::enable() ci-dessus (esp-matter 1.5, voir commit 10180ed pour
+        // ElectricalPowerMeasurement) ; un second appel manuel creerait une
+        // deuxieme instance dont Init() echouerait (interface deja enregistree).
     }
 
     ret_ep = endpoint::get_id(ep);
@@ -1614,6 +1709,49 @@ ElecPowerDelegate* matter_bridge_get_elec_delegate(int endpoint_id)
         }
     }
     return nullptr;
+}
+
+WaterHeaterManagementDelegate* matter_bridge_get_wh_mgmt_delegate(int endpoint_id)
+{
+    for (int i = 0; i < s_wh_mgmt_delegate_count; i++) {
+        if (s_wh_mgmt_delegate_ep_ids[i] == endpoint_id) return s_wh_mgmt_delegates[i];
+    }
+    return nullptr;
+}
+
+WaterHeaterModeDelegate* matter_bridge_get_wh_mode_delegate(int endpoint_id)
+{
+    for (int i = 0; i < s_wh_mode_delegate_count; i++) {
+        if (s_wh_mode_delegate_ep_ids[i] == endpoint_id) return s_wh_mode_delegates[i];
+    }
+    return nullptr;
+}
+
+esp_err_t matter_bridge_wh_push_state(int endpoint_id, bool heat_demand, bool boost_active,
+                                      uint8_t current_mode)
+{
+    WaterHeaterManagementDelegate *mgmt = matter_bridge_get_wh_mgmt_delegate(endpoint_id);
+    if (!mgmt) return ESP_ERR_NOT_FOUND;
+
+    bool held = false;
+    if (s_matter_started && !stack_lock(&held)) return ESP_FAIL;
+
+    mgmt->SetHeatDemand(heat_demand);
+    mgmt->SetBoostActive(boost_active);
+
+    // UpdateCurrentMode() est sur l'Instance (creee par
+    // WaterHeaterModeDelegateInitCB), pas sur le delegate : seul le registre
+    // global des instances Mode Base (tous clusters derives confondus) permet
+    // de la retrouver a partir de l'endpoint.
+    for (auto &inst : ModeBase::GetModeBaseInstanceList()) {
+        if (inst.GetEndpointId() == (chip::EndpointId)endpoint_id) {
+            inst.UpdateCurrentMode(current_mode);
+            break;
+        }
+    }
+
+    stack_unlock(held);
+    return ESP_OK;
 }
 
 // ============================================================================

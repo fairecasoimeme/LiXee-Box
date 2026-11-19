@@ -25,6 +25,7 @@ idf_component_register(
         energy_history
         energy_service
         thermostat
+        water_heater
         delestage
         zigate
         matter_bridge

@@ -15,6 +15,7 @@
 #include "ntp_sync.h"
 #include "matter_bridge.h"
 #include "matter_device_manager.h"
+#include "water_heater.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -1071,6 +1072,7 @@ typedef struct {
 } thermo_msg_t;
 
 static QueueHandle_t s_q;
+static QueueSetHandle_t s_qset;        // s_q + la file du chauffe-eau (pas de tache dediee, issue #57)
 static volatile bool s_matter_on;
 static volatile int s_vep[THERMO_MAX_ZONES];         // endpoint Matter de chaque zone (0 : aucun)
 
@@ -1257,24 +1259,43 @@ void thermostat_matter_start(void)
 static void regulation_task(void *arg)
 {
     (void)arg;
+    QueueHandle_t wh_q = water_heater_get_queue();   // NULL si water_heater_init() a echoue
     int64_t next_tick = now_ms() + TICK_MS;
+    int ticks = 0;
     for (;;) {
         int64_t wait = next_tick - now_ms();
-        thermo_msg_t m;
-        if (wait > 0 && xQueueReceive(s_q, &m, pdMS_TO_TICKS(wait)) == pdTRUE) {
-            lock();
-            if (m.kind == MSG_WRITE) matter_apply_write(&m);
-            else if (m.kind == MSG_PRESET) matter_apply_preset(&m);
-            matter_sync_all();
-            unlock();
-            continue;
+        if (wait > 0) {
+            QueueSetMemberHandle_t ready = xQueueSelectFromSet(s_qset, pdMS_TO_TICKS(wait));
+            if (ready == s_q) {
+                thermo_msg_t m;
+                xQueueReceive(s_q, &m, 0);
+                lock();
+                if (m.kind == MSG_WRITE) matter_apply_write(&m);
+                else if (m.kind == MSG_PRESET) matter_apply_preset(&m);
+                matter_sync_all();
+                unlock();
+                continue;
+            }
+            if (ready && ready == wh_q) {
+                water_heater_process_queue_once();
+                continue;
+            }
         }
         lock();
         regulation_tick();
         matter_sync_all();
         unlock();
+        if (wh_q) water_heater_tick();           // regulation chauffe-eau (pas de tache dediee, issue #57)
         presence_tick();                         // remise a zero horaire, enregistrement differe
         temp_history_tick();                     // releve minute des sondes du graphe d'usage
+        // Mesure unique ~10 min apres le demarrage (pile stabilisee) : la
+        // tache gere depuis peu l'endpoint Water Heater en plus du
+        // thermostat, sans tache dediee (6 Ko, RAM interne) - a relever sur
+        // materiel reel (revue PR #57).
+        if (++ticks == 20) {
+            ESP_LOGW(TAG, "pile tache \"thermo\" : %u octets de marge restants",
+                     (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
+        }
         next_tick = now_ms() + TICK_MS;
     }
 }
@@ -1290,8 +1311,24 @@ esp_err_t thermostat_init(void)
     load_config();
     presence_init();
     temp_history_init();
+    // Queue set : la regulation du chauffe-eau (components/water_heater/) n'a
+    // pas de tache dediee, pour economiser 6 Ko de pile en RAM interne (issue
+    // #57) ; elle est reveillee par les memes messages Matter que le
+    // thermostat, dans cette meme tache. water_heater_init() doit avoir cree
+    // sa file avant cet appel (voir l'ordre dans main.cpp) : une file ajoutee
+    // a un set doit etre vide, ce qui est le cas avant tout *_matter_start().
+    s_qset = xQueueCreateSet(32);
+    if (!s_qset) return ESP_ERR_NO_MEM;
+    if (xQueueAddToSet(s_q, s_qset) != pdPASS) {
+        ESP_LOGE(TAG, "xQueueAddToSet(s_q) echoue : messages thermostat jamais traites");
+    }
+    QueueHandle_t wh_q = water_heater_get_queue();
+    if (wh_q && xQueueAddToSet(wh_q, s_qset) != pdPASS) {
+        ESP_LOGE(TAG, "xQueueAddToSet(wh_q) echoue : messages chauffe-eau jamais traites");
+    }
     // Pile en RAM interne : la tache envoie des trames ZiGate, publie vers
-    // Matter et enregistre la configuration apres une commande Matter
+    // Matter et enregistre la configuration (thermostat et chauffe-eau)
+    // apres une commande Matter
     if (xTaskCreate(regulation_task, "thermo", 6144, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
