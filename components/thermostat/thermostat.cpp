@@ -1261,6 +1261,7 @@ static void regulation_task(void *arg)
     (void)arg;
     QueueHandle_t wh_q = water_heater_get_queue();   // NULL si water_heater_init() a echoue
     int64_t next_tick = now_ms() + TICK_MS;
+    int ticks = 0;
     for (;;) {
         int64_t wait = next_tick - now_ms();
         if (wait > 0) {
@@ -1287,6 +1288,14 @@ static void regulation_task(void *arg)
         if (wh_q) water_heater_tick();           // regulation chauffe-eau (pas de tache dediee, issue #57)
         presence_tick();                         // remise a zero horaire, enregistrement differe
         temp_history_tick();                     // releve minute des sondes du graphe d'usage
+        // Mesure unique ~10 min apres le demarrage (pile stabilisee) : la
+        // tache gere depuis peu l'endpoint Water Heater en plus du
+        // thermostat, sans tache dediee (6 Ko, RAM interne) - a relever sur
+        // materiel reel (revue PR #57).
+        if (++ticks == 20) {
+            ESP_LOGW(TAG, "pile tache \"thermo\" : %u octets de marge restants",
+                     (unsigned)(uxTaskGetStackHighWaterMark(NULL) * sizeof(StackType_t)));
+        }
         next_tick = now_ms() + TICK_MS;
     }
 }
@@ -1310,9 +1319,13 @@ esp_err_t thermostat_init(void)
     // a un set doit etre vide, ce qui est le cas avant tout *_matter_start().
     s_qset = xQueueCreateSet(32);
     if (!s_qset) return ESP_ERR_NO_MEM;
-    xQueueAddToSet(s_q, s_qset);
+    if (xQueueAddToSet(s_q, s_qset) != pdPASS) {
+        ESP_LOGE(TAG, "xQueueAddToSet(s_q) echoue : messages thermostat jamais traites");
+    }
     QueueHandle_t wh_q = water_heater_get_queue();
-    if (wh_q) xQueueAddToSet(wh_q, s_qset);
+    if (wh_q && xQueueAddToSet(wh_q, s_qset) != pdPASS) {
+        ESP_LOGE(TAG, "xQueueAddToSet(wh_q) echoue : messages chauffe-eau jamais traites");
+    }
     // Pile en RAM interne : la tache envoie des trames ZiGate, publie vers
     // Matter et enregistre la configuration (thermostat et chauffe-eau)
     // apres une commande Matter

@@ -123,12 +123,17 @@ CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
     return CHIP_NO_ERROR;
 }
 
-// Delegates pour les endpoints Water Heater (un par endpoint max)
-static WaterHeaterManagementDelegate *s_wh_mgmt_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
-static int s_wh_mgmt_delegate_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+// Delegates pour les endpoints Water Heater (un par endpoint max). Borne par
+// WATERHEATER_MAX_ZONES (components/water_heater/include/water_heater.h),
+// pas par MATTER_BRIDGE_MAX_ENDPOINTS (32) : il ne peut jamais y avoir plus de
+// 4 chauffe-eau virtuels, inutile de reserver 32 entrees en RAM interne pour
+// ces 4 tableaux (revue PR #57).
+#define MATTER_WH_DELEGATE_MAX 4
+static WaterHeaterManagementDelegate *s_wh_mgmt_delegates[MATTER_WH_DELEGATE_MAX] = {};
+static int s_wh_mgmt_delegate_ep_ids[MATTER_WH_DELEGATE_MAX] = {};
 static int s_wh_mgmt_delegate_count = 0;
-static WaterHeaterModeDelegate *s_wh_mode_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
-static int s_wh_mode_delegate_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static WaterHeaterModeDelegate *s_wh_mode_delegates[MATTER_WH_DELEGATE_MAX] = {};
+static int s_wh_mode_delegate_ep_ids[MATTER_WH_DELEGATE_MAX] = {};
 static int s_wh_mode_delegate_count = 0;
 
 // Energie cumulee : un acces partage pour tous les endpoints compteur, et
@@ -713,23 +718,36 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
 
         endpoint::water_heater::add(ep, &cfg);
 
-        // Sans ces attributs, la validation du serveur Thermostat (voir
-        // thermostat-server.cpp, kDefaultAbsMinHeatSetpointLimit/Max) retombe
-        // sur la plage par defaut 700-3000 (7-30 degC, pensee pour une piece) :
-        // un ballon d'eau chaude monte plus haut (jusqu'a 70 degC ici, voir
-        // water_heater.cpp). CONSTRAINT_ERROR sinon sur toute consigne > 30 degC.
+        // esp_matter borne OccupiedHeatingSetpoint via MinHeatSetpointLimit/
+        // MaxHeatSetpointLimit (0x0015/0x0016, voir
+        // esp_matter_attribute_bounds.cpp, case OccupiedHeatingSetpoint), PAS
+        // via les limites absolues (0x0012/0x0013) : ces deux premiers
+        // attributs n'existant pas par defaut sur le cluster, les bornes
+        // retombent sur 700-3000 (7-30 degC, pensee pour une piece) et toute
+        // consigne > 30 degC publiee par la box est rejetee silencieusement
+        // (retour ignore). Un ballon d'eau chaude monte plus haut (jusqu'a 70
+        // degC ici, voir water_heater.cpp) : il faut creer les 4 attributs
+        // (Abs* bornent Min/MaxHeatSetpointLimit eux-memes si un controleur
+        // les ecrit ; Min/MaxHeatSetpointLimit bornent la consigne) avant
+        // endpoint::enable() (revue PR #57, point bloquant).
         cluster_t *wh_th = cluster::get(ep, Thermostat::Id);
         if (wh_th) {
             cluster::thermostat::attribute::create_abs_min_heat_setpoint_limit(wh_th, 0);
             cluster::thermostat::attribute::create_abs_max_heat_setpoint_limit(wh_th, 7000);
+            cluster::thermostat::attribute::create_min_heat_setpoint_limit(wh_th, 0);
+            cluster::thermostat::attribute::create_max_heat_setpoint_limit(wh_th, 7000);
+            // Publie par water_heater.cpp (attribut 0x0029) mais pas cree par
+            // endpoint::water_heater::add() : sans ca, la valeur part dans le
+            // vide (l'attribut n'existe pas sur ce cluster).
+            cluster::thermostat::attribute::create_thermostat_running_state(wh_th, 0);
         }
 
-        if (s_wh_mgmt_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
+        if (s_wh_mgmt_delegate_count < MATTER_WH_DELEGATE_MAX) {
             s_wh_mgmt_delegates[s_wh_mgmt_delegate_count] = mgmt_delegate;
             s_wh_mgmt_delegate_ep_ids[s_wh_mgmt_delegate_count] = endpoint::get_id(ep);
             s_wh_mgmt_delegate_count++;
         }
-        if (s_wh_mode_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
+        if (s_wh_mode_delegate_count < MATTER_WH_DELEGATE_MAX) {
             s_wh_mode_delegates[s_wh_mode_delegate_count] = mode_delegate;
             s_wh_mode_delegate_ep_ids[s_wh_mode_delegate_count] = endpoint::get_id(ep);
             s_wh_mode_delegate_count++;

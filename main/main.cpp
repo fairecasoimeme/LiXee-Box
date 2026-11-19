@@ -1468,7 +1468,12 @@ extern "C" void app_main(void)
     // water_heater_init() avant thermostat_init() : sa file doit exister pour
     // entrer dans le queue set construit par thermostat_init() (pas de tache
     // dediee pour la regulation du chauffe-eau, voir thermostat.cpp).
-    water_heater_init();        // chauffe-eau virtuels (lit waterheaters.json)
+    // Echec non fatal (ex. allocation de s_z/s_q) : pas d'ESP_ERROR_CHECK ici,
+    // meme logique que matter_bridge_init() ci-dessous (voir s_matter_error) -
+    // le reste de la box doit continuer sans chauffe-eau plutot que redemarrer
+    // en boucle (revue PR #57, "codes de retour ignores").
+    esp_err_t wh_err = water_heater_init();   // chauffe-eau virtuels (lit waterheaters.json)
+    if (wh_err != ESP_OK) ESP_LOGE(TAG, "water_heater_init() echoue : %s", esp_err_to_name(wh_err));
     thermostat_init();          // thermostats virtuels (lit thermostats.json, regulation 30 s, inclut le chauffe-eau)
     delestage_init();           // delestage des prises sur depassement de puissance souscrite
     {

@@ -2,7 +2,7 @@
 
 Le **chauffe-eau virtuel** transforme la LiXee-Box en régulateur de ballon d'eau chaude. Comme le [thermostat virtuel](THERMOSTATS.md), il **découple la mesure de l'action** : une sonde de température Zigbee (optionnelle) mesure le ballon, et la box pilote un **contacteur/relais** séparé pour l'alimenter, en respectant un mode (arrêt, marche forcée, programme) et en se maîtrisant par les heures creuses ou le tarif Linky.
 
-Côté Matter, chaque chauffe-eau est exposé comme le device type standard **Water Heater** (`0x050F`, spécification Matter 1.5), reconnu nativement par **Home Assistant** et **SmartThings** (entités dédiées). **Non supporté par Apple Maison** (voir §11).
+Côté Matter, chaque chauffe-eau est exposé comme le device type standard **Water Heater** (`0x050F`, spécification Matter 1.5). **Validé sur Home Assistant** (entités dédiées, commissioning et commandes testés sur matériel réel). **SmartThings** reconnaît ce device type d'après la spécification, mais n'a pas été testé sur ce code. **Non supporté par Apple Maison** (voir §11).
 
 On peut définir **jusqu'à 4 chauffe-eau** indépendants.
 
@@ -152,8 +152,9 @@ Les durées minimales de marche (`minOn`) et d'arrêt (`minOff`) empêchent les 
 Le **Boost** force la chauffe pendant une **durée donnée**, puis revient **automatiquement** au mode précédent (Arrêt/Marche forcée/Programme) à l'échéance — utile pour un besoin ponctuel d'eau chaude en dehors des heures creuses.
 
 - Boutons rapides sur la vignette : **Boost 30 min** et **Boost 2h** (arrêt anticipé dès la consigne atteinte si une sonde est présente — comportement « one-shot »).
+- **Durée maximale : 4 h**, quelle que soit l'origine de la demande (page web ou commande Matter) — une durée plus longue est tronquée, le Boost n'est pas un mode permanent.
 - **Annuler le boost** : revient immédiatement au mode normal.
-- Côté Matter (cluster Water Heater Management `0x0094`, commande `Boost`), un contrôleur peut aussi fixer une **consigne propre au boost** (`temporarySetpoint`), distincte de la consigne normale.
+- Côté Matter (cluster Water Heater Management `0x0094`, commande `Boost`), un contrôleur peut aussi fixer une **consigne propre au boost** (`temporarySetpoint`), distincte de la consigne normale — bornée **0-70 °C** comme la consigne normale.
 - Le paramètre `emergency` du cluster Matter est accepté mais sans effet matériel : la box ne pilote qu'un seul relais, il n'y a pas de distinction possible entre un boost normal et un boost « urgence ».
 
 ---
@@ -205,8 +206,8 @@ Chaque chauffe-eau est publié comme un endpoint **Water Heater** (device type `
 | **Water Heater Management** | `0x0094` | Commandes `Boost` / `CancelBoost`, attributs `HeaterTypes` (fixe : résistance immergée), `HeatDemand` (reflète l'état réel du contacteur), `BoostState` |
 | **Water Heater Mode** | `0x009E` | 3 modes fixes (`SupportedModes`), commande `ChangeToMode` |
 
-- **Support par contrôleur** : **Home Assistant** et **SmartThings** reconnaissent nativement le device type Water Heater (entités dédiées : mode, boost…). **Non supporté par Apple Maison**.
-- **Écriture directe de `SystemMode`** (cluster Thermostat, via un contrôleur générique comme Apple Maison) : `Off` (0) ↔ Arrêt, `Heat` (4) ↔ Marche forcée. Le mode Programme reste accessible uniquement via la commande `ChangeToMode` (Water Heater Mode) — les contrôleurs qui l'exposent nativement (Home Assistant, SmartThings) l'affichent comme un sélecteur à 3 états.
+- **Support par contrôleur** : **Home Assistant** reconnaît nativement le device type Water Heater (entités dédiées : mode, boost…) — validé sur matériel réel. **SmartThings** devrait aussi le reconnaître nativement d'après la spécification, mais ce n'est pas testé sur ce code. **Non supporté par Apple Maison**.
+- **Écriture directe de `SystemMode`** (cluster Thermostat, via un contrôleur générique comme Apple Maison) : `Off` (0) ↔ Arrêt, `Heat` (4) ↔ Marche forcée. Le mode Programme reste accessible uniquement via la commande `ChangeToMode` (Water Heater Mode) — les contrôleurs qui l'exposent nativement (Home Assistant) l'affichent comme un sélecteur à 3 états.
 - Les attributs `HeatDemand`/`BoostState`/`CurrentMode` sont **republiés en temps réel** (le contrôleur est notifié des changements, pas besoin de rafraîchir).
 - **Non supporté** : les features optionnelles `EnergyManagement` (niveau de cuve, énergie estimée) et `TankPercent` — aucun ballon connecté de ce type dans l'écosystème Zigbee actuel.
 
@@ -221,11 +222,11 @@ Chaque chauffe-eau est publié comme un endpoint **Water Heater** (device type `
 1. **Boost en cours** → chauffe (continue, ou jusqu'à consigne atteinte en one-shot).
 2. **Mode Arrêt** → coupure.
 3. **Mode Programme, hors plage/tarif** → coupure.
-4. **Régulation normale** (Marche forcée, ou Programme en plage) : TPI si sonde valide, pilotage en ouvert sinon.
+4. **Régulation normale** (Marche forcée, ou Programme en plage) : TPI si sonde valide, pilotage en ouvert si **aucune sonde n'est configurée**, coupure par sécurité si une sonde **est** configurée mais HS (voir ci-dessous) — ne pas confondre les deux cas.
 
 Sécurités complémentaires :
 
-- **Capteur HS** (pas de mesure depuis le délai configuré) → contacteur coupé.
+- **Capteur HS** (sonde configurée, mais pas de mesure depuis le délai configuré ou appareil introuvable) → contacteur coupé, pour ne pas chauffer « à l'aveugle » un ballon dont on a perdu la mesure.
 - **Anti-court-cycle** sur tous les basculements (`minOn`/`minOff`).
 - L'état réel lu sur le contacteur (`actualOn`) peut diverger de la commande (`output`) si l'appareil a été actionné en dehors de la box (bouton physique, autre automatisation) : la régulation **corrige** au cycle suivant, sans attendre une action de l'utilisateur.
 

@@ -96,7 +96,12 @@ public:
         b.emergency = emergencyBoost.ValueOr(false);
         b.has_temp = temporarySetpoint.HasValue();
         b.temp_centidegrees = temporarySetpoint.ValueOr(0);
-        matter_bridge_dispatch_virtual_command(mEndpointId, MATTER_VCMD_WH_BOOST, 0, &b);
+        // Reponse optimiste seulement si le message a bien rejoint la file du
+        // module water_heater (voir matter_command_cb) : sinon (file pleine),
+        // ne pas annoncer un succes que rien ne confirmera (revue PR #57).
+        if (matter_bridge_dispatch_virtual_command(mEndpointId, MATTER_VCMD_WH_BOOST, 0, &b) != ESP_OK) {
+            return chip::Protocols::InteractionModel::Status::Busy;
+        }
         GenerateBoostStartedEvent(duration, oneShot, emergencyBoost, temporarySetpoint,
                                   chip::Optional<chip::Percent>(), chip::Optional<chip::Percent>());
         return chip::Protocols::InteractionModel::Status::Success;
@@ -104,7 +109,9 @@ public:
 
     chip::Protocols::InteractionModel::Status HandleCancelBoost() override
     {
-        matter_bridge_dispatch_virtual_command(mEndpointId, MATTER_VCMD_WH_CANCEL_BOOST, 0, nullptr);
+        if (matter_bridge_dispatch_virtual_command(mEndpointId, MATTER_VCMD_WH_CANCEL_BOOST, 0, nullptr) != ESP_OK) {
+            return chip::Protocols::InteractionModel::Status::Busy;
+        }
         return chip::Protocols::InteractionModel::Status::Success;
     }
 
@@ -165,17 +172,20 @@ public:
     void HandleChangeToMode(uint8_t newMode, lixee_mode::Commands::ChangeToModeResponse::Type &response) override
     {
         bool known = (newMode == WH_MODE_OFF || newMode == WH_MODE_MANUAL || newMode == WH_MODE_TIMED);
-        response.status = static_cast<uint8_t>(known
-            ? lixee_mode::StatusCode::kSuccess
-            : lixee_mode::StatusCode::kUnsupportedMode);
         // ModeBase::Delegate n'a pas de mEndpointId (contrairement a
         // WaterHeaterManagement::Delegate) : seul GetInstance()->GetEndpointId()
         // le donne. mInstance est prive dans esp-matter 1.5 (accessible
         // seulement via l'accesseur protege GetInstance()).
+        bool dispatched = false;
         if (known && GetInstance()) {
-            matter_bridge_dispatch_virtual_command(GetInstance()->GetEndpointId(), MATTER_VCMD_WH_CHANGE_MODE,
-                                                   newMode, nullptr);
+            dispatched = matter_bridge_dispatch_virtual_command(GetInstance()->GetEndpointId(),
+                MATTER_VCMD_WH_CHANGE_MODE, newMode, nullptr) == ESP_OK;
         }
+        // Succes seulement si le mode est valide ET que la commande a bien
+        // rejoint la file du module water_heater (file pleine sinon, revue PR #57).
+        response.status = static_cast<uint8_t>(!known
+            ? lixee_mode::StatusCode::kUnsupportedMode
+            : (dispatched ? lixee_mode::StatusCode::kSuccess : lixee_mode::StatusCode::kGenericFailure));
     }
 
 private:

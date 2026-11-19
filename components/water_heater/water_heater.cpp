@@ -82,7 +82,7 @@ typedef struct {
     // Matter : endpoint cree a ce demarrage, dernieres valeurs publiees
     bool    m_created;
     bool    m_pushed;
-    int32_t m_temp, m_sp, m_mode_val, m_run;
+    int32_t m_temp, m_sp, m_mode_val, m_run, m_system_mode;
     bool    m_heat_demand, m_boost_active;
 } wh_t;
 
@@ -154,7 +154,13 @@ static uint32_t next_uid(void)
 static void zone_defaults(wh_t *t)
 {
     memset(t, 0, sizeof(*t));
-    t->mode = WATERHEATER_MODE_MANUAL;
+    // Programme (heures creuses/tarif Linky) par defaut, pas Marche forcee :
+    // un chauffe-eau nouvellement cree ne doit pas chauffer 24h/24 y compris
+    // en heures pleines tant que l'utilisateur n'a pas choisi explicitement
+    // la marche forcee (revue PR #57). Sans plage/tarif configure,
+    // zone_schedule_active() reste active en permanence : comportement
+    // identique a Manuel jusqu'a ce qu'un horaire soit renseigne.
+    t->mode = WATERHEATER_MODE_TIMED;
     t->setpoint = 55.0f;           // consigne ballon usuelle (securite anti-legionellose)
     t->tpi_cycle_s = 900;
     t->kp = 0.8f;
@@ -315,11 +321,25 @@ static void apply_output(wh_t *t, bool desired, int64_t now)
 // Regulation
 // ----------------------------------------------------------------------------
 
+#define WATERHEATER_BOOST_MAX_SEC (4 * 3600)   // 4 h : "besoin ponctuel", pas un mode permanent (revue PR #57)
+
 static void end_boost_locked(wh_t *t)
 {
     t->boost_until_ms = 0;
     t->boost_one_shot = false;
     t->boost_reached = false;
+}
+
+// Point d'entree commun web/Matter (revue PR #57 : la consigne et la duree du
+// boost n'etaient bornees sur aucun des deux chemins).
+static void start_boost_locked(wh_t *t, uint32_t duration_s, bool one_shot, bool has_temp, float temp_c)
+{
+    if (duration_s > WATERHEATER_BOOST_MAX_SEC) duration_s = WATERHEATER_BOOST_MAX_SEC;
+    t->boost_until_ms = now_ms() + (int64_t)duration_s * 1000;
+    t->boost_one_shot = one_shot;
+    t->boost_reached = false;
+    float sp = has_temp ? temp_c : t->setpoint;
+    t->boost_setpoint = sp < 0.0f ? 0.0f : (sp > 70.0f ? 70.0f : sp);   // meme plage que set_setpoint_locked
 }
 
 static void regulation_tick(void)
@@ -349,9 +369,19 @@ static void regulation_tick(void)
             t->duty = 0.0f;
             t->integral = 0.0f;
         } else if (!t->sensor_valid) {
-            // Pas de sonde (ou HS) : pilotage ouvert, pas de regulation possible
-            desired = true;
-            t->duty = 1.0f;
+            if (t->sensor[0]) {
+                // Sonde configuree mais HS (pas de mesure depuis sensor_timeout_s,
+                // ou appareil introuvable) : coupure par securite, voir
+                // WATERHEATER.md §5/§14 ("le contacteur est coupe par securite").
+                // A ne pas confondre avec "pas de sonde du tout" (revue PR #57).
+                desired = false;
+                t->duty = 0.0f;
+            } else {
+                // Pas de sonde configuree : pilotage ouvert, le contacteur suit
+                // simplement le mode / la plage horaire.
+                desired = true;
+                t->duty = 1.0f;
+            }
         } else {
             float error = target - t->current_temp;
             if (boosting) {
@@ -497,7 +527,7 @@ static void load_config(void)
         j_str(o, "actuatorIEEE", v, sizeof(v)); copy_ieee(t->actuator, v);
         t->extra_count = j_ieee_list(o, "actuatorsExtra", t->extra, WATERHEATER_MAX_EXTRA, NULL);
         j_int(o, "mode", &t->mode);
-        if (t->mode < WATERHEATER_MODE_OFF || t->mode > WATERHEATER_MODE_TIMED) t->mode = WATERHEATER_MODE_MANUAL;
+        if (t->mode < WATERHEATER_MODE_OFF || t->mode > WATERHEATER_MODE_TIMED) t->mode = WATERHEATER_MODE_TIMED;
         j_num(o, "setpoint", &t->setpoint);
         j_int(o, "tpiCycleSec", &t->tpi_cycle_s);
         j_num(o, "tpiKp", &t->kp);
@@ -684,15 +714,21 @@ int water_heater_save_zone(int id, const cJSON *j)
 {
     lock();
     wh_t *t;
-    if (id < 0 || id >= s_count) {
+    if (id < 0) {
         if (s_count >= WATERHEATER_MAX_ZONES) { unlock(); return -1; }
         uint32_t uid = next_uid();
         id = s_count++;
         t = &s_z[id];
         zone_defaults(t);
         t->uid = uid;
-    } else {
+    } else if (id < s_count) {
         t = &s_z[id];
+    } else {
+        // id positif mais inconnu (zone deja supprimee, requete perimee...) :
+        // -1 comme l'annonce le header, pas de creation silencieuse a cet id
+        // (revue PR #57).
+        unlock();
+        return -1;
     }
     char v[64];
     v[0] = '\0';
@@ -708,7 +744,7 @@ int water_heater_save_zone(int id, const cJSON *j)
     t->extra_count = j_ieee_list(j, "actuatorsExtra", t->extra, WATERHEATER_MAX_EXTRA, t->actuator);
 
     j_int(j, "mode", &t->mode);
-    if (t->mode < WATERHEATER_MODE_OFF || t->mode > WATERHEATER_MODE_TIMED) t->mode = WATERHEATER_MODE_MANUAL;
+    if (t->mode < WATERHEATER_MODE_OFF || t->mode > WATERHEATER_MODE_TIMED) t->mode = WATERHEATER_MODE_TIMED;
     j_num(j, "setpoint", &t->setpoint);
     if (t->setpoint < 0.0f) t->setpoint = 0.0f;
     if (t->setpoint > 70.0f) t->setpoint = 70.0f;
@@ -808,7 +844,11 @@ static esp_err_t matter_command_cb(int ep, matter_virtual_cmd_t cmd, int32_t val
     if (!ours) return ESP_ERR_NOT_FOUND;
     wh_msg_t m = {}; m.kind = MSG_CMD; m.ep = ep; m.cmd = (uint8_t)cmd; m.value = value;
     if (boost) m.boost = *boost;
-    if (s_q) xQueueSend(s_q, &m, 0);
+    // Le delegate (Boost/ChangeToMode) renvoie Success au controleur uniquement
+    // si le message a reellement rejoint la file : sinon (file pleine), il
+    // doit le savoir pour repondre un echec plutot qu'un faux succes
+    // (revue PR #57).
+    if (!s_q || xQueueSend(s_q, &m, 0) != pdTRUE) return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
 
@@ -848,6 +888,7 @@ static void matter_sync_zone(wh_t *t, bool *dirty)
     int32_t sp = (int32_t)lroundf((boosting ? t->boost_setpoint : t->setpoint) * 100.0f);
     int32_t mode_val = (int32_t)t->mode;
     int32_t run = (t->output && t->actual_on) ? 0x1 : 0;
+    int32_t system_mode = t->mode == WATERHEATER_MODE_OFF ? 0 : 4;   // SystemMode : Off / Heat
     bool heat_demand = t->output && t->actual_on;
     bool force = !t->m_pushed;
 
@@ -856,12 +897,17 @@ static void matter_sync_zone(wh_t *t, bool *dirty)
     // piece (700-3000 chez le thermostat virtuel, voir thermostat.cpp)
     if (force || t->m_sp != sp) matter_bridge_set_number(ep, 0x0201, 0x0012, clamp32(sp, 0, 7000), false);
     if (force || t->m_run != run) matter_bridge_set_number(ep, 0x0201, 0x0029, run, false);
+    // SystemMode (0x001C) : sans republication, un controleur generique reste
+    // bloque sur "Heat" apres un passage en Arret (web ou ChangeToMode), voir
+    // revue PR #57.
+    if (force || t->m_system_mode != system_mode) matter_bridge_set_number(ep, 0x0201, 0x001C, system_mode, false);
     if (force || t->m_mode_val != mode_val || t->m_heat_demand != heat_demand || t->m_boost_active != boosting) {
         matter_bridge_wh_push_state(ep, heat_demand, boosting, (uint8_t)t->mode);
     }
     t->m_temp = temp;
     t->m_sp = sp;
     t->m_run = run;
+    t->m_system_mode = system_mode;
     t->m_mode_val = mode_val;
     t->m_heat_demand = heat_demand;
     t->m_boost_active = boosting;
@@ -911,10 +957,8 @@ static void matter_apply_command(const wh_msg_t *m)
     case MATTER_VCMD_WH_BOOST:
         ESP_LOGI(TAG, "zone \"%s\" : Boost %lu s%s%s", t->name, (unsigned long)m->boost.duration_s,
                  m->boost.one_shot ? " oneShot" : "", m->boost.emergency ? " emergency" : "");
-        t->boost_until_ms = now_ms() + (int64_t)m->boost.duration_s * 1000;
-        t->boost_one_shot = m->boost.one_shot;
-        t->boost_reached = false;
-        t->boost_setpoint = m->boost.has_temp ? m->boost.temp_centidegrees / 100.0f : t->setpoint;
+        start_boost_locked(t, m->boost.duration_s, m->boost.one_shot,
+                           m->boost.has_temp, m->boost.temp_centidegrees / 100.0f);
         break;
     case MATTER_VCMD_WH_CANCEL_BOOST:
         ESP_LOGI(TAG, "zone \"%s\" : CancelBoost", t->name);
@@ -1015,10 +1059,7 @@ bool water_heater_boost(int id, uint32_t duration_s, bool one_shot, bool emergen
     bool ok = t != NULL;
     if (t) {
         (void)emergency;   // pas de distinction materielle possible (un seul relais)
-        t->boost_until_ms = now_ms() + (int64_t)duration_s * 1000;
-        t->boost_one_shot = one_shot;
-        t->boost_reached = false;
-        t->boost_setpoint = has_temp ? temp_c : t->setpoint;
+        start_boost_locked(t, duration_s, one_shot, has_temp, temp_c);
     }
     unlock();
     post_sync();
