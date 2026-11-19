@@ -1016,7 +1016,7 @@
         '<button type="button" class="btn btn-primary zb-cmd" data-cmd="Network" ' +
           'title="Relit l\'état du réseau Zigbee auprès de la ZiGate (adresse, PAN, canal). Ne modifie rien.">Lire l\'état du réseau</button> ' +
         '<button type="button" class="btn btn-primary zb-cmd" data-cmd="Reset" ' +
-          'title="Redémarre le module ZiGate, pas la box. Le réseau Zigbee et les appareils sont conservés.">Redémarrer la ZiGate</button> ' +
+          'title="Redémarre seulement la puce radio Zigbee (ZiGate), pas la box. Le réseau Zigbee et les appareils sont conservés.">Redémarrer la ZiGate (module radio Zigbee)</button> ' +
         '<button type="button" class="btn btn-danger zb-cmd" data-cmd="ErasePDM" ' +
           'title="Efface la mémoire réseau de la ZiGate (PDM) : le réseau Zigbee est perdu et tous les appareils devront être réappairés." ' +
           'data-confirm="Effacer la PDM ? Tout le réseau Zigbee sera perdu et les appareils devront être réappairés.">Effacer le réseau Zigbee</button> ' +
