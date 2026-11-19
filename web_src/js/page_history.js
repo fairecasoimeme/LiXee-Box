@@ -58,6 +58,43 @@
   }
   function daysBetween(a, b) { return Math.round((b - a) / 86400000); }
 
+  // ---------------------------------------------------------------- mobile
+  // Ecran etroit : barre d'outils compacte, titre court, graphe plus bas, pas
+  // de zoom (le glisser du zoom bloquait le defilement de la page) mais un
+  // glissement du doigt sur le graphe pour changer de periode
+  function isMobile() { return window.matchMedia ? window.matchMedia('(max-width: 767.98px)').matches : window.innerWidth < 768; }
+  function isTouch() { return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; }
+
+  var CSS =
+    '#hist-cal-btn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;}' +
+    '#hist-chart-wrap{position:relative;height:420px;transition:opacity .15s;}' +
+    '@media (max-width:767.98px){' +
+      '#hist-page{padding-left:6px;padding-right:6px;}' +
+      '#hist-page .hist-head{margin:.6rem 0 !important;}' +
+      '#hist-page .hist-head h3{font-size:1.2rem;}' +
+      '#hist-page .hist-card{padding:.6rem !important;margin-bottom:.6rem !important;}' +
+      '#hist-page .hist-card h5{font-size:1rem;}' +
+      '#hist-gran{width:100%;display:flex;}' +
+      '#hist-gran .btn{flex:1 1 0;padding:.35rem 0;font-size:.82rem;}' +
+      '#hist-page .hist-nav{width:100%;}' +
+      '#hist-cal-btn{flex:1 1 auto;}' +
+      '#hist-prev,#hist-next{padding:.2rem .75rem;font-size:1.15rem;line-height:1.2;}' +
+      '#hist-page .hist-opts{width:100%;margin-left:0 !important;}' +
+      '#hist-compare{flex:1 1 100%;min-width:0;}' +
+      '#hist-chart-wrap{height:300px;}' +
+      '#hist-water-wrap{height:220px !important;}' +
+      '#hist-stats .fs-5{font-size:1.05rem !important;}' +
+      '#hist-stats .border{padding:.4rem !important;}' +
+      '#hist-cal{left:50% !important;transform:translateX(-50%);max-width:calc(100vw - 20px);}' +
+    '}';
+  function injectCss() {
+    if (document.getElementById('hist-style')) return;
+    var st = document.createElement('style');
+    st.id = 'hist-style';
+    st.textContent = CSS;
+    document.head.appendChild(st);
+  }
+
   // ---------------------------------------------------------------- etat
   var S = null;                // etat de la page
   var gen = 0;                 // generation des requetes (reponses perimees ignorees)
@@ -120,6 +157,11 @@
 
   function periodTitle(r) {
     var g = S.gran, f = r.from, t = r.to;
+    if (isMobile()) {
+      if (S.custom) return dd(f) + ' – ' + ddmmyyyy(t);
+      if (g === 'hour') return DAYS[f.getDay()].slice(0, 3) + '. ' + f.getDate() + ' ' + MONTHS_S[f.getMonth()] + ' ' + f.getFullYear();
+      if (g === 'week') return 'S' + isoWeek(f) + ' – S' + isoWeek(t) + ' ' + t.getFullYear();
+    }
     if (S.custom) return 'Du ' + ddmmyyyy(f) + ' au ' + ddmmyyyy(t);
     if (g === 'hour') {
       var s = DAYS[f.getDay()] + ' ' + f.getDate() + ' ' + MONTHS[f.getMonth()] + ' ' + f.getFullYear();
@@ -161,22 +203,25 @@
   function page() {
     gen++;
     S = newState();
+    S.mobile = isMobile();
+    injectCss();
     A.setContent(
       '<div class="container-fluid" id="hist-page" style="max-width:1400px;">' +
-        '<div class="d-flex flex-wrap align-items-center gap-2" style="margin:1rem 0;">' +
+        '<div class="d-flex align-items-center gap-2 hist-head" style="margin:1rem 0;">' +
           '<h3 class="mb-0 me-auto">Historique de consommation</h3>' +
           '<a href="#energy" class="btn btn-sm btn-outline-secondary">&larr; &Eacute;nergie</a>' +
         '</div>' +
         // Barre d'outils
-        '<div class="card p-3 mb-3"><div class="d-flex flex-wrap align-items-center gap-2">' +
+        '<div class="card p-3 mb-3 hist-card"><div class="d-flex flex-wrap align-items-center gap-2">' +
           '<div class="btn-group btn-group-sm" role="group" id="hist-gran">' +
             GRANS.map(function(g) { return '<button type="button" class="btn btn-outline-primary" data-g="' + g.id + '">' + g.label + '</button>'; }).join('') +
           '</div>' +
-          '<div class="d-flex align-items-center gap-1 position-relative">' +
+          '<div class="d-flex align-items-center gap-1 position-relative hist-nav">' +
             '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-prev" title="Période précédente">&lsaquo;</button>' +
             '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-cal-btn" title="Choisir une date">&#128197; <span id="hist-title"></span></button>' +
             '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-next" title="Période suivante">&rsaquo;</button>' +
-            '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-today">Aujourd&#39;hui</button>' +
+            '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-today" title="Aujourd&#39;hui">' +
+              '<span class="d-none d-md-inline">Aujourd&#39;hui</span><span class="d-md-none">Auj.</span></button>' +
             '<div id="hist-cal" class="card shadow p-2" style="display:none;position:absolute;top:100%;left:0;z-index:1050;width:290px;"></div>' +
           '</div>' +
           '<details id="hist-custom-box" class="ms-1"><summary class="small text-primary" style="cursor:pointer;">P&eacute;riode libre</summary>' +
@@ -187,7 +232,7 @@
               '<button type="button" class="btn btn-sm btn-primary" id="hist-custom-go">Afficher</button>' +
               '<button type="button" class="btn btn-sm btn-link" id="hist-custom-clear" style="display:none;">Annuler</button>' +
             '</div></details>' +
-          '<div class="ms-lg-auto d-flex flex-wrap align-items-center gap-2">' +
+          '<div class="ms-lg-auto d-flex flex-wrap align-items-center gap-2 hist-opts">' +
             '<div class="btn-group btn-group-sm" role="group" id="hist-mode">' +
               '<button type="button" class="btn btn-outline-secondary" data-m="kwh">kWh</button>' +
               '<button type="button" class="btn btn-outline-secondary" data-m="eur">€</button>' +
@@ -198,28 +243,29 @@
             '</div>' +
             '<select class="form-select form-select-sm" id="hist-compare" style="width:auto;">' +
               '<option value="none">Sans comparaison</option>' +
-              '<option value="prev">Comparer à la période précédente</option>' +
-              '<option value="year">Comparer à l&#39;année précédente</option>' +
+              '<option value="prev">' + (S.mobile ? 'Comparer : période préc.' : 'Comparer à la période précédente') + '</option>' +
+              '<option value="year">' + (S.mobile ? 'Comparer : année préc.' : 'Comparer à l&#39;année précédente') + '</option>' +
             '</select>' +
           '</div>' +
         '</div></div>' +
         // Graphe electricite / production / gaz
-        '<div class="card p-3 mb-3">' +
+        '<div class="card p-3 mb-3 hist-card">' +
           '<div class="d-flex flex-wrap align-items-center gap-2 mb-2">' +
             '<h5 class="card-title mb-0 me-auto">&Eacute;lectricit&eacute;, production et gaz</h5>' +
             '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-zoom-reset" style="display:none;">Zoom initial</button>' +
             '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-csv">Export CSV</button>' +
           '</div>' +
           '<div id="hist-msg" class="text-muted small mb-2" style="display:none;"></div>' +
-          '<div style="position:relative;height:420px;"><canvas id="hist-chart"></canvas></div>' +
-          '<div class="form-text">Molette ou pincement : zoom ; glisser : s&eacute;lection d&#39;une plage ; Ctrl + glisser : d&eacute;placement. Clic sur la l&eacute;gende : masquer une s&eacute;rie.</div>' +
+          '<div id="hist-chart-wrap"><canvas id="hist-chart"></canvas></div>' +
+          '<div class="form-text d-none d-md-block">Molette : zoom ; glisser : s&eacute;lection d&#39;une plage ; Ctrl + glisser : d&eacute;placement. Clic sur la l&eacute;gende : masquer une s&eacute;rie.</div>' +
+          '<div class="form-text d-md-none">Glissez le graphe vers la gauche ou la droite pour changer de p&eacute;riode ; touchez une barre pour le d&eacute;tail.</div>' +
         '</div>' +
         // Statistiques
-        '<div class="card p-3 mb-3"><h5 class="card-title">Statistiques de la p&eacute;riode</h5><div id="hist-stats" class="row g-2"></div></div>' +
+        '<div class="card p-3 mb-3 hist-card"><h5 class="card-title">Statistiques de la p&eacute;riode</h5><div id="hist-stats" class="row g-2"></div></div>' +
         // Eau
-        '<div class="card p-3 mb-3" id="hist-water-card" style="display:none;">' +
+        '<div class="card p-3 mb-3 hist-card" id="hist-water-card" style="display:none;">' +
           '<h5 class="card-title">Eau</h5>' +
-          '<div style="position:relative;height:300px;"><canvas id="hist-water"></canvas></div>' +
+          '<div id="hist-water-wrap" style="position:relative;height:300px;"><canvas id="hist-water"></canvas></div>' +
           '<div id="hist-water-stats" class="small mt-2"></div>' +
         '</div>' +
       '</div>');
@@ -319,6 +365,40 @@
       $(this).hide();
     });
     $('#hist-csv').on('click', exportCsv);
+
+    // Glissement horizontal sur le graphe : periode precedente / suivante.
+    // Ecouteurs passifs : le defilement vertical de la page reste libre.
+    var wrap = document.getElementById('hist-chart-wrap'), sw = null;
+    if (wrap) {
+      wrap.addEventListener('touchstart', function(e) {
+        sw = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+      }, { passive: true });
+      wrap.addEventListener('touchend', function(e) {
+        if (!sw || !e.changedTouches.length) return;
+        var dx = e.changedTouches[0].clientX - sw.x, dy = e.changedTouches[0].clientY - sw.y;
+        sw = null;
+        if (Math.abs(dx) < 60 || Math.abs(dx) < 1.5 * Math.abs(dy)) return;
+        var dir = dx < 0 ? 1 : -1;
+        if ($(dir > 0 ? '#hist-next' : '#hist-prev').prop('disabled')) return;
+        $('#hist-chart-wrap').css('opacity', 0.35);
+        step(dir);
+      }, { passive: true });
+    }
+
+    // Rotation de l'ecran, fenetre redimensionnee : mise en page a refaire
+    var rt = null;
+    $(window).off('resize.hist').on('resize.hist', function() {
+      clearTimeout(rt);
+      rt = setTimeout(function() {
+        if (!document.getElementById('hist-page')) { $(window).off('resize.hist'); return; }
+        var m = isMobile();
+        if (m === S.mobile) return;
+        S.mobile = m;
+        $('#hist-compare option[value="prev"]').text(m ? 'Comparer : période préc.' : 'Comparer à la période précédente');
+        $('#hist-compare option[value="year"]').text(m ? 'Comparer : année préc.' : 'Comparer à l\u2019année précédente');
+        render();
+      }, 250);
+    });
   }
 
   function step(dir) {
@@ -444,7 +524,7 @@
     id: 'histPresence',
     beforeDraw: function(c) {
       var p = c.lixeePresence, ca = c.chartArea;
-      if (!p || !ca) return;
+      if (!p || !ca || c.lixeePresenceHidden) return;
       var x = c.scales.x, ctx = c.ctx;
       if (!x) return;
       ctx.save();
@@ -462,8 +542,10 @@
 
   function render() {
     syncControls();
+    $('#hist-chart-wrap').css('opacity', 1);
     var d = S.data;
     if (!d) return;
+    var mob = isMobile(), small = { size: 10 };
     if (d.configured === false) {
       $('#hist-msg').html('S&eacute;lectionnez votre ZLinky dans <a href="#configEnergy">Config &Eacute;nergie</a>.').show();
       return;
@@ -508,6 +590,16 @@
       });
     }
 
+    // Lignes de reference : budget, talon et max de la consommation electrique
+    refLines(d, sets, keys).forEach(function(r) {
+      datasets.push({
+        type: 'line', label: r.label, data: labels.map(function() { return r.value; }),
+        borderColor: r.color, backgroundColor: r.color, borderDash: r.dash, borderWidth: 2,
+        pointRadius: 0, pointHoverRadius: 0, fill: false, stack: 'ref_' + r.id, yAxisID: 'y', order: -2,
+        lixee: { kind: 'ref' }
+      });
+    });
+
     // Temperature
     var tempOn = $.isArray(d.temp) && d.temp.length && d.tempEnabled !== false;
     if (tempOn) {
@@ -524,6 +616,7 @@
       });
     }
     var pres = d.presence && d.presence.enabled !== false && $.isArray(d.presence.data) ? d.presence.data : null;
+    var presMask = (pres && S.gran === 'hour') ? pres.map(function(v) { return v === 1; }) : null;
 
     if (S.chart) { try { S.chart.destroy(); } catch (e) {} S.chart = null; }
     var canvas = document.getElementById('hist-chart');
@@ -536,25 +629,54 @@
         interaction: { mode: 'index', intersect: false },
         datasets: { bar: { barPercentage: 0.9, categoryPercentage: S.stacked ? 0.95 : 0.85 } },
         scales: {
-          x: { stacked: S.stacked, ticks: { maxRotation: 70, minRotation: 0, autoSkip: true, maxTicksLimit: 31 } },
+          x: { stacked: S.stacked,
+               ticks: mob ? { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: small }
+                          : { maxRotation: 70, minRotation: 0, autoSkip: true, maxTicksLimit: 31 } },
+          // Unite sur mobile : dans le titre de l'axe, pas sur chaque graduation
           y: { stacked: S.stacked, beginAtZero: true, grace: '10%',
-               ticks: { callback: function(v) { return fmtQ(v) + ' ' + unit; } } },
+               title: { display: mob, text: unit, font: small, padding: 0 },
+               ticks: { font: mob ? small : undefined, callback: function(v) { return fmtQ(v) + (mob ? '' : ' ' + unit); } } },
           yG: { display: gasAxis ? true : false, position: 'right', beginAtZero: true, grid: { drawOnChartArea: false },
-                ticks: { callback: function(v) { return fmtQ(v) + ' ' + ((d.gas && d.gas.unit) || ''); } } },
+                ticks: { font: mob ? small : undefined, callback: function(v) { return fmtQ(v) + (mob ? '' : ' ' + ((d.gas && d.gas.unit) || '')); } } },
           yT: { display: 'auto', position: 'right', beginAtZero: false, grace: '10%', grid: { drawOnChartArea: false },
-                ticks: { callback: function(v) { return fmt(v, Math.round(v) === v ? 0 : 1) + ' °C'; } } }
+                ticks: { font: mob ? small : undefined, callback: function(v) { return fmt(v, Math.round(v) === v ? 0 : 1) + (mob ? '°' : ' °C'); } } }
         },
         plugins: {
-          legend: { display: true, position: 'top' },
-          zoom: {
+          legend: { display: true, position: 'top',
+                    labels: $.extend(mob ? { boxWidth: 12, boxHeight: 10, padding: 6, font: { size: 11 } } : {}, {
+                      // Entree "Presence detectee" pour la bande verte (vue heure)
+                      generateLabels: function(c) {
+                        var items = Chart.defaults.plugins.legend.labels.generateLabels(c);
+                        if (presMask) {
+                          items.push({ text: 'Présence détectée', fillStyle: 'rgba(76,175,80,0.35)',
+                                       strokeStyle: 'rgba(76,175,80,0.8)', lineWidth: 1,
+                                       hidden: !!c.lixeePresenceHidden, lixeePresence: true });
+                        }
+                        return items;
+                      }
+                    }),
+                    onClick: function(e, item, legend) {
+                      if (item && item.lixeePresence) {
+                        legend.chart.lixeePresenceHidden = !legend.chart.lixeePresenceHidden;
+                        legend.chart.update('none');
+                        return;
+                      }
+                      Chart.defaults.plugins.legend.onClick.call(this, e, item, legend);
+                    } },
+          // Zoom : souris seulement (au doigt, le glisser bloquait le defilement)
+          zoom: (mob || isTouch()) ? false : {
             limits: { x: { min: 'original', max: 'original', minRange: 3 } },
             pan: { enabled: true, mode: 'x', modifierKey: 'ctrl' },
-            zoom: { wheel: { enabled: true, speed: 0.1 }, pinch: { enabled: true }, mode: 'x', drag: { enabled: true },
+            zoom: { wheel: { enabled: true, speed: 0.1 }, pinch: { enabled: false }, mode: 'x', drag: { enabled: true },
                     onZoomComplete: function() { $('#hist-zoom-reset').show(); } }
           },
           tooltip: {
+            titleFont: mob ? { size: 11 } : undefined, bodyFont: mob ? { size: 11 } : undefined,
+            footerFont: mob ? { size: 11 } : undefined, padding: mob ? 6 : 6, boxWidth: mob ? 9 : undefined,
+            boxHeight: mob ? 9 : undefined,
             filter: function(it) {
               var m = it.dataset.lixee || {};
+              if (m.kind === 'ref') return false;              // valeur dans la legende
               if (m.kind === 'temp' || m.kind === 'cmp') return it.parsed.y != null;
               return it.parsed.y != null && Number(it.parsed.y) !== 0;
             },
@@ -568,12 +690,56 @@
       },
       plugins: [PRESENCE_PLUGIN]
     });
-    chart.lixeePresence = (pres && S.gran === 'hour') ? pres.map(function(v) { return v === 1; }) : null;
+    chart.lixeePresence = presMask;
+    // Rendu initial fait sans le masque (sans animation, aucun autre trace) : on redessine
+    if (presMask) chart.draw();
     S.chart = chart;
     $('#hist-zoom-reset').hide();
 
     renderStats(d, sets, cmpTotals);
     renderWater();
+  }
+
+  /**
+   * Lignes horizontales de la granularite affichee (heure, jour, semaine...) :
+   *  - Budget : budget mensuel (Config Notifications) ramene au creneau, en €
+   *    ou en kWh au prix moyen de la periode (comme le graphe d'usage) ;
+   *  - Talon : creneau complet le plus faible (consommation de fond) ;
+   *  - Max : creneau le plus fort.
+   * Consommation electrique (index et sous-compteurs), creneau en cours exclu.
+   */
+  function refLines(d, sets, keys) {
+    var out = [], eur = S.mode === 'eur', unit = eur ? '€' : 'kWh';
+    var fv = function(v) { return eur ? fmtEur(v) : fmtQ(v) + ' kWh'; };
+    var elec = sets.filter(function(s) { return s.type === 'index' || s.type === 'submeter'; });
+    var tot = [];
+    for (var i = 0; i < keys.length; i++) {
+      var t = null;
+      elec.forEach(function(s) { if (s.data[i] != null) t = (t || 0) + s.data[i]; });
+      tot.push(t);
+    }
+    // Creneau en cours (dernier renseigne, periode incluant aujourd'hui) : incomplet
+    var last = -1;
+    tot.forEach(function(v, j) { if (v != null) last = j; });
+    if (last >= 0 && range().to >= today()) tot[last] = null;
+    var vals = tot.filter(function(v) { return v != null && v > 0; });
+    var bud = num(d.budgetEur) * num(d.periodFactor);
+    if (bud > 0 && !eur) {
+      // Prix moyen du kWh (index) sur la periode, comme budgetWh du graphe d'usage
+      var kwh = 0, cost = 0;
+      (d.series || []).forEach(function(s) {
+        if (s.type !== 'index' || !$.isArray(s.data)) return;
+        s.data.forEach(function(v) { if (isNum(v)) { kwh += Number(v) / 1000; cost += Number(v) / 1000 * num(s.price); } });
+      });
+      bud = (kwh > 0 && cost > 0) ? bud * kwh / cost : 0;
+    }
+    if (bud > 0) out.push({ id: 'budget', label: 'Budget : ' + fv(bud), value: bud, color: '#8e44ad', dash: [6, 4] });
+    if (vals.length >= 2) {
+      var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+      out.push({ id: 'talon', label: 'Talon : ' + fv(mn), value: mn, color: '#16a085', dash: [3, 3] });
+      out.push({ id: 'max', label: 'Max : ' + fv(mx), value: mx, color: '#c0392b', dash: [3, 3] });
+    }
+    return out;
   }
 
   function tooltipTitle(key) {
@@ -606,7 +772,7 @@
     var i = items[0].dataIndex, cons = 0, prod = 0, any = false;
     items.forEach(function(it) {
       var m = it.dataset.lixee || {}, v = num(it.parsed.y);
-      if (m.kind === 'temp' || m.kind === 'cmp' || (m.unit && m.unit !== unit)) return;
+      if (m.kind === 'temp' || m.kind === 'cmp' || m.kind === 'ref' || (m.unit && m.unit !== unit)) return;
       any = true;
       if (v < 0) prod += -v; else cons += v;
     });
@@ -764,7 +930,8 @@
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
         interaction: { mode: 'index', intersect: false },
-        scales: { x: { ticks: { maxRotation: 70, autoSkip: true, maxTicksLimit: 31 } },
+        scales: { x: { ticks: isMobile() ? { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 10 } }
+                                         : { maxRotation: 70, autoSkip: true, maxTicksLimit: 31 } },
                   y: { beginAtZero: true, ticks: { callback: function(v) { return fmtQ(v) + ' ' + u; } } } },
         plugins: { tooltip: { callbacks: {
           title: function(items) { return items.length ? tooltipTitle((w.keys || [])[items[0].dataIndex]) : ''; },

@@ -484,7 +484,8 @@
             '<div class="col-md-6">' +
               '<div class="card p-4">' +
                 '<h5 class="card-title d-flex align-items-center">Usage d\'&eacute;lectricit&eacute;' +
-                  '<a href="#energyHistory" class="ms-auto small fw-normal">Historique d&eacute;taill&eacute; &rsaquo;</a></h5>' +
+                  '<a href="#energyHistory" class="ms-auto text-muted" title="Historique d&eacute;taill&eacute;" aria-label="Historique d&eacute;taill&eacute;">' +
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707"/></svg></a></h5>' +
                 '<div class="card-body"><div style="position:relative;height:342px;"><canvas id="energy-chart"></canvas></div></div>' +
                 helpLink('popupHelpElectricity') +
                 '<a href="' + energyUrl('/api/energy/chart/export?time=' + t) + '" download class="position-absolute bottom-0 end-0 p-2 text-muted" title="Exporter en CSV">' + ENERGY_CSV_ICON + '</a>' +
@@ -1292,7 +1293,7 @@
                 ticks: { callback: function(v) { return fmtNum(v, Math.round(v) === v ? 0 : 1) + ' °C'; } } }
         },
         plugins: {
-          legend: { display: true, position: 'top' },
+          legend: opts.presence ? presenceLegend() : { display: true, position: 'top' },
           tooltip: {
             filter: tooltipKeep,
             callbacks: {
@@ -1352,11 +1353,40 @@
   // barres d'energie, une bande verte pale et un point vert en haut de chaque
   // creneau (heure, ou jour) ou une presence a ete detectee
   var presenceState = { period: '', hour: [], day: {} };
+  var PRESENCE_COLOR = 'rgba(76,175,80,0.8)';
+
+  // Legende : entree "Presence detectee" tant que la bande verte est affichable
+  // (vues heure et jour, presence activee) ; un clic la masque, comme une serie
+  function presenceLegend() {
+    var base = Chart.defaults.plugins.legend;
+    return {
+      display: true, position: 'top',
+      labels: {
+        generateLabels: function(c) {
+          var items = base.labels.generateLabels(c), p = presenceState.period;
+          if (p === 'hour' || p === 'day') {
+            items.push({ text: 'Présence détectée', fillStyle: PRESENCE_COLOR, strokeStyle: PRESENCE_COLOR,
+                         lineWidth: 0, pointStyle: 'circle', hidden: !!c.lixeePresenceHidden, lixeePresence: true });
+          }
+          return items;
+        }
+      },
+      onClick: function(e, item, legend) {
+        if (item && item.lixeePresence) {
+          legend.chart.lixeePresenceHidden = !legend.chart.lixeePresenceHidden;
+          legend.chart.update('none');
+          return;
+        }
+        base.onClick.call(this, e, item, legend);
+      }
+    };
+  }
+
   var PRESENCE_OVERLAY = {
     id: 'presenceOverlay',
     beforeDraw: function(c) {
       var ca = c.chartArea, p = presenceState.period;
-      if (!ca || (p !== 'hour' && p !== 'day')) return;
+      if (!ca || c.lixeePresenceHidden || (p !== 'hour' && p !== 'day')) return;
       var l = c.data.labels || [];
       if (!l.length) return;
       var bw = (ca.right - ca.left) / l.length, ctx = c.ctx;
@@ -1372,7 +1402,7 @@
         var x = ca.left + i * bw + bw / 2;
         ctx.fillStyle = 'rgba(76,175,80,0.15)';
         ctx.fillRect(x - bw / 2, ca.top, bw, ca.bottom - ca.top);
-        ctx.fillStyle = 'rgba(76,175,80,0.8)';
+        ctx.fillStyle = PRESENCE_COLOR;
         ctx.beginPath();
         ctx.arc(x, ca.top + 8, 4, 0, 6.28);
         ctx.fill();

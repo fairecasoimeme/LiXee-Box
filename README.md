@@ -516,11 +516,12 @@ Tout device Zigbee reportant le cluster **Temperature Measurement (0x0402)**, at
 
 #### Historique détaillé (à partir de la v3.3)
 
-La page **Mesures** --> **Energie** --> **Historique** (ou le lien « Historique détaillé » du graphe d'usage) donne accès à tout l'historique enregistré par la box, alors que le tableau de bord reste sur les 24 dernières heures, les 30 derniers jours, les 12 derniers mois et les années.
+La page **Mesures** --> **Energie** --> **Historique** (ou l'icône d'agrandissement, deux flèches, à droite du titre du graphe d'usage) donne accès à tout l'historique enregistré par la box, alors que le tableau de bord reste sur les 24 dernières heures, les 30 derniers jours, les 12 derniers mois et les années.
 
 * **Granularités** : heure (un jour), jour (un mois), semaine (12 semaines), mois (une année), année (10 ans).
 * **Navigation** : flèches ‹ › pour la période précédente ou suivante, bouton **Aujourd'hui**, calendrier pour choisir un jour (les jours sans données sont grisés), et **période libre** du … au … (31 jours au plus en vue heure).
 * **Electricité, production et gaz** sur le même graphe : index tarifaires, sous-compteurs, production (sous l'axe) et gaz (dans la pile s'il est compté en Wh ou kWh, sinon sur son propre axe). L'eau a son propre graphe.
+* **Lignes de référence** : budget mensuel ramené au créneau (en kWh au prix moyen de la période, ou en €), talon (créneau le plus faible) et max (créneau le plus fort) de la consommation électrique, pour la granularité affichée ; le créneau en cours n'est pas compté.
 * **Outils** : affichage en kWh ou en €, barres empilées ou séparées, comparaison avec la période précédente ou la même période de l'année précédente, zoom (molette, pincement, sélection), température et présence, export CSV de la période affichée.
 * **Statistiques de la période** : consommation et coût (abonnement compris), moyenne, pic, consommation de fond la nuit (vue heure), part des heures creuses, production, gaz, écart avec la période comparée, température moyenne et extrêmes, heures de présence.
 

@@ -1856,6 +1856,8 @@ char *energy_history_page_json(const char *gran_s, uint32_t from, uint32_t to, u
     sb_printf(&b, ",\"coeff\":%g,\"displayUnit\":", coeff);
     sb_jstr(&b, display_unit);
     sb_printf(&b, ",\"meterPrice\":%.5f", meter_price);
+    // Budget mensuel (EUR, Config Notifications) : la page en deduit la part d'un creneau
+    if (!meter) sb_printf(&b, ",\"budgetEur\":%.2f", budget_month_eur());
     sb_printf(&b, ",\"costs\":{\"abo\":%.5f,\"cspe\":%.5f,\"cta\":%.5f,\"prodPrice\":%.5f},\"periodFactor\":%.6f}",
               parse_num(gc->tarif_abo), parse_num(gc->tarif_cspe), parse_num(gc->tarif_cta),
               parse_num(gc->tarif_idx_prod), FACTOR[gran]);
