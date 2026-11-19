@@ -1144,6 +1144,7 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
         p->heat = feat & 1;
         p->cool = (feat & 2) != 0;
         p->presets = feat & 1;        // Confort/Hors-gel (issue #51) : chauffage uniquement
+        p->virtual_zone = true;       // zone virtuelle (pas un vrai thermostat Zigbee, issue #78)
         p->link_count = 1;
         p->links[0].target = ML_TH_RUNNING;          // cree ThermostatRunningState
         int ep = matter_bridge_add_virtual_endpoint(MATTER_UID_BASE | t->uid, p, t->name,

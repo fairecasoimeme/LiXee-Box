@@ -640,10 +640,13 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
             if (p->links[i].target == ML_TH_RUNNING) running = true;
         if (th && running) cluster::thermostat::attribute::create_thermostat_running_state(th, 0);
         // RemoteSensing (0x001A, optionalConform) : non cree par defaut par esp-matter
-        // (create_remote_sensing() existe mais n'a aucun appelant generique). LocalTemperature
-        // d'un thermostat virtuel vient toujours d'un capteur Zigbee distant (jamais d'un capteur
-        // integre a l'endpoint) -> bit kLocalTemperature (0x01) systematique.
-        if (th) cluster::thermostat::attribute::create_remote_sensing(th, 0x01);
+        // (create_remote_sensing() existe mais n'a aucun appelant generique). Uniquement sur
+        // les zones virtuelles (p->virtual_zone, positionne par matter_sync_zone()) : un vrai
+        // thermostat Zigbee (TRVZB, tetes Tuya, AC201A...) mesure sa propre temperature et ne
+        // doit pas l'annoncer comme distante. LocalTemperature d'un thermostat virtuel vient
+        // toujours d'un capteur Zigbee distant (jamais d'un capteur integre a l'endpoint) ->
+        // bit kLocalTemperature (0x01) systematique sur ce chemin.
+        if (th && p->virtual_zone) cluster::thermostat::attribute::create_remote_sensing(th, 0x01);
         if (presets_delegate) {
             if (s_thermo_preset_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
                 s_thermo_preset_delegates[s_thermo_preset_delegate_count] = presets_delegate;
