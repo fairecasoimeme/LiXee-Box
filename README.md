@@ -1262,6 +1262,30 @@ Exemple de fichier 24321.json pour l'appareil id (5F01 Hex) :
 | `manufacturerSpecific` | | String | Code fabricant (hex) pour un attribut propriétaire, ex. `"0x1021"` |
 | `mode` | | String | Modes du Linky concernés, séparés par `;` (ex. `"3;7"`) : la ligne n'est utilisée que dans ces modes |
 | `writable` | | Boolean | Attribut modifiable depuis l'interface |
+| `typewritable` | si `writable` | Decimal | Type de donnée utilisé pour écrire l'attribut (voir ci-dessous) |
+
+#### Type d'écriture (`typewritable`)
+Pour écrire un attribut, la box doit encoder la valeur dans le type attendu par l'appareil. `typewritable` donne ce type, **en décimal** :
+
+- **Cluster Zigbee standard ou propriétaire** : identifiant du type de donnée ZCL (Zigbee Cluster Library). Il fixe le nombre d'octets et le signe de la valeur envoyée. Le type est celui de l'attribut dans la documentation de l'appareil, ou celui reçu dans ses rapports (colonne type des données brutes de la page de l'appareil).
+
+| `typewritable` | Type ZCL | Donnée |
+|----------------|----------|--------|
+| `16` | 0x10 | booléen |
+| `32` | 0x20 | entier non signé 8 bits (0 à 255) |
+| `33` | 0x21 | entier non signé 16 bits (0 à 65535) |
+| `35` | 0x23 | entier non signé 32 bits |
+| `40` | 0x28 | entier signé 8 bits (-128 à 127) |
+| `41` | 0x29 | entier signé 16 bits, ex. consigne de thermostat en centièmes de °C |
+| `48` | 0x30 | énumération 8 bits (modes, états) |
+| `49` | 0x31 | énumération 16 bits |
+| `24` | 0x18 | bitmap 8 bits |
+| `57` | 0x39 | nombre à virgule (flottant 32 bits) |
+| `66` | 0x42 | chaîne de caractères |
+
+- **Cluster Tuya `EF00`** : type du point de donnée (DP) Tuya : `1` booléen, `2` valeur numérique sur 4 octets, `3` chaîne, `4` énumération, `5` bitmap.
+
+Exemple : `{ "name": "occupancy_timeout", "cluster": "0406", "attribut": 32, "type": "numeric", "writable": true, "typewritable": 33 }`
 
 ### Action
 ### Paramètres d'Action
