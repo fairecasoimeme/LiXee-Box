@@ -953,6 +953,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | Marque | Modèles | Mesures | Notes | Template | Testé |
 |--------|---------|---------|-------|:--------:|:-----:|
 | **Hiking / TOMZN** | DDS238-2 | Tension, courant, puissance, énergie | Compteur monophasé DIN rail 65A, énergie bidirectionnelle | 📋 | ✅ |
+| **Zemismart** | SPM01V2 (`_TZE200_qhlxve78`, `_TZE284_qhlxve78`, `_TZE204_qhlxve78`) | Tension, courant, puissance, énergie (import/export) | Compteur monophasé ; facteur de puissance et fréquence lus par le pont mais pas encore remontés côté Matter (device type Matter non étendu) | 📋 | |
 
 ---
 
