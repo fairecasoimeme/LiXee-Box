@@ -17,4 +17,5 @@ idf_component_register(
         ntp_sync
         matter_bridge
         config_manager
+        water_heater
 )

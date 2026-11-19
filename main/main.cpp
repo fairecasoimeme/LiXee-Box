@@ -1465,8 +1465,11 @@ extern "C" void app_main(void)
     rules_set_command_executor(rules_zigbee_exec);
     zigate_actions_set_setpoint_source(hvac_setpoint_source);
     rules_set_notify_cb(rules_notify);
-    thermostat_init();          // thermostats virtuels (lit thermostats.json, regulation 30 s)
-    water_heater_init();        // chauffe-eau virtuels (lit waterheaters.json, regulation 30 s)
+    // water_heater_init() avant thermostat_init() : sa file doit exister pour
+    // entrer dans le queue set construit par thermostat_init() (pas de tache
+    // dediee pour la regulation du chauffe-eau, voir thermostat.cpp).
+    water_heater_init();        // chauffe-eau virtuels (lit waterheaters.json)
+    thermostat_init();          // thermostats virtuels (lit thermostats.json, regulation 30 s, inclut le chauffe-eau)
     delestage_init();           // delestage des prises sur depassement de puissance souscrite
     {
         // Module LoRa : absent sur la plupart des cartes (ESP_ERR_NOT_FOUND, sans gravite)

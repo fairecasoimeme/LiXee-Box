@@ -39,7 +39,6 @@ static const char *TAG = "WATERHEATER";
 
 #define SENSOR_TIMEOUT_DEFAULT_SEC  10800   // 3 h, voir thermostat.cpp
 
-#define TICK_MS                30000
 #define HYSTERESIS_C           0.3f
 #define MATTER_UID_BASE        0x4C58574800000000ULL     // UniqueID Matter : "LXWH" + uid de la zone
 
@@ -936,27 +935,31 @@ void water_heater_matter_start(void)
     post_sync();
 }
 
-static void regulation_task(void *arg)
+// Pas de tache FreeRTOS dediee : la regulation tourne dans la tache du
+// thermostat (components/thermostat/thermostat.cpp, regulation_task), qui
+// inclut s_q dans un queue set avec sa propre file. Economise 6 Ko de pile
+// en RAM interne (cf. revue PR #57) ; ecrit en flash (save_locked()) comme
+// le thermostat, donc pas question de pile en PSRAM (voir le meme choix
+// documente dans zigate_driver.cpp pour la tache zigate_proc).
+QueueHandle_t water_heater_get_queue(void) { return s_q; }
+
+void water_heater_process_queue_once(void)
 {
-    (void)arg;
-    int64_t next_tick = now_ms() + TICK_MS;
-    for (;;) {
-        int64_t wait = next_tick - now_ms();
-        wh_msg_t m;
-        if (wait > 0 && xQueueReceive(s_q, &m, pdMS_TO_TICKS(wait)) == pdTRUE) {
-            lock();
-            if (m.kind == MSG_WRITE) matter_apply_write(&m);
-            else if (m.kind == MSG_CMD) matter_apply_command(&m);
-            matter_sync_all();
-            unlock();
-            continue;
-        }
-        lock();
-        regulation_tick();
-        matter_sync_all();
-        unlock();
-        next_tick = now_ms() + TICK_MS;
-    }
+    wh_msg_t m;
+    if (!s_q || xQueueReceive(s_q, &m, 0) != pdTRUE) return;
+    lock();
+    if (m.kind == MSG_WRITE) matter_apply_write(&m);
+    else if (m.kind == MSG_CMD) matter_apply_command(&m);
+    matter_sync_all();
+    unlock();
+}
+
+void water_heater_tick(void)
+{
+    lock();
+    regulation_tick();
+    matter_sync_all();
+    unlock();
 }
 
 esp_err_t water_heater_init(void)
@@ -968,7 +971,6 @@ esp_err_t water_heater_init(void)
     s_q = xQueueCreate(16, sizeof(wh_msg_t));
     if (!s_z || !s_lock || !s_q) return ESP_ERR_NO_MEM;
     load_config();
-    if (xTaskCreate(regulation_task, "waterheater", 6144, NULL, 3, NULL) != pdPASS) return ESP_ERR_NO_MEM;
     return ESP_OK;
 }
 

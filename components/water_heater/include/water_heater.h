@@ -21,6 +21,8 @@
 #include <stdint.h>
 #include "esp_err.h"
 #include "cJSON.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,8 +37,23 @@ extern "C" {
 #define WATERHEATER_MODE_MANUAL  1
 #define WATERHEATER_MODE_TIMED   2
 
-/** Charge la configuration et demarre la regulation (premier passage a 30 s). */
+/** Charge la configuration (pas de tache dediee, voir water_heater_get_queue()). */
 esp_err_t water_heater_init(void);
+
+/**
+ * File des messages Matter (ecriture/commande) a inclure dans un queue set
+ * FreeRTOS par le code appelant (components/thermostat/thermostat.cpp,
+ * regulation_task : la regulation du chauffe-eau n'a pas de tache dediee,
+ * pour economiser 6 Ko de pile en RAM interne). NULL si water_heater_init()
+ * n'a pas (encore) reussi.
+ */
+QueueHandle_t water_heater_get_queue(void);
+
+/** A appeler quand water_heater_get_queue() signale un message pret (queue set). */
+void water_heater_process_queue_once(void);
+
+/** Tick de regulation (30 s), a appeler depuis la tache du thermostat. */
+void water_heater_tick(void);
 
 /** Pont Matter demarre : chaque zone devient un endpoint Water Heater (0x050F). */
 void water_heater_matter_start(void);
