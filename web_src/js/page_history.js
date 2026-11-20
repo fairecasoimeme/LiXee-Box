@@ -5,7 +5,8 @@
 // heure par heure, jours, semaines, mois, annees), navigation par fleches et
 // calendrier (jours sans donnees grises), periode libre, comparaison, kWh/€,
 // empile/separe, temperature et presence, statistiques et export CSV.
-// Electricite, production et gaz sur un graphe ; eau sur un second.
+// Electricite (et production) sur un graphe, avec le gaz s'il est compte en
+// Wh / kWh (meme unite, empilable) ; sinon (m3...) le gaz a son graphe. Eau a part.
 // API : /api/energy/history, /api/energy/history/days (web_energy.cpp)
 // ============================================================================
 (function() {
@@ -26,7 +27,7 @@
                 'septembre', 'octobre', 'novembre', 'décembre'];
   var MONTHS_S = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
   var DAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-  var TEMP_COLORS = ['#c0392b', '#8e44ad', '#16a085', '#b7950b'];   // le gaz est orange
+  var TEMP_COLORS = ['#c0392b', '#8e44ad', '#16a085', '#b7950b'];
   var SEP = '────────────────────';
 
   // ---------------------------------------------------------------- outils
@@ -82,7 +83,7 @@
       '#hist-page .hist-opts{width:100%;margin-left:0 !important;}' +
       '#hist-compare{flex:1 1 100%;min-width:0;}' +
       '#hist-chart-wrap{height:300px;}' +
-      '#hist-water-wrap{height:220px !important;}' +
+      '#hist-gas-wrap,#hist-water-wrap{height:220px !important;}' +
       '#hist-stats .fs-5{font-size:1.05rem !important;}' +
       '#hist-stats .border{padding:.4rem !important;}' +
       '#hist-cal{left:50% !important;transform:translateX(-50%);max-width:calc(100vw - 20px);}' +
@@ -109,7 +110,7 @@
       custom: null,                          // {from: Date, to: Date} : periode libre
       mode: 'kwh', stacked: true, compare: 'none',
       avail: { hour: [], day: [] }, first: null,
-      cfg: {}, data: null, cmp: null, water: null, waterCmp: null,
+      cfg: {}, data: null, cmp: null, water: null, waterCmp: null, gasChart: null, waterChart: null,
       calMonth: null
     };
   }
@@ -248,10 +249,10 @@
             '</select>' +
           '</div>' +
         '</div></div>' +
-        // Graphe electricite / production / gaz
+        // Graphe electricite / production
         '<div class="card p-3 mb-3 hist-card">' +
           '<div class="d-flex flex-wrap align-items-center gap-2 mb-2">' +
-            '<h5 class="card-title mb-0 me-auto">&Eacute;lectricit&eacute;, production et gaz</h5>' +
+            '<h5 class="card-title mb-0 me-auto" id="hist-elec-title">&Eacute;lectricit&eacute;</h5>' +
             '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-zoom-reset" style="display:none;">Zoom initial</button>' +
             '<button type="button" class="btn btn-sm btn-outline-secondary" id="hist-csv">Export CSV</button>' +
           '</div>' +
@@ -262,6 +263,12 @@
         '</div>' +
         // Statistiques
         '<div class="card p-3 mb-3 hist-card"><h5 class="card-title">Statistiques de la p&eacute;riode</h5><div id="hist-stats" class="row g-2"></div></div>' +
+        // Gaz
+        '<div class="card p-3 mb-3 hist-card" id="hist-gas-card" style="display:none;">' +
+          '<h5 class="card-title">Gaz</h5>' +
+          '<div id="hist-gas-wrap" style="position:relative;height:300px;"><canvas id="hist-gas"></canvas></div>' +
+          '<div id="hist-gas-stats" class="small mt-2"></div>' +
+        '</div>' +
         // Eau
         '<div class="card p-3 mb-3 hist-card" id="hist-water-card" style="display:none;">' +
           '<h5 class="card-title">Eau</h5>' +
@@ -470,8 +477,9 @@
       });
   }
 
-  // Series electriques du graphe (production en negatif), valeurs en kWh ou €
-  function buildSets(d, mode, forTotal) {
+  // Series electriques du graphe (production en negatif), valeurs en kWh ou €.
+  // Le gaz et l'eau ont chacun leur graphe (renderFluids).
+  function buildSets(d, mode) {
     var c = d.costs || {}, cspe = num(c.cspe), out = [];
     (d.series || []).forEach(function(s, i) {
       if (!s || !$.isArray(s.data)) return;
@@ -488,30 +496,36 @@
       });
       out.push({ key: s.key, name: String(s.name || s.key), type: s.type, color: safeColor(s.color, '#2980b9'), data: data, raw: s });
     });
-    // Gaz : dans la pile si son unite est une energie, sinon sur son propre axe
+    // Gaz compte en energie (Wh / kWh) : empile avec l'electricite, en kWh ;
+    // tarif gaz en €/kWh (comme le serveur, energy_service)
     var g = d.gas;
-    if (g && $.isArray(g.data)) {
+    if (gasIsEnergy(g) && $.isArray(g.data)) {
       var wf = num(g.whFactor), gp = num(g.price);
       out.push({
         key: 'gas', name: String(g.name || 'Gaz'), type: 'gas', color: safeColor(g.color, '#e67e22'),
-        energy: wf > 0, unit: String(g.unit || ''),
         data: g.data.map(function(v) {
           if (!isNum(v)) return null;
-          if (mode === 'eur') return Number(v) * gp;
-          return wf > 0 ? Number(v) * wf / 1000 : Number(v);
+          var kwh = Number(v) * wf / 1000;
+          return mode === 'eur' ? kwh * gp : kwh;
         })
       });
     }
     return out;
   }
 
-  // Consommation totale d'un point (electricite + gaz energie), dans le mode courant
+  // Gaz en unite d'energie ? Reponse du serveur (whFactor), sinon config
+  function gasIsEnergy(g) {
+    if (g && g.whFactor != null) return num(g.whFactor) > 0;
+    return /^k?wh$/i.test(String(S.cfg.unitGaz || '').trim());
+  }
+
+  // Consommation totale d'un point (electricite + gaz en energie), dans le mode courant
   function totalsOf(sets, n) {
     var t = [];
     for (var i = 0; i < n; i++) {
       var s = null;
       sets.forEach(function(x) {
-        if (x.type === 'prod' || (x.type === 'gas' && !x.energy && S.mode !== 'eur')) return;
+        if (x.type === 'prod') return;
         var v = x.data[i];
         if (v != null) s = (s || 0) + v;
       });
@@ -558,20 +572,20 @@
     var sets = buildSets(d, S.mode);
     var hasData = sets.some(function(s) { return s.data.some(function(v) { return v; }); });
     if (!hasData) $('#hist-msg').text('Aucune consommation enregistrée sur cette période.').show();
+    var tp = ['&Eacute;lectricit&eacute;'];
+    if (sets.some(function(s) { return s.type === 'gas'; }) || (S.cfg.Gaz && gasIsEnergy(d.gas))) tp.push('gaz');
+    if (sets.some(function(s) { return s.type === 'prod'; })) tp.push('production');
+    $('#hist-elec-title').html(tp.length > 1 ? tp.slice(0, -1).join(', ') + ' et ' + tp[tp.length - 1] : tp[0]);
 
     var datasets = [];
-    var gasAxis = false;
     sets.forEach(function(s) {
       if (!s.data.some(function(v) { return v; })) return;
-      var own = s.type === 'gas' && !s.energy && !eur;
-      if (own) gasAxis = true;
       datasets.push({
-        type: own ? 'line' : 'bar',
-        label: s.type === 'prod' ? s.name + ' (Prod)' : (s.type === 'gas' && !s.energy && !eur ? s.name + ' (' + s.unit + ')' : s.name),
+        type: 'bar', label: s.type === 'prod' ? s.name + ' (Prod)' : s.name,
         data: s.data, backgroundColor: s.color, borderColor: s.color,
-        stack: own ? 'gas' : (S.stacked ? 'e' : s.key), yAxisID: own ? 'yG' : 'y',
-        borderWidth: own ? 2 : 0, pointRadius: own ? 2 : 0, fill: false, order: own ? -1 : 1,
-        lixee: { kind: s.type, unit: own ? s.unit : unit }
+        stack: S.stacked ? 'e' : s.key, yAxisID: 'y',
+        borderWidth: 0, pointRadius: 0, fill: false, order: 1,
+        lixee: { kind: s.type, unit: unit }
       });
     });
 
@@ -636,8 +650,6 @@
           y: { stacked: S.stacked, beginAtZero: true, grace: '10%',
                title: { display: mob, text: unit, font: small, padding: 0 },
                ticks: { font: mob ? small : undefined, callback: function(v) { return fmtQ(v) + (mob ? '' : ' ' + unit); } } },
-          yG: { display: gasAxis ? true : false, position: 'right', beginAtZero: true, grid: { drawOnChartArea: false },
-                ticks: { font: mob ? small : undefined, callback: function(v) { return fmtQ(v) + (mob ? '' : ' ' + ((d.gas && d.gas.unit) || '')); } } },
           yT: { display: 'auto', position: 'right', beginAtZero: false, grace: '10%', grid: { drawOnChartArea: false },
                 ticks: { font: mob ? small : undefined, callback: function(v) { return fmt(v, Math.round(v) === v ? 0 : 1) + (mob ? '°' : ' °C'); } } }
         },
@@ -697,7 +709,7 @@
     $('#hist-zoom-reset').hide();
 
     renderStats(d, sets, cmpTotals);
-    renderWater();
+    renderFluids();
   }
 
   /**
@@ -769,19 +781,26 @@
 
   function tooltipFooter(items, unit, pres) {
     if (!items.length) return '';
-    var i = items[0].dataIndex, cons = 0, prod = 0, any = false;
+    var i = items[0].dataIndex, cons = 0, gas = 0, prod = 0, any = false, anyGas = false;
     items.forEach(function(it) {
       var m = it.dataset.lixee || {}, v = num(it.parsed.y);
       if (m.kind === 'temp' || m.kind === 'cmp' || m.kind === 'ref' || (m.unit && m.unit !== unit)) return;
       any = true;
-      if (v < 0) prod += -v; else cons += v;
+      if (m.kind === 'gas') { gas += v; anyGas = true; }
+      else if (v < 0) prod += -v; else cons += v;
     });
     var L = [];
     if (any) {
       L.push(SEP);
       var f = function(v) { return unit === '€' ? fmtEur(v) : fmtQ(v) + ' ' + unit; };
-      L.push('Consommation : ' + f(cons));
-      if (prod > 0) { L.push('Production : ' + f(prod)); L.push('Net : ' + f(cons - prod)); }
+      if (anyGas) {
+        L.push('Électricité : ' + f(cons));
+        L.push('Gaz : ' + f(gas));
+        L.push('Total : ' + f(cons + gas));
+      } else {
+        L.push('Consommation : ' + f(cons));
+      }
+      if (prod > 0) { L.push('Production : ' + f(prod)); L.push('Net : ' + f(cons + gas - prod)); }
     }
     if (pres && pres[i] != null) {
       if (S.gran === 'hour') L.push(pres[i] ? 'Présence détectée' : 'Pas de présence');
@@ -862,13 +881,14 @@
       var pk2 = -sumArr(prod.data), pe = eurSets.filter(function(s) { return s.type === 'prod'; })[0];
       H.push(statCard('Production', fmtQ(pk2) + ' kWh', pe && sumArr(pe.data) ? 'Revenu ' + fmtEur(-sumArr(pe.data)) : ''));
     }
-    // Gaz
-    var gas = d.gas;
-    if (gas && $.isArray(gas.data)) {
-      var gt = sumArr(gas.data.map(function(v) { return isNum(v) ? Number(v) : null; }));
-      H.push(statCard('Gaz', fmtQ(gt) + ' ' + esc(gas.unit || ''), num(gas.price) ? 'Coût ' + fmtEur(gt * num(gas.price)) : ''));
+    // Gaz empile (energie) ; en m3, il a son graphe et son total dessous
+    var gk = kwhSets.filter(function(s) { return s.type === 'gas'; })[0];
+    if (gk) {
+      var ge = eurSets.filter(function(s) { return s.type === 'gas'; })[0];
+      H.push(statCard('Consommation de gaz', fmtQ(sumArr(gk.data)) + ' kWh',
+                      ge && sumArr(ge.data) ? 'Coût ' + fmtEur(sumArr(ge.data)) : ''));
     }
-    // Comparaison
+    // Comparaison : total du graphe (electricite et gaz empile)
     if (cmpTotals) {
       var curT = sumArr(totalsOf(setsMode, n)), refT = sumArr(cmpTotals);
       if (refT > 0) {
@@ -877,7 +897,7 @@
         H.push(statCard(S.compare === 'year' ? 'Écart sur un an' : 'Écart avec la période précédente',
                         '<span style="color:' + col + ';">' + (pct > 0 ? '+' : '') + fmt(pct, 1) + ' %</span>',
                         (S.mode === 'eur' ? fmtEur(curT) + ' contre ' + fmtEur(refT) : fmtQ(curT) + ' contre ' + fmtQ(refT) + ' kWh') +
-                        (elapsed < n ? ' (période en cours)' : '')));
+                        (gk ? ', électricité et gaz' : '') + (elapsed < n ? ' (période en cours)' : '')));
       }
     }
     // Temperature
@@ -898,48 +918,100 @@
     $('#hist-stats').html(H.join('') || '<div class="col-12 text-muted">Aucune donnée.</div>');
   }
 
-  // ---------------------------------------------------------------- eau
-  function renderWater() {
-    var w = S.water, $card = $('#hist-water-card');
-    if (S.waterChart) { try { S.waterChart.destroy(); } catch (e) {} S.waterChart = null; }
-    if (!S.cfg.Water || !w || w.configured === false) { $card.hide(); return; }
+  // ---------------------------------------------------------------- gaz et eau
+  function arrNum(a, k) { return $.isArray(a) ? a.map(function(v) { return isNum(v) ? Number(v) * (k || 1) : null; }) : null; }
+
+  // Gaz (hors Wh / kWh, empile sinon) et eau : un graphe chacun, dans leur
+  // unite (ou en € si un prix est connu), periode de comparaison en
+  // pointilles, total et ecart dessous
+  function renderFluids() {
+    var d = S.data || {}, g = d.gas, cg = S.cmp && S.cmp.gas;
+    renderFluid({
+      id: 'hist-gas', chart: 'gasChart', what: 'de gaz', label: 'Gaz',
+      show: !!S.cfg.Gaz && d.configured !== false && !gasIsEnergy(g || cg),
+      keys: $.isArray(d.keys) ? d.keys : [], data: g ? arrNum(g.data) : null,
+      cmp: cg ? arrNum(cg.data) : null, cmpKeys: S.cmp && S.cmp.keys,
+      unit: String((g && g.unit) || (cg && cg.unit) || ''), price: num((g || cg || {}).price),
+      color: safeColor(g && g.color, '#e67e22')
+    });
+    var w = S.water, wc = S.waterCmp, ws = w && $.isArray(w.series) ? w.series[0] : null;
+    var wcs = wc && $.isArray(wc.series) ? wc.series[0] : null, coeff = num((w || {}).coeff) || 1;
+    renderFluid({
+      id: 'hist-water', chart: 'waterChart', what: 'd’eau', label: 'Eau',
+      show: !!S.cfg.Water && !!w && w.configured !== false,
+      keys: w && $.isArray(w.keys) ? w.keys : [], data: ws ? arrNum(ws.data, coeff) : null,
+      cmp: wcs ? arrNum(wcs.data, num(wc.coeff) || coeff) : null, cmpKeys: wc && wc.keys,
+      unit: String((w && w.displayUnit) || 'L'), price: num((w || {}).meterPrice),
+      color: safeColor(ws && ws.color, '#2e86c1')
+    });
+  }
+
+  function renderFluid(o) {
+    var $card = $('#' + o.id + '-card'), $st = $('#' + o.id + '-stats'), $cv = $('#' + o.id);
+    if (S[o.chart]) { try { S[o.chart].destroy(); } catch (e) {} S[o.chart] = null; }
+    if (!o.show) { $card.hide(); return; }
     $card.show();
-    if (!$.isArray(w.series) || !w.series.length) {
-      $('#hist-water').hide();
-      $('#hist-water-stats').text('Aucune consommation d’eau enregistrée sur cette période.');
+    var has = o.data && o.data.some(function(v) { return v; });
+    if (!has) {
+      $cv.hide();
+      $st.text('Aucune consommation ' + o.what + ' enregistrée sur cette période.');
       return;
     }
-    $('#hist-water').show();
-    var coeff = num(w.coeff) || 1, unit = String(w.displayUnit || 'L'), price = num(w.meterPrice);
-    var eur = S.mode === 'eur';
-    var s = w.series[0];
-    var data = (s.data || []).map(function(v) { return isNum(v) ? Number(v) * coeff * (eur ? price : 1) : null; });
-    var u = eur ? '€' : unit;
-    var multiDay = S.gran === 'hour' && (w.keys || []).length > 24;
-    var labels = (w.keys || []).map(function(k) { return pointLabel(k, multiDay); });
-    var ds = [{ type: 'bar', label: 'Eau', data: data, backgroundColor: safeColor(s.color, '#2e86c1') }];
-    if (S.waterCmp && $.isArray(S.waterCmp.series) && S.waterCmp.series[0]) {
-      var cs = S.waterCmp.series[0];
-      ds.push({ type: 'line', label: (S.compare === 'year' ? 'Année précédente' : 'Période précédente'),
-                data: labels.map(function(_, i) { var v = (cs.data || [])[i]; return isNum(v) ? Number(v) * coeff * (eur ? price : 1) : null; }),
-                borderColor: '#555', borderDash: [6, 4], borderWidth: 2, pointRadius: 0, fill: false });
+    $cv.show();
+    var eur = S.mode === 'eur' && o.price > 0, u = eur ? '€' : o.unit;
+    var conv = function(v) { return v == null ? null : (eur ? v * o.price : v); };
+    var mob = isMobile(), small = { size: 10 };
+    var multiDay = S.gran === 'hour' && o.keys.length > 24;
+    var labels = o.keys.map(function(k) { return pointLabel(k, multiDay); });
+    var ds = [{ type: 'bar', label: o.label, data: o.data.map(conv), backgroundColor: o.color, borderColor: o.color,
+                borderWidth: 0, order: 1 }];
+    if (o.cmp) {
+      ds.push({ type: 'line', label: S.compare === 'year' ? 'Année précédente' : 'Période précédente',
+                data: labels.map(function(_, i) { return i < o.cmp.length ? conv(o.cmp[i]) : null; }),
+                borderColor: '#555', backgroundColor: '#555', borderDash: [6, 4], borderWidth: 2,
+                pointRadius: 0, pointHoverRadius: 3, fill: false, order: -1 });
     }
-    var canvas = document.getElementById('hist-water');
-    S.waterChart = new Chart(canvas.getContext('2d'), {
+    S[o.chart] = new Chart(document.getElementById(o.id).getContext('2d'), {
       type: 'bar', data: { labels: labels, datasets: ds },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
         interaction: { mode: 'index', intersect: false },
-        scales: { x: { ticks: isMobile() ? { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: { size: 10 } }
-                                         : { maxRotation: 70, autoSkip: true, maxTicksLimit: 31 } },
-                  y: { beginAtZero: true, ticks: { callback: function(v) { return fmtQ(v) + ' ' + u; } } } },
-        plugins: { tooltip: { callbacks: {
-          title: function(items) { return items.length ? tooltipTitle((w.keys || [])[items[0].dataIndex]) : ''; },
-          label: function(ctx) { return ctx.dataset.label + ' : ' + (eur ? fmtEur(ctx.parsed.y) : fmtQ(ctx.parsed.y) + ' ' + unit); } } } }
+        datasets: { bar: { barPercentage: 0.9, categoryPercentage: 0.95 } },
+        scales: {
+          x: { ticks: mob ? { maxRotation: 0, autoSkip: true, maxTicksLimit: 7, font: small }
+                          : { maxRotation: 70, minRotation: 0, autoSkip: true, maxTicksLimit: 31 } },
+          y: { beginAtZero: true, grace: '10%',
+               title: { display: mob, text: u, font: small, padding: 0 },
+               ticks: { font: mob ? small : undefined, callback: function(v) { return fmtQ(v) + (mob ? '' : ' ' + u); } } }
+        },
+        plugins: {
+          legend: { display: !!o.cmp, position: 'top',
+                    labels: mob ? { boxWidth: 12, boxHeight: 10, padding: 6, font: { size: 11 } } : {} },
+          tooltip: {
+            titleFont: mob ? { size: 11 } : undefined, bodyFont: mob ? { size: 11 } : undefined,
+            filter: function(it) { return it.parsed.y != null; },
+            callbacks: {
+              title: function(items) { return items.length ? tooltipTitle(o.keys[items[0].dataIndex]) : ''; },
+              label: function(ctx) {
+                var ck = ctx.datasetIndex && $.isArray(o.cmpKeys) ? o.cmpKeys[ctx.dataIndex] : null;
+                return ctx.dataset.label + (ck ? ' [' + tooltipTitle(ck) + ']' : '') + ' : ' +
+                       (eur ? fmtEur(ctx.parsed.y) : fmtQ(ctx.parsed.y) + ' ' + o.unit);
+              }
+            }
+          }
+        }
       }
     });
-    var tot = sumArr((s.data || []).map(function(v) { return isNum(v) ? Number(v) * coeff : null; }));
-    $('#hist-water-stats').html('Total : <b>' + fmtQ(tot) + ' ' + esc(unit) + '</b>' + (price ? ' (' + fmtEur(tot * price) + ')' : ''));
+    var tot = sumArr(o.data);
+    var h = 'Total : <b>' + esc(fmtQ(tot) + ' ' + o.unit) + '</b>' + (o.price ? ' (' + fmtEur(tot * o.price) + ')' : '');
+    var ref = o.cmp ? sumArr(o.cmp) : 0;
+    if (ref > 0) {
+      var pct = (tot - ref) / ref * 100;
+      h += ' · ' + (S.compare === 'year' ? 'écart sur un an' : 'écart avec la période précédente') + ' : ' +
+           '<span style="color:' + (pct > 0 ? '#c0392b' : '#27ae60') + ';">' + (pct > 0 ? '+' : '') + fmt(pct, 1) + ' %</span>' +
+           ' (' + esc(fmtQ(ref) + ' ' + o.unit) + ')';
+    }
+    $st.html(h);
   }
 
   // ---------------------------------------------------------------- export CSV
@@ -950,7 +1022,9 @@
     if (!d || !$.isArray(d.keys)) return;
     var sets = buildSets(d, 'kwh');
     var head = ['Date'];
-    sets.forEach(function(s) { head.push(s.type === 'gas' && !s.energy ? s.name + ' (' + s.unit + ')' : s.name + (s.type === 'prod' ? ' (Prod)' : '') + ' (kWh)'); });
+    sets.forEach(function(s) { head.push(s.name + (s.type === 'prod' ? ' (Prod)' : '') + ' (kWh)'); });
+    var gas = d.gas && $.isArray(d.gas.data) && !gasIsEnergy(d.gas) ? d.gas : null;   // sinon dans sets, en kWh
+    if (gas) head.push('Gaz (' + (gas.unit || '') + ')');
     var temps = $.isArray(d.temp) ? d.temp : [];
     temps.forEach(function(t) { head.push(String(t.name || t.ieee) + ' (°C)'); });
     var pres = d.presence && $.isArray(d.presence.data) ? d.presence.data : null;
@@ -961,6 +1035,7 @@
     d.keys.forEach(function(k, i) {
       var row = [k];
       sets.forEach(function(s) { var v = s.data[i]; row.push(v == null ? '' : csvNum(Math.abs(v), 3)); });
+      if (gas) row.push(isNum(gas.data[i]) ? csvNum(Number(gas.data[i]), 3) : '');
       temps.forEach(function(t) { row.push(csvNum(isNum((t.avg || [])[i]) ? t.avg[i] : null, 1)); });
       if (pres) row.push(pres[i] == null ? '' : String(pres[i]));
       if (w) { var wv = (w.series[0].data || [])[i]; row.push(isNum(wv) ? csvNum(Number(wv) * (num(w.coeff) || 1), 3) : ''); }
