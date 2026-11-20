@@ -303,6 +303,9 @@
   // ZLinky affiche ('' = celui de Config Energie) : site a plusieurs compteurs
   // Linky. Retenu par navigateur.
   var energyZl = '';
+  // Gaz compte en energie (Wh, kWh, ou volume converti en kWh) : empile sur
+  // le graphe principal, comme dans l'historique. null sinon (carte a part).
+  var gasMain = null;
   try { energyZl = localStorage.getItem('energyZl') || ''; } catch (e) {}
   function energyUrl(url) {
     return energyZl ? url + (url.indexOf('?') < 0 ? '?' : '&') + 'zl=' + encodeURIComponent(energyZl) : url;
@@ -496,7 +499,7 @@
             // Usage electricite
             '<div class="col-md-6">' +
               '<div class="card p-4">' +
-                '<h5 class="card-title d-flex align-items-center">Usage d\'&eacute;lectricit&eacute;' +
+                '<h5 class="card-title d-flex align-items-center"><span id="energy-chart-title">Usage d\'&eacute;lectricit&eacute;</span>' +
                   '<a href="#energyHistory" class="ms-auto text-muted" title="Historique d&eacute;taill&eacute;" aria-label="Historique d&eacute;taill&eacute;">' +
                     '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707"/></svg></a></h5>' +
                 '<div class="card-body"><div style="position:relative;height:342px;"><canvas id="energy-chart"></canvas></div></div>' +
@@ -654,6 +657,7 @@
 
     // Graphiques d'un affichage precedent : liberes avant d'en recreer
     destroyEnergyCharts();
+    gasMain = null;
     energyGauges = { sig: '', list: [] };
     energyState = {};
     donutChart = null;
@@ -1333,7 +1337,7 @@
   // Courbes de temperature (Config Energie > Temperature) : une par sonde,
   // moyenne horaire (vue heure) ou journaliere (vue jour)
   var tempState = { period: '', sensors: [] };
-  var TEMP_COLORS = ['#e67e22', '#c0392b', '#8e44ad', '#16a085'];
+  var TEMP_COLORS = ['#c0392b', '#8e44ad', '#16a085', '#b7950b'];   // sans l'orange du gaz (comme l'historique)
   function tempDatasets(labels) {
     var p = tempState.period, out = [];
     if (p !== 'hour' && p !== 'day') return out;
@@ -1442,9 +1446,44 @@
   }
 
   function loadMainEnergyChart(time, gen) {
+    var elec = null;
     return energyGet('/api/energy/series?time=' + time, gen, function(d) {
-      fillEnergyChart(energyCharts.energy, d, time);
+      elec = d;
+      if (!gasMain) fillEnergyChart(energyCharts.energy, d, time);
+    }).then(function() {
+      if (!gasMain || !elec || !energyAlive(gen)) return;
+      var gm = gasMain;
+      return $.getJSON(gm.url).then(function(g) {
+        if (energyAlive(gen)) fillEnergyChart(energyCharts.energy, withGasSeries(elec, g, gm), time);
+      }, function() {
+        if (energyAlive(gen)) fillEnergyChart(energyCharts.energy, elec, time);
+      });
     });
+  }
+
+  // Wh par unite de gaz (cfg_gaz_wh_per_unit) : Wh, kWh, ou volume avec la
+  // conversion kWh de la facture ; 0 si le gaz n'est pas convertible en energie
+  function gasWhPerUnit(cfg) {
+    var u = String((cfg && cfg.unitGaz) || '').trim().toLowerCase();
+    if (u === 'wh') return 1;
+    if (u === 'kwh') return 1000;
+    var k = num(cfg && cfg.kwhGaz);
+    return k > 0 ? k * 1000 : 0;
+  }
+
+  // Serie electricite + gaz converti en Wh (memes creneaux que l'electricite)
+  function withGasSeries(elec, g, gm) {
+    g = g || {};
+    var gs = arr(g.series)[0];
+    var labels = arr(elec.labels).map(String);
+    if (!gs || !$.isArray(gs.data) || arr(g.labels).map(String).join('|') !== labels.join('|')) return elec;
+    var k = num(g.coeff) > 0 ? num(g.coeff) : 1;
+    var out = $.extend({}, elec);
+    out.series = arr(elec.series).concat([{
+      key: 'gaz', name: 'Gaz', type: 'gas', color: '#e67e22', price: gm.price,
+      data: gs.data.map(function(v) { var n = Number(v); return (v == null || !isFinite(n)) ? null : n * k * gm.wf; })
+    }]);
+    return out;
   }
 
   function fillEnergyChart(chart, d, period) {
@@ -1482,7 +1521,7 @@
         data: data,
         backgroundColor: isProd ? safeColor(s.color, '#27ae60') : safeColor(s.color, info.palette[i % info.palette.length]),
         stack: 'Stack0',
-        lixee: { price: num(s.price), prices: $.isArray(s.prices) ? s.prices : null, prod: isProd }
+        lixee: { price: num(s.price), prices: $.isArray(s.prices) ? s.prices : null, prod: isProd, gas: s.type === 'gas' }
       };
       (isProd ? prodSets : consoSets).push(ds);
     });
@@ -1518,7 +1557,7 @@
       var q = v * info.qtyScale;
       var cost = q * price;
       // Accise ajoutee a la consommation electrique seulement
-      if (!meta.prod && info.fees && num(costs.cspe) > 0) cost += q * num(costs.cspe);
+      if (!meta.prod && !meta.gas && info.fees && num(costs.cspe) > 0) cost += q * num(costs.cspe);
       line += ' (' + fmtEur(cost) + ')';
     }
     return line;
@@ -1532,7 +1571,7 @@
     var f = num(costs.periodFactor);
     if (!(f > 0)) f = PERIOD_FACTORS[info.period] || 0;
     var u = ' ' + info.unit;
-    var prodQty = 0, consoQty = 0, prodEur = 0, consoEnergy = 0, consoTax = 0;
+    var prodQty = 0, consoQty = 0, prodEur = 0, consoEnergy = 0, consoTax = 0, gasQty = 0;
     items.forEach(function(it) {
       var meta = it.dataset.lixee || {};
       if (meta.ref || meta.temp) return;
@@ -1545,14 +1584,15 @@
       } else {
         consoQty += a;
         consoEnergy += q * slotPrice(meta, it.dataIndex);
-        if (info.fees) consoTax += q * num(costs.cspe);
+        if (meta.gas) gasQty += a;
+        else if (info.fees) consoTax += q * num(costs.cspe);
       }
     });
     // Abonnement et CTA : une seule fois pour le creneau
     var abo = 0;
     // Temperature seule sous le curseur : pas de pied (le separateur resterait seul)
     if (!prodQty && !consoQty) return '';
-    if (consoQty > 0 && info.fees) {
+    if (consoQty - gasQty > 0 && info.fees) {
       abo = num(costs.abo) * f;
       consoTax += num(costs.cta) * f;
     }
@@ -1570,6 +1610,10 @@
     }
     if (consoQty > 0) {
       lines.push('Consommation : ' + fmtQty(consoQty) + u);
+      if (gasQty > 0) {
+        lines.push('   • Électricité : ' + fmtQty(consoQty - gasQty) + u);
+        lines.push('   • Gaz : ' + fmtQty(gasQty) + u);
+      }
       if (consoTotal > 0) {
         lines.push('   Coût : ' + fmtEur(consoTotal));
         details('Énergie', consoEnergy);
@@ -1596,7 +1640,16 @@
       if (!energyAlive(gen)) return;
       cfg = cfg || {};
       var meters = [];
-      if (cfg.Gaz)   meters.push({ key: 'gaz',   ieee: String(cfg.Gaz),   title: 'Consommation de Gaz', palette: ['#e67e22'] });
+      // Gaz en energie, vue du ZLinky principal : empile sur l'electricite
+      var wf = cfg.Gaz && !energyZl ? gasWhPerUnit(cfg) : 0;
+      if (wf > 0) {
+        gasMain = { url: '/api/energy/series?time=' + time + '&ieee=' + encodeURIComponent(String(cfg.Gaz)),
+                    wf: wf, price: num(String(cfg.tarifGaz || '').replace(',', '.')) };
+        $('#energy-chart-title').html('Usage d\'&eacute;lectricit&eacute; et de gaz');
+        loadMainEnergyChart(time, gen);
+      } else if (cfg.Gaz) {
+        meters.push({ key: 'gaz', ieee: String(cfg.Gaz), title: 'Consommation de Gaz', palette: ['#e67e22'] });
+      }
       if (cfg.Water) meters.push({ key: 'water', ieee: String(cfg.Water), title: 'Consommation d\'eau', palette: ['#2e86c1'] });
       if (!meters.length) return;
       var $box = $('#energy-meters');
