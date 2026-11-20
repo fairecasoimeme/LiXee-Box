@@ -990,6 +990,9 @@ static esp_err_t api_config_general_post_handler(httpd_req_t *req)
     // Sauvegarder
     esp_err_t err = cfg_save_general();
 
+    // Prix du kWh eventuellement modifies : republication Matter (CommodityPrice)
+    matter_device_manager_refresh_tariff_price();
+
     httpd_resp_set_type(req, "application/json");
     if (err == ESP_OK) {
         httpd_resp_sendstr(req, "{\"status\":\"ok\"}");

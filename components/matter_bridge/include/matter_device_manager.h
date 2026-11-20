@@ -101,6 +101,19 @@ const bridge_device_mapping_t* matter_device_manager_get_mapping_by_ieee(uint64_
 matter_device_type_t matter_device_manager_zcl_to_matter_type(uint16_t zcl_device_id);
 
 /**
+ * Republie le prix courant du kWh (CommodityPrice) sur les EP Linky, d'apres
+ * la configuration tarifaire de la page Energie. A appeler apres une
+ * modification des prix.
+ */
+void matter_device_manager_refresh_tariff_price(void);
+
+/**
+ * A appeler periodiquement (minute) : republie le prix s'il n'a pas pu l'etre
+ * faute d'heure synchronisee (juste apres le demarrage). Sans effet sinon.
+ */
+void matter_device_manager_tariff_price_tick(void);
+
+/**
  * Sauvegarde les mappings en NVS
  */
 esp_err_t matter_device_manager_save(void);

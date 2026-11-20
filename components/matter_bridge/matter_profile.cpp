@@ -412,6 +412,9 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
 
     for (int i = 0; i < p->link_count; i++) p->caps |= cap_of(p->links[i].target);
 
+    // Prix courant du kWh (CommodityPrice) sur l'EP du ZLinky (issue #67)
+    if (p->zlinky) p->caps |= MCAP_LINKY_PRICE;
+
     // Lampe : DeviceId d'eclairage ZCL (le ZLinky s'annonce a tort en 0x0101)
     p->light = (p->caps & MCAP_ONOFF) && !p->zlinky &&
                (zcl_device_id == 0x0100 || zcl_device_id == 0x0101 || zcl_device_id == 0x0102 ||
