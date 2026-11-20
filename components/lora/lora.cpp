@@ -62,6 +62,7 @@ static const char *TAG = "LORA";
 #define LORA_PAIR_CHANNEL   3       // 2440 MHz : rendez-vous d'appairage
 #define LORA_OP_CHANNEL     4       // 2450 MHz : canal de donnees par defaut
 #define LORA_PAIR_WINDOW_MS (LORA_PAIR_WINDOW_S * 1000UL)
+#define LORA_CONFIRM_WAIT_MS 4000UL
 // SF du rendez-vous : celui du firmware actuel du ZLinky LoRa. L'emetteur doit
 // utiliser le MEME, sinon il n'est pas entendu (cf. commentaire de la Box).
 #define LORA_PAIR_SF        11
@@ -223,6 +224,12 @@ static uint8_t  s_pending_key[KEY_SIZE];
 static char     s_pending_device_id[8];
 static char     s_pending_model[24];
 static uint32_t s_last_pair_rearm = 0;
+
+// Echec de la fenetre en cours (lora_pair_issue), remis a zero a l'ouverture
+typedef enum { PI_NONE = 0, PI_NO_CONFIRM, PI_CONFIRM_CUT, PI_TX_FAIL, PI_BAD_PROOF, PI_NO_SLOT } pair_issue_t;
+static pair_issue_t s_pair_issue = PI_NONE;
+static bool s_confirm_crc = false;     // trame illisible pendant l'attente du CONFIRM
+static uint32_t s_response_ms = 0;     // envoi de la PAIR_RESPONSE (delai du CONFIRM)
 
 static uint64_t s_paired_ieee = 0;
 static char     s_paired_model[24] = "";
@@ -1225,6 +1232,7 @@ static void start_pairing_now(void)
     s_pairing_mode = true;
     s_pairing_start = millis();
     s_awaiting_confirm = false;
+    s_pair_issue = PI_NONE;
     // Rendez-vous FIXE : canal 3 + SF11, quelle que soit la config operationnelle
     set_channel(LORA_PAIR_CHANNEL);
     set_sf(LORA_PAIR_SF);
@@ -1278,6 +1286,7 @@ static bool handle_pair_request(const uint8_t *buf, int len)
     esp_err_t st = sx_transmit(pkt, SZ_PAIR_RESPONSE, NULL);
     if (st != ESP_OK) {
         ESP_LOGW(TAG, "TX PAIR_RESPONSE en echec (%s)", esp_err_to_name(st));
+        s_pair_issue = PI_TX_FAIL;
         start_rx();
         return true;
     }
@@ -1286,24 +1295,43 @@ static bool handle_pair_request(const uint8_t *buf, int len)
     set_sf(s_op_sf);
     start_rx();
     s_awaiting_confirm = true;
-    s_confirm_deadline = millis() + 4000;
+    s_confirm_crc = false;
+    // Depuis ZLinky_LoRa_1.1.1+45f2c6c, le CONFIRM part ~2,2-2,5 s apres la
+    // reponse (recharge de la reserve). Sans CONFIRM, le ZLinky renvoie une
+    // PAIR_REQUEST ~6,4 s apres la reponse : au-dela de 4 s d'attente, la box
+    // risquerait de ne pas etre revenue a temps sur le rendez-vous.
+    s_response_ms = millis();
+    s_confirm_deadline = s_response_ms + LORA_CONFIRM_WAIT_MS;
     ESP_LOGI(TAG, "PAIR_RESPONSE envoye -> attente CONFIRM sur canal %d, SF%d", s_op_channel, s_op_sf);
     return true;
 }
 
 static void handle_pair_confirm(const uint8_t *buf, int len)
 {
-    if (!s_awaiting_confirm || len != SZ_PAIR_CONFIRM) return;
-    if (memcmp(&buf[2], s_pending_mac, MAC_SIZE) != 0) return;
+    if (!s_awaiting_confirm) return;
+    if (len != SZ_PAIR_CONFIRM) {
+        ESP_LOGW(TAG, "PAIR_CONFIRM ignore : %d octets au lieu de %d", len, SZ_PAIR_CONFIRM);
+        return;
+    }
+    if (memcmp(&buf[2], s_pending_mac, MAC_SIZE) != 0) {
+        char mh[17];
+        mac_hex(&buf[2], mh);
+        ESP_LOGW(TAG, "PAIR_CONFIRM ignore : emetteur %s, pas celui de la demande", mh);
+        return;
+    }
 
     // Preuve = AES-ECB(MAC(8) || 0x00*8, cle)[0..3]
     uint8_t in[16] = {0}, out[16];
     memcpy(in, s_pending_mac, MAC_SIZE);
     aes_ecb(s_pending_key, in, out);
-    if (memcmp(&buf[10], out, 4) != 0) { ESP_LOGW(TAG, "Preuve d'appairage invalide"); return; }
+    if (memcmp(&buf[10], out, 4) != 0) {
+        ESP_LOGW(TAG, "Preuve d'appairage invalide : reinitialiser l'emetteur (appui 5 s) et reessayer");
+        s_pair_issue = PI_BAD_PROOF;
+        return;
+    }
 
     int slot = find_or_create_slot(s_pending_mac);
-    if (slot < 0) { ESP_LOGW(TAG, "Aucun slot libre (max %d)", LORA_MAX_EMITTERS); return; }
+    if (slot < 0) { ESP_LOGW(TAG, "Aucun slot libre (max %d)", LORA_MAX_EMITTERS); s_pair_issue = PI_NO_SLOT; return; }
     emitter_t *e = &s_em[slot];
     bool known = e->valid;
     if (!known) memset(e, 0, sizeof(*e));
@@ -1335,9 +1363,13 @@ static void handle_pair_confirm(const uint8_t *buf, int len)
 
     s_awaiting_confirm = false;
     s_pairing_mode = false;
+    // L'emetteur vient de parler : pas d'alerte "Silence" ni de re-armement
+    // de la reception pendant son identification (POLL)
+    s_last_radio_rx = millis();
     char mh[17];
     mac_hex(s_pending_mac, mh);
-    ESP_LOGI(TAG, "*** APPAIRAGE REUSSI *** %s (slot %d)", mh, slot);
+    ESP_LOGI(TAG, "*** APPAIRAGE REUSSI *** %s (slot %d, CONFIRM %lu ms apres la reponse)", mh, slot,
+             (unsigned long)(millis() - s_response_ms));
 
     // Canal dedie a l'assistant (pas une alerte partagee que d'autres pages
     // consommeraient, cf. la Box)
@@ -2191,8 +2223,9 @@ static void loop_once(void)
     if (s_pairing_mode) pairing_led_tick();
     else if (s_led_state) pairing_led_off();
 
-    // Fin de la fenetre -> retour a la config operationnelle
-    if (s_pairing_mode && (millis() - s_pairing_start > LORA_PAIR_WINDOW_MS)) {
+    // Fin de la fenetre -> retour a la config operationnelle. Une demande
+    // recue en fin de fenetre garde son attente de CONFIRM jusqu'au bout.
+    if (s_pairing_mode && !s_awaiting_confirm && (millis() - s_pairing_start > LORA_PAIR_WINDOW_MS)) {
         s_pairing_mode = false;
         s_awaiting_confirm = false;
         pairing_led_off();
@@ -2204,7 +2237,15 @@ static void loop_once(void)
     // Pas de CONFIRM : retour a l'ecoute du rendez-vous
     if (s_awaiting_confirm && (int32_t)(millis() - s_confirm_deadline) > 0) {
         s_awaiting_confirm = false;
-        ESP_LOGW(TAG, "Pas de PAIR_CONFIRM recu (timeout)");
+        // Trame illisible ~0,7 s apres la reponse : le ZLinky LoRa (alimente
+        // par le Linky) a commence le CONFIRM mais a manque d'energie pour le finir
+        s_pair_issue = s_confirm_crc ? PI_CONFIRM_CUT : PI_NO_CONFIRM;
+        if (s_confirm_crc)
+            ESP_LOGW(TAG, "PAIR_CONFIRM coupe (canal %d, SF%d) : l'emetteur manque d'energie, passer a un SF plus bas%s",
+                     s_op_channel, s_op_sf, s_op_sf >= 11 ? " (SF10)" : "");
+        else
+            ESP_LOGW(TAG, "Pas de PAIR_CONFIRM (canal %d, SF%d) : reinitialiser l'emetteur (appui 5 s)%s et reessayer",
+                     s_op_channel, s_op_sf, s_op_sf >= 11 ? ", passer en SF10" : "");
         if (s_pairing_mode) {
             set_channel(LORA_PAIR_CHANNEL);
             set_sf(LORA_PAIR_SF);
@@ -2223,8 +2264,19 @@ static void loop_once(void)
     float rssi = 0, snr = 0;
     int len = sx_read_packet(buf, sizeof(buf), &rssi, &snr);
     if (len < 0) s_rx_errors++;
+    // Diagnostic de l'appairage : ce qui arrive pendant l'attente du CONFIRM
+    // (trame illisible = emission coupee, ZLinky a court d'energie ?)
+    if (len < 0 && s_awaiting_confirm) {
+        s_confirm_crc = true;
+        ESP_LOGW(TAG, "Trame illisible (CRC) pendant l'attente du PAIR_CONFIRM");
+    }
     if (len <= 0) { start_rx(); return; }
     s_rx_read_ms = millis();
+    if (s_awaiting_confirm && (buf[0] & 0x0F) != T_PAIR_CONFIRM)
+        ESP_LOGW(TAG, "Trame type 0x%02X (%d octets, RSSI %.0f dBm) pendant l'attente du PAIR_CONFIRM",
+                 buf[0], len, rssi);
+    if (s_pairing_mode && !s_awaiting_confirm && (buf[0] & 0x0F) == T_PAIR_REQUEST)
+        ESP_LOGI(TAG, "Demande d'appairage : RSSI %.0f dBm, SNR %.1f dB", rssi, snr);
     if ((buf[0] & 0x0F) != T_ESSENTIAL && (buf[0] & 0x0F) != T_EXTENDED &&
         (buf[0] & 0x0F) != T_DATA_GENERIC) {
         ESP_LOGD(TAG, "RX trame type 0x%02X, %d octets, RSSI %.0f dBm, SNR %.1f dB",
@@ -2477,6 +2529,18 @@ bool lora_take_pair_result(uint64_t *ieee, char *model, size_t model_len)
     }
     unlock();
     return got;
+}
+
+const char *lora_pair_issue(void)
+{
+    switch (s_pair_issue) {
+    case PI_NO_CONFIRM: return "noConfirm";
+    case PI_CONFIRM_CUT: return "confirmCut";
+    case PI_TX_FAIL:    return "txFail";
+    case PI_BAD_PROOF:  return "badProof";
+    case PI_NO_SLOT:    return "noSlot";
+    default:            return "none";
+    }
 }
 
 esp_err_t lora_set_op_params(uint8_t channel, uint8_t sf)

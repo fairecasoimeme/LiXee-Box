@@ -520,8 +520,10 @@
         '<div class="card p-4" id="lora-assist">' + SPINNER + '</div>' +
       '</div>');
 
+    var curSf = 0, win = 40;   // SF reseau actuel (conseil SF10 en cas d'echec), duree de la fenetre
     $.getJSON('/api/lora/status', function(st) {
       if (!st.detected) { $('#lora-assist').html(NO_MODULE); return; }
+      curSf = Number(st.sf) || 0; win = Number(st.pairWindow) || win;
       if (st.count >= st.maxEmitters) {
         $('#lora-assist').html('<div class="alert alert-warning">Nombre maximum d\'appareils LoRa atteint (' + esc(st.maxEmitters) +
           '). Supprimez-en un pour en appairer un nouveau, ou r&eacute;-appairez un appareil d&eacute;j&agrave; connu.</div>' +
@@ -537,7 +539,7 @@
     function step1() {
       $('#lora-assist').html(
         '<h5>&Eacute;tape 1 : Pr&eacute;parez l\'appareil</h5>' +
-        '<p>Branchez l\'appareil LoRa (ZLinky LoRa sur le compteur). Le pont va ouvrir une fen&ecirc;tre d\'appairage de 30 s ' +
+        '<p>Branchez l\'appareil LoRa (ZLinky LoRa sur le compteur). Le pont va ouvrir une fen&ecirc;tre d\'appairage de ' + win + ' s ' +
         'sur le canal de rendez-vous : mettez alors l\'appareil en mode appairage (appui long sur son bouton).</p>' +
         '<button class="btn btn-primary" id="lora-pair-go">Ouvrir la fen&ecirc;tre d\'appairage</button> ' +
         '<a class="btn btn-link" href="#configLora">Annuler</a>');
@@ -564,9 +566,9 @@
               var elapsed = (Date.now() - started) / 1000;
               if (d.pairing) $('#lora-pair-left').text('Fen\u00eatre ouverte encore ' + d.left + ' s...');
               // Marge apres la fermeture : l'appairage (bascule canal/SF) peut aboutir tard
-              if ((!d.pairing && elapsed > 8) || elapsed > 45) {
+              if ((!d.pairing && elapsed > 8) || elapsed > win + 15) {
                 clearInterval(timer);
-                $('#lora-assist').html('<div class="alert alert-warning">Aucun appareil trouv&eacute;.</div>' +
+                $('#lora-assist').html(pairFailHtml(d.issue) +
                   '<button class="btn btn-primary" id="lora-pair-retry">R&eacute;essayer</button> <a class="btn btn-link" href="#configLora">Retour</a>');
                 $('#lora-pair-retry').on('click', step2);
               }
@@ -577,6 +579,40 @@
             '<a class="btn btn-link" href="#configLora">Retour</a>');
         });
       });
+    }
+
+    // Echec : ce qui s'est passe (d.issue, cf. lora_pair_issue) et quoi faire
+    function pairFailHtml(issue) {
+      var reset = 'r&eacute;initialisez le ZLinky LoRa (<b>appui de 5 s</b> sur son bouton)';
+      var sf10 = 'passez en <b>SF10</b> dans <a href="#configLoraSettings">Config</a> (Spreading Factor, puis Appliquer), ';
+      var title, tip;
+      if (issue === 'confirmCut') {
+        // Trame illisible pendant l'attente : emission du CONFIRM coupee
+        title = 'Le ZLinky LoRa a commenc&eacute; &agrave; confirmer, mais son &eacute;mission a &eacute;t&eacute; coup&eacute;e.';
+        tip = 'Le compteur ne lui fournit pas assez d&#39;&eacute;nergie pour &eacute;mettre en <b>SF' + curSf + '</b>. ' +
+              'Passez &agrave; un SF plus bas (' + (curSf >= 11 ? '<b>SF10</b>' : '<b>SF' + Math.max(7, curSf - 1) + '</b>') + ') dans ' +
+              '<a href="#configLoraSettings">Config</a> (Spreading Factor, puis Appliquer), ' + reset + ', puis r&eacute;essayez.';
+      } else if (issue === 'noConfirm') {
+        // Le CONFIRM part sur le SF du reseau : long en SF11 / SF12, le ZLinky
+        // (alimente par le compteur) peut manquer d'energie pour l'emettre
+        title = 'Le ZLinky LoRa a r&eacute;pondu mais n&#39;a pas confirm&eacute; l&#39;appairage.';
+        tip = 'Il a probablement manqu&eacute; d&#39;&eacute;nergie (il est aliment&eacute; par le compteur). ' +
+              (curSf >= 11 ? 'Le r&eacute;seau est en <b>SF' + curSf + '</b> : ' + sf10 : '') + reset + ', puis r&eacute;essayez.';
+      } else if (issue === 'badProof') {
+        title = '&Eacute;change d&#39;appairage invalide.';
+        tip = 'Le ZLinky LoRa a gard&eacute; un ancien appairage : ' + reset + ', puis r&eacute;essayez.';
+      } else if (issue === 'txFail') {
+        title = 'Le pont n&#39;a pas pu r&eacute;pondre au ZLinky LoRa (erreur radio).';
+        tip = 'R&eacute;essayez ; si l&#39;erreur se r&eacute;p&egrave;te, red&eacute;marrez la box.';
+      } else if (issue === 'noSlot') {
+        title = 'Nombre maximum d&#39;appareils LoRa atteint.';
+        tip = 'Supprimez un appareil LoRa dans <a href="#configLora">Appareils</a>, puis r&eacute;essayez.';
+      } else {
+        title = 'Aucun appareil trouv&eacute;.';
+        tip = 'Aucune demande re&ccedil;ue. V&eacute;rifiez que le ZLinky LoRa est branch&eacute; sur le compteur, ' +
+              'puis, fen&ecirc;tre ouverte, ' + reset + '.';
+      }
+      return '<div class="alert alert-warning">' + title + '</div><div class="alert alert-info">' + tip + '</div>';
     }
 
     function step3(d) {

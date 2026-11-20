@@ -352,6 +352,7 @@ static esp_err_t pair_status_handler(httpd_req_t *req)
         cJSON_AddBoolToObject(o, "found", false);
         cJSON_AddBoolToObject(o, "pairing", active);
         cJSON_AddNumberToObject(o, "left", left);
+        cJSON_AddStringToObject(o, "issue", lora_pair_issue());
     }
     char *txt = cJSON_PrintUnformatted(o);
     cJSON_Delete(o);
