@@ -1779,35 +1779,34 @@ extern "C" void app_main(void)
             lora_save_state(false);
             zigate_devices_save_seen(false);
 
-            // Archive datee des anneaux : avant leur remise a zero
-            energy_archive_tick();
-
-            // Reset periodique de l'historique d'energie (equivalent ScanDevicesToRAZ)
+            // Debut de periode de l'historique d'energie : le creneau de l'heure
+            // (du jour, du mois) qui commence porte encore le cycle precedent ;
+            // il est vide pour les appareils qui n'y ont encore rien mesure.
+            // A chaque changement, demarrage compris (sans effet sur un
+            // appareil qui a deja mesure dans la periode). Attendre la minute 0
+            // sautait le passage quand la boucle tombait a la minute 1.
             if (ntp_sync_is_synced()) {
                 int cur_hour  = ntp_sync_get_hour();
                 int cur_day   = ntp_sync_get_day();
                 int cur_month = ntp_sync_get_month();
 
-                // Reset horaire : a chaque nouvelle heure. Attendre la minute 0
-                // sautait la remise a zero quand ce passage de la boucle tombait
-                // a la minute 1 : le creneau suivant gardait la veille.
                 if (cur_hour != last_reset_hour) {
                     energy_history_reset_hourly(cur_hour);
                     last_reset_hour = cur_hour;
-
-                    // Reset journalier: quand heure == 0
-                    if (cur_hour == 0 && cur_day != last_reset_day) {
-                        energy_history_reset_daily(cur_day);
-                        last_reset_day = cur_day;
-
-                        // Reset mensuel: quand jour == 1
-                        if (cur_day == 1 && cur_month != last_reset_month) {
-                            energy_history_reset_monthly(cur_month);
-                            last_reset_month = cur_month;
-                        }
-                    }
+                }
+                if (cur_day != last_reset_day) {
+                    energy_history_reset_daily(cur_day);
+                    last_reset_day = cur_day;
+                }
+                if (cur_month != last_reset_month) {
+                    energy_history_reset_monthly(cur_month);
+                    last_reset_month = cur_month;
                 }
             }
+
+            // Archive datee des anneaux : apres le debut de periode, pour ne pas
+            // recopier le cycle precedent comme la periode qui commence
+            energy_archive_tick();
         }
     }
 }

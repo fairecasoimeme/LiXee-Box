@@ -41,7 +41,7 @@ void energy_archive_register(energy_archive_provider_t fn);
 /** Inventaire des jours archives (tache principale, apres energy_history_load_all). */
 void energy_archive_init(void);
 
-/** Chaque minute, tache principale, AVANT energy_history_reset_hourly(). */
+/** Chaque minute, tache principale, APRES energy_history_reset_hourly() (debut de periode). */
 void energy_archive_tick(void);
 
 /** Recopie immediate (avant un redemarrage). */

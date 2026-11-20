@@ -298,8 +298,9 @@ static void mirror(void)
     const int hc = now.tm_hour, year = now.tm_year + 1900;
 
     // Jours de l'anneau (31 creneaux) : date la plus recente de chaque creneau,
-    // au plus 30 jours en arriere ; celui que la remise a zero de minuit a vide
-    // (jour + 1 du mois precedent) est ignore
+    // au plus 30 jours en arriere ; le plus ancien (jour + 1 du mois precedent)
+    // n'est pas recopie : archive a la fin de sa periode, et vide par avance
+    // par les versions anterieures (ecraserait l'archive juste apres une mise a jour)
     uint32_t day_date[31] = {};
     const int day_excl = now.tm_mday % 31;
     for (int b = 0; b <= 30; b++) {
@@ -308,8 +309,8 @@ static void mirror(void)
         int i = d.tm_mday - 1;
         if (i != day_excl && !day_date[i]) day_date[i] = ymd_of(&d);
     }
-    // Mois : (annee, mois) le plus recent de chaque creneau ; le mois suivant,
-    // vide par la remise a zero mensuelle, est ignore
+    // Mois : (annee, mois) le plus recent de chaque creneau ; le plus ancien
+    // (mois suivant, l'an dernier) est ignore, comme pour les jours
     const int mon_excl = (now.tm_mon + 1) % 12;
 
     // Documents charges avant de prendre le verrou des mesures (lecture flash)
@@ -329,7 +330,8 @@ static void mirror(void)
         char id[20];
         snprintf(id, sizeof(id), "%016llX", (unsigned long long)ids[k]);
 
-        // Heures : 0..hc du jour, hc+2..23 de la veille (hc+1 vient d'etre vide)
+        // Heures : 0..hc du jour, hc+2..23 de la veille (hc+1, le plus ancien,
+        // est deja archive : voir les jours)
         cJSON *ht = obj_child(obj_child(doc_get('h', today), "e"), id);
         cJSON *hy = obj_child(obj_child(doc_get('h', yesterday), "e"), id);
         for (int s = 0; s < 24; s++) {

@@ -232,28 +232,22 @@ esp_err_t power_history_add_measurement(uint64_t ieee_addr,
                                          int32_t value);
 
 // ============================================================================
-// API publique - Reset periodique (equivalent ScanDevicesToRAZ)
+// API publique - Debut de periode (remplace ScanDevicesToRAZ de la 2.x)
+//
+// Vident le creneau de la periode COURANTE (il porte encore le cycle
+// precedent) pour chaque appareil qui n'y a encore rien mesure. La 2.x vidait
+// le creneau suivant par avance, ce qui laissait vide le premier creneau des
+// graphes glissants (24 dernieres heures, 12 derniers mois).
+// A appeler a chaque changement d'heure, de jour, de mois (demarrage compris).
 // ============================================================================
 
-/**
- * Reset horaire: remet a zero les deltas de l'heure suivante.
- * Appele quand Minute == 0.
- * @param hour Heure courante (0-23)
- */
+/** @param hour Heure courante (0-23) */
 esp_err_t energy_history_reset_hourly(int hour);
 
-/**
- * Reset journalier: remet a zero les deltas du jour suivant.
- * Appele quand Hour == 0 && Minute == 0.
- * @param day Jour courant (1-31)
- */
+/** @param day Jour courant (1-31) */
 esp_err_t energy_history_reset_daily(int day);
 
-/**
- * Reset mensuel: remet a zero les deltas du mois suivant.
- * Appele quand Day == 1 && Hour == 0.
- * @param month Mois courant (1-12)
- */
+/** @param month Mois courant (1-12) */
 esp_err_t energy_history_reset_monthly(int month);
 
 // ============================================================================

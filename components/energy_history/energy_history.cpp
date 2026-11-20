@@ -1298,42 +1298,65 @@ esp_err_t power_history_add_measurement(uint64_t ieee_addr,
 // API publique - Reset periodique
 // ============================================================================
 
-esp_err_t energy_history_reset_hourly(int hour)
+// Debut d'une periode : son creneau porte encore le cycle precedent (meme heure
+// la veille, meme jour le mois dernier, meme mois l'an dernier). On le vide
+// pour chaque appareil qui n'a encore rien mesure dans la periode (sa premiere
+// mesure le vide aussi, period_update) : un appareil muet n'affiche pas
+// l'ancienne valeur comme celle d'aujourd'hui.
+// La LiXee-Box 2.x (ScanDevicesToRAZ) vidait plutot le creneau SUIVANT, par
+// avance : c'est le premier des graphes glissants (24 dernieres heures, 12
+// derniers mois), qui restait donc toujours vide.
+static void roll_period(hist_gran_t g, int cur)
 {
-    int next_hour = (hour + 1) % ENERGY_HOURS;
+    struct tm now;
+    if (!ntp_sync_is_synced() || ntp_sync_get_local_time(&now) != ESP_OK) return;
+    const time_t now_t = time(NULL);
+    const int64_t kn = gran_key(&now, now_t, g);
+    int cleared = 0;
+    data_lock();
     for (int i = 0; i < s_entry_count; i++) {
         energy_history_t *h = s_entries[i].energy;
         if (!h) continue;
-        memset(&h->hours.graph[next_hour], 0, sizeof(energy_slot_t));
+        energy_period_t *p = g == G_HOUR ? &h->hours : g == G_DAY ? &h->days : &h->months;
+        bool measured = false;
+        for (int ai = 0; ai < h->attr_count && !measured; ai++) {
+            time_t tl = (time_t)h->last_ts[ai];
+            if (tl <= 0 || tl > now_t) continue;
+            struct tm tlt;
+            localtime_r(&tl, &tlt);
+            measured = gran_key(&tlt, tl, g) >= kn;
+        }
+        if (measured) continue;                      // deja vide par sa premiere mesure
+        if (p->ref_slot == cur) {                    // reference du cycle precedent
+            p->ref      = p->last;
+            p->ref_mask = p->last_mask;
+        }
+        memset(&p->graph[cur], 0, sizeof(p->graph[cur]));
         h->dirty = true;
+        cleared++;
     }
-    ESP_LOGD(TAG, "Hourly reset: cleared slot %d", next_hour);
+    data_unlock();
+    ESP_LOGD(TAG, "Debut de periode : creneau %d vide pour %d appareil(s)", cur, cleared);
+}
+
+esp_err_t energy_history_reset_hourly(int hour)
+{
+    if (hour < 0 || hour >= ENERGY_HOURS) return ESP_ERR_INVALID_ARG;
+    roll_period(G_HOUR, hour);
     return ESP_OK;
 }
 
 esp_err_t energy_history_reset_daily(int day)
 {
-    int next_day = day % ENERGY_DAYS; // day est 1-31, index 0-30
-    for (int i = 0; i < s_entry_count; i++) {
-        energy_history_t *h = s_entries[i].energy;
-        if (!h) continue;
-        memset(&h->days.graph[next_day], 0, sizeof(energy_slot_t));
-        h->dirty = true;
-    }
-    ESP_LOGD(TAG, "Daily reset: cleared slot %d", next_day);
+    if (day < 1 || day > ENERGY_DAYS) return ESP_ERR_INVALID_ARG;      // 1-31, index 0-30
+    roll_period(G_DAY, day - 1);
     return ESP_OK;
 }
 
 esp_err_t energy_history_reset_monthly(int month)
 {
-    int next_month = month % ENERGY_MONTHS; // month 1-12, index 0-11
-    for (int i = 0; i < s_entry_count; i++) {
-        energy_history_t *h = s_entries[i].energy;
-        if (!h) continue;
-        memset(&h->months.graph[next_month], 0, sizeof(energy_slot_t));
-        h->dirty = true;
-    }
-    ESP_LOGD(TAG, "Monthly reset: cleared slot %d", next_month);
+    if (month < 1 || month > ENERGY_MONTHS) return ESP_ERR_INVALID_ARG;  // 1-12, index 0-11
+    roll_period(G_MONTH, month - 1);
     return ESP_OK;
 }
 
