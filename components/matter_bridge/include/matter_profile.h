@@ -113,6 +113,8 @@ typedef struct {
     bool          heat;             // MCAP_THERMOSTAT : consigne de chauffage
     bool          cool;             //                   consigne de refroidissement
     bool          presets;          // MCAP_THERMOSTAT : feature Matter Presets (zones virtuelles uniquement)
+    bool          virtual_zone;     //                   endpoint de zone virtuelle (matter_sync_zone), pas un
+                                     //                   vrai thermostat Zigbee (TRVZB, tetes Tuya, AC201A...)
     bool          cover_inverted;   // volet dont la position remontee est l'ouverture (252)
     bool          zlinky;
     int           link_count;
