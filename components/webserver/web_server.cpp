@@ -234,10 +234,11 @@ static bool url_is_loopback(const char *url)
  * n'envoie pas de lui-meme a un site tiers.
  */
 static bool origin_ok(httpd_req_t *req);
+static bool tunnel_origin_ok(httpd_req_t *req);
 
 bool web_server_origin_ok(httpd_req_t *req)
 {
-    if (web_tunnel_req_is_tunnel(req)) return true;
+    if (web_tunnel_req_is_tunnel(req)) return tunnel_origin_ok(req);
     return origin_ok(req);
 }
 
@@ -261,6 +262,36 @@ static bool origin_ok(httpd_req_t *req)
         return url_host_matches(src, host) || url_is_loopback(src);
     }
     return true;
+}
+
+/**
+ * Origine d'une requete relayee par le tunnel. Toutes les box sont servies
+ * sous *.lixee-box.fr, qui n'est pas un suffixe public : pour le navigateur,
+ * une page d'un AUTRE sous-domaine est du meme site et le cookie
+ * SameSite=Strict lui est joint. L'Origin (sinon le Referer) doit donc etre
+ * https://<notre sous-domaine>. Sans l'un ni l'autre (LiXee-Assist, client
+ * non navigateur), la requete passe ; un en-tete tronque est refuse.
+ * Sec-Fetch-Site, s'il est relaye, ferme aussi les requetes sans Origin ni
+ * Referer d'une page tierce (<img referrerpolicy="no-referrer">).
+ */
+static bool tunnel_origin_ok(httpd_req_t *req)
+{
+    char sfs[24];
+    esp_err_t e = httpd_req_get_hdr_value_str(req, "Sec-Fetch-Site", sfs, sizeof(sfs));
+    if (e == ESP_OK) {
+        if (strcasecmp(sfs, "same-origin") != 0 && strcasecmp(sfs, "none") != 0) return false;
+    } else if (e != ESP_ERR_NOT_FOUND) {
+        return false;
+    }
+    char src[256];
+    e = httpd_req_get_hdr_value_str(req, "Origin", src, sizeof(src));
+    if (e == ESP_ERR_NOT_FOUND) e = httpd_req_get_hdr_value_str(req, "Referer", src, sizeof(src));
+    if (e == ESP_ERR_NOT_FOUND) return true;
+    if (e != ESP_OK) return false;                 // tronque : origine inconnue
+    if (url_is_loopback(src)) return true;         // proxy local de LiXee-Assist
+    char sub[128];
+    tunnel_get_subdomain(sub, sizeof(sub));
+    return sub[0] && url_host_matches(src, sub);
 }
 
 /** Navigation d'un navigateur vers une page (pas un appel XHR ni un fichier). */
@@ -334,15 +365,26 @@ static void url_decode(char *s)
  */
 static bool login_asset(const char *uri);
 
+/**
+ * Interdit l'affichage du pont dans un cadre d'un autre site (clickjacking) :
+ * via le tunnel, une page d'un autre sous-domaine de lixee-box.fr l'aurait
+ * charge avec le cookie de session et fait cliquer sur ses commandes.
+ */
+static void set_frame_headers(httpd_req_t *req)
+{
+    httpd_resp_set_hdr(req, "X-Frame-Options", "SAMEORIGIN");
+    httpd_resp_set_hdr(req, "Content-Security-Policy", "frame-ancestors 'self'");
+}
+
 static bool auth_check(httpd_req_t *req)
 {
     // Feuille de style et logo de la page de connexion : sans session (rien de prive)
     if (req->method == HTTP_GET && login_asset(req->uri)) return true;
     // Requete relayee par le tunnel distant (connexion locale 127.0.0.1,
     // qu'un client du reseau ne peut pas usurper) : comme sur la LiXee-Box,
-    // jamais d'acces sans identifiants par ce chemin, pas de Basic, et pas de
-    // controle CSRF (le relais envoie l'Origin de son sous-domaine avec
-    // Host 127.0.0.1 ; le cookie SameSite=Strict protege la session).
+    // jamais d'acces sans identifiants par ce chemin, pas de Basic. Le relais
+    // envoie l'Origin de son sous-domaine avec Host 127.0.0.1 : l'origine est
+    // comparee au sous-domaine annonce par le relais (tunnel_origin_ok).
     const bool via_tunnel = web_tunnel_req_is_tunnel(req);
     if (via_tunnel && !tunnel_security_ok()) {
         httpd_resp_set_status(req, "403 Forbidden");
@@ -409,6 +451,14 @@ static bool auth_check(httpd_req_t *req)
     // Sans Origin ni Referer (client non navigateur), la requete passe.
     if ((by_session || by_basic) && !via_tunnel && !csrf_ok(req)) {
         ESP_LOGW(TAG, "Requete refusee (origine etrangere) sur %s", req->uri);
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_sendstr(req, "Forbidden");
+        return false;
+    }
+    // Tunnel : une page d'un autre sous-domaine de lixee-box.fr porte le
+    // cookie de session ; ses requetes qui modifient l'etat sont refusees
+    if (via_tunnel && req->method != HTTP_GET && req->method != HTTP_HEAD && !tunnel_origin_ok(req)) {
+        ESP_LOGW(TAG, "Requete refusee via le tunnel (origine etrangere) sur %s", req->uri);
         httpd_resp_set_status(req, "403 Forbidden");
         httpd_resp_sendstr(req, "Forbidden");
         return false;
@@ -508,6 +558,7 @@ static bool login_asset(const char *uri)
 
 static esp_err_t login_get_handler(httpd_req_t *req)
 {
+    set_frame_headers(req);
     if (!auth_required()) {
         // Protection desactivee : rien a saisir
         httpd_resp_set_status(req, "302 Found");
@@ -870,6 +921,7 @@ static esp_err_t auth_dispatch(httpd_req_t *req)
     // Acces a l'API depuis une autre origine (comme la LiXee-Box) : sans
     // identifiants, un navigateur n'envoyant pas de cookie ni de Basic avec "*"
     httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    set_frame_headers(req);
     if (!auth_check(req)) return ESP_OK;   // 401 deja envoye
 
     web_handler_fn real = (web_handler_fn)req->user_ctx;

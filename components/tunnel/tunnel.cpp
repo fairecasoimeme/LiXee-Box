@@ -1206,9 +1206,12 @@ static void worker_task(void *arg)
 
 // En-tetes relayes au serveur local : liste de la LiXee-Box, dans l'ordre de
 // priorite (le budget MAX_FWD_HEADERS peut ecarter les derniers).
+// sec-fetch-site (ajoute) : sert au controle d'origine du pont (CSRF entre
+// sous-domaines de lixee-box.fr), si le relais le transmet.
 static const char *const FWD_HEADERS[] = {
     "cookie", "content-type", "x-requested-with", "origin",
     "accept", "accept-encoding", "authorization", "referer",
+    "sec-fetch-site",
 };
 
 static const cJSON *obj_get_ci(const cJSON *obj, const char *name)
@@ -1363,6 +1366,14 @@ static void local_ip(char *out, size_t n)
     if (nif && esp_netif_get_ip_info(nif, &ip) == ESP_OK) {
         sfmt(out, n, IPSTR, IP2STR(&ip.ip));
     }
+}
+
+void tunnel_get_subdomain(char *out, size_t len)
+{
+    if (!out || !len) return;
+    lock();
+    strlcpy(out, s_subdomain, len);
+    unlock();
 }
 
 static void handle_welcome(const cJSON *doc, uint32_t session)

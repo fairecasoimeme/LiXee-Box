@@ -149,6 +149,9 @@ esp_err_t tunnel_set_config(bool enabled, const char *client_id, const char *tok
 /** Etat de la connexion, pour la page et l'API. */
 void tunnel_get_status(tunnel_status_t *out);
 
+/** Sous-domaine annonce par le relais ("abcd.lixee-box.fr"), "" avant le welcome. */
+void tunnel_get_subdomain(char *out, size_t len);
+
 /**
  * Lance l'activation par code (GET https://remote.lixee-box.fr/api/activate
  * ?code=XXXXXX). En cas de succes, deviceId et token recus deviennent
