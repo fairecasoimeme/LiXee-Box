@@ -624,7 +624,7 @@ typedef struct {
     int64_t  sub_wh[MAX_SUB];
     int64_t  sub_total;
     int64_t  prod_wh;
-    int64_t  gaz_wh;          // en Wh si l'unite du gaz est Wh, sinon 0
+    int64_t  gaz_wh;          // en Wh si le gaz est convertible en energie (cfg_gaz_wh_per_unit), sinon 0
 } slot_agg_t;
 
 static const energy_history_t *prod_history(const roles_t *r)
@@ -666,12 +666,18 @@ static int64_t sub_value(uint64_t ieee, slot_ref_t s)
 }
 
 /** Gaz exprime en energie (Wh ou kWh) : facteur vers les Wh, 0 pour un volume. */
+// Wh par unite de gaz : Wh, kWh, ou m3... avec la conversion kWh de la facture
 static double gaz_wh_factor(void)
 {
-    const char *u = cfg_get_general()->unit_gaz;
-    if (strcasecmp(u, "Wh") == 0) return 1.0;
-    if (strcasecmp(u, "kWh") == 0) return 1000.0;
-    return 0;
+    return cfg_gaz_wh_per_unit();
+}
+
+// Prix d'une unite de gaz affichee : le tarif est en EUR/kWh quand le gaz est
+// convertible en energie (comme la facture et le bilan), sinon en EUR/unite
+static double gaz_unit_price(void)
+{
+    double p = parse_num(cfg_get_general()->tarif_gaz), wf = gaz_wh_factor();
+    return wf > 0 ? p * wf / 1000.0 : p;
 }
 
 static void aggregate(const roles_t *r, slot_ref_t s, slot_agg_t *a)
@@ -1319,7 +1325,7 @@ static bool chart_build(chart_t *c, energy_gran_t g, uint64_t ieee)
         if (ieee == r.gaz) {
             c->coeff = gc->coeff_gaz > 0 ? gc->coeff_gaz : 1;
             c->display_unit = gc->unit_gaz;
-            c->meter_price = parse_num(gc->tarif_gaz);
+            c->meter_price = gaz_unit_price();
             name = "Gaz";
         } else if (ieee == r.water) {
             c->coeff = gc->coeff_water > 0 ? gc->coeff_water : 1;
@@ -1747,7 +1753,7 @@ char *energy_history_page_json(const char *gran_s, uint32_t from, uint32_t to, u
         if (ieee == r.gaz) {
             coeff = gc->coeff_gaz > 0 ? gc->coeff_gaz : 1;
             display_unit = gc->unit_gaz;
-            meter_price = parse_num(gc->tarif_gaz);
+            meter_price = gaz_unit_price();
             name = "Gaz";
         } else if (ieee == r.water) {
             coeff = gc->coeff_water > 0 ? gc->coeff_water : 1;

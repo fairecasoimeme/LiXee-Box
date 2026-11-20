@@ -46,6 +46,7 @@
 #include "driver/temperature_sensor.h"
 #include "cJSON.h"
 #include <string.h>
+#include <math.h>
 
 #ifndef VERSION
 #define VERSION "3.3"
@@ -869,10 +870,12 @@ static esp_err_t api_config_general_get_handler(httpd_req_t *req)
     cJSON_AddStringToObject(root, "tarifAboProd", g->tarif_abo_prod);
 
     // Gaz / Eau / Presence : persistes, pas encore exploites par le firmware
-    cJSON_AddNumberToObject(root, "coeffGaz",   g->coeff_gaz);
+    // Coefficients stockes en float : arrondis (11,2 et non 11.199999809...)
+    cJSON_AddNumberToObject(root, "coeffGaz",   round(g->coeff_gaz * 1e6) / 1e6);
+    cJSON_AddNumberToObject(root, "kwhGaz",     round(g->kwh_gaz * 1e6) / 1e6);
     cJSON_AddStringToObject(root, "unitGaz",    g->unit_gaz);
     cJSON_AddStringToObject(root, "tarifGaz",   g->tarif_gaz);
-    cJSON_AddNumberToObject(root, "coeffWater", g->coeff_water);
+    cJSON_AddNumberToObject(root, "coeffWater", round(g->coeff_water * 1e6) / 1e6);
     cJSON_AddStringToObject(root, "unitWater",  g->unit_water);
     cJSON_AddStringToObject(root, "tarifWater", g->tarif_water);
     cJSON_AddStringToObject(root, "Presence",   g->presence);
@@ -969,6 +972,7 @@ static esp_err_t api_config_general_post_handler(httpd_req_t *req)
     json_take_str(doc, "tarifAboProd", g->tarif_abo_prod, sizeof(g->tarif_abo_prod));
 
     if (json_take_num(doc, "coeffGaz",   &num)) g->coeff_gaz   = (float)num;
+    if (json_take_num(doc, "kwhGaz",     &num)) g->kwh_gaz     = num > 0 ? (float)num : 0.0f;
     if (json_take_num(doc, "coeffWater", &num)) g->coeff_water = (float)num;
     json_take_str(doc, "unitGaz",    g->unit_gaz,    sizeof(g->unit_gaz));
     json_take_str(doc, "unitWater",  g->unit_water,  sizeof(g->unit_water));

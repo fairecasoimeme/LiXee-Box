@@ -434,9 +434,10 @@ static void send_daily_metrics(void)
         if (raw > 0) {
             double coeff = g->coeff_gaz > 0 ? g->coeff_gaz : 1.0;
             double v = raw * coeff;
-            if (strcasecmp(g->unit_gaz, "Wh") == 0) {
-                double e = v / 1000.0 * parse_num(g->tarif_gaz);
-                nbuf_printf(&b, "\U0001F525 Gaz: %.1f kWh", v / 1000.0);
+            const double wf = cfg_gaz_wh_per_unit();   // Wh, kWh, ou m3 converti
+            if (wf > 0) {
+                const double kwh = v * wf / 1000.0, e = kwh * parse_num(g->tarif_gaz);
+                nbuf_printf(&b, "\U0001F525 Gaz: %.1f kWh", kwh);
                 if (e > 0) { nbuf_printf(&b, " (%.2f \u20AC)", e); total += e; }
             } else {
                 // Unite de volume : pas de prix au kWh applicable

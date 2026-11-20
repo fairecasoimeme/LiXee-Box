@@ -513,10 +513,11 @@
     return out;
   }
 
-  // Gaz en unite d'energie ? Reponse du serveur (whFactor), sinon config
+  // Gaz en unite d'energie (Wh / kWh, ou m3 converti en kWh) ? Reponse du
+  // serveur (whFactor), sinon config
   function gasIsEnergy(g) {
     if (g && g.whFactor != null) return num(g.whFactor) > 0;
-    return /^k?wh$/i.test(String(S.cfg.unitGaz || '').trim());
+    return /^k?wh$/i.test(String(S.cfg.unitGaz || '').trim()) || num(S.cfg.kwhGaz) > 0;
   }
 
   // Consommation totale d'un point (electricite + gaz en energie), dans le mode courant

@@ -2800,8 +2800,12 @@
                 '<div class="mb-3"><label>Coefficient de conversion</label><input class="form-control decimal-input" id="cfg-coeffGaz" type="text" value="1"></div>' +
                 '<div class="mb-3"><label>Unit&eacute;</label><input class="form-control" id="cfg-unitGaz" type="text" maxlength="11" list="dl-unit-gaz" placeholder="m3">' +
                   '<datalist id="dl-unit-gaz"><option value="Wh"><option value="kWh"><option value="m3"><option value="L"></datalist>' +
-                  '<div class="form-text">En <b>Wh</b>, le gaz est ajout&eacute; au bilan &eacute;nerg&eacute;tique (r&eacute;partition, &eacute;tiquette).</div></div>' +
-                '<div class="mb-3"><label>Tarif (&euro; / unit&eacute;)</label><input class="form-control decimal-input" id="cfg-tarifGaz" type="text"></div>' +
+                  '<div class="form-text">En <b>Wh</b> ou <b>kWh</b>, le gaz est ajout&eacute; au bilan &eacute;nerg&eacute;tique (r&eacute;partition, &eacute;tiquette, historique avec l&#39;&eacute;lectricit&eacute;).</div></div>' +
+                '<div class="mb-3" id="cfg-kwhGaz-box"><label>Conversion en kWh (kWh / <span class="cfg-gaz-u">m3</span>)</label>' +
+                  '<input class="form-control decimal-input" id="cfg-kwhGaz" type="text" placeholder="ex. 11,2">' +
+                  '<div class="form-text">Coefficient de conversion indiqu&eacute; sur votre facture de gaz. Rempli, le gaz reste affich&eacute; en ' +
+                  '<span class="cfg-gaz-u">m3</span> mais est aussi compt&eacute; en kWh dans le bilan et l&#39;historique. Vide : pas de conversion.</div></div>' +
+                '<div class="mb-3"><label>Tarif (&euro; / <span id="cfg-tarifGaz-u">unit&eacute;</span>)</label><input class="form-control decimal-input" id="cfg-tarifGaz" type="text"></div>' +
                 '<button type="submit" class="btn btn-primary mt-3">Enregistrer</button>' +
               '</form>' +
             '</div></div>' +
@@ -2935,6 +2939,8 @@
         $('#cfg-coeffGaz').val(cfg.coeffGaz != null ? cfg.coeffGaz : 1);
         $('#cfg-unitGaz').val(cfg.unitGaz || '');
         $('#cfg-tarifGaz').val(cfg.tarifGaz || '');
+        $('#cfg-kwhGaz').val(Number(cfg.kwhGaz) > 0 ? cfg.kwhGaz : '');
+        gazUnitUi();
         $('#cfg-water').val(cfg.Water || '');
         $('#cfg-coeffWater').val(cfg.coeffWater != null ? cfg.coeffWater : 1);
         $('#cfg-unitWater').val(cfg.unitWater || '');
@@ -3007,11 +3013,21 @@
                                         tarifAboProd: dec('#cfg-tarifAboProd') })
         .then(saved('Configuration Production enregistr&eacute;e'), failed);
     });
+    // Gaz : unite d'energie (Wh / kWh) ou volume converti en kWh -> tarif au kWh
+    function gazUnitUi() {
+      var u = $.trim($('#cfg-unitGaz').val()) || 'm3', energy = /^k?wh$/i.test(u);
+      $('#cfg-kwhGaz-box').toggle(!energy);
+      $('.cfg-gaz-u').text(u);
+      $('#cfg-tarifGaz-u').text(energy || parseFloat(dec('#cfg-kwhGaz')) > 0 ? 'kWh' : u);
+    }
+    $(document).off('input.gazu').on('input.gazu', '#cfg-unitGaz, #cfg-kwhGaz', gazUnitUi);
     $(document).off('submit','#form-gaz').on('submit','#form-gaz', function(e) {
       e.preventDefault();
+      var unit = $.trim($('#cfg-unitGaz').val()) || 'm3';
       postJSON('/api/config/general', {
         Gaz: $('#cfg-gaz').val() || '', coeffGaz: parseFloat(dec('#cfg-coeffGaz')) || 1,
-        unitGaz: $.trim($('#cfg-unitGaz').val()) || 'm3', tarifGaz: dec('#cfg-tarifGaz')
+        unitGaz: unit, tarifGaz: dec('#cfg-tarifGaz'),
+        kwhGaz: /^k?wh$/i.test(unit) ? 0 : (parseFloat(dec('#cfg-kwhGaz')) || 0)
       }).then(saved('Configuration Gaz enregistr&eacute;e'), failed);
     });
     $(document).off('submit','#form-water').on('submit','#form-water', function(e) {
