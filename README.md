@@ -594,6 +594,21 @@ La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier e
 
 > **Documentation technique** : le protocole radio est décrit dans [doc/LORA_PROTOCOL.md](doc/LORA_PROTOCOL.md).
 
+### Dépannage
+
+#### L'appairage du ZLinky LoRa ne va pas au bout (SF11)
+Le ZLinky LoRa est alimenté par le compteur Linky, qui ne fournit que peu d'énergie (certains compteurs, notamment triphasés, encore moins). Pendant l'appairage, les firmwares du ZLinky LoRa antérieurs à **ZLinky_LoRa_1.1.5+a01d757** peuvent manquer d'énergie pour émettre leur confirmation : l'émission est coupée et l'appairage échoue, surtout en **SF11** (réglage par défaut), dont les trames sont plus longues. L'assistant d'appairage (à partir de la v3.3) indique alors la cause de l'échec et quoi faire.
+
+**Solution** : mettez le ZLinky LoRa à jour avec le firmware **ZLinky_LoRa_1.1.5+a01d757** ou plus récent. Il attend d'avoir rechargé sa réserve avant de confirmer et adapte sa puissance d'émission à la qualité radio : l'appairage aboutit en **SF11**, sans rien changer sur la box.
+
+**Contournement**, en dernier recours, si le ZLinky LoRa ne peut pas être mis à jour :
+1. Allez dans **Réseau → LoRa → Config**
+2. Choisissez **SF10** dans **Spreading Factor**, puis cliquez sur **Appliquer**
+3. Réinitialisez le ZLinky LoRa : **appui de 5 secondes** sur son bouton (indispensable après un appairage raté)
+4. Relancez l'assistant d'appairage (**Réseau → LoRa**) : l'appairage va jusqu'au bout
+
+Laissez ensuite le réglage en **SF10** : un changement de SF ne s'applique qu'au prochain appairage, et repasser en SF11 imposerait de ré-appairer le ZLinky. La portée en SF10 est un peu plus courte qu'en SF11 ; vérifiez la qualité de réception (**RSSI / SNR / PDR**) sur la fiche de l'appareil.
+
 ---
 
 ## 🌍 Tunnel d'accès distant (à partir de la v2.17)
