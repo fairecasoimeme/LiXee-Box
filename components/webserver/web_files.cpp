@@ -156,10 +156,35 @@ static void mask_secrets(cJSON *node)
 }
 
 /**
+ * Serveur d'un secret "passXxx" (servXxx, portXxx, tlsXxx, securityXxx)
+ * different entre 'doc' et la version actuelle ?
+ */
+static bool secret_target_changed(const cJSON *doc, const cJSON *current, const char *secret_key)
+{
+    if (strncasecmp(secret_key, "pass", 4) != 0 || !secret_key[4]) return false;
+    static const char *const PFX[] = { "serv", "port", "tls", "security" };
+    char k[48];
+    for (size_t i = 0; i < sizeof(PFX) / sizeof(PFX[0]); i++) {
+        snprintf(k, sizeof(k), "%s%s", PFX[i], secret_key + 4);
+        const cJSON *a = cJSON_GetObjectItem(doc, k), *b = cJSON_GetObjectItem(current, k);
+        if (!a && !b) continue;
+        char *sa = a ? cJSON_PrintUnformatted(a) : NULL;
+        char *sb = b ? cJSON_PrintUnformatted(b) : NULL;
+        bool diff = !sa || !sb || strcasecmp(sa, sb) != 0;
+        free(sa);
+        free(sb);
+        if (diff) return true;
+    }
+    return false;
+}
+
+/**
  * Remet dans 'doc' les secrets laisses masques, depuis la version actuelle.
  * Les tableaux sont suivis par position (ex. emetteurs de lora.json).
+ * false si un secret masque accompagne un serveur modifie : il partirait
+ * vers ce serveur sans avoir ete ressaisi.
  */
-static void restore_secrets(cJSON *doc, const cJSON *current)
+static bool restore_secrets(cJSON *doc, const cJSON *current)
 {
     int idx = 0;
     for (cJSON *it = doc ? doc->child : NULL; it; it = it->next, idx++) {
@@ -167,11 +192,28 @@ static void restore_secrets(cJSON *doc, const cJSON *current)
                                       : (cJSON_IsArray(current) ? cJSON_GetArrayItem(current, idx) : NULL);
         if (it->string && is_secret_key(it->string) && cJSON_IsString(it) &&
             strcmp(it->valuestring, PASS_MASK) == 0 && cJSON_IsString(cur)) {
+            if (secret_target_changed(doc, current, it->string)) return false;
             cJSON_SetValuestring(it, cur->valuestring);
         } else if ((cJSON_IsObject(it) && cJSON_IsObject(cur)) || (cJSON_IsArray(it) && cJSON_IsArray(cur))) {
-            restore_secrets(it, cur);
+            if (!restore_secrets(it, cur)) return false;
         }
     }
+    return true;
+}
+
+/** Fichier jamais servi par l'API : sauvegardes (mots de passe), cles privees. */
+static bool sensitive_name(const char *dir, const char *name)
+{
+    return strcmp(dir, "bk") == 0 || ends_with(name, ".tar") || ends_with(name, ".key");
+}
+
+static bool has_private_key(const char *buf, size_t len)
+{
+    static const char K[] = "PRIVATE KEY";
+    for (size_t i = 0; i + sizeof(K) - 1 <= len; i++) {
+        if (memcmp(buf + i, K, sizeof(K) - 1) == 0) return true;
+    }
+    return false;
 }
 
 // ----------------------------------------------------------------------------
@@ -248,26 +290,32 @@ static esp_err_t files_read_handler(httpd_req_t *req)
     if (!dev_mode_ok(req)) return ESP_OK;
     char dir[16], name[72], path[128];
     if (!parse_target(req, true, dir, sizeof(dir), name, sizeof(name), path, sizeof(path))) return ESP_OK;
+    if (sensitive_name(dir, name)) return send_json_error(req, "403 Forbidden", "Fichier sensible : non lisible ici");
 
     size_t len = 0;
     char *buf = read_whole_file(path, &len);
     if (!buf) return send_json_error(req, "404 Not Found", "Fichier introuvable ou trop grand");
+    if (has_private_key(buf, len)) {
+        free(buf);
+        return send_json_error(req, "403 Forbidden", "Fichier sensible : non lisible ici");
+    }
 
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     if (strcmp(dir, "config") == 0 && ends_with(name, ".json")) {
         cJSON *doc = cJSON_Parse(buf);
+        char *masked = NULL;
         if (doc) {
             mask_secrets(doc);
-            char *masked = cJSON_Print(doc);
+            masked = cJSON_Print(doc);
             cJSON_Delete(doc);
-            if (masked) {
-                httpd_resp_set_type(req, "application/json");
-                httpd_resp_sendstr(req, masked);
-                free(masked);
-                free(buf);
-                return ESP_OK;
-            }
         }
+        free(buf);
+        // Jamais le fichier brut (secrets), meme illisible
+        if (!masked) return send_json_error(req, "500 Internal Server Error", "Fichier de configuration illisible");
+        httpd_resp_set_type(req, "application/json");
+        httpd_resp_sendstr(req, masked);
+        free(masked);
+        return ESP_OK;
     }
     httpd_resp_set_type(req, ends_with(name, ".json") ? "application/json" : "text/plain");
     httpd_resp_send(req, buf, len);
@@ -297,7 +345,7 @@ static esp_err_t legacy_readfile_handler(httpd_req_t *req)
     }
     if (strcasecmp(dir, "web%2Fjs") == 0) strcpy(dir, "web/js");
     // Sauvegardes (mots de passe en clair dans l'archive) jamais servies ici
-    if (!dir_allowed(dir) || !name_valid(name) || !strcmp(dir, "bk") || ends_with(name, ".tar")) {
+    if (!dir_allowed(dir) || !name_valid(name) || sensitive_name(dir, name)) {
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_set_type(req, "text/plain");
         return httpd_resp_sendstr(req, "Invalid path");
@@ -310,6 +358,12 @@ static esp_err_t legacy_readfile_handler(httpd_req_t *req)
         httpd_resp_set_status(req, "404 Not Found");
         httpd_resp_set_type(req, "text/plain");
         return httpd_resp_sendstr(req, "Fichier introuvable");
+    }
+    if (has_private_key(buf, len)) {
+        free(buf);
+        httpd_resp_set_status(req, "403 Forbidden");
+        httpd_resp_set_type(req, "text/plain");
+        return httpd_resp_sendstr(req, "Fichier sensible");
     }
     // Texte brut : un fichier ne doit pas s'executer comme page du pont
     httpd_resp_set_type(req, "text/plain; charset=utf-8");
@@ -399,8 +453,14 @@ static esp_err_t files_write_handler(httpd_req_t *req)
             cJSON *cur = cur_txt ? cJSON_Parse(cur_txt) : NULL;
             free(cur_txt);
             if (cur) {
-                restore_secrets(doc, cur);
+                bool ok = restore_secrets(doc, cur);
                 cJSON_Delete(cur);
+                if (!ok) {
+                    cJSON_Delete(doc);
+                    free(buf);
+                    return send_json_error(req, "400 Bad Request",
+                                           "Serveur modifie : ressaisissez le mot de passe correspondant");
+                }
             }
         }
         char *out = cJSON_Print(doc);

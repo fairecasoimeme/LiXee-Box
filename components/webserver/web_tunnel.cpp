@@ -45,6 +45,7 @@
 #include "web_tunnel.h"
 #include "web_server.h"
 #include "tunnel.h"
+#include "config_manager.h"
 
 #include "esp_log.h"
 #include "cJSON.h"
@@ -293,6 +294,13 @@ static esp_err_t config_post_handler(httpd_req_t *req)
                           "et un mot de passe, avant d'activer le tunnel.");
     }
 
+    // Mise en service : l'interface sera exposee sur Internet
+    if (want && !cur_enabled && strlen(cfg_get_general()->pass_http) < TUNNEL_MIN_PASS_LEN) {
+        cJSON_Delete(doc);
+        return send_error(req, "400 Bad Request", 32,
+                          "Mot de passe HTTP trop court pour l'acc\u00e8s distant : 8 caract\u00e8res au moins.");
+    }
+
     const char *id  = json_str(doc, "tunnelClientId");
     const char *tok = token_param(doc);
     const char *eff_id = id ? id : cur_id;
@@ -351,6 +359,11 @@ static esp_err_t activate_post_handler(httpd_req_t *req)
  */
 static esp_err_t activate_get_handler(httpd_req_t *req)
 {
+    // GET qui agit : origine controlee (lien depuis une autre box du tunnel)
+    if (!web_server_origin_ok(req)) {
+        httpd_resp_set_status(req, "403 Forbidden");
+        return httpd_resp_sendstr(req, "Forbidden");
+    }
     char q[64], code[8] = "";
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
         httpd_query_key_value(q, "code", code, sizeof(code));
@@ -360,6 +373,10 @@ static esp_err_t activate_get_handler(httpd_req_t *req)
 
 static esp_err_t activate_with_code(httpd_req_t *req, const char *code)
 {
+    if (tunnel_security_ok() && strlen(cfg_get_general()->pass_http) < TUNNEL_MIN_PASS_LEN) {
+        return activate_reply(req, "error",
+                              "Mot de passe HTTP trop court pour l'acc\u00e8s distant : 8 caract\u00e8res au moins.");
+    }
     switch (tunnel_start_activation(code)) {
         case TUNNEL_ACT_START_OK:          return activate_reply(req, "pending", NULL);
         case TUNNEL_ACT_START_BUSY:        return activate_reply(req, "processing", NULL);

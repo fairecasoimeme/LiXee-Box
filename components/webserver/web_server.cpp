@@ -178,12 +178,26 @@ static void log_login(httpd_req_t *req, const char *user)
     ESP_LOGW(TAG, "Connexion de '%s' (%s, %d/%d sessions)", user, ua, used, SESSION_MAX);
 }
 
+/*
+ * Cookie de session par canal. Tunnel : "__Host-session", Secure, qu'une page
+ * d'un autre sous-domaine de lixee-box.fr ne peut ni poser ni ecraser
+ * (cookie tossing, Domain=.lixee-box.fr) ; le cookie "session" n'y est pas
+ * lu. Local : "session" (http, ou un cookie Secure serait ignore).
+ */
+#define COOKIE_LAN     "session"
+#define COOKIE_TUNNEL  "__Host-session"
+
+static const char *session_cookie_name(httpd_req_t *req)
+{
+    return web_tunnel_req_is_tunnel(req) ? COOKIE_TUNNEL : COOKIE_LAN;
+}
+
 /** Index de la session portee par le cookie de la requete, -1 si aucune. */
 static int session_find(httpd_req_t *req)
 {
     char tok[SESSION_TOKEN_LEN + 8];
     size_t len = sizeof(tok);
-    if (httpd_req_get_cookie_val(req, "session", tok, &len) != ESP_OK) return -1;
+    if (httpd_req_get_cookie_val(req, session_cookie_name(req), tok, &len) != ESP_OK) return -1;
     if (strlen(tok) != SESSION_TOKEN_LEN) return -1;
     int64_t now = esp_timer_get_time();
     for (int i = 0; i < SESSION_MAX; i++) {
@@ -193,6 +207,30 @@ static int session_find(httpd_req_t *req)
         }
     }
     return -1;
+}
+
+void web_server_sessions_revoke(httpd_req_t *keep)
+{
+    int k = keep ? session_find(keep) : -1;
+    int n = 0;
+    for (int i = 0; i < SESSION_MAX; i++) {
+        if (i == k || !s_sessions[i].token[0]) continue;
+        memset(&s_sessions[i], 0, sizeof(s_sessions[i]));
+        n++;
+    }
+    if (n) ESP_LOGW(TAG, "Identifiants modifies : %d autre(s) session(s) fermee(s)", n);
+}
+
+/** Cookie de session neuf pour la requete (nom et attributs selon le canal). */
+static void make_session_cookie(httpd_req_t *req, char *out, size_t len)
+{
+    if (web_tunnel_req_is_tunnel(req)) {
+        snprintf(out, len, COOKIE_TUNNEL "=%s; Path=/; Max-Age=86400; Secure; HttpOnly; SameSite=Strict",
+                 session_create());
+    } else {
+        snprintf(out, len, COOKIE_LAN "=%s; Path=/; Max-Age=86400; HttpOnly; SameSite=Strict",
+                 session_create());
+    }
 }
 
 /** Hote d'une URL "http://hote[:port]/..." compare a l'en-tete Host. */
@@ -292,6 +330,31 @@ static bool tunnel_origin_ok(httpd_req_t *req)
     char sub[128];
     tunnel_get_subdomain(sub, sizeof(sub));
     return sub[0] && url_host_matches(src, sub);
+}
+
+/**
+ * Toute requete relayee par le tunnel. Modification (POST, PUT, DELETE) :
+ * tunnel_origin_ok. GET / HEAD : une page d'un autre sous-domaine peut aussi
+ * declencher un GET avec le cookie (<img>, <script>, fetch no-cors) vers une
+ * route qui agit ; d'apres Sec-Fetch-Site, seuls passent les GET de la page
+ * elle-meme et la navigation vers l'accueil depuis un lien (portail, favori).
+ * Sans Sec-Fetch-Site (LiXee-Assist, ancien navigateur) : admis, les routes
+ * GET qui agissent controlent l'origine (web_server_origin_ok).
+ */
+static bool tunnel_fetch_ok(httpd_req_t *req)
+{
+    if (req->method != HTTP_GET && req->method != HTTP_HEAD) return tunnel_origin_ok(req);
+    char sfs[24], mode[24];
+    esp_err_t e = httpd_req_get_hdr_value_str(req, "Sec-Fetch-Site", sfs, sizeof(sfs));
+    if (e == ESP_ERR_NOT_FOUND) return true;
+    if (e != ESP_OK) return false;
+    if (strcasecmp(sfs, "same-origin") == 0 || strcasecmp(sfs, "none") == 0) return true;
+    if (httpd_req_get_hdr_value_str(req, "Sec-Fetch-Mode", mode, sizeof(mode)) != ESP_OK ||
+        strcasecmp(mode, "navigate") != 0) {
+        return false;
+    }
+    size_t n = strcspn(req->uri, "?#");
+    return (n == 1 && req->uri[0] == '/') || (n == 11 && strncmp(req->uri, "/index.html", 11) == 0);
 }
 
 /** Navigation d'un navigateur vers une page (pas un appel XHR ni un fichier). */
@@ -418,7 +481,7 @@ static bool auth_check(httpd_req_t *req)
             size_t cklen = sizeof(ck);
             const char *why =
                 httpd_req_get_hdr_value_len(req, "Authorization") ? "identifiants Basic invalides" :
-                httpd_req_get_cookie_val(req, "session", ck, &cklen) != ESP_ERR_NOT_FOUND
+                httpd_req_get_cookie_val(req, session_cookie_name(req), ck, &cklen) != ESP_ERR_NOT_FOUND
                     ? "session inconnue ou expiree" : "sans identifiants";
             ESP_LOGW(TAG, "Acces refuse sur %s (%s, %s)", req->uri, why, ua);
         }
@@ -456,8 +519,8 @@ static bool auth_check(httpd_req_t *req)
         return false;
     }
     // Tunnel : une page d'un autre sous-domaine de lixee-box.fr porte le
-    // cookie de session ; ses requetes qui modifient l'etat sont refusees
-    if (via_tunnel && req->method != HTTP_GET && req->method != HTTP_HEAD && !tunnel_origin_ok(req)) {
+    // cookie de session ; ses requetes sont refusees (tunnel_fetch_ok)
+    if (via_tunnel && !tunnel_fetch_ok(req)) {
         ESP_LOGW(TAG, "Requete refusee via le tunnel (origine etrangere) sur %s", req->uri);
         httpd_resp_set_status(req, "403 Forbidden");
         httpd_resp_sendstr(req, "Forbidden");
@@ -586,11 +649,11 @@ static esp_err_t login_get_handler(httpd_req_t *req)
     // Page de retour (champ cache) et message d'erreur ecrits par le serveur,
     // comme la Box : la page n'a plus besoin de JavaScript pour se connecter
     static char q[3 * 128], nx[128], nx_html[6 * 128];   // tache HTTP seule
-    bool error = false;
+    int error = 0;                                   // 1 identifiants, 2 trop d'essais
     q[0] = '\0';
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
         char v[3 * 128] = "";
-        error = httpd_query_key_value(q, "error", v, sizeof(v)) == ESP_OK;
+        if (httpd_query_key_value(q, "error", v, sizeof(v)) == ESP_OK) error = strcmp(v, "2") == 0 ? 2 : 1;
         if (httpd_query_key_value(q, "next", v, sizeof(v)) == ESP_OK) url_decode(v);
         else v[0] = '\0';
         strlcpy(q, v, sizeof(q));
@@ -601,6 +664,7 @@ static esp_err_t login_get_handler(httpd_req_t *req)
     char *page = (char *)heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
     if (!page) return httpd_resp_send_500(req);
     int n = snprintf(page, cap, LOGIN_HTML, error ? "" : "d-none",
+                     error == 2 ? "Trop de tentatives : r&eacute;essayez dans quelques minutes" :
                      error ? "Identifiant ou mot de passe incorrect" : "", nx_html,
                      esp_app_get_description()->version);
     httpd_resp_set_type(req, "text/html");
@@ -610,7 +674,56 @@ static esp_err_t login_get_handler(httpd_req_t *req)
     return r;
 }
 
-static int64_t s_last_fail_us;          // dernier echec de connexion
+/*
+ * Echecs de connexion, par canal : le tunnel (tous ses clients arrivent de
+ * 127.0.0.1) et le reseau local ; un attaquant sur Internet ne bloque donc pas
+ * la connexion locale. 5 echecs : 1 s entre deux essais, puis un delai qui
+ * double (2 s, 4 s ... 10 min). Remis a zero par une connexion reussie ou
+ * apres 30 min sans echec.
+ */
+#define LOGIN_FREE_FAILS   5
+#define LOGIN_MAX_DELAY_S  600
+#define LOGIN_FORGET_US    (30LL * 60 * 1000000)
+typedef struct { int64_t last_us; int64_t until_us; uint32_t fails; } login_guard_t;
+static login_guard_t s_login_guard[2];   // 0 local, 1 tunnel (tache HTTP seule)
+
+static login_guard_t *login_guard(httpd_req_t *req)
+{
+    return &s_login_guard[web_tunnel_req_is_tunnel(req) ? 1 : 0];
+}
+
+/** Secondes d'attente avant le prochain essai, 0 si autorise. */
+static uint32_t login_wait_s(httpd_req_t *req)
+{
+    login_guard_t *g = login_guard(req);
+    int64_t now = esp_timer_get_time();
+    if (g->fails && now - g->last_us > LOGIN_FORGET_US) { g->fails = 0; g->until_us = 0; }
+    return g->until_us > now ? (uint32_t)((g->until_us - now + 999999) / 1000000) : 0;
+}
+
+static void login_failed(httpd_req_t *req)
+{
+    login_guard_t *g = login_guard(req);
+    int64_t now = esp_timer_get_time();
+    g->fails++;
+    g->last_us = now;
+    uint32_t d = 1;
+    if (g->fails > LOGIN_FREE_FAILS) {
+        uint32_t k = g->fails - LOGIN_FREE_FAILS;
+        d = k >= 10 ? LOGIN_MAX_DELAY_S : (1u << k);
+        if (d > LOGIN_MAX_DELAY_S) d = LOGIN_MAX_DELAY_S;
+    }
+    g->until_us = now + (int64_t)d * 1000000;
+    ESP_LOGW(TAG, "Echec de connexion %s (%u de suite) : prochain essai dans %u s",
+             g == &s_login_guard[1] ? "via le tunnel" : "en local", (unsigned)g->fails, (unsigned)d);
+}
+
+static void login_succeeded(httpd_req_t *req)
+{
+    login_guard_t *g = login_guard(req);
+    g->fails = 0;
+    g->until_us = 0;
+}
 
 // Corps "chunked" (voir plus bas, avec chunked_body_end)
 static bool is_chunked(httpd_req_t *req);
@@ -624,8 +737,20 @@ static esp_err_t login_post_handler(httpd_req_t *req)
         return httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
     }
     // Frein aux essais en serie sans bloquer la seule tache HTTP : un essai
-    // moins d'une seconde apres un echec est refuse tout de suite
-    if (s_last_fail_us && esp_timer_get_time() - s_last_fail_us < 1000000) {
+    // avant la fin du delai (login_failed) est refuse tout de suite
+    uint32_t wait = login_wait_s(req);
+    if (wait) {
+        char ra[12];
+        snprintf(ra, sizeof(ra), "%u", (unsigned)wait);
+        httpd_resp_set_hdr(req, "Retry-After", ra);
+        char ct[64] = "";
+        httpd_req_get_hdr_value_str(req, "Content-Type", ct, sizeof(ct));
+        if (strstr(ct, "x-www-form-urlencoded")) {
+            // Formulaire : retour a la page de connexion, avec le message
+            httpd_resp_set_status(req, "303 See Other");
+            httpd_resp_set_hdr(req, "Location", "/login?error=2");
+            return httpd_resp_send(req, NULL, 0);
+        }
         httpd_resp_set_status(req, "429 Too Many Requests");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Trop de tentatives\"}");
@@ -682,17 +807,16 @@ static esp_err_t login_post_handler(httpd_req_t *req)
         memset(fp, 0, sizeof(fp));
         httpd_resp_set_status(req, "303 See Other");
         if (!fok) {
-            ESP_LOGW(TAG, "Echec de connexion");
-            s_last_fail_us = esp_timer_get_time();
+            login_failed(req);
             static char loc[3 * 128 + 24];
             strlcpy(loc, strcmp(next, "/") ? "/login?error=1&next=" : "/login?error=1", sizeof(loc));
             if (strcmp(next, "/")) append_param(loc, sizeof(loc), next);   // "next" decode : re-encode
             httpd_resp_set_hdr(req, "Location", loc);
             return httpd_resp_send(req, NULL, 0);
         }
-        static char cookie[96], dest[128];
-        snprintf(cookie, sizeof(cookie),
-                 "session=%s; Path=/; Max-Age=86400; HttpOnly; SameSite=Strict", session_create());
+        static char cookie[160], dest[128];
+        login_succeeded(req);
+        make_session_cookie(req, cookie, sizeof(cookie));
         strlcpy(dest, next, sizeof(dest));
         httpd_resp_set_hdr(req, "Set-Cookie", cookie);
         httpd_resp_set_hdr(req, "Location", dest);
@@ -711,16 +835,15 @@ static esp_err_t login_post_handler(httpd_req_t *req)
     cJSON_Delete(json);
 
     if (!ok) {
-        ESP_LOGW(TAG, "Echec de connexion");
-        s_last_fail_us = esp_timer_get_time();   // freine les essais en serie
+        login_failed(req);   // freine les essais en serie
         httpd_resp_set_status(req, "401 Unauthorized");
         httpd_resp_set_type(req, "application/json");
         return httpd_resp_sendstr(req, "{\"status\":\"error\"}");
     }
 
-    char cookie[96];
-    snprintf(cookie, sizeof(cookie),
-             "session=%s; Path=/; Max-Age=86400; HttpOnly; SameSite=Strict", session_create());
+    char cookie[160];
+    login_succeeded(req);
+    make_session_cookie(req, cookie, sizeof(cookie));
     httpd_resp_set_hdr(req, "Set-Cookie", cookie);
     httpd_resp_set_type(req, "application/json");
     log_login(req, gen->user_http);
@@ -742,7 +865,9 @@ static esp_err_t logout_handler(httpd_req_t *req)
 {
     int i = session_find(req);
     if (i >= 0) memset(&s_sessions[i], 0, sizeof(s_sessions[i]));
-    httpd_resp_set_hdr(req, "Set-Cookie", "session=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
+    httpd_resp_set_hdr(req, "Set-Cookie", web_tunnel_req_is_tunnel(req)
+        ? COOKIE_TUNNEL "=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Strict"
+        : COOKIE_LAN "=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict");
     httpd_resp_set_status(req, "302 Found");
     httpd_resp_set_hdr(req, "Location", "/login");
     return httpd_resp_send(req, NULL, 0);

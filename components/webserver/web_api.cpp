@@ -1061,6 +1061,16 @@ static esp_err_t api_config_mqtt_get_handler(httpd_req_t *req)
 // POST /api/config/mqtt - Sauvegarde la config MQTT
 // ============================================================================
 
+/** Port de la requete (chaine ou nombre) different de l'actuel ? */
+static bool port_changed(const cJSON *it, const char *cur)
+{
+    char b[16];
+    if (cJSON_IsString(it)) strlcpy(b, it->valuestring, sizeof(b));
+    else if (cJSON_IsNumber(it)) snprintf(b, sizeof(b), "%d", it->valueint);
+    else return false;
+    return strcmp(b, cur) != 0;
+}
+
 static esp_err_t api_config_mqtt_post_handler(httpd_req_t *req)
 {
     // 4 Ko : le gabarit personnalise fait jusqu'a 511 caracteres, et son
@@ -1071,6 +1081,25 @@ static esp_err_t api_config_mqtt_post_handler(httpd_req_t *req)
     cfg_general_t  *g = cfg_get_general_mut();
     cfg_settings_t *s = cfg_get_settings_mut();
     cJSON *item;
+
+    // Mot de passe conserve (champ vide) mais serveur, port change ou TLS
+    // retire : il partirait vers un autre serveur, peut-etre en clair (une
+    // session volee suffisait a le recuperer). A ressaisir.
+    if (g->pass_mqtt[0]) {
+        const cJSON *sv = cJSON_GetObjectItem(doc, "servMQTT");
+        const cJSON *pw = cJSON_GetObjectItem(doc, "passMQTT");
+        const cJSON *tl = cJSON_GetObjectItem(doc, "tlsMQTT");
+        const cJSON *cl = cJSON_GetObjectItem(doc, "clearPassMQTT");
+        bool given = cJSON_IsString(pw) && pw->valuestring[0];
+        bool clear = cl && (cJSON_IsTrue(cl) || (cJSON_IsNumber(cl) && cl->valueint));
+        bool moved = (cJSON_IsString(sv) && strcasecmp(sv->valuestring, g->serv_mqtt) != 0) ||
+                     port_changed(cJSON_GetObjectItem(doc, "portMQTT"), g->port_mqtt) ||
+                     (cJSON_IsNumber(tl) && tl->valueint == 0 && g->tls_mqtt != 0);
+        if (moved && !given && !clear) {
+            cJSON_Delete(doc);
+            return send_bad_request(req, "Serveur MQTT modifi\u00e9 : ressaisissez le mot de passe MQTT");
+        }
+    }
 
     if ((item = cJSON_GetObjectItem(doc, "enableMqtt")))
         s->enable_mqtt = cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint);
@@ -1268,7 +1297,16 @@ static esp_err_t api_config_webpush_post_handler(httpd_req_t *req)
     if ((item = cJSON_GetObjectItem(doc, "clearPassWebPush")) &&
         (cJSON_IsTrue(item) || (cJSON_IsNumber(item) && item->valueint)))
         pass[0] = '\0';
+    const cJSON *pw_in = cJSON_GetObjectItem(doc, "passWebPush");
+    bool pw_given = cJSON_IsString(pw_in) && pw_in->valuestring[0];
     cJSON_Delete(doc);
+
+    // Mot de passe conserve mais adresse changee : a ressaisir (il partirait
+    // vers le nouveau serveur)
+    if (pass[0] && !pw_given && strcasecmp(url, g->serv_webpush) != 0) {
+        memset(pass, 0, sizeof(pass));
+        return send_bad_request(req, "Serveur WebPush modifi\u00e9 : ressaisissez le mot de passe WebPush");
+    }
 
     const char *err_msg = NULL;
     if (enable && !url[0])                   err_msg = "Adresse du serveur WebPush requise";
@@ -1409,6 +1447,15 @@ static esp_err_t api_save_config_http_handler(httpd_req_t *req)
                                 "\"Le mot de passe doit faire au moins 4 caracteres\"}");
         return ESP_OK;
     }
+    // Tunnel actif : l'interface est exposee sur Internet
+    if (tunnel_security_locked() && strcmp(new_pass, g->pass_http) != 0 &&
+        strlen(new_pass) < TUNNEL_MIN_PASS_LEN) {
+        memset(new_pass, 0, sizeof(new_pass));
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":"
+                                "\"Acces distant actif : le mot de passe doit faire au moins 8 caracteres\"}");
+        return ESP_OK;
+    }
     if (enable && (new_user[0] == '\0' || new_pass[0] == '\0')) {
         memset(new_pass, 0, sizeof(new_pass));
         httpd_resp_set_status(req, "400 Bad Request");
@@ -1417,10 +1464,14 @@ static esp_err_t api_save_config_http_handler(httpd_req_t *req)
         return ESP_OK;
     }
 
+    // Identifiants ou protection modifies : les autres sessions sont fermees
+    const bool creds_changed = enable != s->enable_secure_http ||
+                               strcmp(new_user, g->user_http) != 0 || strcmp(new_pass, g->pass_http) != 0;
     s->enable_secure_http = enable;
     strlcpy(g->user_http, new_user, sizeof(g->user_http));
     strlcpy(g->pass_http, new_pass, sizeof(g->pass_http));
     memset(new_pass, 0, sizeof(new_pass));
+    if (creds_changed) web_server_sessions_revoke(req);
 
     esp_err_t err = cfg_save_general();
     if (err != ESP_OK) {

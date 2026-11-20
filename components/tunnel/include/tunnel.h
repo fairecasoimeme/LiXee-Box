@@ -149,6 +149,13 @@ esp_err_t tunnel_set_config(bool enabled, const char *client_id, const char *tok
 /** Etat de la connexion, pour la page et l'API. */
 void tunnel_get_status(tunnel_status_t *out);
 
+/**
+ * Longueur minimale du mot de passe HTTP pour ACTIVER le tunnel (interface
+ * exposee sur Internet) et pour le changer tunnel actif. Un tunnel deja actif
+ * avec un mot de passe plus court n'est pas coupe.
+ */
+#define TUNNEL_MIN_PASS_LEN 8
+
 /** Sous-domaine annonce par le relais ("abcd.lixee-box.fr"), "" avant le welcome. */
 void tunnel_get_subdomain(char *out, size_t len);
 

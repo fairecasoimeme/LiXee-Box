@@ -1211,7 +1211,7 @@ static void worker_task(void *arg)
 static const char *const FWD_HEADERS[] = {
     "cookie", "content-type", "x-requested-with", "origin",
     "accept", "accept-encoding", "authorization", "referer",
-    "sec-fetch-site",
+    "sec-fetch-site", "sec-fetch-mode",
 };
 
 static const cJSON *obj_get_ci(const cJSON *obj, const char *name)
@@ -1246,10 +1246,13 @@ static bool filter_session_cookie(const char *in, char *out, size_t out_len)
         while (*p == ' ' || *p == ';') p++;
         const char *end = strchr(p, ';');
         size_t n = end ? (size_t)(end - p) : strlen(p);
-        if (n > 8 && strncmp(p, "session=", 8) == 0) {
-            size_t vl = n - 8;
+        // "session" (acces local) ou "__Host-session" (cookie Secure du tunnel)
+        size_t kl = (n > 8 && strncmp(p, "session=", 8) == 0) ? 8 :
+                    (n > 15 && strncmp(p, "__Host-session=", 15) == 0) ? 15 : 0;
+        if (kl) {
+            size_t vl = n - kl;
             bool hex = (vl == 32);
-            for (size_t i = 0; hex && i < vl; i++) hex = isxdigit((unsigned char)p[8 + i]) != 0;
+            for (size_t i = 0; hex && i < vl; i++) hex = isxdigit((unsigned char)p[kl + i]) != 0;
             if (hex && o + n + 3 < out_len) {
                 if (o) { out[o++] = ';'; out[o++] = ' '; }
                 memcpy(out + o, p, n);

@@ -44,6 +44,13 @@ httpd_handle_t web_server_get_handle(void);
 /** Requete du pont lui-meme (Origin / Referer absent ou egal a l'hote) : pour une route GET qui agit. */
 bool web_server_origin_ok(httpd_req_t *req);
 
+/**
+ * Ferme toutes les sessions sauf celle de 'keep' (NULL : toutes), apres un
+ * changement d'identifiant, de mot de passe ou de protection : un cookie vole
+ * ne reste pas valable 24 h.
+ */
+void web_server_sessions_revoke(httpd_req_t *keep);
+
 #ifdef __cplusplus
 }
 #endif
