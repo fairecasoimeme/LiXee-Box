@@ -1315,21 +1315,115 @@ esp_err_t device_data_update_poll_timestamp(uint64_t ieee_addr, uint16_t cluster
 // API publique - Templates
 // ============================================================================
 
+/**
+ * true si le texte JSON declare la cle : "cle" suivi de ':' (meme recherche
+ * textuelle que l'ancien file_has_model de device_setup, sans analyse).
+ */
+static bool json_text_has_key(const char *buf, const char *key)
+{
+    if (!buf || !key || !key[0]) return false;
+    char quoted[56];
+    int n = snprintf(quoted, sizeof(quoted), "\"%s\"", key);
+    if (n <= 0 || n >= (int)sizeof(quoted)) return false;
+    for (const char *p = strstr(buf, quoted); p; p = strstr(p + 1, quoted)) {
+        const char *q = p + n;
+        while (*q == ' ' || *q == '\t' || *q == '\r' || *q == '\n') q++;
+        if (*q == ':') return true;
+    }
+    return false;
+}
+
+static char *read_template_file(const char *dir, const char *file)
+{
+    char path[96];
+    snprintf(path, sizeof(path), "%s/%s", dir, file);
+    return read_file(path, NULL);
+}
+
+/**
+ * Texte du template a appliquer (a liberer), choisi modele par modele entre
+ * tpu/ (utilisateur) et tp/ (livre) : modele exact dans tpu/, puis dans tp/,
+ * puis "default" de tpu/, puis tp/. NULL si aucun des deux fichiers n'existe.
+ */
+static char *read_resolved_template(const char *file, const char *model, bool *user_tpl)
+{
+    char *user = read_template_file(DEVDATA_TPU_DIR, file);
+    char *stock = read_template_file(DEVDATA_TP_DIR, file);
+    char *pick;
+    if (model && model[0] && json_text_has_key(user, model)) pick = user;
+    else if (model && model[0] && json_text_has_key(stock, model)) pick = stock;
+    else if (json_text_has_key(user, "default") || !stock) pick = user;
+    else pick = stock;
+    if (pick != user) free(user);
+    if (pick != stock) free(stock);
+    *user_tpl = pick && pick == user;
+    return pick;
+}
+
+bool device_data_template_exists(const char *file)
+{
+    char path[96];
+    struct stat st;
+    snprintf(path, sizeof(path), DEVDATA_TPU_DIR "/%s", file);
+    if (stat(path, &st) == 0) return true;
+    snprintf(path, sizeof(path), DEVDATA_TP_DIR "/%s", file);
+    return stat(path, &st) == 0;
+}
+
+static bool dir_file_has_model(const char *dir, const char *file, const char *model)
+{
+    char *buf = read_template_file(dir, file);
+    bool found = json_text_has_key(buf, model);
+    free(buf);
+    return found;
+}
+
+bool device_data_template_has_model(const char *file, const char *model)
+{
+    if (!model || !model[0]) return false;
+    return dir_file_has_model(DEVDATA_TPU_DIR, file, model) ||
+           dir_file_has_model(DEVDATA_TP_DIR, file, model);
+}
+
+bool device_data_template_find_model(const char *model, const char *skip, char *out, size_t len)
+{
+    if (!model || !model[0]) return false;
+    static const char *const dirs[] = { DEVDATA_TPU_DIR, DEVDATA_TP_DIR };
+    for (size_t i = 0; i < sizeof(dirs) / sizeof(dirs[0]); i++) {
+        DIR *d = opendir(dirs[i]);
+        if (!d) continue;
+        bool found = false;
+        struct dirent *e;
+        while (!found && (e = readdir(d)) != NULL) {
+            size_t n = strlen(e->d_name);
+            if (n < 6 || n >= len || strcmp(e->d_name + n - 5, ".json") != 0) continue;
+            if (skip && strcmp(e->d_name, skip) == 0) continue;
+            if (dir_file_has_model(dirs[i], e->d_name, model)) {
+                strlcpy(out, e->d_name, len);
+                found = true;
+            }
+        }
+        closedir(d);
+        if (found) return true;
+    }
+    return false;
+}
+
 esp_err_t device_data_load_template(uint64_t ieee_addr,
                                      const char *device_id_file,
                                      const char *model_name)
 {
     if (!device_data_find(ieee_addr)) return ESP_ERR_NOT_FOUND;
 
-    // Construire le chemin du template
-    char filepath[80];
-    snprintf(filepath, sizeof(filepath), DEVDATA_TP_DIR "/%s", device_id_file);
-
-    // Lecture du fichier hors verrou (acces flash)
-    size_t fsize = 0;
-    char *json = read_file(filepath, &fsize);
+    // Lecture hors verrou (acces flash) : tpu/ ou tp/ selon le modele
+    bool user_tpl = false;
+    char *json = read_resolved_template(device_id_file, model_name, &user_tpl);
+    if (json && user_tpl) {
+        ESP_LOGI(TAG, "0x%016llX : template personnel tpu/%s",
+                 (unsigned long long)ieee_addr, device_id_file);
+    }
     if (!json) {
-        ESP_LOGD(TAG, "Template file not found: %s", filepath);
+        ESP_LOGD(TAG, "Template file not found: %s", device_id_file);
         // Sans fichier : actions dynamiques seules (telecommande IR sans template)
         dd_lock();
         int s = find_slot_locked(ieee_addr);

@@ -13,6 +13,7 @@
 #include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <strings.h>   // strcasecmp
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -49,6 +50,14 @@ static cfg_zigbee_t        g_zigbee;
 const cfg_settings_t*      cfg_get_settings(void)          { return &g_settings; }
 cfg_settings_t*            cfg_get_settings_mut(void)      { return &g_settings; }
 const cfg_general_t*       cfg_get_general(void)           { return &g_general; }
+
+double cfg_gaz_wh_per_unit(void)
+{
+    const char *u = g_general.unit_gaz;
+    if (strcasecmp(u, "Wh") == 0) return 1.0;
+    if (strcasecmp(u, "kWh") == 0) return 1000.0;
+    return g_general.kwh_gaz > 0 ? g_general.kwh_gaz * 1000.0 : 0;
+}
 cfg_general_t*             cfg_get_general_mut(void)       { return &g_general; }
 const cfg_notifications_t* cfg_get_notifications(void)     { return &g_notifications; }
 cfg_notifications_t*       cfg_get_notifications_mut(void) { return &g_notifications; }
@@ -268,6 +277,7 @@ esp_err_t cfg_init(void)
     g_general.coeff_production = 1.0f;
     g_general.time_offset = 1;
     g_general.enable_presence_graph = true;
+    g_general.enable_temperature_graph = true;
     g_general.zigate_led = -1;
     g_general.delestage_restore_min = 5;
     g_general.delestage_restore_pct = 80;
@@ -402,6 +412,7 @@ esp_err_t cfg_load_general(void)
 
     // Gaz / Water
     g_general.coeff_gaz   = json_get_float(doc, "coeffGaz", 1.0f);
+    g_general.kwh_gaz     = json_get_float(doc, "kwhGaz", 0.0f);
     g_general.coeff_water = json_get_float(doc, "coeffWater", 1.0f);
     json_get_str(doc, "unitGaz",    g_general.unit_gaz,    sizeof(g_general.unit_gaz),    "m3");
     json_get_str(doc, "unitWater",  g_general.unit_water,  sizeof(g_general.unit_water),  "L");
@@ -468,6 +479,9 @@ esp_err_t cfg_load_general(void)
     // Presence
     json_get_str(doc, "Presence", g_general.presence, sizeof(g_general.presence), "");
     g_general.enable_presence_graph = json_get_bool(doc, "enablePresenceGraph", true);
+    // Temperature
+    json_get_str(doc, "Temperature", g_general.temperature, sizeof(g_general.temperature), "");
+    g_general.enable_temperature_graph = json_get_bool(doc, "enableTemperatureGraph", true);
     {
         const cJSON *zl = cJSON_GetObjectItem(doc, "zigateLed");
         g_general.zigate_led = cJSON_IsNumber(zl) && zl->valueint >= 0 ? (zl->valueint ? 1 : 0) : -1;
@@ -648,8 +662,9 @@ static esp_err_t save_general_unlocked(void)
     put_str(doc, "customUDPJson", g_general.custom_udp_json);
 
     // Gaz / Water
-    put_num(doc, "coeffGaz",   g_general.coeff_gaz);
-    put_num(doc, "coeffWater",  g_general.coeff_water);
+    put_num(doc, "coeffGaz",   round(g_general.coeff_gaz * 1e6) / 1e6);     // float -> 11.2, pas 11.199999809
+    put_num(doc, "kwhGaz",     round(g_general.kwh_gaz * 1e6) / 1e6);
+    put_num(doc, "coeffWater", round(g_general.coeff_water * 1e6) / 1e6);
     put_str(doc, "unitGaz",    g_general.unit_gaz);
     put_str(doc, "unitWater",  g_general.unit_water);
     put_str(doc, "tarifGaz",   g_general.tarif_gaz);
@@ -706,6 +721,9 @@ static esp_err_t save_general_unlocked(void)
     // Presence
     put_str(doc, "Presence", g_general.presence);
     put_bool(doc, "enablePresenceGraph", g_general.enable_presence_graph);
+    // Temperature
+    put_str(doc, "Temperature", g_general.temperature);
+    put_bool(doc, "enableTemperatureGraph", g_general.enable_temperature_graph);
     if (g_general.zigate_led >= 0) cJSON_AddNumberToObject(doc, "zigateLed", g_general.zigate_led);
 
     // Delestage
@@ -843,6 +861,7 @@ esp_err_t cfg_ensure_directories(void)
         "/littlefs/config",
         "/littlefs/db",
         "/littlefs/hst",
+        "/littlefs/tpu",     // templates de l'utilisateur (issue #84)
         "/littlefs/debug",
         "/littlefs/bk",
         "/littlefs/rt",

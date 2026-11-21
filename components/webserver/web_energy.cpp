@@ -7,8 +7,10 @@
 #include "web_energy.h"
 #include "web_server.h"
 #include "energy_service.h"
+#include "energy_archive.h"
 #include "energy_history.h"
 #include "presence.h"
+#include "temp_history.h"
 #include "delestage.h"
 #include "config_manager.h"
 #include "zigate_devices.h"
@@ -236,6 +238,7 @@ static esp_err_t history_clear_handler(httpd_req_t *req)
     cJSON_Delete(doc);
     if (!ok) return send_status(req, "400 Bad Request", "confirm requis");
     energy_history_clear_all();
+    energy_archive_request_clear();
     energy_service_clear_power();
     return send_status(req, "200 OK", "Historique efface");
 }
@@ -414,6 +417,34 @@ static esp_err_t presence_handler(httpd_req_t *req)
     return send_json_owned(req, presence_chart_json(t));
 }
 
+// GET /api/energy/temperature?time=hour|day : courbes de temperature du graphe d'usage
+static esp_err_t temperature_handler(httpd_req_t *req)
+{
+    char t[8];
+    period_param(req, t, sizeof(t));
+    return send_json_owned(req, temp_history_chart_json(t));
+}
+
+/**
+ * GET /api/energy/history?gran=hour|day|week|month|year&from=aaaammjj&to=aaaammjj[&ieee=]
+ * Page Energie > Historique (archive datee)
+ */
+static esp_err_t history_page_handler(httpd_req_t *req)
+{
+    char g[8], f[12], t[12];
+    query_param(req, "gran", g, sizeof(g), "day");
+    query_param(req, "from", f, sizeof(f), "0");
+    query_param(req, "to", t, sizeof(t), "0");
+    return send_json_owned(req, energy_history_page_json(g, (uint32_t)strtoul(f, NULL, 10),
+                                                         (uint32_t)strtoul(t, NULL, 10), ieee_param(req)));
+}
+
+// GET /api/energy/history/days : jours archives (calendrier)
+static esp_err_t history_days_handler(httpd_req_t *req)
+{
+    return send_json_owned(req, energy_archive_days_json());
+}
+
 // GET /api/delestage : etat du delestage ; POST /api/delestage/restore : rallumage manuel
 static esp_err_t delestage_get_handler(httpd_req_t *req)
 {
@@ -447,7 +478,10 @@ void web_energy_register(httpd_handle_t server)
         { "/api/energy/linky",              HTTP_GET,  linky_handler },
         { "/api/energy/zlinkys",            HTTP_GET,  zlinkys_handler },
         { "/api/energy/history/clear",      HTTP_POST, history_clear_handler },
+        { "/api/energy/history",            HTTP_GET,  history_page_handler },
+        { "/api/energy/history/days",       HTTP_GET,  history_days_handler },
         { "/api/energy/presence",           HTTP_GET,  presence_handler },
+        { "/api/energy/temperature",        HTTP_GET,  temperature_handler },
         { "/api/delestage",                 HTTP_GET,  delestage_get_handler },
         { "/api/delestage/restore",         HTTP_POST, delestage_restore_handler },
         { "/api/energy/submeters",          HTTP_GET,  submeters_get_handler },

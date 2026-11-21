@@ -316,7 +316,8 @@ typedef struct {
     uint16_t last_join_short;
     uint32_t last_join_s;        // secondes depuis le demarrage
     bool     ghost_pending;
-    int      ghost_result;       // -1 jamais lance, sinon nombre d'entrees effacees
+    uint32_t ghost_since_s;      // lancement du nettoyage (secondes depuis le demarrage)
+    int      ghost_result;       // -1 jamais lance, -2 pas de reponse, sinon nombre d'entrees effacees
     uint32_t frames_rx;
     uint32_t frames_tx;
 } zigate_coord_info_t;

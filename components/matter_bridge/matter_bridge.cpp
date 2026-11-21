@@ -19,6 +19,7 @@
 #include "matter_device_manager.h"
 #include "elec_power_delegate.h"
 #include "thermostat_presets_delegate.h"
+#include "linky_price_delegate.h"
 #include "zigate_devices.h"
 #include "device_data.h"
 #include "esp_log.h"
@@ -26,6 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <math.h>
 
 // esp-matter SDK
 #include <esp_matter.h>
@@ -34,8 +36,12 @@
 #include <esp_matter_feature.h>
 #include <esp_matter_event.h>
 #include <app/clusters/electrical-energy-measurement-server/ElectricalEnergyMeasurementCluster.h>
+#include <app/clusters/electrical-energy-measurement-server/electrical-energy-measurement-server.h>
 #include <app/clusters/meter-identification-server/meter-identification-server.h>
 #include <app/clusters/commodity-metering-server/commodity-metering-server.h>
+#include <app/clusters/commodity-price-server/commodity-price-server.h>
+#include <lib/support/BitMask.h>
+#include <lib/support/TimeUtils.h>
 #include <app/reporting/reporting.h>
 #include <app/server/Server.h>
 #include <setup_payload/OnboardingCodesUtil.h>
@@ -77,10 +83,16 @@ static ThermostatPresetsDelegate *s_thermo_preset_delegates[MATTER_BRIDGE_MAX_EN
 static int s_thermo_preset_delegate_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static int s_thermo_preset_delegate_count = 0;
 static matter_thermostat_preset_cb_t s_thermo_preset_cb = nullptr;
+static matter_thermostat_preset_commit_cb_t s_thermo_preset_commit_cb = nullptr;
 
 void matter_bridge_set_thermostat_preset_cb(matter_thermostat_preset_cb_t cb)
 {
     s_thermo_preset_cb = cb;
+}
+
+void matter_bridge_set_thermostat_preset_commit_cb(matter_thermostat_preset_commit_cb_t cb)
+{
+    s_thermo_preset_commit_cb = cb;
 }
 
 static ThermostatPresetsDelegate *get_thermo_preset_delegate(int endpoint_id)
@@ -92,16 +104,30 @@ static ThermostatPresetsDelegate *get_thermo_preset_delegate(int endpoint_id)
 }
 
 void matter_bridge_set_thermostat_presets(int endpoint_id, int32_t comfort_setpoint,
-                                          int32_t frost_setpoint, bool frost_active)
+                                          int32_t frost_setpoint, bool frost_active,
+                                          const matter_preset_t *custom, int custom_count,
+                                          uint8_t active_custom_handle)
 {
     ThermostatPresetsDelegate *d = get_thermo_preset_delegate(endpoint_id);
-    if (d) d->SyncFromZone(comfort_setpoint, frost_setpoint, frost_active);
+    if (d) d->SyncFromZone(comfort_setpoint, frost_setpoint, frost_active, custom, custom_count, active_custom_handle);
+}
+
+bool matter_bridge_get_thermostat_custom_presets(int endpoint_id, matter_preset_t *out,
+                                                 int max_out, int *out_count)
+{
+    ThermostatPresetsDelegate *d = get_thermo_preset_delegate(endpoint_id);
+    if (!d) return false;
+    d->GetCustomPresetsSnapshot(out, max_out, out_count);
+    return true;
 }
 
 // Appelee par le serveur CHIP quand un controleur invoque SetActivePresetRequest :
 // repercute le choix sur la zone via le callback enregistre par thermostat.cpp
 // (definie ici, et non dans thermostat_presets_delegate.h, pour acceder a
-// s_thermo_preset_cb).
+// s_thermo_preset_cb). Le handle est deja verifie present dans Presets par
+// ThermostatAttrAccess::SetActivePreset() (voir thermostat-server-presets.cpp)
+// avant d'arriver ici : built-in (0x01/0x02) ou personnalise (0x03+, issue #80),
+// pas besoin de le revalider.
 CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
     const chip::app::DataModel::Nullable<chip::ByteSpan> &newActivePresetHandle)
 {
@@ -109,14 +135,55 @@ CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
         return CHIP_NO_ERROR;   // aucun preset actif demande : rien a repercuter sur la zone
     }
     const chip::ByteSpan &v = newActivePresetHandle.Value();
-    if (v.size() != 1 || (v.data()[0] != 0x01 && v.data()[0] != 0x02)) {
+    if (v.size() != 1) {
         return CHIP_ERROR_INVALID_ARGUMENT;
     }
-    bool frost = (v.data()[0] == 0x02);
     if (s_thermo_preset_cb) {
-        esp_err_t err = s_thermo_preset_cb(EndpointId(), frost);
+        esp_err_t err = s_thermo_preset_cb(EndpointId(), v.data()[0]);
         if (err == ESP_ERR_NOT_FOUND) {
             ESP_LOGW(TAG, "Preset Matter sur l'endpoint %d : zone introuvable", EndpointId());
+        }
+    }
+    return CHIP_NO_ERROR;
+}
+
+// Instances CommodityPrice pour l'EP Linky (une par endpoint max), creees par
+// price_endpoint_init() et retrouvees par endpoint pour publier le prix.
+static LinkyPriceDelegate *s_price_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static CommodityPrice::Instance *s_price_instances[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static int s_price_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
+static int s_price_count = 0;
+
+// Commit de l'edition des presets personnalises (issue #80) : le contenu valide
+// a deja ete range dans m_custom (CommitPendingPresets, tache CHIP) ; notifie
+// seulement thermostat.cpp (file d'attente, jamais d'appel bloquant depuis la
+// tache CHIP, voir commentaire en tete de thermostat_presets_delegate.h) pour
+// qu'il relise ce contenu via matter_bridge_get_thermostat_custom_presets() et
+// le persiste.
+CHIP_ERROR ThermostatPresetsDelegate::CommitPendingPresets()
+{
+    matter_preset_t next[MATTER_PRESET_MAX_CUSTOM];
+    uint8_t next_count = 0;
+    uint8_t next_free = 0x03;
+    for (uint8_t i = 0; i < m_custom_count; i++) {
+        if ((uint16_t)m_custom[i].handle + 1 > next_free) next_free = (uint8_t)(m_custom[i].handle + 1);
+    }
+    for (uint8_t i = 0; i < m_pending_count && next_count < MATTER_PRESET_MAX_CUSTOM; i++) {
+        const matter_preset_t &p = m_pending[i];
+        if (p.handle == kHandleComfort || p.handle == kHandleFrost) continue;
+        next[next_count] = p;
+        if (next[next_count].handle == 0) next[next_count].handle = next_free++;
+        next_count++;
+    }
+    memcpy(m_custom, next, sizeof(matter_preset_t) * next_count);
+    m_custom_count = next_count;
+    m_pending_count = 0;
+    m_commit_pending = true;   // voir SyncFromZone()/GetCustomPresetsSnapshot()
+
+    if (s_thermo_preset_commit_cb) {
+        esp_err_t err = s_thermo_preset_commit_cb(EndpointId());
+        if (err == ESP_ERR_NOT_FOUND) {
+            ESP_LOGW(TAG, "Commit presets Matter sur l'endpoint %d : zone introuvable", EndpointId());
         }
     }
     return CHIP_NO_ERROR;
@@ -280,13 +347,18 @@ static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *labe
     if (!bdbi) return;
 
     // UniqueID : identifiant stable de l'appareil ponte (son IEEE Zigbee).
-    // esp-matter le cree vide.
+    // esp-matter le cree vide. Ecrit sans callback (issue #71) : le callback
+    // PRE_UPDATE renverrait la valeur vers matter_device_manager, qui ne
+    // connait pas encore cet endpoint (mapping enregistre apres) et repond
+    // ESP_ERR_NOT_FOUND ; esp-matter abandonnait alors l'ecriture et
+    // l'UniqueID restait vide.
     char uid[17];
     snprintf(uid, sizeof(uid), "%016llX", (unsigned long long)ieee);
     attribute_t *uid_attr = attribute::get(bdbi, BridgedDeviceBasicInformation::Attributes::UniqueID::Id);
     if (uid_attr) {
         esp_matter_attr_val_t v = esp_matter_char_str(uid, (uint16_t)strlen(uid));
-        attribute::set_val(uid_attr, &v);
+        esp_err_t err = attribute::set_val(uid_attr, &v, false);
+        if (err != ESP_OK) ESP_LOGW(TAG, "UniqueID %s : %s", uid, esp_err_to_name(err));
     }
 
     // NodeLabel : nom affiche par le controleur. Attribut persistant : un nom
@@ -445,7 +517,15 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
         break;
     }
     case MATTER_DEV_OCCUPANCY_SENSOR: {
+        // Appareil sans template : au moins une feature de detection est
+        // obligatoire, sinon esp_matter echoue sur une assertion et la box
+        // redemarre en boucle (issue #74). Meme reglage que le chemin par
+        // profil (MCAP_OCCUPANCY plus bas) : PIR, le type le plus courant.
         endpoint::occupancy_sensor::config_t cfg;
+        cfg.occupancy_sensing.occupancy_sensor_type = 0;          // PIR
+        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x01;
+        cfg.occupancy_sensing.feature_flags =
+            cluster::occupancy_sensing::feature::passive_infrared::get_id();
         endpoint::occupancy_sensor::add(ep, &cfg);
         break;
     }
@@ -603,6 +683,20 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         endpoint::contact_sensor::config_t cfg;
         endpoint::contact_sensor::add(ep, &cfg);
     }
+    if (caps & MCAP_LINKY_PRICE) {
+        // Cluster standard CommodityPrice (0x0095) et device type compose
+        // Electrical Energy Tariff (0x0513, superset d'Electrical Meter deja
+        // porte par cet EP) sur l'EP Linky.
+        // config.delegate laisse a nullptr : avec un delegate, esp_matter
+        // cree lui-meme l'Instance (CommodityPriceDelegateInitCB) sans la
+        // rendre accessible, alors qu'il faut l'appeler pour publier le prix
+        // (SetCurrentPrice). L'Instance est donc creee par
+        // price_endpoint_init() une fois l'endpoint actif.
+        endpoint::electrical_energy_tariff::config_t tariff_cfg;
+        endpoint::electrical_energy_tariff::add(ep, &tariff_cfg);
+        cluster::commodity_price::config_t price_cfg;
+        cluster::commodity_price::create(ep, &price_cfg, CLUSTER_FLAG_SERVER);
+    }
     if (caps & MCAP_COVER) {
         endpoint::window_covering::config_t cfg(0);
         cfg.window_covering.feature_flags =
@@ -615,7 +709,8 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         uint32_t f = 0;
         if (p->heat) f |= cluster::thermostat::feature::heating::get_id();
         if (p->cool) f |= cluster::thermostat::feature::cooling::get_id();
-        if (p->presets) f |= cluster::thermostat::feature::presets::get_id();
+        // Presets volontairement absent d'ici : voir le contournement
+        // espressif/esp-matter#1928 juste apres endpoint::thermostat::add().
         cfg.thermostat.feature_flags = f;
         // ControlSequenceOfOperation : 2 chauffage seul, 0 froid seul, 4 les deux
         cfg.thermostat.control_sequence_of_operation = (p->heat && p->cool) ? 4 : (p->heat ? 2 : 0);
@@ -635,10 +730,40 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         }
         endpoint::thermostat::add(ep, &cfg);
         cluster_t *th = cluster::get(ep, Thermostat::Id);
+        if (p->presets && th) {
+            // Contournement espressif/esp-matter#1928 (revue PR #83) : sans
+            // feature presets dans feature_flags ci-dessus, endpoint::thermostat::add()
+            // n'a pas appele feature::presets::add(), qui aurait cree l'attribut
+            // Presets avec ATTRIBUTE_FLAG_MANAGED_INTERNALLY -- flag qui fait
+            // echouer emberAfLocateAttributeMetadata() (modele Ember legacy,
+            // jamais peuple par les endpoints dynamiques esp-matter) et donc
+            // la commande AtomicRequest (InvalidCommand systematique) pour
+            // Presets/Schedules sur tout endpoint dynamique de ce type.
+            // On cree nous-memes l'attribut Presets sans ce drapeau ;
+            // esp_matter::attribute::create() renvoie l'attribut existant sans
+            // toucher a ses flags s'il existe deja (esp_matter_data_model.cpp),
+            // donc feature::presets::add() juste en dessous reutilise le notre
+            // au lieu d'en creer un avec MANAGED_INTERNALLY. Lecture/ecriture
+            // restent servies par ThermostatPresetsDelegate (AttributeAccessInterface),
+            // ce drapeau ne changeait de toute facon rien a ce chemin.
+            attribute::create(th, Thermostat::Attributes::Presets::Id, ATTRIBUTE_FLAG_WRITABLE,
+                              esp_matter_array(nullptr, 0, 0));
+            cluster::thermostat::feature::presets::add(th);
+            cluster::thermostat::command::create_atomic_request(th);
+            cluster::thermostat::command::create_atomic_response(th);
+        }
         bool running = false;
         for (int i = 0; i < p->link_count; i++)
             if (p->links[i].target == ML_TH_RUNNING) running = true;
         if (th && running) cluster::thermostat::attribute::create_thermostat_running_state(th, 0);
+        // RemoteSensing (0x001A, optionalConform) : non cree par defaut par esp-matter
+        // (create_remote_sensing() existe mais n'a aucun appelant generique). Uniquement sur
+        // les zones virtuelles (p->virtual_zone, positionne par matter_sync_zone()) : un vrai
+        // thermostat Zigbee (TRVZB, tetes Tuya, AC201A...) mesure sa propre temperature et ne
+        // doit pas l'annoncer comme distante. LocalTemperature d'un thermostat virtuel vient
+        // toujours d'un capteur Zigbee distant (jamais d'un capteur integre a l'endpoint) ->
+        // bit kLocalTemperature (0x01) systematique sur ce chemin.
+        if (th && p->virtual_zone) cluster::thermostat::attribute::create_remote_sensing(th, 0x01);
         if (presets_delegate) {
             if (s_thermo_preset_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
                 s_thermo_preset_delegates[s_thermo_preset_delegate_count] = presets_delegate;
@@ -687,6 +812,48 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         }
     }
     return ESP_OK;
+}
+
+// ============================================================================
+// Prix courant (CommodityPrice)
+// ============================================================================
+
+// Appele verrou de la pile tenu, une fois l'endpoint active : Instance::Init()
+// enregistre l'Instance aupres de AttributeAccessInterfaceRegistry/
+// CommandHandlerInterfaceRegistry, qui echoue silencieusement si l'endpoint
+// n'est pas encore actif dans le modele de donnees (meme regle que
+// energy_endpoint_init ci-dessous).
+static void price_endpoint_init(uint16_t ep_id)
+{
+    for (int i = 0; i < s_price_count; i++) {
+        if (s_price_ep_ids[i] == ep_id) return;   // deja initialise (resume)
+    }
+    cluster_t *price_cluster = cluster::get(ep_id, CommodityPrice::Id);
+    if (!price_cluster) return;
+
+    LinkyPriceDelegate *delegate = new LinkyPriceDelegate();
+    chip::BitMask<CommodityPrice::Feature, uint32_t> no_features(0u);
+    CommodityPrice::Instance *inst = new CommodityPrice::Instance(
+        (chip::EndpointId)ep_id, *delegate, no_features);
+    if (inst->Init() != CHIP_NO_ERROR) {
+        ESP_LOGE(TAG, "CommodityPrice: echec d'initialisation (ep=%d)", ep_id);
+        delete inst;
+        delete delegate;
+        return;
+    }
+
+    Globals::Structs::CurrencyStruct::Type eur;
+    eur.currency = 978;          // EUR (ISO 4217)
+    eur.decimalPoints = 4;       // price_for_attr() arrondi au 1/10000e d'euro
+    inst->SetCurrency(eur);
+    inst->SetTariffUnit(Globals::TariffUnitEnum::kKWh);
+
+    if (s_price_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
+        s_price_delegates[s_price_count] = delegate;
+        s_price_instances[s_price_count] = inst;
+        s_price_ep_ids[s_price_count] = ep_id;
+        s_price_count++;
+    }
 }
 
 // ============================================================================
@@ -1012,6 +1179,67 @@ out:
     return ret;
 }
 
+static CommodityPrice::Instance *price_instance_for(int endpoint_id)
+{
+    for (int i = 0; i < s_price_count; i++) {
+        if (s_price_ep_ids[i] == endpoint_id) return s_price_instances[i];
+    }
+    return nullptr;
+}
+
+esp_err_t matter_bridge_report_tariff_price(int endpoint_id, double price_eur_per_kwh,
+                                            const char *tariff_name)
+{
+    if (!s_matter_started) return ESP_ERR_INVALID_STATE;
+
+    bool held;
+    if (!stack_lock(&held)) return ESP_FAIL;
+
+    esp_err_t ret = ESP_OK;
+    CommodityPrice::Instance *inst = price_instance_for(endpoint_id);
+    if (!inst) {
+        ret = ESP_ERR_NOT_FOUND;
+        goto out;
+    }
+
+    {
+        chip::app::DataModel::Nullable<CommodityPrice::Structs::CommodityPriceStruct::Type> value;
+        if (price_eur_per_kwh > 0) {
+            // periodStart obligatoire : rien n'est publie tant que l'heure
+            // n'est pas synchronisee (juste apres le demarrage), l'appelant
+            // republie plus tard (voir matter_device_manager_tariff_price_tick)
+            uint32_t chip_epoch = 0;
+            time_t now = time(NULL);
+            if (now < 1577836800 /* 2020-01-01 */ ||
+                !chip::UnixEpochToChipEpochTime((uint32_t)now, chip_epoch)) {
+                ret = ESP_ERR_INVALID_STATE;
+                goto out;
+            }
+            CommodityPrice::Structs::CommodityPriceStruct::Type price;
+            price.periodStart = chip_epoch;
+            // periodEnd inconnu (pas de calendrier tarifaire complet cote
+            // TIC) : la prochaine periode re-ecrit la valeur a son propre
+            // changement.
+            price.price.SetValue((int64_t)llround(price_eur_per_kwh * 10000.0));  // decimalPoints = 4
+            static char s_desc[32];
+            if (tariff_name && tariff_name[0]) {
+                strlcpy(s_desc, tariff_name, sizeof(s_desc));
+                price.description.SetValue(chip::CharSpan::fromCharString(s_desc));
+            }
+            value.SetNonNull(price);
+        }
+        CHIP_ERROR err = inst->SetCurrentPrice(value);
+        if (err != CHIP_NO_ERROR) {
+            ESP_LOGW(TAG, "CommodityPrice ep=%d : %" CHIP_ERROR_FORMAT, endpoint_id, err.Format());
+            ret = ESP_FAIL;
+        }
+    }
+
+out:
+    stack_unlock(held);
+    return ret;
+}
+
 // ============================================================================
 // API publique
 // ============================================================================
@@ -1325,6 +1553,9 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
         }
         if (profile ? (profile->zlinky && (profile->caps & MCAP_ENERGY)) : device_type == MATTER_DEV_ENERGY_METER) {
             linky_endpoint_init(new_ep_id, zigbee_ieee);
+        }
+        if (profile && (profile->caps & MCAP_LINKY_PRICE)) {
+            price_endpoint_init(new_ep_id);
         }
     }
 

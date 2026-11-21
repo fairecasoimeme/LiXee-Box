@@ -20,7 +20,7 @@ extern "C" {
 #define MATTER_BRIDGE_PRODUCT_NAME    "LiXee MatterBridge"
 #define MATTER_BRIDGE_VENDOR_NAME     "LiXee"
 #define MATTER_BRIDGE_HW_VERSION      1
-#define MATTER_BRIDGE_SW_VERSION_STR  "3.2"
+#define MATTER_BRIDGE_SW_VERSION_STR  "3.3"
 
 // Nombre max d'endpoints dynamiques (devices Zigbee exposes via Matter)
 #define MATTER_BRIDGE_MAX_ENDPOINTS   32
@@ -92,6 +92,24 @@ bool matter_bridge_get_onboarding_codes(const char **qr_code, const char **manua
 esp_err_t matter_bridge_report_energy_index(int endpoint_id, uint16_t attr_id, uint64_t wh);
 
 /**
+ * Publie le prix courant du kWh (cluster standard CommodityPrice, 0x0095) sur
+ * l'EP Linky, d'apres la configuration tarifaire de la page Energie (voir
+ * energy_service_get_live()). Sans effet si l'endpoint n'a pas la capacite
+ * MCAP_LINKY_PRICE (voir matter_profile.h).
+ * @param endpoint_id  Endpoint Matter du ZLinky
+ * @param price_eur_per_kwh  Prix EUR/kWh de la periode tarifaire en cours ;
+ *                           <= 0 efface le prix courant (valeur Nullable null,
+ *                           tarif pas encore configure sur la page Energie)
+ * @param tariff_name  Libelle de la periode en cours ("Heures Creuses"...),
+ *                      peut etre NULL
+ * @return ESP_ERR_INVALID_STATE si Matter n'est pas demarre ou si l'heure
+ *         n'est pas encore synchronisee (rien n'est publie : periodStart
+ *         serait faux), ESP_ERR_NOT_FOUND si l'EP n'a pas le cluster
+ */
+esp_err_t matter_bridge_report_tariff_price(int endpoint_id, double price_eur_per_kwh,
+                                            const char *tariff_name);
+
+/**
  * Supprime un endpoint dynamique
  */
 esp_err_t matter_bridge_remove_endpoint(int endpoint_id);
@@ -137,25 +155,66 @@ typedef esp_err_t (*matter_virtual_write_cb_t)(int endpoint_id, uint32_t cluster
 void matter_bridge_set_virtual_write_cb(matter_virtual_write_cb_t cb);
 
 /**
+ * Un preset personnalise de thermostat (issue #80), en plus des deux presets
+ * fixes Confort/Hors-gel. handle : 0x03.. (0x01/0x02 reserves aux fixes).
+ * heating_setpoint en centiemes de degre. scenario : valeur numerique de
+ * chip::app::Clusters::Thermostat::PresetScenarioEnum (pas de dependance aux
+ * headers Matter ici, cote C pur).
+ */
+#define MATTER_PRESET_NAME_LEN     32
+#define MATTER_PRESET_MAX_CUSTOM   3
+typedef struct {
+    uint8_t  handle;
+    char     name[MATTER_PRESET_NAME_LEN];
+    int32_t  heating_setpoint;
+    uint8_t  scenario;
+} matter_preset_t;
+
+/**
  * Invoque quand un controleur Matter selectionne un preset (commande
  * SetActivePresetRequest du cluster Thermostat, feature Presets) sur un
- * thermostat virtuel. frost : true si le preset "Hors-gel" a ete choisi,
- * false pour "Confort". Ne concerne que les endpoints crees avec
+ * thermostat virtuel. handle : 0x01 "Confort", 0x02 "Hors-gel", 0x03+ un
+ * preset personnalise (issue #80). Ne concerne que les endpoints crees avec
  * matter_profile_t.presets (voir matter_bridge_add_virtual_endpoint).
  */
-typedef esp_err_t (*matter_thermostat_preset_cb_t)(int endpoint_id, bool frost);
+typedef esp_err_t (*matter_thermostat_preset_cb_t)(int endpoint_id, uint8_t handle);
 /** Un seul module gere les presets (les thermostats virtuels). */
 void matter_bridge_set_thermostat_preset_cb(matter_thermostat_preset_cb_t cb);
 
 /**
- * Met a jour le contenu des presets Matter "Confort"/"Hors-gel" d'une zone de
- * thermostat virtuel et l'etat actif courant, pour qu'un controleur Matter
- * les lise a jour. Consignes en centiemes de degre (comme
- * matter_bridge_set_number sur 0x0201/0x0012). Sans effet si l'endpoint n'a
- * pas la feature Presets.
+ * Invoque quand un controleur Matter valide l'edition des presets
+ * personnalises d'un thermostat virtuel (AtomicRequest CommitWrite sur
+ * l'attribut Presets, issue #80). Notification seule : le contenu final est
+ * a relire via matter_bridge_get_thermostat_custom_presets().
+ */
+typedef esp_err_t (*matter_thermostat_preset_commit_cb_t)(int endpoint_id);
+/** Un seul module gere les presets (les thermostats virtuels). */
+void matter_bridge_set_thermostat_preset_commit_cb(matter_thermostat_preset_commit_cb_t cb);
+
+/**
+ * Lit la liste de presets personnalises courante d'un endpoint, telle que
+ * retenue par le delegate Matter apres un commit (voir
+ * matter_thermostat_preset_commit_cb_t). A appeler depuis la tache des
+ * thermostats (prend lixee_chip_lock() en interne : ordre de verrou
+ * identique a matter_sync_all()/SyncFromZone, jamais l'inverse).
+ * @return false si l'endpoint n'a pas de delegate Presets.
+ */
+bool matter_bridge_get_thermostat_custom_presets(int endpoint_id, matter_preset_t *out,
+                                                 int max_out, int *out_count);
+
+/**
+ * Met a jour le contenu des presets Matter "Confort"/"Hors-gel" et des
+ * presets personnalises (issue #80) d'une zone de thermostat virtuel, ainsi
+ * que le handle actif courant, pour qu'un controleur Matter les lise a jour.
+ * Consignes en centiemes de degre (comme matter_bridge_set_number sur
+ * 0x0201/0x0012). active_custom_handle : 0 si Confort/Hors-gel est actif
+ * (voir frost_active), sinon le handle du preset personnalise actif. Sans
+ * effet si l'endpoint n'a pas la feature Presets.
  */
 void matter_bridge_set_thermostat_presets(int endpoint_id, int32_t comfort_setpoint,
-                                          int32_t frost_setpoint, bool frost_active);
+                                          int32_t frost_setpoint, bool frost_active,
+                                          const matter_preset_t *custom, int custom_count,
+                                          uint8_t active_custom_handle);
 
 /**
  * Cree un endpoint virtuel. uid : identifiant stable (UniqueID), product :

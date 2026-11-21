@@ -72,6 +72,7 @@ L'appareil peut être configuré via un site web local
 ### 🔧 Gestion des Appareils Zigbee
 - Création et gestion d'objets Zigbee
 - Modèles personnalisables pour différents types d'appareils
+- **Templates personnels** (à partir de la v3.3) : un modèle modifié avec **Personnaliser** est conservé à part et n'est plus écrasé par les mises à jour (voir [Templates personnels](#templates-personnels-à-partir-de-la-v33))
 - Gestion des états et actions
 - **Groupes d'actions** : un bouton pour déclencher plusieurs actions sur des appareils différents (à partir de la v2.23)
 - **Volets roulants** : position 0–100 % par curseur, avec retour d'état en temps réel (à partir de la v2.23)
@@ -90,6 +91,7 @@ L'appareil peut être configuré via un site web local
 - Appareils **Zigbee**, **LoRa** (ZLinky LoRa), **thermostats virtuels** et **groupes d'actions**
 - Compatible **Home Assistant**, **Apple Maison**, **Amazon Alexa** et les contrôleurs Matter qui acceptent les appareils non certifiés
 - Code d'appairage **propre à chaque box**, choix des appareils publiés appareil par appareil
+- **Matter 1.5** (à partir de la v3.2) : le ZLinky est publié comme compteur électrique, avec l'identification du compteur et ses index par période tarifaire
 
 ### 📊 Surveillance et Tableau de Bord
 - Tableau de bord énergétique avec jauges et graphiques
@@ -101,9 +103,11 @@ L'appareil peut être configuré via un site web local
 - **Ethernet** (W5500, à partir de la v2.26) prioritaire, **WiFi en secours** : le WiFi est coupé quand l'Ethernet est connecté (v3.0), et relancé si le câble reste débranché 30 s
 - **Matter** : voir [Pont Matter](#-pont-matter-à-partir-de-la-v30) (à partir de la v3.0)
 - **MQTT** : Serveur/port/utilisateur/mot de passe personnalisables
+- **MQTT chiffré (TLS)** (à partir de la v3.2) : autorités publiques ou certificat d'une autorité privée, **TLS mutuel** par certificat client, ALPN (AWS IoT Core sur le port 443)
 - **MQTT Discovery** compatible avec Home Assistant
 - **WebPush API** : URL/utilisateur/mot de passe
 - **Tunnel d'accès distant** : Accès sécurisé à la LiXee-Box depuis Internet sans ouverture de ports (reverse proxy WebSocket)
+- **Découverte mDNS** : service `_http._tcp` (instance `LIXEEBOX-XXXX`) avec le fabricant, le modèle, la version, l'adresse MAC et la version de l'API (à partir de la v3.2)
 
 ### ⚡ Gestion de l'Énergie
 - Règles automatisées pour le délestage de charge et le routage énergétique
@@ -119,7 +123,7 @@ L'appareil peut être configuré via un site web local
 - Hors-gel, forçage manuel, cadran temps réel — guide détaillé : [THERMOSTATS.md](THERMOSTATS.md)
 
 ### 🔒 Sécurité
-- Authentification par sessions (token 32 caractères, durée 24h, max 4 sessions simultanées)
+- Authentification par sessions (token 32 caractères, durée 24h, max 16 sessions simultanées à partir de la v3.2, 4 avant)
 - Page de connexion dédiée avec redirection automatique, et retour sur la page demandée après connexion
 - Compatibilité Basic Auth pour les clients API
 - Tunnel d'accès distant autorisé uniquement si l'accès sécurisé est activé **avec un identifiant et un mot de passe** (à partir de la v2.23)
@@ -131,7 +135,7 @@ L'appareil peut être configuré via un site web local
 - Mise à jour **automatique** depuis les releases GitHub de la LiXee-Box (source fixe, non modifiable), sans le mode développeur (à partir de la v3.0)
 - Mise à jour **manuelle** par fichier `update.tar` (firmware + pages web)
 - Contrôle de l'image avant installation : un firmware qui n'est pas celui de la LiXee-Box v3 est refusé (à partir de la v3.0)
-- Sauvegarde/restauration de configuration
+- Sauvegarde/restauration de configuration (avec les codes infrarouges appris à partir de la v3.2)
 - Mode développeur pour le débogage
 
 ## 🚀 Installation et Configuration
@@ -184,7 +188,7 @@ Une LiXee-Box en **v2.x** (Arduino) passe en v3 **sans ordinateur**, par sa page
 ### Avant de commencer
 - Faites une **sauvegarde** : **A propos → Sauvegarde**. Elle sert si vous voulez un jour revenir en v2.x.
 - Faites la mise à jour depuis le **réseau local** (adresse IP de la box), plutôt que par l'accès distant (tunnel).
-- La box doit avoir environ **4,5 Mo libres** pendant l'installation : le paquet (3,4 Mo) et les fichiers qu'il installe cohabitent un moment. La v2.x ne vérifie pas cette place lors d'un envoi manuel : une box très chargée (nombreuses sauvegardes, historiques, journaux de debug) peut se retrouver en v3 avec une interface incomplète.
+- La box doit avoir environ **4,5 Mo libres** pendant l'installation : le paquet (3,5 Mo) et les fichiers qu'il installe cohabitent un moment. La v2.x ne vérifie pas cette place lors d'un envoi manuel : une box très chargée (nombreuses sauvegardes, historiques, journaux de debug) peut se retrouver en v3 avec une interface incomplète.
 
 ### Mise à jour
 - **Manuelle** : téléchargez le fichier `update.tar` de la [release v3](https://github.com/fairecasoimeme/LiXee-Box/releases), puis **A propos → Mise à jour** et envoyez-le
@@ -218,6 +222,17 @@ Cliquer sur "A propos" puis "Mise à jour"
 ![Mise à Jour du Firmware](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Update.png)
 
 L'interface de mise à jour vous permet de maintenir votre LiXee-Box à jour avec les dernières fonctionnalités.
+
+#### Templates personnels (à partir de la v3.3)
+
+Une mise à jour remplace les **templates livrés** (dossier `tp/`) : une modification faite directement dans l'un d'eux est perdue. Les templates livrés sont donc en **lecture seule** dans l'interface. Pour modifier un modèle, ouvrez son template dans **Outils → Templates** (mode développeur), choisissez le modèle et cliquez sur **Personnaliser** : il est copié dans les **templates personnels** (dossier `tpu/`), où vous le modifiez. Les mises à jour ne touchent jamais ce dossier.
+
+- Un modèle personnel remplace celui du fichier livré de **même nom**, modèle par modèle : les autres modèles du fichier continuent de profiter des corrections des nouvelles versions
+- Les nouveaux templates (création, import) vont directement dans les templates personnels
+- Supprimer un template personnel fait revenir les appareils au template livré
+- Les templates personnels sont inclus dans la sauvegarde
+
+⚠️ La mise à jour **vers la v3.3** est encore faite par la version installée : sauvegardez une dernière fois vos templates modifiés avant, puis recopiez vos modèles dans les templates personnels.
 
 ⚠️ **Si la mise à jour ne fonctionne pas, veuillez passer avec la méthode suivante (avec un ordinateur)**
 
@@ -253,10 +268,20 @@ Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START
 
 #### En mode console
 
-1. Ouvrir une console ou powershell et se placer dans le répertoire où se trouvent les fichiers
-2. Taper la commande suivante :
+1. Ouvrir une console ou PowerShell et se placer dans le répertoire où se trouvent les fichiers.
+2. Taper la commande correspondant à la version d'**esptool** installée, en remplaçant `COMxx` par le nom du port COM utilisé.
 
-   ```esptool.exe --chip esp32s3 --port "COMXX" --baud 460800 write_flash -z --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin```
+   **Avec esptool 5 ou supérieur :**
+
+   ```bash
+   esptool.exe --chip esp32s3 --port "COMxx" --baud 460800 write-flash -z --flash-mode dio --flash-freq 80m --flash-size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin
+   ```
+
+   **Avec esptool 4 :**
+
+   ```bash
+   esptool.exe --chip esp32s3 --port "COMxx" --baud 460800 write_flash -z --flash_mode dio --flash_freq 80m --flash_size 16MB 0x0 bootloader.bin 0x8000 partitions.bin 0xe000 ota_data_initial.bin 0x10000 firmware.bin 0x910000 littlefs.bin
+   ```
 
    Si le flash échoue à 460800 bauds, relancez avec `--baud 115200`.
 
@@ -274,6 +299,8 @@ Il ne reste plus qu'à sélectionner le bon port COM puis de cliquer sur START
 3. La page affiche le **code d'appairage manuel** et le contenu du **QR code** (bouton **Afficher le QR code**)
 
 Le code d'appairage est **propre à chaque box** : il est tiré au hasard au premier démarrage de Matter, puis conservé.
+
+Si Matter ne peut pas démarrer (mémoire NVS pleine, par exemple), la box continue de fonctionner sans Matter et la page Matter en affiche la cause (à partir de la v3.2). Le **Factory Reset Matter** reste alors possible.
 
 ### Appairer la box
 
@@ -303,18 +330,19 @@ Chaque appareil Matter est construit à partir des états de son template :
 | Capteurs d'ouverture | contact, batterie |
 | Prises, relais, contacteurs | marche/arrêt, puissance, tension, courant, énergie selon le template |
 | Compteurs d'énergie (Tuya TS0601, SEM-4…) | puissance, tension, courant, énergie |
-| **ZLinky** (Zigbee et LoRa) | compteur : index, puissance apparente, tension et courant (phase 1) |
+| **ZLinky** (Zigbee et LoRa) | compteur : index, puissance apparente, tension et courant (phase 1) ; à partir de la v3.2, compteur électrique (Electrical Utility Meter) avec identification (ADSC, puissance souscrite, TIC standard ou historique) et index EASF01 à EASF10 en kWh |
 | Volets roulants (TS130F…) | volet : monter, descendre, stop, position |
 | Têtes thermostatiques (TRVZB, Tuya) | thermostat chauffage, batterie |
 | Climatiseurs (AC201A, IRB-4) | thermostat chaud/froid, ventilation |
 | Boutons (SNZB-01P, Aqara) | bouton : appui simple, multiple, long ; batterie |
-| **Thermostats virtuels** | thermostat |
+| **Thermostats virtuels** | thermostat ; presets **Confort** et **Hors-gel** en chauffage (à partir de la v3.2, Home Assistant) |
 | **Groupes d'actions** publiés dans Matter | interrupteur virtuel |
 
 ### Limites
 - **Certificat de développement** : la box utilise le certificat de test d'Espressif, pas une certification de la CSA. Home Assistant (avec Test DCL), Apple Maison et Amazon Alexa (essayé avec un Echo) l'acceptent ; **Google Home n'accepte que les appareils certifiés**
 - **Amazon Alexa** : un volet ne peut pas être ajouté à une routine. Créez deux groupes d'actions (ouvrir, fermer) et publiez-les dans Matter comme interrupteurs en **mode impulsion** : ils s'utilisent dans les routines
-- **Apple Maison** n'affiche pas les compteurs et mesures d'énergie (ZLinky, puissance des prises)
+- **Apple Maison** n'affiche pas les compteurs et mesures d'énergie (ZLinky, puissance des prises), ni les presets des thermostats virtuels
+- L'identification du compteur et les index par période (v3.2) utilisent des clusters encore **provisoires** dans Matter 1.5 : peu de contrôleurs les affichent
 - **Appareils à plusieurs voies** : une seule voie est publiée
 - **Triphasé** : les phases 2 et 3 ne sont pas publiées
 - **Sans équivalent Matter** : énergie injectée, modes fil pilote, vanne d'arrosage, champs TIC propres au Linky
@@ -468,6 +496,48 @@ Les zones de présence sont affichées en transparence sur le graphique de conso
 ##### Compatibilité
 Tout device Zigbee reportant le cluster **Occupancy (0x0406)** avec l'attribut **0x0000** est compatible.
 
+#### Température sur le graphe d'usage (à partir de la v3.3)
+
+Le graphe « Usage d'électricité » peut afficher la température de une à quatre sondes Zigbee, une courbe par sonde sur un axe à droite. Utile pour relier la consommation de chauffage ou de climatisation à la température intérieure ou extérieure.
+
+* **Vue heure** : température moyenne de chaque heure des dernières 24 h (l'heure en cours est une moyenne partielle).
+* **Vue jour** : moyenne de chaque jour des 30 derniers jours ; l'infobulle donne aussi le minimum et le maximum des moyennes horaires.
+
+La box relève chaque minute la dernière température connue de chaque sonde et en fait la moyenne sur l'heure. Une sonde silencieuse depuis plus de 3 h n'est plus comptée. L'historique est conservé dans `hst/temperature.json` (inclus dans la sauvegarde).
+
+##### Configuration
+
+1. Accédez à la page **Config** --> **Énergie**
+2. Dans l'onglet **Température**, cochez les sondes à afficher (4 au plus)
+3. Laissez **Afficher sur le graphique** coché et enregistrez
+
+##### Compatibilité
+Tout device Zigbee reportant le cluster **Temperature Measurement (0x0402)**, attribut **0x0000**. Les sondes LoRa ne sont pas encore prises en charge.
+
+#### Historique détaillé (à partir de la v3.3)
+
+Le bouton **Historique** en haut du tableau de bord **Mesures** --> **Energie** (ou l'icône d'agrandissement, deux flèches, à droite du titre du graphe d'usage) donne accès à tout l'historique enregistré par la box, alors que le tableau de bord reste sur les 24 dernières heures, les 30 derniers jours, les 12 derniers mois et les années.
+
+* **Granularités** : heure (un jour), jour (un mois), semaine (12 semaines), mois (une année), année (10 ans).
+* **Navigation** : flèches ‹ › pour la période précédente ou suivante, bouton **Aujourd'hui**, calendrier pour choisir un jour (les jours sans données sont grisés), et **période libre** du … au … (31 jours au plus en vue heure).
+* **Electricité, production et gaz** sur le même graphe : index tarifaires, sous-compteurs, production (sous l'axe) et gaz (dans la pile s'il est compté en Wh ou kWh, sinon sur son propre axe). L'eau a son propre graphe.
+* **Lignes de référence** : budget mensuel ramené au créneau (en kWh au prix moyen de la période, ou en €), talon (créneau le plus faible) et max (créneau le plus fort) de la consommation électrique, pour la granularité affichée ; le créneau en cours n'est pas compté.
+* **Outils** : affichage en kWh ou en €, barres empilées ou séparées, comparaison avec la période précédente ou la même période de l'année précédente, zoom (molette, pincement, sélection), température et présence, export CSV de la période affichée.
+* **Statistiques de la période** : consommation et coût (abonnement compris), moyenne, pic, consommation de fond la nuit (vue heure), part des heures creuses, production, gaz, écart avec la période comparée, température moyenne et extrêmes, heures de présence.
+
+##### Conservation
+
+La box recopie ses compteurs dans `hst/` toutes les 15 minutes et à chaque changement d'heure (un fichier n'est réécrit que si son contenu change) :
+
+| Fichier | Contenu | Conservation |
+|---|---|---|
+| `hr_aaaammjj.json` | une journée heure par heure (énergie, température, présence) | 400 jours (13 mois) |
+| `dy_aaaamm.json` | un mois jour par jour | sans limite |
+| `mo_aaaa.json` | une année mois par mois | sans limite |
+| `yr.json` | les années | sans limite |
+
+Environ 2 Mo pour 13 mois, inclus dans la sauvegarde. Le détail heure par heure commence à la mise à jour en v3.3 ; les 30 derniers jours, 12 derniers mois et les années déjà connus de la box sont repris dès le premier enregistrement. **Effacer l'historique** (Config Energie) retire aussi l'énergie de ces fichiers (température et présence restent).
+
 ### Production d'énergie et Injection
 
 #### Mode Producteur
@@ -523,6 +593,21 @@ La LiXee-Box reçoit des objets **LoRa 2.4 GHz** en plus du Zigbee. Le premier e
 ![Fiche d'un appareil LoRa](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_LoRa_Reseau.png)
 
 > **Documentation technique** : le protocole radio est décrit dans [doc/LORA_PROTOCOL.md](doc/LORA_PROTOCOL.md).
+
+### Dépannage
+
+#### L'appairage du ZLinky LoRa ne va pas au bout (SF11)
+Le ZLinky LoRa est alimenté par le compteur Linky, qui ne fournit que peu d'énergie (certains compteurs, notamment triphasés, encore moins). Pendant l'appairage, les firmwares du ZLinky LoRa antérieurs à **ZLinky_LoRa_1.1.5+a01d757** peuvent manquer d'énergie pour émettre leur confirmation : l'émission est coupée et l'appairage échoue, surtout en **SF11** (réglage par défaut), dont les trames sont plus longues. L'assistant d'appairage (à partir de la v3.3) indique alors la cause de l'échec et quoi faire.
+
+**Solution** : mettez le ZLinky LoRa à jour avec le firmware **ZLinky_LoRa_1.1.5+a01d757** ou plus récent. Il attend d'avoir rechargé sa réserve avant de confirmer et adapte sa puissance d'émission à la qualité radio : l'appairage aboutit en **SF11**, sans rien changer sur la box.
+
+**Contournement**, en dernier recours, si le ZLinky LoRa ne peut pas être mis à jour :
+1. Allez dans **Réseau → LoRa → Config**
+2. Choisissez **SF10** dans **Spreading Factor**, puis cliquez sur **Appliquer**
+3. Réinitialisez le ZLinky LoRa : **appui de 5 secondes** sur son bouton (indispensable après un appairage raté)
+4. Relancez l'assistant d'appairage (**Réseau → LoRa**) : l'appairage va jusqu'au bout
+
+Laissez ensuite le réglage en **SF10** : un changement de SF ne s'applique qu'au prochain appairage, et repasser en SF11 imposerait de ré-appairer le ZLinky. La portée en SF10 est un peu plus courte qu'en SF11 ; vérifiez la qualité de réception (**RSSI / SNR / PDR**) sur la fiche de l'appareil.
 
 ---
 
@@ -891,6 +976,7 @@ La **LiXee-Box** est compatible avec un large éventail d'appareils Zigbee grâc
 | Marque | Modèles | Mesures | Notes | Template | Testé |
 |--------|---------|---------|-------|:--------:|:-----:|
 | **NodOn** | SEM-4-1-00 | Tension, intensité, puissances, facteur de puissance | Module de mesure | 📋 | |
+| **Sonoff** | MINI-ZB1GP (MINI PM) | Puissance, tension, intensité, énergie du jour, énergie injectée, index total | Micromodule, puissance négative en injection (à partir de la v3.2) | 📋 | |
 
 ---
 
@@ -1191,6 +1277,30 @@ Exemple de fichier 24321.json pour l'appareil id (5F01 Hex) :
 | `manufacturerSpecific` | | String | Code fabricant (hex) pour un attribut propriétaire, ex. `"0x1021"` |
 | `mode` | | String | Modes du Linky concernés, séparés par `;` (ex. `"3;7"`) : la ligne n'est utilisée que dans ces modes |
 | `writable` | | Boolean | Attribut modifiable depuis l'interface |
+| `typewritable` | si `writable` | Decimal | Type de donnée utilisé pour écrire l'attribut (voir ci-dessous) |
+
+#### Type d'écriture (`typewritable`)
+Pour écrire un attribut, la box doit encoder la valeur dans le type attendu par l'appareil. `typewritable` donne ce type, **en décimal** :
+
+- **Cluster Zigbee standard ou propriétaire** : identifiant du type de donnée ZCL (Zigbee Cluster Library). Il fixe le nombre d'octets et le signe de la valeur envoyée. Le type est celui de l'attribut dans la documentation de l'appareil, ou celui reçu dans ses rapports (colonne type des données brutes de la page de l'appareil).
+
+| `typewritable` | Type ZCL | Donnée |
+|----------------|----------|--------|
+| `16` | 0x10 | booléen |
+| `32` | 0x20 | entier non signé 8 bits (0 à 255) |
+| `33` | 0x21 | entier non signé 16 bits (0 à 65535) |
+| `35` | 0x23 | entier non signé 32 bits |
+| `40` | 0x28 | entier signé 8 bits (-128 à 127) |
+| `41` | 0x29 | entier signé 16 bits, ex. consigne de thermostat en centièmes de °C |
+| `48` | 0x30 | énumération 8 bits (modes, états) |
+| `49` | 0x31 | énumération 16 bits |
+| `24` | 0x18 | bitmap 8 bits |
+| `57` | 0x39 | nombre à virgule (flottant 32 bits) |
+| `66` | 0x42 | chaîne de caractères |
+
+- **Cluster Tuya `EF00`** : type du point de donnée (DP) Tuya : `1` booléen, `2` valeur numérique sur 4 octets, `3` chaîne, `4` énumération, `5` bitmap.
+
+Exemple : `{ "name": "occupancy_timeout", "cluster": "0406", "attribut": 32, "type": "numeric", "writable": true, "typewritable": 33 }`
 
 ### Action
 ### Paramètres d'Action
@@ -1266,6 +1376,8 @@ Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, 
 | `/api/energy/submeters` | GET | Sous-compteurs | `/getSubMeters` |
 | `/api/energy/chart?ieee=&time=` | GET | Données du graphe d'énergie (`time` : `hour`, `day`, `month`, `year`) | `/loadEnergyChart` |
 | `/api/energy/chart/export?ieee=&time=` | GET | Même chose en CSV | `/exportEnergyChart` |
+| `/api/energy/zlinkys` | GET | ZLinky appairés (Zigbee et LoRa) ; les routes `/api/energy/*` acceptent `?zl=<ieee>` pour en afficher un autre que celui de Config Énergie | v3.2 |
+| `/api/energy/history/clear` | POST | Effacer l'historique de consommation et la courbe 24 h (configuration conservée) | v3.2 |
 | **Puissance** (v2.26) | | | |
 | [`/api/power/peaks?days=90`](#apipowerpeaks) | GET | Puissance par jour : pic instantané, sur 1 min, plateau sur 10 min, temps passé près de la coupure | v2.26 |
 | [`/api/power/floor?days=30`](#apipowerfloor) | GET | Consommation plancher de la nuit | v2.26 |
@@ -1291,8 +1403,11 @@ Les routes de l'API sont servies par la box : `http://<HOST>/api/...` en local, 
 | `/api/rules/add`, `/edit`, `/delete`, `/toggle` | POST | Gérer les règles | |
 | `/api/actiongroups/list`, `/devices` | GET | Groupes d'actions et appareils utilisables | |
 | `/api/actiongroups/run`, `/save`, `/delete` | POST | Lancer, enregistrer, supprimer un groupe | |
+| **MQTT** (v3.2) | | | |
+| `/api/config/mqtt/ca` | POST | Certificat PEM de l'autorité privée du broker (corps brut) | v3.2 |
+| `/api/config/mqtt/client` | POST | Certificat client et clé privée non chiffrée, en PEM (TLS mutuel) | v3.2 |
 | **Matter** (v3.0) | | | |
-| `/api/matter/status` | GET | Activation, appairage, codes d'appairage, nombre d'appareils publiés | v3.0 |
+| `/api/matter/status` | GET | Activation, appairage, codes d'appairage, nombre d'appareils publiés ; erreur de démarrage et occupation de la NVS (v3.2) | v3.0 |
 | `/api/matter/config` | POST | Activer ou désactiver Matter (`{"enabled":true}`, redémarrage nécessaire) | v3.0 |
 | `/api/matter/excluded` | GET | Appareils retirés de Matter | v3.0 |
 | `/api/matter/expose` | POST | Publier ou retirer un appareil (`{"ieee":"...","expose":true}`) | v3.0 |
@@ -1680,7 +1795,7 @@ curl -X POST 'https://<HOST>/api/delestage/restore'\
 Réponse `202 {"status":"pending"}` : la commande part au tour de boucle suivant, relire `/api/delestage` pour l'état. En accès direct, la requête POST doit porter un en-tête `Origin` ou `Referer` du même hôte (protection CSRF).
 
 #### api/energy/tariff
-Tarif en cours (bandeau de la page Énergie). Depuis la v2.26 : `index` (attribut de l'index en cours, 256…272), `price` (prix du kWh en cours, `null` s'il n'est pas saisi) et `nextChange` (prochain changement `HH:MM` : 06:00 / 22:00 en Tempo, heures de bascule observées en HC/HP et EJP, `null` en Base ou tant qu'une journée complète n'a pas été observée).
+Tarif en cours (bandeau de la page Énergie). Depuis la v2.26 : `index` (attribut de l'index en cours, 256…272), `price` (prix du kWh en cours, `null` s'il n'est pas saisi) et `nextChange` (prochain changement `HH:MM` : 06:00 / 22:00 en Tempo, heures de bascule observées en HC/HP et EJP, `null` en Base ou tant qu'une journée complète n'a pas été observée). À partir de la v3.2, `index` et `price` valent `null` tant que le tarif en cours n'est pas identifié (`"tariff": "---"`, juste après le démarrage).
 
 ##### Requête
 ```bash
@@ -1760,6 +1875,7 @@ Remplissez le formulaire :
   * Port MQTT
   * Nom d'utilisateur MQTT
   * Mot de passe MQTT
+  * Sécurité (à partir de la v3.2) : aucune, TLS avec les autorités publiques, ou TLS avec le certificat de votre autorité, et en option un certificat client (TLS mutuel)
 
 Puis choisissez **Home Assistant (auto-discovery)** et cliquez sur **Sauvegarder**  
 Attendez un moment et si tout est correct, l'icône de connexion deviendra verte.
@@ -1794,6 +1910,7 @@ Version 3 (ESP-IDF) :
 * [espressif / esp-matter](https://github.com/espressif/esp-matter) et [project-chip / connectedhomeip](https://github.com/project-chip/connectedhomeip)
 * [joltwallet / esp_littlefs](https://github.com/joltwallet/esp_littlefs)
 * [espressif / mdns](https://github.com/espressif/esp-protocols)
+* [espressif / led_strip](https://github.com/espressif/idf-extra-components)
 * [DaveGamble / cJSON](https://github.com/DaveGamble/cJSON)
 
 Version 2.x (Arduino) :

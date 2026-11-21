@@ -1,18 +1,19 @@
 idf_component_register(
     SRCS
         "energy_service.cpp"
+        "energy_archive.cpp"
         "power_stats.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES
         log
+        json
     PRIV_REQUIRES
         energy_history
         device_data
         config_manager
         zigate
         ntp_sync
-        json
         vfs
         esp_timer
 )

@@ -62,6 +62,7 @@ static const char *TAG = "LORA";
 #define LORA_PAIR_CHANNEL   3       // 2440 MHz : rendez-vous d'appairage
 #define LORA_OP_CHANNEL     4       // 2450 MHz : canal de donnees par defaut
 #define LORA_PAIR_WINDOW_MS (LORA_PAIR_WINDOW_S * 1000UL)
+#define LORA_CONFIRM_WAIT_MS 4000UL
 // SF du rendez-vous : celui du firmware actuel du ZLinky LoRa. L'emetteur doit
 // utiliser le MEME, sinon il n'est pas entendu (cf. commentaire de la Box).
 #define LORA_PAIR_SF        11
@@ -165,6 +166,7 @@ typedef struct {
     float    last_snr;
     uint32_t last_seen_ms;
     time_t   last_seen_epoch;
+    bool     live;              // trame recue depuis le demarrage (last_seen_ms valide)
     uint16_t short_addr;        // synthetique, unique (affichage)
     // Lecture d'attribut a la demande (sect. 8)
     bool     poll_pending;
@@ -197,6 +199,8 @@ typedef struct {
 } emitter_t;
 
 static emitter_t s_em[LORA_MAX_EMITTERS];
+static bool     s_state_dirty;          // etat radio a enregistrer (lora_state.json)
+static uint32_t s_state_saved_ms;
 
 static SemaphoreHandle_t s_lock = NULL;
 static TaskHandle_t      s_task = NULL;
@@ -220,6 +224,12 @@ static uint8_t  s_pending_key[KEY_SIZE];
 static char     s_pending_device_id[8];
 static char     s_pending_model[24];
 static uint32_t s_last_pair_rearm = 0;
+
+// Echec de la fenetre en cours (lora_pair_issue), remis a zero a l'ouverture
+typedef enum { PI_NONE = 0, PI_NO_CONFIRM, PI_CONFIRM_CUT, PI_TX_FAIL, PI_BAD_PROOF, PI_NO_SLOT } pair_issue_t;
+static pair_issue_t s_pair_issue = PI_NONE;
+static bool s_confirm_crc = false;     // trame illisible pendant l'attente du CONFIRM
+static uint32_t s_response_ms = 0;     // envoi de la PAIR_RESPONSE (delai du CONFIRM)
 
 static uint64_t s_paired_ieee = 0;
 static char     s_paired_model[24] = "";
@@ -667,6 +677,85 @@ static esp_err_t save_config(void)
     return err;
 }
 
+/**
+ * Etat radio repris au demarrage : sans lui, trames, RSSI, SNR, version et
+ * derniere activite repartaient de zero a chaque redemarrage, et l'emetteur
+ * paraissait muet jusqu'a sa trame suivante (plusieurs minutes).
+ */
+static void load_state(void)
+{
+    char *txt = read_text_file(LORA_STATE_PATH, 4096);
+    if (!txt) return;
+    cJSON *doc = cJSON_Parse(txt);
+    free(txt);
+    if (!doc) { ESP_LOGW(TAG, LORA_STATE_PATH " illisible"); return; }
+    for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
+        emitter_t *e = &s_em[i];
+        if (!e->valid) continue;
+        char mh[17];
+        mac_hex(e->mac, mh);
+        const cJSON *o = cJSON_GetObjectItem(doc, mh);
+        if (!cJSON_IsObject(o)) continue;
+        const cJSON *v;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "rx")))     e->rx_count = (uint32_t)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "missed"))) e->missed = (uint32_t)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "rssi")))   e->last_rssi = (float)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "snr")))    e->last_snr = (float)v->valuedouble;
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "seen")))   e->last_seen_epoch = (time_t)v->valuedouble;
+        if (cJSON_IsString(v = cJSON_GetObjectItem(o, "version")))
+            strlcpy(e->version, v->valuestring, sizeof(e->version));
+        if (cJSON_IsNumber(v = cJSON_GetObjectItem(o, "fw"))) {
+            e->fw_version = (uint16_t)v->valueint;
+            e->fw_known = true;
+        }
+    }
+    cJSON_Delete(doc);
+}
+
+void lora_save_state(bool force)
+{
+    if (!s_inited || !s_lock || !s_state_dirty) return;
+    if (!force && s_state_saved_ms && millis() - s_state_saved_ms < 10UL * 60 * 1000) return;
+    if (!lock(LORA_LOCK_WAIT_MS)) return;
+    cJSON *doc = cJSON_CreateObject();
+    for (int i = 0; doc && i < LORA_MAX_EMITTERS; i++) {
+        const emitter_t *e = &s_em[i];
+        if (!e->valid) continue;
+        char mh[17];
+        mac_hex(e->mac, mh);
+        cJSON *o = cJSON_AddObjectToObject(doc, mh);
+        if (!o) continue;
+        cJSON_AddNumberToObject(o, "rx", e->rx_count);
+        cJSON_AddNumberToObject(o, "missed", e->missed);
+        cJSON_AddNumberToObject(o, "rssi", e->last_rssi);
+        cJSON_AddNumberToObject(o, "snr", e->last_snr);
+        cJSON_AddNumberToObject(o, "seen", (double)e->last_seen_epoch);
+        cJSON_AddStringToObject(o, "version", e->version);
+        if (e->fw_known) cJSON_AddNumberToObject(o, "fw", e->fw_version);
+    }
+    s_state_dirty = false;
+    unlock();
+    char *txt = doc ? cJSON_PrintUnformatted(doc) : NULL;
+    cJSON_Delete(doc);
+    if (!txt) { s_state_dirty = true; return; }
+    if (cfg_write_file(LORA_STATE_PATH, txt) != ESP_OK) s_state_dirty = true;
+    free(txt);
+    s_state_saved_ms = millis() ? millis() : 1;
+}
+
+/**
+ * Secondes depuis la derniere trame, -1 si inconnue. Apres un redemarrage,
+ * d'apres l'heure de la derniere trame enregistree (horloge plausible).
+ */
+static long emitter_age_s(const emitter_t *e)
+{
+    if (e->live) return (long)((millis() - e->last_seen_ms) / 1000);
+    time_t now = time(NULL);
+    if (e->rx_count && e->last_seen_epoch > 1600000000 && now >= e->last_seen_epoch)
+        return (long)(now - e->last_seen_epoch);
+    return -1;
+}
+
 // ============================================================================
 // Injection des valeurs (equivalent de readZigbeeDatas())
 // ============================================================================
@@ -1096,15 +1185,13 @@ static void ensure_device(emitter_t *e)
     if (e->version[0]) set_basic_string(ieee, 0x4000, e->version);
 
     if (e->device_id[0]) {
-        char file[16], path[48];
+        char file[16];
         snprintf(file, sizeof(file), "%s.json", e->device_id);
-        snprintf(path, sizeof(path), DEVDATA_TP_DIR "/%s", file);
-        struct stat st;
-        if (stat(path, &st) != 0) {
+        if (!device_data_template_exists(file)) {      // tpu/ ou tp/
             ESP_LOGW(TAG, "Template %s introuvable : la fiche de %016llX restera vide",
-                     path, (unsigned long long)ieee);
+                     file, (unsigned long long)ieee);
         } else if (device_data_load_template(ieee, file, e->model) != ESP_OK) {
-            ESP_LOGW(TAG, "Template %s : modele '%s' non charge", path, e->model);
+            ESP_LOGW(TAG, "Template %s : modele '%s' non charge", file, e->model);
         }
     } else {
         ESP_LOGI(TAG, "%016llX : identite pas encore lue, template applique apres le POLL",
@@ -1130,6 +1217,7 @@ static void set_device_version(emitter_t *e, const char *ver)
 {
     if (strcmp(e->version, ver) == 0) return;
     strlcpy(e->version, ver, sizeof(e->version));
+    s_state_dirty = true;
     uint64_t ieee = mac_to_ieee(e->mac);
     set_basic_string(ieee, 0x4000, ver);                    // SWBuildID, comme le ZLinky Zigbee
     device_data_save(ieee);
@@ -1144,6 +1232,7 @@ static void start_pairing_now(void)
     s_pairing_mode = true;
     s_pairing_start = millis();
     s_awaiting_confirm = false;
+    s_pair_issue = PI_NONE;
     // Rendez-vous FIXE : canal 3 + SF11, quelle que soit la config operationnelle
     set_channel(LORA_PAIR_CHANNEL);
     set_sf(LORA_PAIR_SF);
@@ -1197,6 +1286,7 @@ static bool handle_pair_request(const uint8_t *buf, int len)
     esp_err_t st = sx_transmit(pkt, SZ_PAIR_RESPONSE, NULL);
     if (st != ESP_OK) {
         ESP_LOGW(TAG, "TX PAIR_RESPONSE en echec (%s)", esp_err_to_name(st));
+        s_pair_issue = PI_TX_FAIL;
         start_rx();
         return true;
     }
@@ -1205,24 +1295,43 @@ static bool handle_pair_request(const uint8_t *buf, int len)
     set_sf(s_op_sf);
     start_rx();
     s_awaiting_confirm = true;
-    s_confirm_deadline = millis() + 4000;
+    s_confirm_crc = false;
+    // Depuis ZLinky_LoRa_1.1.1+45f2c6c, le CONFIRM part ~2,2-2,5 s apres la
+    // reponse (recharge de la reserve). Sans CONFIRM, le ZLinky renvoie une
+    // PAIR_REQUEST ~6,4 s apres la reponse : au-dela de 4 s d'attente, la box
+    // risquerait de ne pas etre revenue a temps sur le rendez-vous.
+    s_response_ms = millis();
+    s_confirm_deadline = s_response_ms + LORA_CONFIRM_WAIT_MS;
     ESP_LOGI(TAG, "PAIR_RESPONSE envoye -> attente CONFIRM sur canal %d, SF%d", s_op_channel, s_op_sf);
     return true;
 }
 
 static void handle_pair_confirm(const uint8_t *buf, int len)
 {
-    if (!s_awaiting_confirm || len != SZ_PAIR_CONFIRM) return;
-    if (memcmp(&buf[2], s_pending_mac, MAC_SIZE) != 0) return;
+    if (!s_awaiting_confirm) return;
+    if (len != SZ_PAIR_CONFIRM) {
+        ESP_LOGW(TAG, "PAIR_CONFIRM ignore : %d octets au lieu de %d", len, SZ_PAIR_CONFIRM);
+        return;
+    }
+    if (memcmp(&buf[2], s_pending_mac, MAC_SIZE) != 0) {
+        char mh[17];
+        mac_hex(&buf[2], mh);
+        ESP_LOGW(TAG, "PAIR_CONFIRM ignore : emetteur %s, pas celui de la demande", mh);
+        return;
+    }
 
     // Preuve = AES-ECB(MAC(8) || 0x00*8, cle)[0..3]
     uint8_t in[16] = {0}, out[16];
     memcpy(in, s_pending_mac, MAC_SIZE);
     aes_ecb(s_pending_key, in, out);
-    if (memcmp(&buf[10], out, 4) != 0) { ESP_LOGW(TAG, "Preuve d'appairage invalide"); return; }
+    if (memcmp(&buf[10], out, 4) != 0) {
+        ESP_LOGW(TAG, "Preuve d'appairage invalide : reinitialiser l'emetteur (appui 5 s) et reessayer");
+        s_pair_issue = PI_BAD_PROOF;
+        return;
+    }
 
     int slot = find_or_create_slot(s_pending_mac);
-    if (slot < 0) { ESP_LOGW(TAG, "Aucun slot libre (max %d)", LORA_MAX_EMITTERS); return; }
+    if (slot < 0) { ESP_LOGW(TAG, "Aucun slot libre (max %d)", LORA_MAX_EMITTERS); s_pair_issue = PI_NO_SLOT; return; }
     emitter_t *e = &s_em[slot];
     bool known = e->valid;
     if (!known) memset(e, 0, sizeof(*e));
@@ -1234,6 +1343,9 @@ static void handle_pair_confirm(const uint8_t *buf, int len)
     e->seq_init = false;
     e->rx_count = 0;
     e->missed = 0;
+    e->live = false;
+    e->last_seen_epoch = 0;
+    s_state_dirty = true;
     e->poll_pending = false;
     e->poll_setting = 0;
     e->poll_tx = 0;
@@ -1251,9 +1363,13 @@ static void handle_pair_confirm(const uint8_t *buf, int len)
 
     s_awaiting_confirm = false;
     s_pairing_mode = false;
+    // L'emetteur vient de parler : pas d'alerte "Silence" ni de re-armement
+    // de la reception pendant son identification (POLL)
+    s_last_radio_rx = millis();
     char mh[17];
     mac_hex(s_pending_mac, mh);
-    ESP_LOGI(TAG, "*** APPAIRAGE REUSSI *** %s (slot %d)", mh, slot);
+    ESP_LOGI(TAG, "*** APPAIRAGE REUSSI *** %s (slot %d, CONFIRM %lu ms apres la reponse)", mh, slot,
+             (unsigned long)(millis() - s_response_ms));
 
     // Canal dedie a l'assistant (pas une alerte partagee que d'autres pages
     // consommeraient, cf. la Box)
@@ -1413,6 +1529,8 @@ static emitter_t *accept_data_frame(uint8_t *buf, int len, float rssi, float snr
         e->last_snr = snr;
         e->last_seen_ms = millis();
         e->last_seen_epoch = time(NULL);
+        e->live = true;
+        s_state_dirty = true;
         s_last_radio_rx = millis();
 
         // Identification puis version (cluster Basic), si rien d'autre n'attend
@@ -2032,9 +2150,27 @@ static void ota_tick(void)
 // Boucle radio (equivalent de loraReceiverLoop)
 // ============================================================================
 
-// Chien de garde de la reception : un emetteur parle toutes les 5 s, un
-// silence d'une minute signifie une radio sortie de RX. Re-armer est sans
-// effet de bord si tout va bien.
+/**
+ * true si un emetteur parle en continu : le ZLinky emet toutes les 5 s (modele
+ * vide = ZLinky par defaut), contrairement aux emetteurs sur evenement
+ * (ZiPulses), qui peuvent se taire des heures.
+ */
+static bool has_chatty_emitter(void)
+{
+    for (int i = 0; i < LORA_MAX_EMITTERS; i++) {
+        const emitter_t *e = &s_em[i];
+        if (e->valid && (!e->model[0] || strcmp(e->model, LORA_ZLINKY_MODEL) == 0)) return true;
+    }
+    return false;
+}
+
+// Chien de garde de la reception. Avec un ZLinky (une trame toutes les 5 s),
+// une minute de silence signifie une radio sortie de RX : re-armement toutes
+// les 15 s, puis toutes les minutes si le silence dure (ZLinky debranche).
+// Sans ZLinky, le silence est normal : re-armement de precaution toutes les
+// 5 min. Re-armer est sans effet de bord si tout va bien ; un seul
+// avertissement par periode de silence (le journal en recevait un toutes les
+// 15 s avec un ZiPulses seul).
 static void rx_watchdog(void)
 {
     if (s_pairing_mode || s_awaiting_confirm) return;
@@ -2042,14 +2178,24 @@ static void rx_watchdog(void)
     if (lora_count_emitters() == 0) return;
     if (s_last_radio_rx == 0) return;
     uint32_t now = millis();
-    if (now - s_last_radio_rx < 60000) return;
-    if (now - s_last_wd_rearm < 15000) return;
+    uint32_t silence = now - s_last_radio_rx;
+    bool chatty = has_chatty_emitter();
+    uint32_t period = !chatty ? 300000 : (silence < 300000 ? 15000 : 60000);
+    if (silence < (chatty ? 60000u : 300000u)) return;
+    if (now - s_last_wd_rearm < period) return;
     s_last_wd_rearm = now;
     set_channel(s_op_channel);
     set_sf(s_op_sf);
     start_rx();
-    ESP_LOGW(TAG, "Silence de %lu s -> re-armement RX (canal %d, SF%d)",
-             (unsigned long)((now - s_last_radio_rx) / 1000), s_op_channel, s_op_sf);
+    static uint32_t s_warned_for = 0;          // periode de silence deja signalee
+    if (chatty && s_warned_for != s_last_radio_rx) {
+        s_warned_for = s_last_radio_rx;
+        ESP_LOGW(TAG, "Silence de %lu s -> re-armement RX (canal %d, SF%d)",
+                 (unsigned long)(silence / 1000), s_op_channel, s_op_sf);
+    } else {
+        ESP_LOGD(TAG, "Silence de %lu s -> re-armement RX (canal %d, SF%d)",
+                 (unsigned long)(silence / 1000), s_op_channel, s_op_sf);
+    }
 }
 
 static void loop_once(void)
@@ -2077,8 +2223,9 @@ static void loop_once(void)
     if (s_pairing_mode) pairing_led_tick();
     else if (s_led_state) pairing_led_off();
 
-    // Fin de la fenetre -> retour a la config operationnelle
-    if (s_pairing_mode && (millis() - s_pairing_start > LORA_PAIR_WINDOW_MS)) {
+    // Fin de la fenetre -> retour a la config operationnelle. Une demande
+    // recue en fin de fenetre garde son attente de CONFIRM jusqu'au bout.
+    if (s_pairing_mode && !s_awaiting_confirm && (millis() - s_pairing_start > LORA_PAIR_WINDOW_MS)) {
         s_pairing_mode = false;
         s_awaiting_confirm = false;
         pairing_led_off();
@@ -2090,7 +2237,15 @@ static void loop_once(void)
     // Pas de CONFIRM : retour a l'ecoute du rendez-vous
     if (s_awaiting_confirm && (int32_t)(millis() - s_confirm_deadline) > 0) {
         s_awaiting_confirm = false;
-        ESP_LOGW(TAG, "Pas de PAIR_CONFIRM recu (timeout)");
+        // Trame illisible ~0,7 s apres la reponse : le ZLinky LoRa (alimente
+        // par le Linky) a commence le CONFIRM mais a manque d'energie pour le finir
+        s_pair_issue = s_confirm_crc ? PI_CONFIRM_CUT : PI_NO_CONFIRM;
+        if (s_confirm_crc)
+            ESP_LOGW(TAG, "PAIR_CONFIRM coupe (canal %d, SF%d) : l'emetteur manque d'energie, passer a un SF plus bas%s",
+                     s_op_channel, s_op_sf, s_op_sf >= 11 ? " (SF10)" : "");
+        else
+            ESP_LOGW(TAG, "Pas de PAIR_CONFIRM (canal %d, SF%d) : reinitialiser l'emetteur (appui 5 s)%s et reessayer",
+                     s_op_channel, s_op_sf, s_op_sf >= 11 ? ", passer en SF10" : "");
         if (s_pairing_mode) {
             set_channel(LORA_PAIR_CHANNEL);
             set_sf(LORA_PAIR_SF);
@@ -2109,8 +2264,19 @@ static void loop_once(void)
     float rssi = 0, snr = 0;
     int len = sx_read_packet(buf, sizeof(buf), &rssi, &snr);
     if (len < 0) s_rx_errors++;
+    // Diagnostic de l'appairage : ce qui arrive pendant l'attente du CONFIRM
+    // (trame illisible = emission coupee, ZLinky a court d'energie ?)
+    if (len < 0 && s_awaiting_confirm) {
+        s_confirm_crc = true;
+        ESP_LOGW(TAG, "Trame illisible (CRC) pendant l'attente du PAIR_CONFIRM");
+    }
     if (len <= 0) { start_rx(); return; }
     s_rx_read_ms = millis();
+    if (s_awaiting_confirm && (buf[0] & 0x0F) != T_PAIR_CONFIRM)
+        ESP_LOGW(TAG, "Trame type 0x%02X (%d octets, RSSI %.0f dBm) pendant l'attente du PAIR_CONFIRM",
+                 buf[0], len, rssi);
+    if (s_pairing_mode && !s_awaiting_confirm && (buf[0] & 0x0F) == T_PAIR_REQUEST)
+        ESP_LOGI(TAG, "Demande d'appairage : RSSI %.0f dBm, SNR %.1f dB", rssi, snr);
     if ((buf[0] & 0x0F) != T_ESSENTIAL && (buf[0] & 0x0F) != T_EXTENDED &&
         (buf[0] & 0x0F) != T_DATA_GENERIC) {
         ESP_LOGD(TAG, "RX trame type 0x%02X, %d octets, RSSI %.0f dBm, SNR %.1f dB",
@@ -2175,6 +2341,7 @@ esp_err_t lora_init(void)
     // lora.json est lu meme sans module : les fiches LoRa de /littlefs/db
     // restent reconnues (filtres Zigbee) si le module est retire
     load_config();
+    load_state();
 
     if (!sx_detect(&s_chip_ver)) return ESP_ERR_NOT_FOUND;
     s_detected = true;
@@ -2247,7 +2414,7 @@ static void fill_info(int slot, lora_emitter_info_t *o)
     o->missed = e->missed;
     o->rssi = e->last_rssi;
     o->snr = e->last_snr;
-    o->age_s = e->rx_count ? (int32_t)((millis() - e->last_seen_ms) / 1000) : -1;
+    o->age_s = (int32_t)emitter_age_s(e);
     o->last_seen = (uint32_t)e->last_seen_epoch;
     o->short_addr = e->short_addr;
     o->matter_ep = e->matter_ep;
@@ -2362,6 +2529,18 @@ bool lora_take_pair_result(uint64_t *ieee, char *model, size_t model_len)
     }
     unlock();
     return got;
+}
+
+const char *lora_pair_issue(void)
+{
+    switch (s_pair_issue) {
+    case PI_NO_CONFIRM: return "noConfirm";
+    case PI_CONFIRM_CUT: return "confirmCut";
+    case PI_TX_FAIL:    return "txFail";
+    case PI_BAD_PROOF:  return "badProof";
+    case PI_NO_SLOT:    return "noSlot";
+    default:            return "none";
+    }
 }
 
 esp_err_t lora_set_op_params(uint8_t channel, uint8_t sf)
@@ -2560,7 +2739,7 @@ static void sb_emitter(sb_t *s, int slot)
     char mh[17];
     mac_hex(e->mac, mh);
     const device_data_t *dd = device_data_find(ieee);
-    long age = e->rx_count ? (long)((millis() - e->last_seen_ms) / 1000) : -1;
+    long age = emitter_age_s(e);
     sb_addf(s, "{\"slot\":%d,\"ieee\":\"%s\",\"mac\":\"%s\",\"shortAddr\":%u,\"deviceId\":", slot, mh, mh, e->short_addr);
     sb_str(s, e->device_id);
     sb_add(s, ",\"model\":");
@@ -2677,7 +2856,7 @@ char *lora_devices_json(void)
         const device_data_t *dd = device_data_find(ieee);
         char mh[17];
         mac_hex(e->mac, mh);
-        long age = e->rx_count ? (long)((millis() - e->last_seen_ms) / 1000) : -1;
+        long age = emitter_age_s(e);
         if (!first) sb_add(&s, ",");
         first = false;
         sb_addf(&s, "{\"ieee\":\"%s\",\"shortAddr\":%u,\"deviceId\":%d,\"manufacturer\":\"LiXee\",\"model\":",
@@ -2715,7 +2894,7 @@ void lora_add_devices_json(struct cJSON *array)
         const device_data_t *dd = device_data_find(ieee);
         char mh[17];
         mac_hex(e->mac, mh);
-        long age = e->rx_count ? (long)((millis() - e->last_seen_ms) / 1000) : -1;
+        long age = emitter_age_s(e);
         cJSON *o = cJSON_CreateObject();
         if (!o) break;
         cJSON_AddStringToObject(o, "ieee", mh);

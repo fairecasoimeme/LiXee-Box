@@ -209,6 +209,7 @@ typedef struct {
 
     // Gaz / Water coefficients
     float coeff_gaz;
+    float kwh_gaz;            // kWh par unite de gaz (m3...) : coefficient de conversion de la facture, 0 = aucun
     float coeff_water;
     float coeff_production;
     char  unit_gaz[12];       // texte libre (Wh, kWh, m3, L...), comme la LiXee-Box
@@ -229,6 +230,10 @@ typedef struct {
     // Presence
     char presence[20];
     bool enable_presence_graph;
+
+    // Temperature du graphe d'usage : sondes 0x0402 (4 au plus)
+    char temperature[18 * 4];          // IEEE des sondes, separes par des virgules
+    bool enable_temperature_graph;
 
     // LED de la ZiGate (Set Led) : -1 jamais reglee, 0 eteinte, 1 allumee.
     // Renvoyee a chaque redemarrage de la ZiGate, qui la rallume sinon.
@@ -252,6 +257,9 @@ typedef struct {
 const cfg_settings_t*      cfg_get_settings(void);
 cfg_settings_t*            cfg_get_settings_mut(void);
 const cfg_general_t*       cfg_get_general(void);
+// Wh par unite de gaz affichee : 1 (Wh), 1000 (kWh), conversion kWh/unite x 1000
+// (m3... avec kwh_gaz), 0 si le gaz n'est pas convertible en energie
+double                     cfg_gaz_wh_per_unit(void);
 cfg_general_t*             cfg_get_general_mut(void);
 const cfg_notifications_t* cfg_get_notifications(void);
 cfg_notifications_t*       cfg_get_notifications_mut(void);

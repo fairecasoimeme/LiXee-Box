@@ -54,6 +54,7 @@
 #include "wifi_manager.h"
 #include "eth_manager.h"
 #include "energy_service.h"
+#include "energy_archive.h"
 #include "power_stats.h"
 #include "zigate_ir.h"
 #include "group_matter.h"
@@ -71,7 +72,7 @@
 
 // Version du firmware (peut etre surchargee par -DVERSION=... dans CMake)
 #ifndef VERSION
-#define VERSION "3.2"
+#define VERSION "3.3"
 #endif
 
 static const char *TAG = "MAIN";
@@ -321,9 +322,20 @@ static void process_attribute(uint64_t ieee, const zigate_attribute_report_t *re
     // Alertes et WebPush : traites par notifications_on_report(), appele
     // depuis cluster_handler_dispatch()
 
-    // Enregistrer dans l'historique d'energie si cluster pertinent
-    // Cluster 0x0702 (Metering) ou 0x0B04 (Electrical Measurement)
-    if (report->cluster_id == 0x0702 || report->cluster_id == 0x0B04) {
+    // Historique d'energie : attributs d'energie cumulee (compteurs Wh) du
+    // cluster 0x0702 (Metering) seulement.
+    // 0x0000 = CurrentSummationDelivered ; index tarifs aux adresses
+    // PAIRES 0x0100..0x0112 (Tier1..Tier10) -- les impaires sont les
+    // index "Received"
+    // 0x0001 = energie injectee (EAIT, producteur) : courbe et revenu
+    // de production de la page Energie
+    // Les autres attributs (numero de serie 0x0308, puissances 0x0B04...) ne
+    // sont pas convertis ici : le numero de serie du ZLinky, recu sous un type
+    // non reconnu comme chaine, etait lu comme un entier de 8 octets et
+    // remplissait le journal de "saturee a INT32_MAX" a chaque releve.
+    if (report->cluster_id == 0x0702 &&
+        (report->attr_id == 0x0000 || report->attr_id == 0x0001 ||
+         (report->attr_id >= 0x0100 && report->attr_id <= 0x0112 && !(report->attr_id & 1)))) {
         // L'API d'historique est en int32_t : saturer plutot que replier.
         // Un index d'energie uint48 ne depasse INT32_MAX (2,147 GWh) qu'en
         // dehors de tout usage domestique realiste.
@@ -331,29 +343,21 @@ static void process_attribute(uint64_t ieee, const zigate_attribute_report_t *re
         if (has_num) {
             if (num_value > INT32_MAX) {
                 int_value = INT32_MAX;
-                ESP_LOGW(TAG, "  value %lld saturee a INT32_MAX pour l'historique",
-                         (long long)num_value);
+                ESP_LOGW(TAG, "  0702/0x%04X : %lld sature a INT32_MAX pour l'historique (type 0x%02X)",
+                         report->attr_id, (long long)num_value, report->attr_type);
             } else if (num_value < INT32_MIN) {
                 int_value = INT32_MIN;
-                ESP_LOGW(TAG, "  value %lld saturee a INT32_MIN pour l'historique",
-                         (long long)num_value);
+                ESP_LOGW(TAG, "  0702/0x%04X : %lld sature a INT32_MIN pour l'historique (type 0x%02X)",
+                         report->attr_id, (long long)num_value, report->attr_type);
             } else {
                 int_value = (int32_t)num_value;
             }
-        } else if (zcl_type_is_numeric(report->attr_type)) {   // chaine : rien a historiser
-            ESP_LOGW(TAG, "  donnees trop courtes (len=%u, type=0x%02X), historique ignore",
-                     report->data_len, report->attr_type);
+        } else {
+            ESP_LOGW(TAG, "  0702/0x%04X : donnees non numeriques ou trop courtes (len=%u, type=0x%02X), historique ignore",
+                     report->attr_id, report->data_len, report->attr_type);
         }
 
-        // Attributs d'energie cumulee (compteurs Wh) -> energy history
-        // 0x0000 = CurrentSummationDelivered ; index tarifs aux adresses
-        // PAIRES 0x0100..0x0112 (Tier1..Tier10) -- les impaires sont les
-        // index "Received"
-        // 0x0001 = energie injectee (EAIT, producteur) : courbe et revenu
-        // de production de la page Energie
-        if (has_num && report->cluster_id == 0x0702 &&
-            (report->attr_id == 0x0000 || report->attr_id == 0x0001 ||
-             (report->attr_id >= 0x0100 && report->attr_id <= 0x0112 && !(report->attr_id & 1)))) {
+        if (has_num) {
             // Lissage des trous pour le ZLinky et les sous-compteurs seulement :
             // un compteur a impulsions (gaz, eau, ZiPulses...) se tait tant que
             // rien n'est consomme, ce n'est pas une coupure (SimpleMeter.cpp de la Box)
@@ -996,6 +1000,25 @@ static char *s_dbg_buf;
 static size_t s_dbg_len;
 static portMUX_TYPE s_dbg_mux = portMUX_INITIALIZER_UNLOCKED;
 static vprintf_like_t s_prev_vprintf;
+// Ligne W/E commencee sans fin de ligne : le pilote WiFi (et d'autres
+// bibliotheques precompilees) ecrit l'en-tete "W (123) wifi:" puis le texte
+// en appels separes. Les morceaux suivants de la meme tache sont gardes
+// jusqu'au '\n' ; avant, le journal ne montrait que "wifi:".
+static TaskHandle_t s_dbg_cont;
+
+/** Copie sans les sequences de couleur ANSI ; longueur copiee. */
+static size_t dbg_strip_ansi(char *dst, const char *src, size_t n)
+{
+    size_t o = 0;
+    for (size_t i = 0; i < n && src[i]; i++) {
+        if (src[i] == '\033') {
+            while (i < n && src[i] && src[i] != 'm') i++;
+            continue;
+        }
+        dst[o++] = src[i];
+    }
+    return o;
+}
 
 static int debug_log_vprintf(const char *fmt, va_list ap)
 {
@@ -1003,20 +1026,25 @@ static int debug_log_vprintf(const char *fmt, va_list ap)
     va_copy(cp, ap);
     int r = s_prev_vprintf ? s_prev_vprintf(fmt, ap) : vprintf(fmt, ap);
     if (s_dbg_buf && cfg_get_settings()->enable_debug) {
-        char line[200];
+        char line[200], clean[200];
         int n = vsnprintf(line, sizeof(line), fmt, cp);
-        // Niveau : premiere lettre apres une eventuelle sequence de couleur
-        const char *p = line;
-        if (*p == '\033') { while (*p && *p != 'm') p++; if (*p) p++; }
-        if (n > 0 && (*p == 'E' || *p == 'W') && p[1] == ' ') {
-            size_t len = strnlen(p, sizeof(line) - (p - line));
-            portENTER_CRITICAL(&s_dbg_mux);
-            if (s_dbg_len + len + 1 < DBG_BUF_SIZE) {
-                memcpy(s_dbg_buf + s_dbg_len, p, len);
+        size_t len = n > 0 ? dbg_strip_ansi(clean, line, strnlen(line, sizeof(line))) : 0;
+        TaskHandle_t me = xTaskGetCurrentTaskHandle();
+        // Niveau : premiere lettre, couleurs retirees
+        bool start = len > 1 && (clean[0] == 'E' || clean[0] == 'W') && clean[1] == ' ';
+        portENTER_CRITICAL(&s_dbg_mux);
+        bool cont = !start && s_dbg_cont && s_dbg_cont == me;
+        if (len && (start || cont)) {
+            // Nouvelle ligne alors qu'une autre restait ouverte : on la ferme
+            bool close = start && s_dbg_cont;
+            if (s_dbg_len + len + 2 < DBG_BUF_SIZE) {
+                if (close) s_dbg_buf[s_dbg_len++] = '\n';
+                memcpy(s_dbg_buf + s_dbg_len, clean, len);
                 s_dbg_len += len;
             }
-            portEXIT_CRITICAL(&s_dbg_mux);
+            s_dbg_cont = clean[len - 1] == '\n' ? NULL : me;
         }
+        portEXIT_CRITICAL(&s_dbg_mux);
     }
     va_end(cp);
     return r;
@@ -1454,6 +1482,7 @@ extern "C" void app_main(void)
     ESP_ERROR_CHECK(energy_history_init());
     energy_history_load_all();  // Charge /littlefs/hst/ (non-fatal si vide)
     energy_service_init();      // Courbe de puissance 24 h, calculs de la page Energie
+    energy_archive_init();      // Archive datee (page Energie > Historique)
     power_stats_init();         // Pics, plateaux et tranches de charge (/api/power/*)
     zigate_ir_set_change_cb(on_ir_codes_changed);   // codes appris = actions de l'appareil
     zigate_ir_init();           // Codes des telecommandes infrarouges (/littlefs/ir)
@@ -1670,9 +1699,12 @@ extern "C" void app_main(void)
         if (maintenance_reboot_due()) {
             ESP_LOGW(TAG, "Redemarrage demande : sauvegarde des donnees");
             device_data_save_all();
+            energy_archive_flush();
             energy_history_save_all();
             energy_service_flush();
             power_stats_flush();
+            lora_save_state(true);
+            zigate_devices_save_seen(true);
             esp_restart();
         }
 
@@ -1688,10 +1720,11 @@ extern "C" void app_main(void)
         // Le WiFi ne tourne donc jamais en parallele de l'Ethernet.
         {
             static int eth_down_s, eth_up_s;
-            static bool eth_was_up, wifi_backup;
+            static bool eth_was_up, wifi_backup, no_creds;
             if (eth_mgr_has_ip()) {
                 eth_was_up = true;
                 eth_down_s = 0;
+                no_creds = false;
                 if ((wifi_backup || wifi_mgr_is_connected()) && ++eth_up_s >= 30) {
                     eth_up_s = 0;
                     wifi_backup = false;
@@ -1703,13 +1736,21 @@ extern "C" void app_main(void)
                 if (++dns_tick >= 5) { dns_tick = 0; eth_mgr_ensure_dns(); }
             } else {
                 eth_up_s = 0;
-                if (eth_was_up && !wifi_backup && !eth_mgr_inhibits_wifi() &&
+                if (eth_was_up && !wifi_backup && !no_creds && !eth_mgr_inhibits_wifi() &&
                     !wifi_mgr_is_connected() && ++eth_down_s >= 30) {
                     eth_down_s = 0;
                     wifi_backup = true;          // reconnexion WiFi ensuite illimitee
                     esp_err_t fe = wifi_mgr_connect_background();
-                    ESP_LOGW(TAG, "Ethernet perdu depuis 30 s : secours WiFi (%s)", esp_err_to_name(fe));
-                    if (fe == ESP_ERR_NOT_FOUND) wifi_backup = false;   // pas d'identifiants
+                    if (fe == ESP_ERR_NOT_FOUND) {
+                        // Pas d'identifiants WiFi : rien a tenter jusqu'au retour
+                        // de l'Ethernet (avant : nouvel essai et avertissement
+                        // toutes les 30 s pendant toute la coupure)
+                        wifi_backup = false;
+                        no_creds = true;
+                        ESP_LOGW(TAG, "Ethernet perdu depuis 30 s : pas de WiFi enregistre, en attente du cable");
+                    } else {
+                        ESP_LOGW(TAG, "Ethernet perdu depuis 30 s : secours WiFi (%s)", esp_err_to_name(fe));
+                    }
                 }
             }
         }
@@ -1771,32 +1812,38 @@ extern "C" void app_main(void)
             device_data_save_all();
             energy_history_save_all();
             energy_service_minute_tick();
+            matter_device_manager_tariff_price_tick();   // prix en attente de l'heure
+            lora_save_state(false);
+            zigate_devices_save_seen(false);
 
-            // Reset periodique de l'historique d'energie (equivalent ScanDevicesToRAZ)
+            // Debut de periode de l'historique d'energie : le creneau de l'heure
+            // (du jour, du mois) qui commence porte encore le cycle precedent ;
+            // il est vide pour les appareils qui n'y ont encore rien mesure.
+            // A chaque changement, demarrage compris (sans effet sur un
+            // appareil qui a deja mesure dans la periode). Attendre la minute 0
+            // sautait le passage quand la boucle tombait a la minute 1.
             if (ntp_sync_is_synced()) {
                 int cur_hour  = ntp_sync_get_hour();
                 int cur_day   = ntp_sync_get_day();
                 int cur_month = ntp_sync_get_month();
-                int cur_minute = ntp_sync_get_minute();
 
-                // Reset horaire: quand minute == 0 et heure differente
-                if (cur_minute == 0 && cur_hour != last_reset_hour) {
+                if (cur_hour != last_reset_hour) {
                     energy_history_reset_hourly(cur_hour);
                     last_reset_hour = cur_hour;
-
-                    // Reset journalier: quand heure == 0
-                    if (cur_hour == 0 && cur_day != last_reset_day) {
-                        energy_history_reset_daily(cur_day);
-                        last_reset_day = cur_day;
-
-                        // Reset mensuel: quand jour == 1
-                        if (cur_day == 1 && cur_month != last_reset_month) {
-                            energy_history_reset_monthly(cur_month);
-                            last_reset_month = cur_month;
-                        }
-                    }
+                }
+                if (cur_day != last_reset_day) {
+                    energy_history_reset_daily(cur_day);
+                    last_reset_day = cur_day;
+                }
+                if (cur_month != last_reset_month) {
+                    energy_history_reset_monthly(cur_month);
+                    last_reset_month = cur_month;
                 }
             }
+
+            // Archive datee des anneaux : apres le debut de periode, pour ne pas
+            // recopier le cycle precedent comme la periode qui commence
+            energy_archive_tick();
         }
     }
 }

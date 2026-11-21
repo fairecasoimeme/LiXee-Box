@@ -45,12 +45,23 @@ zigate_coord_info_t g_zigate_coord = {
     .state_known = false, .short_addr = 0xFFFF, .ieee = 0, .pan_id = 0, .ext_pan_id = 0,
     .channel = 0, .start_status = -1, .raw_mode = false, .led = -1,
     .permit_join_until = 0, .join_seq = 0, .last_join_ieee = 0, .last_join_short = 0,
-    .last_join_s = 0, .ghost_pending = false, .ghost_result = -1,
+    .last_join_s = 0, .ghost_pending = false, .ghost_since_s = 0, .ghost_result = -1,
     .frames_rx = 0, .frames_tx = 0,
 };
 
+// Delai de reponse de la ZiGate au nettoyage des fantomes (0x0602 -> 0x8602)
+#define GHOST_TIMEOUT_S 15
+
 void zigate_get_coord_info(zigate_coord_info_t *out)
 {
+    // Sans reponse 0x8602 (trame perdue, firmware de ZiGate sans cette
+    // commande), le nettoyage restait "en cours" jusqu'au redemarrage, et la
+    // page l'affichait des son ouverture (issue #86)
+    if (g_zigate_coord.ghost_pending &&
+        zigate_uptime_s() - g_zigate_coord.ghost_since_s > GHOST_TIMEOUT_S) {
+        g_zigate_coord.ghost_pending = false;
+        g_zigate_coord.ghost_result = -2;
+    }
     if (out) *out = g_zigate_coord;
 }
 
@@ -87,7 +98,7 @@ static void touch_device(uint16_t short_addr, uint8_t lqi)
     dev->radio_status = 0;
     if (lqi) dev->lqi = lqi;
     time_t now = time(NULL);
-    if (now > 1600000000) dev->last_seen = (uint32_t)now;
+    if (now > 1600000000) zigate_devices_mark_seen(dev, (uint32_t)now);
 }
 
 // --- Nettoyage des fantomes (reponse 0x8602) ---

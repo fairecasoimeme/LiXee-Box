@@ -23,7 +23,7 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 idf_build_set_property(COMPILE_DEFINITIONS "CJSON_NESTING_LIMIT=32" APPEND)
 
 # Version de l application (esp_app_desc), controlee par la mise a jour OTA
-set(PROJECT_VER "3.2")
+set(PROJECT_VER "3.3")
 project(lixee_matter_bridge)
 
 # esp-matter 1.4.2 : closure-control-cluster-logic.cpp ne compile pas avec
@@ -31,6 +31,7 @@ project(lixee_matter_bridge)
 # Cluster inutilise par le pont : le fichier est retire de la compilation ici,
 # managed_components/ etant retelecharge (et non versionne).
 idf_component_get_property(_matter_dir espressif__esp_matter COMPONENT_DIR)
+
 set_source_files_properties(
     "${_matter_dir}/connectedhomeip/connectedhomeip/src/app/clusters/closure-control-server/closure-control-cluster-logic.cpp"
     DIRECTORY "${_matter_dir}"

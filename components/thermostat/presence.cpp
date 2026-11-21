@@ -6,6 +6,7 @@
 #include "zigate_devices.h"
 #include "config_manager.h"
 #include "ntp_sync.h"
+#include "energy_archive.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -67,8 +68,46 @@ static pres_dev_t *find_dev(uint64_t ieee, bool create)
     return d;
 }
 
+/**
+ * Archive (page Historique) : presence heure par heure du jour ymd (tous
+ * capteurs) sous "p" du fichier de la journee, nombre d'heures de presence
+ * sous "p" du fichier du mois. Appele pour la veille et le jour courant.
+ */
+static void archive_provider(uint32_t day, cJSON *hf, cJSON *df)
+{
+    struct tm t;
+    if (!s_dev || !local_time(&t)) return;
+    uint32_t today = (uint32_t)((t.tm_year + 1900) * 10000 + (t.tm_mon + 1) * 100 + t.tm_mday);
+    int idx = (int)(day % 100) - 1;
+    if (idx < 0 || idx > 30) return;
+    // Jour courant : les heures a venir portent encore le mois precedent
+    uint32_t valid = day == today ? (t.tm_hour >= 23 ? 0xFFFFFFu : ((1u << (t.tm_hour + 1)) - 1)) : 0xFFFFFFu;
+    uint32_t any = 0;
+    portENTER_CRITICAL(&s_mux);
+    int n = s_count;
+    for (int i = 0; i < n; i++) any |= s_dev[i].hours[idx];
+    portEXIT_CRITICAL(&s_mux);
+    if (!n) return;
+    any &= valid;
+    cJSON_DeleteItemFromObject(hf, "p");
+    cJSON *arr = cJSON_AddArrayToObject(hf, "p");
+    int hours = 0;
+    for (int h = 0; h < 24; h++) {
+        int on = (any >> h) & 1;
+        hours += on;
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber(on));
+    }
+    char dk[4];
+    snprintf(dk, sizeof(dk), "%d", (int)(day % 100));
+    cJSON *dp = cJSON_GetObjectItem(df, "p");
+    if (!dp) dp = cJSON_AddObjectToObject(df, "p");
+    cJSON_DeleteItemFromObject(dp, dk);
+    cJSON_AddNumberToObject(dp, dk, hours);
+}
+
 void presence_init(void)
 {
+    energy_archive_register(archive_provider);
     if (s_dev) return;
     s_dev = (pres_dev_t *)heap_caps_calloc(PRES_MAX_DEV, sizeof(pres_dev_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (!s_dev) s_dev = (pres_dev_t *)calloc(PRES_MAX_DEV, sizeof(pres_dev_t));

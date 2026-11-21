@@ -38,9 +38,12 @@ extern "C" {
 #endif
 
 #define LORA_MAX_EMITTERS     4
-#define LORA_PAIR_WINDOW_S    30
+#define LORA_PAIR_WINDOW_S    40   // 30 s trop court apres la reinitialisation du ZLinky (appui 5 s)
 #define LORA_CHANNEL_COUNT    8
 #define LORA_CONFIG_PATH      "/littlefs/config/lora.json"
+// Etat radio des emetteurs (trames, RSSI, SNR, derniere activite, version),
+// a part de lora.json : une ecriture interrompue n'y perd que des statistiques
+#define LORA_STATE_PATH       "/littlefs/config/lora_state.json"
 #define LORA_OTA_DIR          "/littlefs/ota"
 #define LORA_OTA_MAX_FILE     (1024u * 1024u)
 
@@ -57,6 +60,13 @@ extern "C" {
  *         s'initialise pas.
  */
 esp_err_t lora_init(void);
+
+/**
+ * Enregistre l'etat radio des emetteurs s'il a change : au plus toutes les
+ * 10 min, ou tout de suite avec force (redemarrage prevu). Appele par la
+ * boucle principale avec la sauvegarde des fiches appareils.
+ */
+void lora_save_state(bool force);
 
 /** true si un SX128x a repondu au demarrage (modules.lora de /api/system/info). */
 bool lora_is_detected(void);
@@ -116,6 +126,14 @@ esp_err_t lora_start_pairing(void);
 bool lora_pairing_state(int *seconds_left);
 /** Dernier appairage reussi (livre une seule fois, a un seul lecteur). */
 bool lora_take_pair_result(uint64_t *ieee, char *model, size_t model_len);
+/**
+ * Ou la derniere fenetre d'appairage a echoue, pour guider l'utilisateur :
+ * "none" (aucune demande recue), "noConfirm" (demande recue, reponse envoyee,
+ * pas de confirmation de l'emetteur), "confirmCut" (confirmation recue
+ * illisible : emission coupee, emetteur a court d'energie), "txFail" (reponse non emise),
+ * "badProof" (confirmation invalide), "noSlot" (plus de place).
+ */
+const char *lora_pair_issue(void);
 
 // ----------------------------------------------------------------------------
 // Parametres reseau (assignes aux emetteurs a l'appairage)

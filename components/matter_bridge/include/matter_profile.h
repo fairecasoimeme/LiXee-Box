@@ -81,6 +81,11 @@ typedef enum {
 #define MCAP_ELECTRICAL   (1u << 12)   // puissance, tension, courant
 #define MCAP_ENERGY       (1u << 13)   // energie cumulee importee
 #define MCAP_SWITCH       (1u << 14)
+// Cluster standard CommodityPrice (0x0095, device type compose Electrical
+// Energy Tariff 0x0513) sur l'EP Linky : prix courant du kWh d'apres la
+// configuration tarifaire de la page Energie (energy_service_get_live()).
+// Issue #67.
+#define MCAP_LINKY_PRICE  (1u << 15)
 
 #define MATTER_PROFILE_MAX_LINKS  32
 
@@ -113,6 +118,8 @@ typedef struct {
     bool          heat;             // MCAP_THERMOSTAT : consigne de chauffage
     bool          cool;             //                   consigne de refroidissement
     bool          presets;          // MCAP_THERMOSTAT : feature Matter Presets (zones virtuelles uniquement)
+    bool          virtual_zone;     //                   endpoint de zone virtuelle (matter_sync_zone), pas un
+                                     //                   vrai thermostat Zigbee (TRVZB, tetes Tuya, AC201A...)
     bool          cover_inverted;   // volet dont la position remontee est l'ouverture (252)
     bool          zlinky;
     int           link_count;

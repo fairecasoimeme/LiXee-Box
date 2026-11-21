@@ -379,6 +379,15 @@ static esp_err_t mail_post_handler(httpd_req_t *req)
         strlcpy(pass, pw->valuestring, sizeof(pass));
     }
     if (json_flag(cJSON_GetObjectItem(doc, "clearPassSMTP"))) pass[0] = '\0';
+    // Mot de passe conserve mais serveur ou port change, ou chiffrement retire
+    // (3 = sans TLS) : il partirait vers un autre serveur, peut-etre en clair
+    if (pass[0] && !(cJSON_IsString(pw) && pw->valuestring[0]) &&
+        (strcasecmp(serv, cur->serv_smtp) != 0 || strcmp(port, cur->port_smtp) != 0 ||
+         (sec == 3 && cur->security_smtp != 3))) {
+        memset(pass, 0, sizeof(pass));
+        cJSON_Delete(doc);
+        return send_status(req, "400 Bad Request", "Serveur SMTP modifi\u00e9 : ressaisissez le mot de passe SMTP");
+    }
 
     // Sous le verrou des reglages SMTP : la tache "notif" peut etre en train
     // d'envoyer un mail ; elle copie ces champs sous ce verrou au debut de

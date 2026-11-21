@@ -12,6 +12,7 @@
 #include "zigate_actions.h"
 #include "device_data.h"
 #include "config_manager.h"
+#include "energy_service.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -628,6 +629,39 @@ static void apply_link(bridge_device_mapping_t *m, const matter_link_t *l, doubl
     }
 }
 
+// ============================================================================
+// Prix courant du kWh (CommodityPrice, issue #67)
+// ============================================================================
+
+// Prix non publie faute d'heure synchronisee : republie par
+// matter_device_manager_tariff_price_tick() des que l'heure est connue.
+static volatile bool s_price_pending = false;
+
+static void publish_tariff_price(const bridge_device_mapping_t *m)
+{
+    if (!m || !m->active || !m->profile || !(m->profile->caps & MCAP_LINKY_PRICE)) return;
+    energy_live_t live;
+    if (!energy_service_get_live(&live)) return;
+    if (matter_bridge_report_tariff_price(m->matter_endpoint, live.tariff_price, live.tariff)
+            == ESP_ERR_INVALID_STATE) {
+        s_price_pending = true;
+    }
+}
+
+void matter_device_manager_refresh_tariff_price(void)
+{
+    if (!matter_bridge_is_started()) return;
+    s_price_pending = false;
+    map_lock();
+    for (int i = 0; i < s_mapping_count; i++) publish_tariff_price(&s_mappings[i]);
+    map_unlock();
+}
+
+void matter_device_manager_tariff_price_tick(void)
+{
+    if (s_price_pending) matter_device_manager_refresh_tariff_price();
+}
+
 /**
  * Publie les dernieres valeurs connues (device_data) des attributs lies, des
  * la creation de l'endpoint. Sans cela, apres un redemarrage du pont, Matter
@@ -637,6 +671,11 @@ static void apply_link(bridge_device_mapping_t *m, const matter_link_t *l, doubl
 static void replay_stored_values(bridge_device_mapping_t *m)
 {
     const matter_profile_t *p = m->profile;
+
+    // Prix courant du kWh (CommodityPrice), valeur courante des maintenant,
+    // sans attendre le prochain changement de tarif (issue #67).
+    publish_tariff_price(m);
+
     if (!p) return;
     for (int i = 0; i < p->link_count; i++) {
         const matter_link_t *l = &p->links[i];
@@ -735,6 +774,15 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
 
     // Profil du template : liaisons etat -> attribut Matter. Les entrees du
     // tableau des mappings ne bougent jamais : ecriture de last_lift100 sure.
+    // CommodityPrice (issue #67) : avant apply_profile, qui ne connait que les
+    // liaisons du template. Le ZLinky renvoie l'attribut 0x0010 (PTEC/LTARF,
+    // cluster Zigbee 0xFF66) a chaque changement de tarif, dans les deux modes
+    // TIC.
+    if (mapping->profile && (mapping->profile->caps & MCAP_LINKY_PRICE) &&
+        report->cluster_id == 0xFF66 && report->attr_id == 0x0010) {
+        publish_tariff_price(mapping);
+    }
+
     if (mapping->profile) return apply_profile((bridge_device_mapping_t *)mapping, report);
 
     // Convertir le cluster/attribut ZCL -> Matter et mettre a jour
@@ -776,7 +824,10 @@ static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char
 
     case 0x0406:  // Occupancy Sensing
         if (report->attr_id == 0x0000) {
-            val.type = ESP_MATTER_VAL_TYPE_UINT8;
+            // Attribut bitmap8 : un uint8 est refuse par esp_matter (type
+            // different de celui de l'attribut), sans autre trace qu'un log
+            // (issue #75)
+            val.type = ESP_MATTER_VAL_TYPE_BITMAP8;
             val.val.u8 = report->data[0];
             matter_bridge_update_attribute(mapping->matter_endpoint, 0x0406, 0x0000, &val, sizeof(val));
         }

@@ -1206,9 +1206,12 @@ static void worker_task(void *arg)
 
 // En-tetes relayes au serveur local : liste de la LiXee-Box, dans l'ordre de
 // priorite (le budget MAX_FWD_HEADERS peut ecarter les derniers).
+// sec-fetch-site (ajoute) : sert au controle d'origine du pont (CSRF entre
+// sous-domaines de lixee-box.fr), si le relais le transmet.
 static const char *const FWD_HEADERS[] = {
     "cookie", "content-type", "x-requested-with", "origin",
     "accept", "accept-encoding", "authorization", "referer",
+    "sec-fetch-site", "sec-fetch-mode",
 };
 
 static const cJSON *obj_get_ci(const cJSON *obj, const char *name)
@@ -1243,10 +1246,13 @@ static bool filter_session_cookie(const char *in, char *out, size_t out_len)
         while (*p == ' ' || *p == ';') p++;
         const char *end = strchr(p, ';');
         size_t n = end ? (size_t)(end - p) : strlen(p);
-        if (n > 8 && strncmp(p, "session=", 8) == 0) {
-            size_t vl = n - 8;
+        // "session" (acces local) ou "__Host-session" (cookie Secure du tunnel)
+        size_t kl = (n > 8 && strncmp(p, "session=", 8) == 0) ? 8 :
+                    (n > 15 && strncmp(p, "__Host-session=", 15) == 0) ? 15 : 0;
+        if (kl) {
+            size_t vl = n - kl;
             bool hex = (vl == 32);
-            for (size_t i = 0; hex && i < vl; i++) hex = isxdigit((unsigned char)p[8 + i]) != 0;
+            for (size_t i = 0; hex && i < vl; i++) hex = isxdigit((unsigned char)p[kl + i]) != 0;
             if (hex && o + n + 3 < out_len) {
                 if (o) { out[o++] = ';'; out[o++] = ' '; }
                 memcpy(out + o, p, n);
@@ -1363,6 +1369,14 @@ static void local_ip(char *out, size_t n)
     if (nif && esp_netif_get_ip_info(nif, &ip) == ESP_OK) {
         sfmt(out, n, IPSTR, IP2STR(&ip.ip));
     }
+}
+
+void tunnel_get_subdomain(char *out, size_t len)
+{
+    if (!out || !len) return;
+    lock();
+    strlcpy(out, s_subdomain, len);
+    unlock();
 }
 
 static void handle_welcome(const cJSON *doc, uint32_t session)

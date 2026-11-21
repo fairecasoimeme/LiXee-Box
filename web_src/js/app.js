@@ -303,6 +303,9 @@
   // ZLinky affiche ('' = celui de Config Energie) : site a plusieurs compteurs
   // Linky. Retenu par navigateur.
   var energyZl = '';
+  // Gaz compte en energie (Wh, kWh, ou volume converti en kWh) : empile sur
+  // le graphe principal, comme dans l'historique. null sinon (carte a part).
+  var gasMain = null;
   try { energyZl = localStorage.getItem('energyZl') || ''; } catch (e) {}
   function energyUrl(url) {
     return energyZl ? url + (url.indexOf('?') < 0 ? '?' : '&') + 'zl=' + encodeURIComponent(energyZl) : url;
@@ -320,13 +323,20 @@
     var isHour = (t === 'hour');
     var gen = ++energyGen;
 
-    // Icones de periode
-    var iconHour = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M8.515 1.019A7 7 0 0 0 8 1V0a8 8 0 0 1 .589.022zm2.004.45a7 7 0 0 0-.985-.299l.219-.976q.576.129 1.126.342zm1.37.71a7 7 0 0 0-.439-.27l.493-.87a8 8 0 0 1 .979.654l-.615.789a7 7 0 0 0-.418-.302zm1.834 1.79a7 7 0 0 0-.653-.796l.724-.69q.406.429.747.91zm.744 1.352a7 7 0 0 0-.214-.468l.893-.45a8 8 0 0 1 .45 1.088l-.95.313a7 7 0 0 0-.179-.483m.53 2.507a7 7 0 0 0-.1-1.025l.985-.17q.1.58.116 1.17zm-.131 1.538q.05-.254.081-.51l.993.123a8 8 0 0 1-.23 1.155l-.964-.267q.069-.247.12-.501m-.952 2.379q.276-.436.486-.908l.914.405q-.24.54-.555 1.038zm-.964 1.205q.183-.183.35-.378l.758.653a8 8 0 0 1-.401.432z"/><path d="M8 1a7 7 0 1 0 4.95 11.95l.707.707A8.001 8.001 0 1 1 8 0z"/><path d="M7.5 3a.5.5 0 0 1 .5.5v5.21l3.248 1.856a.5.5 0 0 1-.496.868l-3.5-2A.5.5 0 0 1 7 9V3.5a.5.5 0 0 1 .5-.5"/></svg>';
-    var iconDay = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z"/><path d="M12 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg>';
-    var iconMonth = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z"/><path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/></svg>';
-    var iconYear = '<svg xmlns="http://www.w3.org/2000/svg" style="width:32px" fill="currentColor" viewBox="0 0 16 16"><path d="M0 2a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2zm0 1v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V3z"/><text x="8" y="11" font-size="6" text-anchor="middle" fill="white" font-family="Arial">12</text></svg>';
-
-    function linkCls(p) { return t === p ? 'link active' : 'link'; }
+    // Bandeau : periodes glissantes du tableau de bord (meme groupe de boutons
+    // que la page Historique) et acces a l'historique detaille
+    var PERIODS = [
+      { id: 'hour',  label: 'Heure', title: '24 derni&egrave;res heures, heure par heure' },
+      { id: 'day',   label: 'Jour',  title: '30 derniers jours, jour par jour' },
+      { id: 'month', label: 'Mois',  title: '12 derniers mois, mois par mois' },
+      { id: 'year',  label: 'Ann&eacute;e', title: 'Ann&eacute;es, ann&eacute;e par ann&eacute;e' }
+    ];
+    var periodBtns = PERIODS.map(function(o) {
+      var on = t === o.id;
+      return '<button type="button" class="btn flex-fill ' + (on ? 'btn-dark' : 'btn-outline-dark') + '"' +
+             ' aria-pressed="' + on + '" title="' + o.title + '"' +
+             ' onclick="window._energyNav(\'' + o.id + '\')">' + o.label + '</button>';
+    }).join('');
 
     var iconBolt = '<svg xmlns="http://www.w3.org/2000/svg" style="width:40px;" width="28" height="28" fill="currentColor" class="me-2" viewBox="0 0 16 16"><path d="M11.251.068a.5.5 0 0 1 .227.58L9.677 6.5H13a.5.5 0 0 1 .364.843l-8 8.5a.5.5 0 0 1-.842-.49L6.323 9.5H3a.5.5 0 0 1-.364-.843l8-8.5a.5.5 0 0 1 .615-.09z"/></svg>';
     var iconGear = '<svg xmlns="http://www.w3.org/2000/svg" style="width:24px;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
@@ -336,15 +346,21 @@
       '<div class="container">' +
         '<h4>Tableau de bord &eacute;nerg&eacute;tique</h4>' +
         '<div class="row g-4"><div class="col-md-12">' +
-          '<div class="nav justify-content-end align-items-center">' +
+          '<div class="d-flex flex-wrap align-items-center gap-2 energy-toolbar">' +
             // Choix du ZLinky (affiche s'il y en a plusieurs)
             '<div class="me-auto" id="energy-zl-wrap" style="display:none;">' +
               '<select class="form-select form-select-sm" id="energy-zl" title="Compteur Linky affich&eacute;"></select>' +
             '</div>' +
-            '<div><a class="' + linkCls('hour') + '" href="javascript:void(0)" onclick="window._energyNav(\'hour\')" title="Heure">' + iconHour + '</a></div>&nbsp;' +
-            '<div><a class="' + linkCls('day') + '" href="javascript:void(0)" onclick="window._energyNav(\'day\')" title="Jour">' + iconDay + '</a></div>&nbsp;' +
-            '<div><a class="' + linkCls('month') + '" href="javascript:void(0)" onclick="window._energyNav(\'month\')" title="Mois">' + iconMonth + '</a></div>&nbsp;' +
-            '<div><a class="' + linkCls('year') + '" href="javascript:void(0)" onclick="window._energyNav(\'year\')" title="Ann&eacute;e">' + iconYear + '</a></div>' +
+            '<div class="btn-group btn-group-sm ms-auto flex-grow-1 flex-sm-grow-0 energy-periods" role="group" aria-label="P&eacute;riode affich&eacute;e">' +
+              periodBtns +
+            '</div>' +
+            // Historique detaille (13 mois heure par heure, page a part)
+            '<a class="btn btn-sm btn-outline-dark d-inline-flex align-items-center gap-1" href="#energyHistory" ' +
+              'title="Historique d&eacute;taill&eacute; : 13 mois heure par heure, puis jours, semaines, mois et ann&eacute;es">' +
+              '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true">' +
+                '<path d="M14 0H2a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2M1 3.857C1 3.384 1.448 3 2 3h12c.552 0 1 .384 1 .857v10.286c0 .473-.448.857-1 .857H2c-.552 0-1-.384-1-.857z"/>' +
+                '<path d="M6.5 7a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m-9 3a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2m3 0a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/>' +
+              '</svg>Historique</a>' +
           '</div>' +
         '</div></div>' +
       '</div>' +
@@ -483,7 +499,9 @@
             // Usage electricite
             '<div class="col-md-6">' +
               '<div class="card p-4">' +
-                '<h5 class="card-title">Usage d\'&eacute;lectricit&eacute;</h5>' +
+                '<h5 class="card-title d-flex align-items-center"><span id="energy-chart-title">Usage d\'&eacute;lectricit&eacute;</span>' +
+                  '<a href="#energyHistory" class="ms-auto text-muted" title="Historique d&eacute;taill&eacute;" aria-label="Historique d&eacute;taill&eacute;">' +
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M5.828 10.172a.5.5 0 0 0-.707 0l-4.096 4.096V11.5a.5.5 0 0 0-1 0v3.975a.5.5 0 0 0 .5.5H4.5a.5.5 0 0 0 0-1H1.732l4.096-4.096a.5.5 0 0 0 0-.707m4.344-4.344a.5.5 0 0 0 .707 0l4.096-4.096V4.5a.5.5 0 1 0 1 0V.525a.5.5 0 0 0-.5-.5H11.5a.5.5 0 0 0 0 1h2.768l-4.096 4.096a.5.5 0 0 0 0 .707"/></svg></a></h5>' +
                 '<div class="card-body"><div style="position:relative;height:342px;"><canvas id="energy-chart"></canvas></div></div>' +
                 helpLink('popupHelpElectricity') +
                 '<a href="' + energyUrl('/api/energy/chart/export?time=' + t) + '" download class="position-absolute bottom-0 end-0 p-2 text-muted" title="Exporter en CSV">' + ENERGY_CSV_ICON + '</a>' +
@@ -639,6 +657,7 @@
 
     // Graphiques d'un affichage precedent : liberes avant d'en recreer
     destroyEnergyCharts();
+    gasMain = null;
     energyGauges = { sig: '', list: [] };
     energyState = {};
     donutChart = null;
@@ -646,13 +665,20 @@
 
     if (isHour && !energyZl) energyCharts.power = createPowerChart();
     loadZlinkyChoice(time, gen);
-    energyCharts.energy = createEnergyChart('energy-chart', { fees: true, palette: ENERGY_COLORS, presence: true });
+    energyCharts.energy = createEnergyChart('energy-chart', { fees: true, palette: ENERGY_COLORS, presence: true, temperature: true });
 
     // Barres de presence : vue heure (rafraichie chaque minute) et vue jour (5 min)
     presenceState = { period: '', hour: [], day: {} };
     if (time === 'hour' || time === 'day') {
       loadPresence(time, gen);
       pageInterval(function() { loadPresence(time, gen); }, time === 'hour' ? 60000 : 300000);
+    }
+
+    // Courbes de temperature : memes vues et meme rafraichissement que la presence
+    tempState = { period: '', sensors: [] };
+    if (time === 'hour' || time === 'day') {
+      loadTemperature(time, gen);
+      pageInterval(function() { loadTemperature(time, gen); }, time === 'hour' ? 60000 : 300000);
     }
 
     // Bascule Wh / euros de la repartition
@@ -1124,20 +1150,24 @@
   }
   function tooltipKeep(item) {
     var meta = item.dataset.lixee || {};
+    if (meta.temp) return item.parsed.y != null;          // 0 °C est une vraie valeur
     return !meta.ref && item.parsed.y != null && Number(item.parsed.y) !== 0;
   }
 
-  // Puissance apparente des dernieres 24 h (createPowerGraph)
+  // Puissance apparente des dernieres 24 h (createPowerGraph) : aires empilees.
+  // En barres, les 1440 minutes font moins d'un pixel chacune : les phases
+  // empilees se melangeaient et semblaient cote a cote. Chaque phase est ici
+  // une bande posee sur la precedente, le bord superieur donne le total.
   function createPowerChart() {
     var canvas = document.getElementById('power-chart');
     if (!canvas || typeof Chart === 'undefined') return null;
     return new Chart(canvas.getContext('2d'), {
-      type: 'bar',
+      type: 'line',
       data: { labels: [], datasets: [] },
       options: {
         responsive: true, maintainAspectRatio: false, animation: false,
         interaction: { mode: 'index', intersect: false },
-        datasets: { bar: { barPercentage: 0.9, categoryPercentage: 0.95 } },
+        elements: { point: { radius: 0, hoverRadius: 3, hitRadius: 2 }, line: { borderWidth: 1, tension: 0 } },
         scales: {
           x: { stacked: true, ticks: { maxRotation: 70, minRotation: 70, autoSkip: true, maxTicksLimit: 20 } },
           y: { stacked: true, beginAtZero: true, suggestedMax: 100,
@@ -1229,7 +1259,13 @@
     var labels = arr(p.labels).map(String);
     var cons = arr(p.consumption), inj = arr(p.injection);
     var tri = (p.tri != null) ? !!p.tri : cons.length > 1;
-    var BLUES = ['#1e88e5', '#5dade2', '#85c1e9'], GREENS = ['#27ae60', '#0ed160', '#08612d'];
+    // Phases bien distinctes (bleu, sarcelle, violet) ; injection en verts
+    var BLUES = ['#1e88e5', '#00897b', '#7e57c2'], GREENS = ['#27ae60', '#0ed160', '#08612d'];
+    // Aire empilee : remplie jusqu'a la phase precedente de la meme pile
+    function area(label, data, color, stack) {
+      return { label: label, data: data, borderColor: color, backgroundColor: color + 'b3',
+               fill: 'stack', stack: stack, spanGaps: false };
+    }
     // null = minute sans mesure ; injection affichee en negatif
     function clean(a, sign) {
       return arr(a).map(function(v) {
@@ -1241,12 +1277,10 @@
     inj.slice(0, 3).forEach(function(a, i) {
       var data = clean(a, -1);
       if (!data.some(function(v) { return v; })) return;     // injection vide : omise
-      sets.push({ label: tri ? 'Injection Ph' + (i + 1) : 'Injection', data: data,
-                  backgroundColor: GREENS[i], stack: 'Stack0' });
+      sets.push(area(tri ? 'Injection Ph' + (i + 1) : 'Injection', data, GREENS[i], 'inj'));
     });
     cons.slice(0, 3).forEach(function(a, i) {
-      sets.push({ label: tri ? 'Puissance Ph' + (i + 1) : 'Puissance', data: clean(a, 1),
-                  backgroundColor: BLUES[i], stack: 'Stack0' });
+      sets.push(area(tri ? 'Puissance Ph' + (i + 1) : 'Puissance', clean(a, 1), BLUES[i], 'cons'));
     });
     var goal = num(p.goal);
     chart.lixeeGoal = goal;
@@ -1276,10 +1310,14 @@
         scales: {
           x: { stacked: true, ticks: { maxRotation: 70, minRotation: 70, autoSkip: true } },
           y: { stacked: true, beginAtZero: true, grace: '10%',
-               ticks: { callback: function(v) { return fmtQty(v) + ' ' + info.unit; } } }
+               ticks: { callback: function(v) { return fmtQty(v) + ' ' + info.unit; } } },
+          // Temperatures (courbes) : axe de droite, affiche seulement s'il sert ;
+          // beginAtZero explicite, le type 'bar' le force a true sur les axes de valeurs
+          yT: { display: 'auto', position: 'right', beginAtZero: false, grace: '10%', grid: { drawOnChartArea: false },
+                ticks: { callback: function(v) { return fmtNum(v, Math.round(v) === v ? 0 : 1) + ' °C'; } } }
         },
         plugins: {
-          legend: { display: true, position: 'top' },
+          legend: opts.presence ? presenceLegend() : { display: true, position: 'top' },
           tooltip: {
             filter: tooltipKeep,
             callbacks: {
@@ -1292,18 +1330,87 @@
       plugins: opts.presence ? [PRESENCE_OVERLAY] : []
     });
     chart.lixeeInfo = info;
+    chart.lixeeTemp = !!opts.temperature;
     return chart;
+  }
+
+  // Courbes de temperature (Config Energie > Temperature) : une par sonde,
+  // moyenne horaire (vue heure) ou journaliere (vue jour)
+  var tempState = { period: '', sensors: [] };
+  var TEMP_COLORS = ['#c0392b', '#8e44ad', '#16a085', '#b7950b'];   // sans l'orange du gaz (comme l'historique)
+  function tempDatasets(labels) {
+    var p = tempState.period, out = [];
+    if (p !== 'hour' && p !== 'day') return out;
+    tempState.sensors.forEach(function(s, k) {
+      if (!s) return;
+      var stats = [];
+      var data = arr(labels).map(function(l, i) {
+        var e = null, v = null;
+        if (p === 'hour') v = arr(s.hour)[i];
+        else { e = (s.day || {})[String(l)] || null; v = e ? e.avg : null; }
+        stats.push(e);
+        var n = Number(v);
+        return (v == null || !isFinite(n)) ? null : n;
+      });
+      if (!data.some(function(v) { return v != null; })) return;     // aucune mesure : omise
+      var c = TEMP_COLORS[k % TEMP_COLORS.length], name = String(s.name || s.ieee || ('Sonde ' + (k + 1)));
+      out.push({ type: 'line', label: name + ' (°C)', data: data, yAxisID: 'yT', stack: 'temp_' + k,
+                 borderColor: c, backgroundColor: c, borderWidth: 2, pointRadius: 2, pointHoverRadius: 4,
+                 fill: false, tension: 0.3, order: -1, lixee: { temp: true, name: name, stats: stats } });
+    });
+    return out;
+  }
+  // Recharge les courbes, sans attendre le cycle suivant du graphe
+  function loadTemperature(time, gen) {
+    return energyGet('/api/energy/temperature?time=' + time, gen, function(d) {
+      d = d || {};
+      tempState = { period: d.enabled ? time : '', sensors: arr(d.sensors) };
+      var ch = energyCharts.energy;
+      if (!ch || !ch.lixeeTemp) return;
+      var labels = ch.data.labels || [];
+      var sets = (ch.data.datasets || []).filter(function(ds) { return !(ds.lixee && ds.lixee.temp); });
+      setChartData(ch, labels, sets.concat(tempDatasets(labels)));
+    });
   }
 
   // Barres de presence (getPresenceJavaScript de la LiXee-Box) : sous les
   // barres d'energie, une bande verte pale et un point vert en haut de chaque
   // creneau (heure, ou jour) ou une presence a ete detectee
   var presenceState = { period: '', hour: [], day: {} };
+  var PRESENCE_COLOR = 'rgba(76,175,80,0.8)';
+
+  // Legende : entree "Presence detectee" tant que la bande verte est affichable
+  // (vues heure et jour, presence activee) ; un clic la masque, comme une serie
+  function presenceLegend() {
+    var base = Chart.defaults.plugins.legend;
+    return {
+      display: true, position: 'top',
+      labels: {
+        generateLabels: function(c) {
+          var items = base.labels.generateLabels(c), p = presenceState.period;
+          if (p === 'hour' || p === 'day') {
+            items.push({ text: 'Présence détectée', fillStyle: PRESENCE_COLOR, strokeStyle: PRESENCE_COLOR,
+                         lineWidth: 0, pointStyle: 'circle', hidden: !!c.lixeePresenceHidden, lixeePresence: true });
+          }
+          return items;
+        }
+      },
+      onClick: function(e, item, legend) {
+        if (item && item.lixeePresence) {
+          legend.chart.lixeePresenceHidden = !legend.chart.lixeePresenceHidden;
+          legend.chart.update('none');
+          return;
+        }
+        base.onClick.call(this, e, item, legend);
+      }
+    };
+  }
+
   var PRESENCE_OVERLAY = {
     id: 'presenceOverlay',
     beforeDraw: function(c) {
       var ca = c.chartArea, p = presenceState.period;
-      if (!ca || (p !== 'hour' && p !== 'day')) return;
+      if (!ca || c.lixeePresenceHidden || (p !== 'hour' && p !== 'day')) return;
       var l = c.data.labels || [];
       if (!l.length) return;
       var bw = (ca.right - ca.left) / l.length, ctx = c.ctx;
@@ -1319,7 +1426,7 @@
         var x = ca.left + i * bw + bw / 2;
         ctx.fillStyle = 'rgba(76,175,80,0.15)';
         ctx.fillRect(x - bw / 2, ca.top, bw, ca.bottom - ca.top);
-        ctx.fillStyle = 'rgba(76,175,80,0.8)';
+        ctx.fillStyle = PRESENCE_COLOR;
         ctx.beginPath();
         ctx.arc(x, ca.top + 8, 4, 0, 6.28);
         ctx.fill();
@@ -1339,9 +1446,44 @@
   }
 
   function loadMainEnergyChart(time, gen) {
+    var elec = null;
     return energyGet('/api/energy/series?time=' + time, gen, function(d) {
-      fillEnergyChart(energyCharts.energy, d, time);
+      elec = d;
+      if (!gasMain) fillEnergyChart(energyCharts.energy, d, time);
+    }).then(function() {
+      if (!gasMain || !elec || !energyAlive(gen)) return;
+      var gm = gasMain;
+      return $.getJSON(gm.url).then(function(g) {
+        if (energyAlive(gen)) fillEnergyChart(energyCharts.energy, withGasSeries(elec, g, gm), time);
+      }, function() {
+        if (energyAlive(gen)) fillEnergyChart(energyCharts.energy, elec, time);
+      });
     });
+  }
+
+  // Wh par unite de gaz (cfg_gaz_wh_per_unit) : Wh, kWh, ou volume avec la
+  // conversion kWh de la facture ; 0 si le gaz n'est pas convertible en energie
+  function gasWhPerUnit(cfg) {
+    var u = String((cfg && cfg.unitGaz) || '').trim().toLowerCase();
+    if (u === 'wh') return 1;
+    if (u === 'kwh') return 1000;
+    var k = num(cfg && cfg.kwhGaz);
+    return k > 0 ? k * 1000 : 0;
+  }
+
+  // Serie electricite + gaz converti en Wh (memes creneaux que l'electricite)
+  function withGasSeries(elec, g, gm) {
+    g = g || {};
+    var gs = arr(g.series)[0];
+    var labels = arr(elec.labels).map(String);
+    if (!gs || !$.isArray(gs.data) || arr(g.labels).map(String).join('|') !== labels.join('|')) return elec;
+    var k = num(g.coeff) > 0 ? num(g.coeff) : 1;
+    var out = $.extend({}, elec);
+    out.series = arr(elec.series).concat([{
+      key: 'gaz', name: 'Gaz', type: 'gas', color: '#e67e22', price: gm.price,
+      data: gs.data.map(function(v) { var n = Number(v); return (v == null || !isFinite(n)) ? null : n * k * gm.wf; })
+    }]);
+    return out;
   }
 
   function fillEnergyChart(chart, d, period) {
@@ -1379,7 +1521,7 @@
         data: data,
         backgroundColor: isProd ? safeColor(s.color, '#27ae60') : safeColor(s.color, info.palette[i % info.palette.length]),
         stack: 'Stack0',
-        lixee: { price: num(s.price), prices: $.isArray(s.prices) ? s.prices : null, prod: isProd }
+        lixee: { price: num(s.price), prices: $.isArray(s.prices) ? s.prices : null, prod: isProd, gas: s.type === 'gas' }
       };
       (isProd ? prodSets : consoSets).push(ds);
     });
@@ -1389,6 +1531,7 @@
     if (budget > 0 && labels.length) {
       datasets.push(refLine('Budget', budget, labels.length, '#8e44ad', [6, 4]));
     }
+    if (chart.lixeeTemp) datasets = datasets.concat(tempDatasets(labels));
     setChartData(chart, labels, datasets);
   }
 
@@ -1400,6 +1543,12 @@
 
   function energyTooltipLabel(chart, ctx) {
     var info = chart.lixeeInfo, meta = ctx.dataset.lixee || {};
+    if (meta.temp) {
+      var st = meta.stats && meta.stats[ctx.dataIndex];
+      var tl = meta.name + ' : ' + fmtNum(ctx.parsed.y, 1) + ' °C';
+      if (st && st.min != null && st.max != null) tl += ' (min ' + fmtNum(st.min, 1) + ' / max ' + fmtNum(st.max, 1) + ')';
+      return tl;
+    }
     var costs = info.costs || {};
     var v = Math.abs(num(ctx.parsed.y));
     var line = ctx.dataset.label + ' : ' + fmtQty(v) + ' ' + info.unit;
@@ -1408,7 +1557,7 @@
       var q = v * info.qtyScale;
       var cost = q * price;
       // Accise ajoutee a la consommation electrique seulement
-      if (!meta.prod && info.fees && num(costs.cspe) > 0) cost += q * num(costs.cspe);
+      if (!meta.prod && !meta.gas && info.fees && num(costs.cspe) > 0) cost += q * num(costs.cspe);
       line += ' (' + fmtEur(cost) + ')';
     }
     return line;
@@ -1422,10 +1571,10 @@
     var f = num(costs.periodFactor);
     if (!(f > 0)) f = PERIOD_FACTORS[info.period] || 0;
     var u = ' ' + info.unit;
-    var prodQty = 0, consoQty = 0, prodEur = 0, consoEnergy = 0, consoTax = 0;
+    var prodQty = 0, consoQty = 0, prodEur = 0, consoEnergy = 0, consoTax = 0, gasQty = 0;
     items.forEach(function(it) {
       var meta = it.dataset.lixee || {};
-      if (meta.ref) return;
+      if (meta.ref || meta.temp) return;
       var v = num(it.parsed.y);
       if (!v) return;
       var a = Math.abs(v), q = a * info.qtyScale;
@@ -1435,12 +1584,15 @@
       } else {
         consoQty += a;
         consoEnergy += q * slotPrice(meta, it.dataIndex);
-        if (info.fees) consoTax += q * num(costs.cspe);
+        if (meta.gas) gasQty += a;
+        else if (info.fees) consoTax += q * num(costs.cspe);
       }
     });
     // Abonnement et CTA : une seule fois pour le creneau
     var abo = 0;
-    if (consoQty > 0 && info.fees) {
+    // Temperature seule sous le curseur : pas de pied (le separateur resterait seul)
+    if (!prodQty && !consoQty) return '';
+    if (consoQty - gasQty > 0 && info.fees) {
       abo = num(costs.abo) * f;
       consoTax += num(costs.cta) * f;
     }
@@ -1458,6 +1610,10 @@
     }
     if (consoQty > 0) {
       lines.push('Consommation : ' + fmtQty(consoQty) + u);
+      if (gasQty > 0) {
+        lines.push('   • Électricité : ' + fmtQty(consoQty - gasQty) + u);
+        lines.push('   • Gaz : ' + fmtQty(gasQty) + u);
+      }
       if (consoTotal > 0) {
         lines.push('   Coût : ' + fmtEur(consoTotal));
         details('Énergie', consoEnergy);
@@ -1484,7 +1640,16 @@
       if (!energyAlive(gen)) return;
       cfg = cfg || {};
       var meters = [];
-      if (cfg.Gaz)   meters.push({ key: 'gaz',   ieee: String(cfg.Gaz),   title: 'Consommation de Gaz', palette: ['#e67e22'] });
+      // Gaz en energie, vue du ZLinky principal : empile sur l'electricite
+      var wf = cfg.Gaz && !energyZl ? gasWhPerUnit(cfg) : 0;
+      if (wf > 0) {
+        gasMain = { url: '/api/energy/series?time=' + time + '&ieee=' + encodeURIComponent(String(cfg.Gaz)),
+                    wf: wf, price: num(String(cfg.tarifGaz || '').replace(',', '.')) };
+        $('#energy-chart-title').html('Usage d\'&eacute;lectricit&eacute; et de gaz');
+        loadMainEnergyChart(time, gen);
+      } else if (cfg.Gaz) {
+        meters.push({ key: 'gaz', ieee: String(cfg.Gaz), title: 'Consommation de Gaz', palette: ['#e67e22'] });
+      }
       if (cfg.Water) meters.push({ key: 'water', ieee: String(cfg.Water), title: 'Consommation d\'eau', palette: ['#2e86c1'] });
       if (!meters.length) return;
       var $box = $('#energy-meters');
@@ -2597,7 +2762,7 @@
   }
 
   // ============================================================================
-  // PAGE: Config Energie (6 onglets: Linky, Production, Gaz, Eau, Sous-compteurs, Presence)
+  // PAGE: Config Energie (7 onglets: Linky, Production, Gaz, Eau, Sous-compteurs, Presence, Temperature)
   // ============================================================================
   function pageConfigEnergy() {
     setContent(
@@ -2610,6 +2775,7 @@
           '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#water" type="button">Eau</button></li>' +
           '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#submeters" type="button">Sous-compteurs</button></li>' +
           '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#presence" type="button">Pr&eacute;sence</button></li>' +
+          '<li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#temperature" type="button">Temp&eacute;rature</button></li>' +
         '</ul>' +
         '<div class="tab-content">' +
 
@@ -2687,8 +2853,12 @@
                 '<div class="mb-3"><label>Coefficient de conversion</label><input class="form-control decimal-input" id="cfg-coeffGaz" type="text" value="1"></div>' +
                 '<div class="mb-3"><label>Unit&eacute;</label><input class="form-control" id="cfg-unitGaz" type="text" maxlength="11" list="dl-unit-gaz" placeholder="m3">' +
                   '<datalist id="dl-unit-gaz"><option value="Wh"><option value="kWh"><option value="m3"><option value="L"></datalist>' +
-                  '<div class="form-text">En <b>Wh</b>, le gaz est ajout&eacute; au bilan &eacute;nerg&eacute;tique (r&eacute;partition, &eacute;tiquette).</div></div>' +
-                '<div class="mb-3"><label>Tarif (&euro; / unit&eacute;)</label><input class="form-control decimal-input" id="cfg-tarifGaz" type="text"></div>' +
+                  '<div class="form-text">En <b>Wh</b> ou <b>kWh</b>, le gaz est ajout&eacute; au bilan &eacute;nerg&eacute;tique (r&eacute;partition, &eacute;tiquette, historique avec l&#39;&eacute;lectricit&eacute;).</div></div>' +
+                '<div class="mb-3" id="cfg-kwhGaz-box"><label>Conversion en kWh (kWh / <span class="cfg-gaz-u">m3</span>)</label>' +
+                  '<input class="form-control decimal-input" id="cfg-kwhGaz" type="text" placeholder="ex. 11,2">' +
+                  '<div class="form-text">Coefficient de conversion indiqu&eacute; sur votre facture de gaz. Rempli, le gaz reste affich&eacute; en ' +
+                  '<span class="cfg-gaz-u">m3</span> mais est aussi compt&eacute; en kWh dans le bilan et l&#39;historique. Vide : pas de conversion.</div></div>' +
+                '<div class="mb-3"><label>Tarif (&euro; / <span id="cfg-tarifGaz-u">unit&eacute;</span>)</label><input class="form-control decimal-input" id="cfg-tarifGaz" type="text"></div>' +
                 '<button type="submit" class="btn btn-primary mt-3">Enregistrer</button>' +
               '</form>' +
             '</div></div>' +
@@ -2742,6 +2912,19 @@
             '</div></div>' +
           '</div>' +
 
+          // === Onglet Temperature ===
+          '<div class="tab-pane fade" id="temperature">' +
+            '<div class="card mx-auto shadow-sm"><div class="card-body">' +
+              '<form id="form-temperature">' +
+                '<h5>Temp&eacute;rature</h5>' +
+                '<div class="form-text mb-2">La temp&eacute;rature moyenne de chaque sonde s&#39;affiche en courbe sur le graphe &laquo; Usage d&#39;&eacute;lectricit&eacute; &raquo; de la page &Eacute;nergie, une courbe par sonde (vues heure et jour). Quatre sondes au plus.</div>' +
+                '<div class="mb-3" id="temp-sensors"></div>' +
+                '<div class="form-check"><input type="checkbox" class="form-check-input" id="cfg-tempGraph"><label class="form-check-label" for="cfg-tempGraph">Afficher sur le graphique</label></div>' +
+                '<button type="submit" class="btn btn-primary mt-3">Enregistrer</button>' +
+              '</form>' +
+            '</div></div>' +
+          '</div>' +
+
         '</div>' +
       '</div>'
     );
@@ -2768,6 +2951,16 @@
       plugs.forEach(function(d) {
         var id = 'dl-' + d.ieee;
         $('#dl-plugs').append('<div class="form-check"><input type="checkbox" class="form-check-input dl-plug" id="' + escHtml(id) +
+          '" value="' + escHtml(d.ieee) + '"><label class="form-check-label" for="' + escHtml(id) + '">' +
+          escHtml((d.alias || d.model || d.ieee) + ' (' + d.ieee + ')') + '</label></div>');
+      });
+
+      // Temperature : seuls les appareils dotes du cluster Temperature Measurement (0x0402)
+      var temps = zb.filter(function(d) { return d && d.temperature; });
+      $('#temp-sensors').html(temps.length ? '' : '<span class="text-muted">Aucune sonde de temp&eacute;rature d&eacute;tect&eacute;e.</span>');
+      temps.forEach(function(d) {
+        var id = 'ts-' + d.ieee;
+        $('#temp-sensors').append('<div class="form-check"><input type="checkbox" class="form-check-input temp-sensor" id="' + escHtml(id) +
           '" value="' + escHtml(d.ieee) + '"><label class="form-check-label" for="' + escHtml(id) + '">' +
           escHtml((d.alias || d.model || d.ieee) + ' (' + d.ieee + ')') + '</label></div>');
       });
@@ -2799,6 +2992,8 @@
         $('#cfg-coeffGaz').val(cfg.coeffGaz != null ? cfg.coeffGaz : 1);
         $('#cfg-unitGaz').val(cfg.unitGaz || '');
         $('#cfg-tarifGaz').val(cfg.tarifGaz || '');
+        $('#cfg-kwhGaz').val(Number(cfg.kwhGaz) > 0 ? cfg.kwhGaz : '');
+        gazUnitUi();
         $('#cfg-water').val(cfg.Water || '');
         $('#cfg-coeffWater').val(cfg.coeffWater != null ? cfg.coeffWater : 1);
         $('#cfg-unitWater').val(cfg.unitWater || '');
@@ -2810,6 +3005,10 @@
         $('#cfg-dlRestorePct').val(cfg.delestageRestorePct != null ? cfg.delestageRestorePct : 80);
         $('#cfg-dlAnticip').val(cfg.delestageAnticipPct != null ? cfg.delestageAnticipPct : 0);
         $('#cfg-presenceGraph').prop('checked', !!cfg.enablePresenceGraph);
+        var ts = ',' + String(cfg.Temperature || '').toUpperCase().replace(/\s/g, '') + ',';
+        $('.temp-sensor').each(function() { this.checked = ts.indexOf(',' + String(this.value).toUpperCase() + ',') >= 0; });
+        limitTempSensors();
+        $('#cfg-tempGraph').prop('checked', cfg.enableTemperatureGraph !== false);
       });
     });
 
@@ -2867,11 +3066,21 @@
                                         tarifAboProd: dec('#cfg-tarifAboProd') })
         .then(saved('Configuration Production enregistr&eacute;e'), failed);
     });
+    // Gaz : unite d'energie (Wh / kWh) ou volume converti en kWh -> tarif au kWh
+    function gazUnitUi() {
+      var u = $.trim($('#cfg-unitGaz').val()) || 'm3', energy = /^k?wh$/i.test(u);
+      $('#cfg-kwhGaz-box').toggle(!energy);
+      $('.cfg-gaz-u').text(u);
+      $('#cfg-tarifGaz-u').text(energy || parseFloat(dec('#cfg-kwhGaz')) > 0 ? 'kWh' : u);
+    }
+    $(document).off('input.gazu').on('input.gazu', '#cfg-unitGaz, #cfg-kwhGaz', gazUnitUi);
     $(document).off('submit','#form-gaz').on('submit','#form-gaz', function(e) {
       e.preventDefault();
+      var unit = $.trim($('#cfg-unitGaz').val()) || 'm3';
       postJSON('/api/config/general', {
         Gaz: $('#cfg-gaz').val() || '', coeffGaz: parseFloat(dec('#cfg-coeffGaz')) || 1,
-        unitGaz: $.trim($('#cfg-unitGaz').val()) || 'm3', tarifGaz: dec('#cfg-tarifGaz')
+        unitGaz: unit, tarifGaz: dec('#cfg-tarifGaz'),
+        kwhGaz: /^k?wh$/i.test(unit) ? 0 : (parseFloat(dec('#cfg-kwhGaz')) || 0)
       }).then(saved('Configuration Gaz enregistr&eacute;e'), failed);
     });
     $(document).off('submit','#form-water').on('submit','#form-water', function(e) {
@@ -2880,6 +3089,19 @@
         Water: $('#cfg-water').val() || '', coeffWater: parseFloat(dec('#cfg-coeffWater')) || 1,
         unitWater: $.trim($('#cfg-unitWater').val()) || 'L', tarifWater: dec('#cfg-tarifWater')
       }).then(saved('Configuration Eau enregistr&eacute;e'), failed);
+    });
+    // Quatre sondes au plus : les autres cases sont grisees une fois la limite atteinte
+    function limitTempSensors() {
+      var full = $('.temp-sensor:checked').length >= 4;
+      $('.temp-sensor').each(function() { this.disabled = full && !this.checked; });
+    }
+    $(document).off('change', '.temp-sensor').on('change', '.temp-sensor', limitTempSensors);
+    $(document).off('submit','#form-temperature').on('submit','#form-temperature', function(e) {
+      e.preventDefault();
+      postJSON('/api/config/general', {
+        Temperature: $('.temp-sensor:checked').map(function() { return this.value; }).get().slice(0, 4).join(','),
+        enableTemperatureGraph: $('#cfg-tempGraph').is(':checked')
+      }).then(saved('Configuration Temp&eacute;rature enregistr&eacute;e'), failed);
     });
     $(document).off('submit','#form-presence').on('submit','#form-presence', function(e) {
       e.preventDefault();
@@ -3297,6 +3519,7 @@
     { dir: 'db',     label: 'Base des appareils' },
     { dir: 'hst',    label: 'Historiques' },
     { dir: 'tp',     label: 'Templates' },
+    { dir: 'tpu',    label: 'Templates personnels' },
     { dir: 'debug',  label: 'Debug' },
     { dir: 'bk',     label: 'Sauvegardes' },
     { dir: 'web/js', label: 'JavaScript' }
@@ -3307,7 +3530,14 @@
   // barre d'outils, editeur sombre, validation JSON et previsualisation.
   // Une variante par dossier, comme les pages de la Box.
   var FILE_EDITORS = {
-    tp:     { title: 'Templates', item: 'template', search: true, create: true, importFile: true, exportFile: true,
+    // Templates livres (tp/) : remplaces a chaque mise a jour, donc en lecture
+    // seule ici (locked : JSON valide et previsualise, mais pas d'edition).
+    // Un modele se modifie apres copie dans tpu/ (bouton Personnaliser), qui
+    // l'emporte modele par modele (issue #84). L'API /api/files/write accepte
+    // toujours tp/ (essais de templates).
+    tp:     { title: 'Templates', item: 'template', search: true, exportFile: true,
+              preview: 'template', locked: true, customize: true, stock: true },
+    tpu:    { title: 'Templates personnels', item: 'template', search: true, create: true, importFile: true, exportFile: true,
               preview: 'template', format: true, save: true, del: true },
     db:     { title: 'Appareils', search: true, importFile: true, exportFile: true, preview: 'device', format: true, save: true, del: true },
     hst:    { title: 'Historique', search: true, importFile: true, exportFile: true, preview: 'history', format: true, save: true, del: true },
@@ -3412,6 +3642,17 @@
             '</div>' +
             (cfg.search ? '<div class="fe-search">' + FE_ICONS.search + '<input type="text" id="fe-search" placeholder="Rechercher..."></div>' : '') +
           '</div>' +
+          (dir === 'tp' || dir === 'tpu' ?
+            '<div class="px-3 pt-2 small">' +
+              '<div class="btn-group btn-group-sm w-100 mb-2">' +
+                '<a class="btn btn-' + (dir === 'tp' ? '' : 'outline-') + 'secondary" href="#files?dir=tp">Livrés</a>' +
+                '<a class="btn btn-' + (dir === 'tpu' ? '' : 'outline-') + 'secondary" href="#files?dir=tpu">Personnels</a>' +
+              '</div>' +
+              '<div class="text-muted">' + (dir === 'tp'
+                ? 'Lecture seule : remplacés à chaque mise à jour. Pour modifier un modèle, ouvrez son fichier et cliquez sur « Personnaliser » : il est copié dans vos templates personnels.'
+                : 'Jamais modifiés par une mise à jour. Un modèle présent ici remplace celui du fichier livré de même nom.') +
+              '</div>' +
+            '</div>' : '') +
           '<div class="fe-list" id="fe-list"></div>' +
           (cfg.importFile ? '<div class="p-2 border-top"><button class="btn btn-outline-secondary btn-sm w-100" id="fe-import">' + FE_ICONS.upload + 'Importer</button></div>' : '') +
           (cfg.delAll ? '<div class="p-2 border-top"><button class="btn btn-danger btn-sm w-100" id="fe-delall">Tout supprimer</button></div>' : '') +
@@ -3423,14 +3664,16 @@
               (cfg.preview ? '<button class="btn btn-outline-secondary btn-sm" id="fe-btn-preview" title="Prévisualisation">' + FE_ICONS.eye + '</button> ' : '') +
               (cfg.format ? '<button class="btn btn-outline-secondary btn-sm" id="fe-btn-format" title="Formater JSON">' + FE_ICONS.code + '</button> ' : '') +
               (cfg.exportFile ? '<button class="btn btn-outline-secondary btn-sm" id="fe-btn-export" title="Exporter">' + FE_ICONS.download + '</button> ' : '') +
+              (cfg.customize ? '<select class="form-select form-select-sm d-inline-block w-auto fe-hidden" id="fe-model" title="Modèle à personnaliser"></select> ' +
+                '<button class="btn btn-outline-primary btn-sm" id="fe-btn-custom" title="Copier le modèle dans les templates personnels">Personnaliser</button> ' : '') +
               (cfg.save ? '<button class="btn btn-warning btn-sm" id="fe-btn-save">Enregistrer</button> ' : '') +
               (cfg.del ? '<button class="btn btn-danger btn-sm" id="fe-btn-delete">Supprimer</button>' : '') +
             '</div>' +
           '</div>' +
           '<div class="fe-editor-container">' +
             '<div class="fe-editor-pane" id="fe-editor-pane">' +
-              '<div class="fe-pane-header">' + (cfg.readonly ? 'Contenu' : 'Éditeur JSON') + '</div>' +
-              '<div class="fe-editor-wrapper"><textarea id="fe-file" spellcheck="false"' + (cfg.readonly ? ' readonly' : '') +
+              '<div class="fe-pane-header">' + (cfg.readonly ? 'Contenu' : cfg.locked ? 'Template livré (lecture seule)' : 'Éditeur JSON') + '</div>' +
+              '<div class="fe-editor-wrapper"><textarea id="fe-file" spellcheck="false"' + (cfg.readonly || cfg.locked ? ' readonly' : '') +
                 ' placeholder="Sélectionnez un ' + what + ' dans la liste..."></textarea></div>' +
               '<div class="fe-validation" id="fe-validation"><span id="fe-status"></span></div>' +
             '</div>' +
@@ -3463,6 +3706,15 @@
             .append($('<span class="name">').text(f.name), $('<span class="size">').text(f.size + ' o'))
             .on('click', function() { selectFile(f.name); }));
         });
+        // Templates livres personnalises (fichier de meme nom dans tpu/)
+        if (cfg.stock) {
+          $.getJSON('/api/files?dir=tpu').done(function(u) {
+            (u.files || []).forEach(function(uf) {
+              $l.find('.fe-item').filter(function() { return $(this).attr('data-file') === uf.name; })
+                .find('.name').append(' ', $('<span class="badge bg-primary">').text('perso'));
+            });
+          });
+        }
         filter();
         if (select) selectFile(select, true);
       }).fail(function(xhr) {
@@ -3491,9 +3743,16 @@
       $.ajax({ url: '/api/files/read?' + q(name), dataType: 'text' }).done(function(txt) {
         $('#fe-loader').remove();
         $('#fe-file').val(txt).removeClass('is-invalid');
-        validate();
+        var parsed = validate();
         if (previewVisible) updatePreview();
         hasChanges = false;
+        // Templates livres : liste des modeles a personnaliser (si plusieurs)
+        if (cfg.customize) {
+          var models = parsed ? Object.keys(parsed) : [];
+          var $m = $('#fe-model').empty();
+          models.forEach(function(m) { $m.append($('<option>').val(m).text(m)); });
+          $m.toggleClass('fe-hidden', models.length < 2);
+        }
       }).fail(function(xhr) {
         $('#fe-loader').remove();
         status('<span class="validation-error">' + escHtml(apiErrorText(xhr) || 'Erreur de chargement') + '</span>');
@@ -3638,6 +3897,41 @@
         loadList();
       }).fail(function(xhr) { alert('Erreur: ' + apiErrorText(xhr)); });
     });
+    // Copie d'un modele livre, tel quel, dans tpu/<meme fichier> : il y est
+    // ensuite modifie, l'emporte sur le template livre et survit aux mises a jour
+    $c.on('click.fe', '#fe-btn-custom', function() {
+      var json = validate();
+      if (!json) { alert('Template livré illisible : impossible de le personnaliser'); return; }
+      var models = Object.keys(json);
+      if (!models.length) return;
+      var model = models.length > 1 ? $('#fe-model').val() : models[0];
+      if (!Object.prototype.hasOwnProperty.call(json, model)) return;
+      var dst = cur, uq = 'dir=tpu&name=' + encodeURIComponent(dst);
+      function save(user) {
+        if (Object.prototype.hasOwnProperty.call(user, model) &&
+            !confirm('Le modèle ' + model + ' est déjà personnalisé. Le remplacer ?')) return;
+        user[model] = json[model];
+        $.ajax({ url: '/api/files/write?' + uq, method: 'POST', contentType: 'text/plain', data: JSON.stringify(user, null, 2) })
+          .done(function() {
+            hasChanges = false;
+            showAlert('Modèle ' + model + ' personnalisé (tpu/' + dst + ')');
+            location.hash = '#files?' + uq;
+          })
+          .fail(function(xhr) { alert('Erreur: ' + apiErrorText(xhr)); });
+      }
+      $.ajax({ url: '/api/files/read?' + uq, dataType: 'text' }).done(function(txt) {
+        var user;
+        try { user = JSON.parse(txt); } catch (e) { user = null; }
+        if (!user || typeof user !== 'object' || Array.isArray(user)) {
+          alert('Le template personnel ' + dst + ' est invalide : corrigez-le d\'abord.');
+          return;
+        }
+        save(user);
+      }).fail(function(xhr) {
+        if (xhr.status === 404) save({});
+        else alert('Erreur: ' + apiErrorText(xhr));
+      });
+    });
     $c.on('click.fe', '#fe-btn-delete', function() {
       if (!cur || !confirm('Supprimer ' + cur + ' ?')) return;
       $.ajax({ url: '/api/files/delete?' + q(cur), method: 'POST' }).done(function() {
@@ -3683,7 +3977,7 @@
       e.target.value = '';
     });
 
-    loadList();
+    loadList(routeParams.name);
   }
 
   // Texte brut d'une erreur d'API (pour .text(), sans echappement HTML)

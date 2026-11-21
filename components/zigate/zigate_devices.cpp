@@ -27,6 +27,15 @@ EXT_RAM_BSS_ATTR static zigate_device_t s_devices[ZIGATE_MAX_DEVICES];
 static int s_device_count = 0;
 
 #define DEVICES_FILE "/littlefs/zigbee_devices.json"
+// Derniere activite des appareils : sans elle, la fiche et la page Zigbee
+// n'affichaient plus de dernier contact apres un redemarrage
+#define SEEN_FILE    "/littlefs/zigbee_seen.json"
+#define SEEN_SAVE_MS (10UL * 60 * 1000)
+
+static bool     s_seen_dirty;
+static uint32_t s_seen_saved_ms;
+
+static void zigate_devices_load_seen(void);
 
 // Correction : add_or_update (tache ZiGate), remove (tache web, qui decalait
 // le tableau), save (plusieurs taches, fopen "w" concurrents sur le meme
@@ -66,6 +75,7 @@ esp_err_t zigate_devices_init(void)
         ESP_LOGW(TAG, "No saved devices found, starting fresh");
     } else {
         ESP_LOGI(TAG, "Loaded %d devices from storage", s_device_count);
+        zigate_devices_load_seen();
     }
     return ESP_OK;
 }
@@ -241,6 +251,74 @@ esp_err_t zigate_devices_save(void)
     else ESP_LOGE(TAG, "Write failed for %s", DEVICES_FILE);
     devs_unlock();
     return err;
+}
+
+static uint32_t now_ms(void)
+{
+    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
+}
+
+void zigate_devices_mark_seen(zigate_device_t *dev, uint32_t epoch)
+{
+    if (!dev) return;
+    dev->last_seen = epoch;
+    s_seen_dirty = true;
+}
+
+void zigate_devices_save_seen(bool force)
+{
+    if (!s_seen_dirty) return;
+    if (!force && s_seen_saved_ms && now_ms() - s_seen_saved_ms < SEEN_SAVE_MS) return;
+    devs_lock();
+    cJSON *root = cJSON_CreateObject();
+    for (int i = 0; root && i < s_device_count; i++) {
+        if (!s_devices[i].last_seen) continue;
+        char ieee_str[20];
+        snprintf(ieee_str, sizeof(ieee_str), "%016llX", s_devices[i].ieee_addr);
+        cJSON_AddNumberToObject(root, ieee_str, (double)s_devices[i].last_seen);
+    }
+    s_seen_dirty = false;
+    char *json_str = root ? cJSON_PrintUnformatted(root) : NULL;
+    cJSON_Delete(root);
+    bool ok = false;
+    if (json_str) {
+        FILE *f = fopen(SEEN_FILE, "w");
+        if (f) {
+            ok = fputs(json_str, f) >= 0;
+            if (fclose(f) != 0) ok = false;
+        }
+        free(json_str);
+    }
+    if (!ok) {
+        s_seen_dirty = true;
+        ESP_LOGE(TAG, "Write failed for %s", SEEN_FILE);
+    }
+    s_seen_saved_ms = now_ms() ? now_ms() : 1;
+    devs_unlock();
+}
+
+static void zigate_devices_load_seen(void)
+{
+    FILE *f = fopen(SEEN_FILE, "r");
+    if (!f) return;
+    char *buf = (char *)malloc(4096);
+    size_t n = buf ? fread(buf, 1, 4095, f) : 0;
+    fclose(f);
+    if (!buf) return;
+    buf[n] = '\0';
+    cJSON *root = cJSON_Parse(buf);
+    free(buf);
+    if (!root) { ESP_LOGW(TAG, SEEN_FILE " illisible"); return; }
+    devs_lock();
+    for (int i = 0; i < s_device_count; i++) {
+        char ieee_str[20];
+        snprintf(ieee_str, sizeof(ieee_str), "%016llX", s_devices[i].ieee_addr);
+        const cJSON *v = cJSON_GetObjectItem(root, ieee_str);
+        if (cJSON_IsNumber(v) && !s_devices[i].last_seen)
+            s_devices[i].last_seen = (uint32_t)v->valuedouble;
+    }
+    devs_unlock();
+    cJSON_Delete(root);
 }
 
 static esp_err_t zigate_devices_load_locked(void);
