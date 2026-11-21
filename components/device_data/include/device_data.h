@@ -166,6 +166,9 @@ typedef struct {
     // pour que fiche, regles, groupes et MQTT les proposent).
     int                       base_action_count;
     bool                      dyn_only;
+    // "occupancy_tech" : techno du capteur Occupancy Sensing (cluster 0406),
+    // "pir" (defaut si absent/inconnu), "ultrasonic" ou "radar" (issue #97).
+    char                      occupancy_tech[16];
 } devdata_template_t;
 
 /** Info device supplementaires */
