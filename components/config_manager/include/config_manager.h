@@ -125,6 +125,7 @@ typedef struct {
     int  water_leak_threshold;          // L consommes de 00h a 06h, defaut 5
     bool night_water_leak;
     int  night_water_leak_threshold;    // L consommes de 00h a 05h59, defaut 1
+    bool water_continuous;              // eau qui coule 3 h d'affilee, dont une heure de nuit
     bool daily_metrics;                 // resume quotidien a 23h50
 } cfg_notifications_t;
 

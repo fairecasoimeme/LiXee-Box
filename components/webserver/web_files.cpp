@@ -42,7 +42,7 @@ static const char *TAG = "WEB_FILES";
 #define PASS_MASK        "********"
 
 static const char *const ALLOWED_DIRS[] = {
-    "config", "db", "hst", "tp", "tpu", "debug", "bk", "web/js",
+    "config", "db", "hst", "tp", "tpu", "debug", "bk", "web/js", "tarifs",
 };
 
 // ----------------------------------------------------------------------------

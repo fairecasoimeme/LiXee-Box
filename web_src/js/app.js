@@ -396,6 +396,15 @@
                   '<div class="text-center"><small style="opacity:0.8;display:block;">Demain</small><div class="tempo-badge tempo-undef" id="tempo-tomorrow">-</div></div>' +
                 '</div></div>' +
               '</div>' +
+              // Meteo de l'electricite (/api/energy/advice?part=weather), ZLinky principal
+              '<div id="tariff-weather" style="display:none;">' +
+                '<div class="d-flex flex-wrap align-items-center gap-2 mt-2 pt-2" style="border-top:1px solid rgba(255,255,255,0.3);">' +
+                  '<span class="badge rounded-pill bg-white" id="tariff-weather-level"></span>' +
+                  '<span class="flex-grow-1" style="font-size:0.9rem;" id="tariff-weather-text"></span>' +
+                  '<span style="opacity:0.85;font-size:0.85rem;" id="tariff-weather-cost"></span>' +
+                  '<a href="#savings" class="text-white text-nowrap" style="font-size:0.85rem;">&Eacute;conomies &rsaquo;</a>' +
+                '</div>' +
+              '</div>' +
             '</div>' +
           '</div></div>' +
 
@@ -1700,7 +1709,32 @@
         setTempoBadge('#tempo-tomorrow', d.tomorrow, '-');
       }
       $('#tariff-section').show();
+      loadTariffWeather(gen);
     }, function() { $('#tariff-section').hide(); });
+  }
+
+  // Meteo de l'electricite calculee par la box (ECONOMIES.md) : niveau de prix
+  // du moment et conseil, sur le ZLinky principal seulement
+  var WEATHER_LEVELS = {
+    surplus:   { label: 'Surplus solaire', color: '#1e8449' },
+    cheap:     { label: 'Bon moment',      color: '#27ae60' },
+    flat:      { label: 'Prix unique',     color: '#2980b9' },
+    normal:    { label: 'Prix normal',     color: '#d68910' },
+    expensive: { label: 'Plus cher',       color: '#5d6d7e' },
+    peak:      { label: 'Très cher',       color: '#c0392b' }
+  };
+  function loadTariffWeather(gen) {
+    if (energyZl) { $('#tariff-weather').hide(); return; }
+    return $.getJSON('/api/energy/advice?part=weather').then(function(d) {
+      if (!energyAlive(gen)) return;
+      var w = d && d.weather, lv = w && WEATHER_LEVELS[w.level];
+      if (!lv) { $('#tariff-weather').hide(); return; }
+      $('#tariff-weather-level').text(lv.label).css('color', lv.color);
+      $('#tariff-weather-text').text(w.text || '');
+      var cost = d.costPerHour;
+      $('#tariff-weather-cost').text(cost != null && isFinite(cost) ? 'en ce moment ' + fmtNum(cost, 2) + ' €/h' : '');
+      $('#tariff-weather').show();
+    }, function() { $('#tariff-weather').hide(); });
   }
 
   // --- Fenetre "Donnees Linky" (/api/energy/linky) ---

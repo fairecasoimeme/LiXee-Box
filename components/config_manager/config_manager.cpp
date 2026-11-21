@@ -454,6 +454,7 @@ esp_err_t cfg_load_general(void)
     g_notifications.water_leak_threshold  = json_get_int_pos(doc, "WaterLeakThreshold", 5);
     g_notifications.night_water_leak      = json_get_bool(doc, "NightWaterLeak", false);
     g_notifications.night_water_leak_threshold = json_get_int_pos(doc, "NightWaterLeakThreshold", 1);
+    g_notifications.water_continuous      = json_get_bool(doc, "WaterContinuous", false);
     g_notifications.daily_metrics         = json_get_bool(doc, "DailyMetrics", false);
 
     // --- Sous-compteurs ---
@@ -704,6 +705,7 @@ static esp_err_t save_general_unlocked(void)
     put_num(doc,  "WaterLeakThreshold",   g_notifications.water_leak_threshold);
     put_flag(doc, "NightWaterLeak",       g_notifications.night_water_leak);
     put_num(doc,  "NightWaterLeakThreshold", g_notifications.night_water_leak_threshold);
+    put_flag(doc, "WaterContinuous",      g_notifications.water_continuous);
     put_flag(doc, "DailyMetrics",         g_notifications.daily_metrics);
 
     // Sous-compteurs

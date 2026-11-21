@@ -37,7 +37,7 @@ enum { ST_HDR = 0, ST_DATA, ST_PAD, ST_END };
 enum { TGT_SKIP = 0, TGT_FILE, TGT_OTA };
 
 // Repertoires restaurables (premiere composante du chemin)
-static const char *const RESTORE_DIRS[] = { "config", "db", "hst", "tp", "tpu", "debug", "ir", "bk", "web" };
+static const char *const RESTORE_DIRS[] = { "config", "db", "hst", "tp", "tpu", "debug", "ir", "bk", "web", "tarifs" };
 
 static void set_err(char *err, size_t len, const char *msg)
 {

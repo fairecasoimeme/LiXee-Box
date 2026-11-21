@@ -3,6 +3,7 @@ idf_component_register(
         "energy_service.cpp"
         "energy_archive.cpp"
         "power_stats.cpp"
+        "energy_advice.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES

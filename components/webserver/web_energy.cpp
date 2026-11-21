@@ -7,6 +7,8 @@
 #include "web_energy.h"
 #include "web_server.h"
 #include "energy_service.h"
+#include "energy_advice.h"
+#include "notifications.h"
 #include "energy_archive.h"
 #include "energy_history.h"
 #include "presence.h"
@@ -224,6 +226,97 @@ static esp_err_t tariff_handler(httpd_req_t *req)
 static esp_err_t linky_handler(httpd_req_t *req)
 {
     VIEW_JSON(req, energy_linky_json());
+}
+
+/** Gravite d'une alerte de la box d'apres son type (comme LiXee-Assist). */
+static const char *box_alert_level(const char *type)
+{
+    static const char *const DANGER[] = { "subscribed_power", "over_power", "water_leak", "night_water_leak",
+                                          "water_continuous", "freeze", "power_outage" };
+    static const char *const WARNING[] = { "over_budget", "red_day", "price_change", "daily_anomaly" };
+    for (size_t i = 0; i < sizeof(DANGER) / sizeof(DANGER[0]); i++) if (!strcmp(type, DANGER[i])) return "danger";
+    for (size_t i = 0; i < sizeof(WARNING) / sizeof(WARNING[0]); i++) if (!strcmp(type, WARNING[i])) return "warning";
+    return "info";
+}
+
+/** "JJ/MM/AAAA HH:MM" (heure locale) -> epoch, 0 si illisible. */
+static time_t box_alert_time(const char *s)
+{
+    struct tm t = {};
+    if (!s || sscanf(s, "%d/%d/%d %d:%d", &t.tm_mday, &t.tm_mon, &t.tm_year, &t.tm_hour, &t.tm_min) != 5) return 0;
+    t.tm_mon -= 1;
+    t.tm_year -= 1900;
+    t.tm_isdst = -1;
+    return mktime(&t);
+}
+
+/**
+ * GET /api/energy/advice : conseils calcules par la box (energy_advice.h),
+ * plus ses alertes des 6 dernieres heures. Une alerte calculee qui double une
+ * alerte de la box (puissance, eau, couleur du lendemain, anomalie) est retiree.
+ */
+static esp_err_t advice_handler(httpd_req_t *req)
+{
+    // ?part=weather : meteo seule, pour le bandeau du tarif (rafraichi chaque minute)
+    char q[48], part[16];
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK &&
+        httpd_query_key_value(q, "part", part, sizeof(part)) == ESP_OK && !strcmp(part, "weather")) {
+        return send_json_owned(req, energy_advice_weather_json());
+    }
+    char *js = energy_advice_json();
+    cJSON *root = js ? cJSON_Parse(js) : NULL;
+    free(js);
+    if (!root) return send_json_owned(req, strdup("{}"));
+    cJSON *alerts = cJSON_GetObjectItem(root, "alerts");
+    if (!cJSON_IsArray(alerts)) alerts = cJSON_AddArrayToObject(root, "alerts");
+
+    char *bj = notifications_alerts_json(0);
+    cJSON *box = bj ? cJSON_Parse(bj) : NULL;
+    free(bj);
+    bool power = false, water = false, tomorrow = false, anomaly = false;
+    cJSON *recent = cJSON_CreateArray();
+    time_t now = time(NULL);
+    const cJSON *a;
+    cJSON_ArrayForEach(a, cJSON_GetObjectItem(box, "alerts")) {
+        const cJSON *ty = cJSON_GetObjectItem(a, "type"), *ti = cJSON_GetObjectItem(a, "title");
+        const cJSON *ms = cJSON_GetObjectItem(a, "message"), *ts = cJSON_GetObjectItem(a, "ts");
+        const char *type = cJSON_IsString(ty) ? ty->valuestring : "";
+        time_t at = box_alert_time(cJSON_IsString(ts) ? ts->valuestring : NULL);
+        if (!at || now - at > 6 * 3600 || now < at - 300 || !cJSON_IsString(ti) || !ti->valuestring[0]) continue;
+        if (!strcmp(type, "subscribed_power") || !strcmp(type, "over_power")) power = true;
+        if (strstr(type, "water")) water = true;
+        if (!strcmp(type, "color_tomorrow")) tomorrow = true;
+        if (!strcmp(type, "daily_anomaly")) anomaly = true;
+        char code[48];
+        snprintf(code, sizeof(code), "box.%s", type[0] ? type : "alert");
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "code", code);
+        cJSON_AddStringToObject(o, "level", box_alert_level(type));
+        cJSON_AddStringToObject(o, "title", ti->valuestring);
+        cJSON_AddStringToObject(o, "text", cJSON_IsString(ms) ? ms->valuestring : "");
+        cJSON_AddNumberToObject(o, "at", (double)at);
+        cJSON_AddItemToArray(recent, o);
+    }
+    cJSON_Delete(box);
+
+    // Les plus recentes d'abord, puis les alertes calculees non redondantes
+    cJSON *out = cJSON_CreateArray();
+    for (int i = cJSON_GetArraySize(recent) - 1; i >= 0; i--)
+        cJSON_AddItemToArray(out, cJSON_DetachItemFromArray(recent, i));
+    cJSON_Delete(recent);
+    cJSON *c;
+    while ((c = cJSON_DetachItemFromArray(alerts, 0)) != NULL) {
+        const cJSON *code = cJSON_GetObjectItem(c, "code");
+        const char *k = cJSON_IsString(code) ? code->valuestring : "";
+        bool dup = (power && !strcmp(k, "alert.near_max_power")) || (water && !strcmp(k, "alert.water_continuous")) ||
+                   (tomorrow && !strncmp(k, "alert.tomorrow_", 15)) || (anomaly && !strcmp(k, "alert.yesterday_high"));
+        if (dup) cJSON_Delete(c);
+        else cJSON_AddItemToArray(out, c);
+    }
+    cJSON_ReplaceItemInObject(root, "alerts", out);
+    char *s = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    return send_json_owned(req, s);
 }
 
 /**
@@ -476,6 +569,7 @@ void web_energy_register(httpd_handle_t server)
         { "/api/energy/power/export",       HTTP_GET,  power_export_handler },
         { "/api/energy/tariff",             HTTP_GET,  tariff_handler },
         { "/api/energy/linky",              HTTP_GET,  linky_handler },
+        { "/api/energy/advice",             HTTP_GET,  advice_handler },
         { "/api/energy/zlinkys",            HTTP_GET,  zlinkys_handler },
         { "/api/energy/history/clear",      HTTP_POST, history_clear_handler },
         { "/api/energy/history",            HTTP_GET,  history_page_handler },

@@ -48,7 +48,7 @@ typedef struct {
 typedef struct {
     char       date[11];                // "YYYY-MM-DD"
     int32_t    meterVA[3];              // SMAXSN (Standard)
-    int32_t    floorW;                  // plancher nocturne, -1 si inconnu
+    int32_t    floorW;                  // plancher : heure la plus calme du jour (W), -1 si inconnu
     int32_t    subVA;
     uint8_t    tri;
     uint16_t   obsMin;
@@ -103,9 +103,30 @@ static long s_closeAtRollover[3] = { -1, -1, -1 };
 static bool s_bootDone;
 
 typedef struct { bool ok; int64_t cons, inj; } snap_t;
-static snap_t s_snap[6];
+static snap_t s_snap[25];          // index releves a chaque heure du jour (0..23), 24 : minuit suivant
 static int    s_lastHour = -1;
 static char   s_floorDoneDate[11];
+
+/**
+ * Plancher d'une journee : l'heure complete la plus calme, a n'importe quelle
+ * heure (la nuit, c'est souvent la recharge de la voiture ou le ballon : voir
+ * ECONOMIES.md). Une heure avec de la production n'est pas comptee. Calcule
+ * au changement de jour, a partir des index releves a chaque heure.
+ */
+static void close_floor(day_stat_t *d)
+{
+    long best = -1;
+    for (int h = 0; h < 24; h++) {
+        const snap_t *a = &s_snap[h], *b = &s_snap[h + 1];
+        if (!a->ok || !b->ok || b->inj != a->inj) continue;   // production pendant l'heure
+        int64_t wh = b->cons - a->cons;                      // Wh en 1 h = W moyens
+        if (wh <= 0 || wh > 100000) continue;
+        if (best < 0 || wh < best) best = (long)wh;
+    }
+    if (best >= 0) d->floorW = (int32_t)best;
+    strlcpy(s_floorDoneDate, d->date, sizeof(s_floorDoneDate));
+    s_dirty = true;
+}
 
 static int16_t s_tr[PS_MAX_TRANSITIONS];
 static int     s_trCount;
@@ -645,7 +666,7 @@ void power_stats_loop(void)
     int64_t cons = 0, inj = 0;
     bool idx_ok = false;
     bool hour_changed = (s_lastHour >= 0 && hour != s_lastHour);
-    if (hour_changed && hour >= 1 && hour <= 5) idx_ok = read_indexes(z, &cons, &inj);
+    if (hour_changed) idx_ok = read_indexes(z, &cons, &inj);
 
     lock();
     s_subVA = sub;
@@ -668,7 +689,13 @@ void power_stats_loop(void)
         s_stale1293 = v1293;
         s_stale1293Active = true;
         for (int k = 0; k < 3; k++) s_closeAtRollover[k] = vclose[k];
+        // Plancher de la veille, jusqu'au releve de minuit
+        if (s_count >= 2 && hour_changed) {
+            s_snap[24] = (snap_t){ idx_ok, cons, inj };
+            close_floor(&s_days[s_count - 2]);
+        }
         memset(s_snap, 0, sizeof(s_snap));
+        if (hour_changed) s_snap[hour] = (snap_t){ idx_ok, cons, inj };
     }
 
     // Pic officiel (Standard) : SMAXSN du jour, SMAXSN-1 par phase pour la veille
@@ -719,21 +746,8 @@ void power_stats_loop(void)
         if (m) m->tri = tri;
     }
 
-    // Plancher nocturne : plus petite consommation horaire entre 1 h et 5 h
-    if (hour_changed && hour >= 1 && hour <= 5) s_snap[hour] = (snap_t){ idx_ok, cons, inj };
-    if (hour >= 5 && strcmp(s_floorDoneDate, d->date) != 0) {
-        long best = -1;
-        for (int h = 1; h <= 4; h++) {
-            const snap_t *a = &s_snap[h], *b = &s_snap[h + 1];
-            if (!a->ok || !b->ok || b->inj != a->inj) continue;   // production pendant l'heure
-            int64_t wh = b->cons - a->cons;                      // Wh en 1 h = W moyens
-            if (wh <= 0 || wh > 100000) continue;
-            if (best < 0 || wh < best) best = (long)wh;
-        }
-        if (best >= 0) d->floorW = (int32_t)best;
-        strlcpy(s_floorDoneDate, d->date, sizeof(s_floorDoneDate));
-        s_dirty = true;
-    }
+    // Plancher : releve des index a chaque heure (voir close_floor)
+    if (hour_changed && !created) s_snap[hour] = (snap_t){ idx_ok, cons, inj };
     s_lastHour = hour;
 
     // Heures de bascule tarifaire

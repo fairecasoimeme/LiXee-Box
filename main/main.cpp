@@ -54,6 +54,7 @@
 #include "wifi_manager.h"
 #include "eth_manager.h"
 #include "energy_service.h"
+#include "energy_advice.h"
 #include "energy_archive.h"
 #include "power_stats.h"
 #include "zigate_ir.h"
@@ -1812,6 +1813,12 @@ extern "C" void app_main(void)
             device_data_save_all();
             energy_history_save_all();
             energy_service_minute_tick();
+            energy_advice_minute_tick();                 // couleur Tempo du jour enregistree
+            if (mqtt_manager_is_connected()) {
+                energy_advice_levels_t lv;
+                energy_advice_levels(&lv);
+                mqtt_manager_publish_advice(lv.weather, lv.cut_risk, lv.base_load_w);
+            }
             matter_device_manager_tariff_price_tick();   // prix en attente de l'heure
             lora_save_state(false);
             zigate_devices_save_seen(false);
