@@ -155,6 +155,7 @@ static energy_state_t s_energy[MATTER_BRIDGE_MAX_ENDPOINTS];
 // esp-matter 1.5.1 reference ce callback (cluster door_lock) sans plus le
 // fournir ; la 1.4.2 en avait une version faible vide. Meme comportement.
 void emberAfDoorLockClusterInitCallback(chip::EndpointId endpoint) {}
+
 static int s_energy_count = 0;
 
 // ============================================================================
@@ -465,13 +466,22 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
     case MATTER_DEV_OCCUPANCY_SENSOR: {
         // Appareil sans template : au moins une feature de detection est
         // obligatoire, sinon esp_matter echoue sur une assertion et la box
-        // redemarre en boucle (issue #74). Meme reglage que le chemin par
-        // profil (MCAP_OCCUPANCY plus bas) : PIR, le type le plus courant.
+        // redemarre en boucle (issue #74). Radar (mmWave), pas PIR : seul
+        // appareil rencontre sur ce chemin generique a ce jour, un SONOFF
+        // SNZB-06P24 (radar 24 GHz) -- le FeatureMap (seul attribut qui
+        // compte pour la conformance) doit refleter sa vraie techno.
+        // occupancy_sensor_type_bitmap laisse a 0 (verifie sur materiel reel,
+        // issue #96) : le callback d'init connectedhomeip qui le derive
+        // habituellement du HAL (toujours Pir par defaut) ne semble pas
+        // s'executer pour ces endpoints dynamiques -- seule cette valeur
+        // initiale compte en pratique, et cet enum legacy n'a pas de valeur
+        // "Radar" de toute facon. occupancy_sensor_type (enum, pas de valeur
+        // "aucune" possible) laisse a Pir par defaut, le moins faux des 4.
         endpoint::occupancy_sensor::config_t cfg;
-        cfg.occupancy_sensing.occupancy_sensor_type = 0;          // PIR
-        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x01;
+        cfg.occupancy_sensing.occupancy_sensor_type = 0;          // Pir (pas de valeur "aucune"/"Radar" dans cet enum)
+        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x00; // aucune feature legacy plutot que de mentir
         cfg.occupancy_sensing.feature_flags =
-            cluster::occupancy_sensing::feature::passive_infrared::get_id();
+            cluster::occupancy_sensing::feature::radar::get_id();
         endpoint::occupancy_sensor::add(ep, &cfg);
         break;
     }
