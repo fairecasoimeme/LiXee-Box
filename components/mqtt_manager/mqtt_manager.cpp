@@ -1299,6 +1299,29 @@ void mqtt_manager_publish_linky_tariff(uint64_t ieee_addr, const char *tarif, in
     }
 }
 
+void mqtt_manager_publish_advice(const char *weather, const char *cut_risk, int base_load_w)
+{
+    static char s_last[3][16];
+    static int64_t s_at[3];
+    if (!s_connected) return;
+    const cfg_general_t *gen = cfg_get_general();
+    char base[16] = "";
+    if (base_load_w > 0) snprintf(base, sizeof(base), "%d", base_load_w);
+    const char *key[3] = { "weather", "cut_risk", "base_load_w" };
+    const char *val[3] = { weather ? weather : "", cut_risk ? cut_risk : "", base };
+    int64_t now = esp_timer_get_time();
+    for (int i = 0; i < 3; i++) {
+        if (!val[i][0]) continue;
+        if (!strcmp(s_last[i], val[i]) && s_at[i] && now - s_at[i] < 3600LL * 1000000LL) continue;
+        char topic[192];
+        snprintf(topic, sizeof(topic), "%sadvice/%s", gen->header_mqtt, key[i]);
+        if (mqtt_publish(topic, val[i], 0, true) == ESP_OK) {
+            strlcpy(s_last[i], val[i], sizeof(s_last[i]));
+            s_at[i] = now;
+        }
+    }
+}
+
 static bool dd_hex_num(uint64_t ieee, uint16_t cl, uint16_t at, int64_t *out)
 {
     char buf[DEVDATA_VALUE_LEN];

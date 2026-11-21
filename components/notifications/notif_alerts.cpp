@@ -34,6 +34,7 @@
 #include "device_data.h"
 #include "energy_history.h"
 #include "energy_service.h"
+#include "energy_advice.h"
 #include "ntp_sync.h"
 
 #include "esp_timer.h"
@@ -116,6 +117,8 @@ static int64_t s_last_minute = 0;
 
 static int     s_today_key = -1;              // annee * 1000 + jour de l'annee
 static bool    s_anomaly_done, s_metrics_done, s_water_done, s_night_done;
+static int     s_water_cont_hour = -1;        // heure du dernier controle
+static bool    s_water_cont_latched = false;  // alerte envoyee, jusqu'a une heure sans eau
 static int     s_budget_key = -1;             // date de la veille deja controlee
 
 // ----------------------------------------------------------------------------
@@ -338,11 +341,12 @@ static void check_daily_anomaly(void)
     int64_t today = zlinky_day_wh(h, day_slot(0));
     int64_t sum = 0;
     int cnt = 0;
-    for (int k = 1; k <= 6; k++) {
+    // Les 7 jours precedents (ECONOMIES.md, comme les conseils)
+    for (int k = 1; k <= 7; k++) {
         int64_t v = zlinky_day_wh(h, day_slot(k));
         if (v > 0) { sum += v; cnt++; }          // jour sans donnees : ignore
     }
-    if (cnt < 2) return;                           // comme la LiXee-Box : 3 jours minimum
+    if (cnt < 3) return;                           // 3 jours de reference au moins
     int64_t avg = sum / cnt;
     int pct = n->daily_anomaly_percent > 0 ? n->daily_anomaly_percent : 30;
     int64_t thr = avg + avg * pct / 100;
@@ -384,6 +388,23 @@ static void check_water_leak(void)
         notifications_add_alert("\U0001F4A7 Fuite d'eau possible", msg, NOTIF_ERROR, "water_leak",
                                 (float)litres, (float)thr);
     }
+}
+
+/**
+ * Eau qui coule sans interruption depuis au moins 3 heures completes, dont une
+ * heure de nuit (1 h a 5 h) : une seule alerte jusqu'a une heure sans eau.
+ */
+static void check_water_continuous(void)
+{
+    const cfg_notifications_t *n = cfg_get_notifications();
+    int hours = energy_advice_water_running_hours();
+    if (hours <= 0) { s_water_cont_latched = false; return; }
+    if (!n->water_continuous || hours < 3 || s_water_cont_latched) return;
+    s_water_cont_latched = true;
+    char msg[160];
+    snprintf(msg, sizeof(msg), "L'eau coule sans s'arr\u00EAter depuis %d heures, m\u00EAme la nuit", hours);
+    notifications_add_alert("\U0001F4A7 Fuite d'eau possible", msg, NOTIF_ERROR, "water_continuous",
+                            (float)hours, 3);
 }
 
 static void check_night_water_leak(void)
@@ -488,7 +509,11 @@ void notif_alerts_daily(void)
     int64_t wh = 0;
     double eur = 0;
     if (!energy_service_period_cost(ENERGY_COST_YESTERDAY, &wh, &eur, NULL) || wh <= 0) return;
-    double budget_day = n->over_budget_threshold / 30.0;
+    // Budget du jour : budget du mois / nombre de jours de ce mois
+    static const int DIM[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    int yr = ty.tm_year + 1900;
+    int dim = (ty.tm_mon == 1 && ((yr % 4 == 0 && yr % 100 != 0) || yr % 400 == 0)) ? 29 : DIM[ty.tm_mon];
+    double budget_day = n->over_budget_threshold / (double)dim;
     if (eur > budget_day) {
         char msg[200];
         snprintf(msg, sizeof(msg),
@@ -615,6 +640,12 @@ static void check_scheduled(void)
     if (t.tm_hour == 6 && t.tm_min <= 9) {
         if (!s_water_done) { s_water_done = true; check_water_leak(); }
         if (!s_night_done) { s_night_done = true; check_night_water_leak(); }
+    }
+    // Eau qui coule sans s'arreter : une fois par heure, a 5 min de l'heure
+    // (creneau precedent complet et archive)
+    if (t.tm_min >= 5 && t.tm_hour != s_water_cont_hour) {
+        s_water_cont_hour = t.tm_hour;
+        check_water_continuous();
     }
 }
 

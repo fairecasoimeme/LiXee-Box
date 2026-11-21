@@ -148,6 +148,13 @@ esp_err_t mqtt_manager_publish_value(const char *ieee_addr,
  */
 void mqtt_manager_publish_linky_tariff(uint64_t ieee_addr, const char *tarif, int today, int tomorrow);
 
+/**
+ * Conseils (ECONOMIES.md) : <en-tete>advice/weather, advice/cut_risk et
+ * advice/base_load_w, messages retenus, au changement et au moins une fois
+ * par heure. Valeur vide / negative : rien n'est publie pour cette cle.
+ */
+void mqtt_manager_publish_advice(const char *weather, const char *cut_risk, int base_load_w);
+
 esp_err_t mqtt_manager_publish_attr(uint64_t ieee_addr, uint16_t cluster, uint16_t attr,
                                     const char *hex, uint8_t zcl_type, bool has_num, int64_t num);
 

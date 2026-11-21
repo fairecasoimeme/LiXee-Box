@@ -58,12 +58,22 @@ esp_err_t wifi_mgr_init(const wifi_mgr_config_t *config);
 
 /**
  * Connexion WiFi au demarrage : attend la connexion (N essais).
- * ESP_OK : connecte. Sans identifiants NVS ou apres echec : provisioning BLE
- * lance en tache de fond et retour ESP_ERR_TIMEOUT (le WiFi est retente toutes
- * les 2 min, le BLE s'arrete des que le WiFi ou l'Ethernet a une adresse ;
- * redemarrage apres reception d'identifiants BLE).
+ * ESP_OK : connecte. Sans identifiants NVS : provisioning BLE en tache de
+ * fond (arret des que le WiFi ou l'Ethernet a une adresse ; redemarrage apres
+ * reception d'identifiants). Box configuree mais WiFi injoignable : nouvel
+ * essai en continu, SANS Bluetooth (retour ESP_ERR_TIMEOUT). Bluetooth demande
+ * (bouton) : fenetre de 10 min, identifiants actuels gardes.
  */
 esp_err_t wifi_mgr_start(void);
+
+/**
+ * Bluetooth demande pour ce demarrage (bouton de la Pro, voir
+ * wifi_mgr_request_ble_and_restart). Lu une fois, puis efface en NVS.
+ */
+bool wifi_mgr_ble_requested(void);
+
+/** Enregistre la demande de Bluetooth (fenetre de 10 min) et redemarre. */
+void wifi_mgr_request_ble_and_restart(void);
 
 /**
  * Secours WiFi sans attente (Ethernet perdu en mode automatique) : connexion

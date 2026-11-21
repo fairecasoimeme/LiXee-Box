@@ -249,7 +249,7 @@
 
   var CN_FLAGS = ['SubscribedPower', 'PowerOutage', 'RedColor', 'OverVoltage', 'UnderVoltage', 'OverPower',
                   'DailyAnomaly', 'PriceChange', 'PEJP', 'ColorTomorrow', 'OverBudget', 'ProdZero', 'ProdSupConso',
-                  'WaterLeak', 'NightWaterLeak', 'Freeze', 'DailyMetrics'];
+                  'WaterLeak', 'NightWaterLeak', 'WaterContinuous', 'Freeze', 'DailyMetrics'];
   var CN_INTS = ['OverVoltageThreshold', 'UnderVoltageThreshold', 'OverPowerThreshold', 'OverPowerDuration',
                  'OverPowerCooldown', 'DailyAnomalyPercent', 'OverBudgetThreshold', 'WaterLeakThreshold',
                  'NightWaterLeakThreshold', 'FreezeCooldown'];
@@ -267,7 +267,7 @@
         { key: 'OverPowerDuration', unit: 's', ph: '60', label: 'Dur&eacute;e' },
         { key: 'OverPowerCooldown', unit: 'min', ph: '30', label: 'Intervalle' }]) +
       cnThreshold('DailyAnomaly', 'Consommation journali&egrave;re anormale (contr&ocirc;le &agrave; 23h50)',
-        [{ key: 'DailyAnomalyPercent', unit: '% au-dessus moy. 7 j', ph: '30' }]) +
+        [{ key: 'DailyAnomalyPercent', unit: '% au-dessus moy. 7 j pr&eacute;c&eacute;dents', ph: '30' }]) +
       '<h5 class="mt-3">Infos</h5>' +
       cnCheck('PriceChange', 'Changement de tarif') +
       cnCheck('PEJP', 'Pr&eacute;avis EJP') +
@@ -281,7 +281,9 @@
       '<h5>Fuite d\'eau (journali&egrave;re)</h5>' +
       cnThreshold('WaterLeak', 'Consommation de 00h &agrave; 06h (contr&ocirc;le &agrave; 06h)', [{ key: 'WaterLeakThreshold', unit: 'L', ph: '5' }]) +
       '<h5 class="mt-3">Fuite d\'eau (nocturne)</h5>' +
-      cnThreshold('NightWaterLeak', 'Consommation entre 00h et 05h59', [{ key: 'NightWaterLeakThreshold', unit: 'L', ph: '1' }]);
+      cnThreshold('NightWaterLeak', 'Consommation entre 00h et 05h59', [{ key: 'NightWaterLeakThreshold', unit: 'L', ph: '1' }]) +
+      '<h5 class="mt-3">Fuite d\'eau (continue)</h5>' +
+      cnCheck('WaterContinuous', 'L\'eau coule sans s\'arr&ecirc;ter depuis 3 h, dont une heure de nuit (1h-5h)');
     var gaz = '<p class="text-muted mb-0">Aucune notification configur&eacute;e pour le gaz.</p>';
     var autres =
       '<h5>Alerte gel</h5>' +

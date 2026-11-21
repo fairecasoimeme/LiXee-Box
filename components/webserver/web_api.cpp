@@ -1556,6 +1556,7 @@ static esp_err_t api_config_notifications_get_handler(httpd_req_t *req)
     cJSON_AddNumberToObject(root, "WaterLeakThreshold",      n->water_leak_threshold);
     cJSON_AddBoolToObject(root,   "NightWaterLeak",          n->night_water_leak);
     cJSON_AddNumberToObject(root, "NightWaterLeakThreshold", n->night_water_leak_threshold);
+    cJSON_AddBoolToObject(root,   "WaterContinuous",         n->water_continuous);
     cJSON_AddBoolToObject(root,   "DailyMetrics",            n->daily_metrics);
 
     char *json = cJSON_PrintUnformatted(root);
@@ -1639,6 +1640,7 @@ static esp_err_t api_config_notifications_post_handler(httpd_req_t *req)
     take_int("WaterLeakThreshold", &n->water_leak_threshold, 1, 100000);
     take_flag("NightWaterLeak",  &n->night_water_leak);
     take_int("NightWaterLeakThreshold", &n->night_water_leak_threshold, 1, 100000);
+    take_flag("WaterContinuous", &n->water_continuous);
     take_flag("DailyMetrics",    &n->daily_metrics);
 
     cJSON_Delete(doc);

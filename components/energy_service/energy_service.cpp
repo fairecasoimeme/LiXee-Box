@@ -16,6 +16,7 @@
 #include "energy_service.h"
 #include "energy_archive.h"
 #include "power_stats.h"
+#include "energy_internal.h"
 #include "energy_history.h"
 #include "device_data.h"
 #include "config_manager.h"
@@ -2724,6 +2725,120 @@ bool energy_service_period_cost(energy_cost_period_t period, int64_t *wh, double
     if (wh) *wh = a.idx_total;
     if (eur) *eur = c.total;
     if (prod_wh) *prod_wh = a.prod_wh;
+    return true;
+}
+
+// ============================================================================
+// Acces pour les conseils (energy_internal.h)
+// ============================================================================
+
+uint64_t es_zlinky(void)
+{
+    roles_t r = get_roles();
+    return (r.zl && device_data_find(r.zl)) ? r.zl : 0;
+}
+
+double es_price(uint16_t attr) { return price_for_attr(attr); }
+
+double es_avg_price(void)
+{
+    uint16_t p[10];
+    int n = energy_tariff_periods(p, 10);
+    double sum = 0;
+    int cnt = 0;
+    for (int i = 0; i < n; i++) {
+        double v = price_for_attr(p[i]);
+        if (v > 0) { sum += v; cnt++; }
+    }
+    return cnt ? sum / cnt : 0;
+}
+
+bool es_tariff_now(es_tariff_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    roles_t r = get_roles();
+    if (!r.zl || !device_data_find(r.zl)) return false;
+    tariff_info_t ti;
+    tariff_info(r.zl, linky_mode(r.zl), &ti);
+    out->family = tariff_family(r.zl);
+    out->known = ti.known;
+    out->index = ti.index;
+    strlcpy(out->label, ti.tariff, sizeof(out->label));
+    out->price = ti.known ? price_for_attr(ti.index) : 0;
+    out->today = ti.today;
+    out->tomorrow = ti.tomorrow;
+    // Meme regle que /api/tariff : 06:00 / 22:00 en Tempo, bascules observees sinon
+    if (out->family == 3 || ti.today) {
+        struct tm t;
+        local_now(&t);
+        strlcpy(out->next, (t.tm_hour >= 6 && t.tm_hour < 22) ? "22:00" : "06:00", sizeof(out->next));
+    } else if (out->family != 0) {
+        if (!power_stats_next_change(out->next, sizeof(out->next))) out->next[0] = '\0';
+    }
+    return true;
+}
+
+static void fill_slot(const roles_t *r, slot_ref_t s, double f, es_slot_t *out)
+{
+    slot_agg_t a;
+    aggregate(r, s, &a);
+    memset(out, 0, sizeof(*out));
+    out->wh = a.idx_total;
+    out->prod_wh = a.prod_wh;
+    for (int i = 0; i < a.n_idx; i++) {
+        uint16_t at = a.idx_attr[i];
+        if (at < 256 || at > 266) continue;
+        int64_t v = a.idx_raw[i];
+        out->idx_wh += v;
+        int rank = (at - 256) / 2;                  // 0 HC, 1 HP, 2 HC blanc...
+        if (!(rank & 1)) out->low_wh += v;
+        out->color_wh[rank / 2] += v;
+    }
+    out->eur = cost_of(&a, f).total;
+}
+
+bool es_hour_slot(int ago, es_slot_t *out)
+{
+    roles_t r = get_roles();
+    if (!r.zl || ago < 0 || ago >= ENERGY_HOURS) return false;
+    struct tm now;
+    local_now(&now);
+    slot_ref_t s = { ENERGY_GRAN_HOUR, (now.tm_hour - ago + 24 * 2) % 24 };
+    fill_slot(&r, s, gran_factor(ENERGY_GRAN_HOUR, &now), out);
+    return true;
+}
+
+bool es_day_slot(int ago, es_slot_t *out)
+{
+    roles_t r = get_roles();
+    if (!r.zl || ago < 0 || ago >= ENERGY_DAYS) return false;
+    struct tm now, d;
+    local_now(&now);
+    // Jour au calendrier, a midi (jours de 23 ou 25 h)
+    d = now;
+    d.tm_mday -= ago;
+    d.tm_hour = 12;
+    d.tm_min = d.tm_sec = 0;
+    d.tm_isdst = -1;
+    mktime(&d);
+    slot_ref_t s = { ENERGY_GRAN_DAY, d.tm_mday - 1 };
+    fill_slot(&r, s, gran_factor(ENERGY_GRAN_DAY, &now), out);
+    return true;
+}
+
+bool es_month_cost(int64_t *wh, double *variable_eur, double *fixed_eur)
+{
+    roles_t r = get_roles();
+    if (!r.zl) return false;
+    struct tm now;
+    local_now(&now);
+    slot_agg_t a;
+    aggregate(&r, current_slot(ENERGY_GRAN_MONTH, &now), &a);
+    cost_t c = cost_of(&a, 1.0);
+    double cta = parse_num(cfg_get_general()->tarif_cta);
+    if (wh) *wh = a.idx_total;
+    if (variable_eur) *variable_eur = c.energy + (c.taxes - cta);
+    if (fixed_eur) *fixed_eur = c.abo + cta;
     return true;
 }
 
