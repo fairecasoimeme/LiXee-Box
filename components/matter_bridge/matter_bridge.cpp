@@ -126,14 +126,6 @@ bool matter_bridge_get_thermostat_custom_presets(int endpoint_id, matter_preset_
     return true;
 }
 
-int matter_bridge_list_thermostat_preset_endpoints(int *out, int max_out)
-{
-    int n = s_thermo_preset_delegate_count;
-    if (n > max_out) n = max_out;
-    for (int i = 0; i < n; i++) out[i] = s_thermo_preset_delegate_ep_ids[i];
-    return n;
-}
-
 // Appelee par le serveur CHIP quand un controleur invoque SetActivePresetRequest :
 // repercute le choix sur la zone via le callback enregistre par thermostat.cpp
 // (definie ici, et non dans thermostat_presets_delegate.h, pour acceder a
@@ -754,7 +746,8 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         uint32_t f = 0;
         if (p->heat) f |= cluster::thermostat::feature::heating::get_id();
         if (p->cool) f |= cluster::thermostat::feature::cooling::get_id();
-        if (p->presets) f |= cluster::thermostat::feature::presets::get_id();
+        // Presets volontairement absent d'ici : voir le contournement
+        // espressif/esp-matter#1928 juste apres endpoint::thermostat::add().
         // LTNE (issue #109) : zone virtuelle sans capteur de temperature assigne ->
         // LocalTemperature (mandatoryConform, nullable) ne sera jamais renseigne,
         // on le signale au controleur plutot que de laisser un null permanent
@@ -779,6 +772,28 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         }
         endpoint::thermostat::add(ep, &cfg);
         cluster_t *th = cluster::get(ep, Thermostat::Id);
+        if (p->presets && th) {
+            // Contournement espressif/esp-matter#1928 (revue PR #83) : sans
+            // feature presets dans feature_flags ci-dessus, endpoint::thermostat::add()
+            // n'a pas appele feature::presets::add(), qui aurait cree l'attribut
+            // Presets avec ATTRIBUTE_FLAG_MANAGED_INTERNALLY -- flag qui fait
+            // echouer emberAfLocateAttributeMetadata() (modele Ember legacy,
+            // jamais peuple par les endpoints dynamiques esp-matter) et donc
+            // la commande AtomicRequest (InvalidCommand systematique) pour
+            // Presets/Schedules sur tout endpoint dynamique de ce type.
+            // On cree nous-memes l'attribut Presets sans ce drapeau ;
+            // esp_matter::attribute::create() renvoie l'attribut existant sans
+            // toucher a ses flags s'il existe deja (esp_matter_data_model.cpp),
+            // donc feature::presets::add() juste en dessous reutilise le notre
+            // au lieu d'en creer un avec MANAGED_INTERNALLY. Lecture/ecriture
+            // restent servies par ThermostatPresetsDelegate (AttributeAccessInterface),
+            // ce drapeau ne changeait de toute facon rien a ce chemin.
+            attribute::create(th, Thermostat::Attributes::Presets::Id, ATTRIBUTE_FLAG_WRITABLE,
+                              esp_matter_array(nullptr, 0, 0));
+            cluster::thermostat::feature::presets::add(th);
+            cluster::thermostat::command::create_atomic_request(th);
+            cluster::thermostat::command::create_atomic_response(th);
+        }
         bool running = false;
         for (int i = 0; i < p->link_count; i++)
             if (p->links[i].target == ML_TH_RUNNING) running = true;
