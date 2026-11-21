@@ -503,6 +503,19 @@ static void base_load_json(const energy_live_t *L, cJSON *root)
     cJSON_AddNumberToObject(o, "hour", hour);
     cJSON_AddNumberToObject(o, "kwhYear", round(kwh));
     if (price > 0) cJSON_AddNumberToObject(o, "eurYear", round(kwh * price));
+    // Graphe : les heures completes des dernieres 24 h, [heure, Wh, Wh produits]
+    struct tm now;
+    local_now(&now);
+    cJSON *hours = cJSON_AddArrayToObject(o, "hours");
+    for (int ago = ENERGY_HOURS - 1; ago >= 1; ago--) {
+        es_slot_t s;
+        if (!es_hour_slot(ago, &s)) continue;
+        cJSON *h = cJSON_CreateArray();
+        cJSON_AddItemToArray(h, cJSON_CreateNumber((now.tm_hour - ago + 48) % 24));
+        cJSON_AddItemToArray(h, cJSON_CreateNumber((double)(s.wh > 0 ? s.wh : 0)));
+        cJSON_AddItemToArray(h, cJSON_CreateNumber((double)(s.prod_wh > 0 ? s.prod_wh : 0)));
+        cJSON_AddItemToArray(hours, h);
+    }
     char text[200];
     snprintf(text, sizeof(text),
              "Même au plus calme, la maison consomme %d W : frigo, box internet, veilles... "
@@ -565,7 +578,6 @@ static void subscription_json(cJSON *root)
         else if (band == 90) strlcpy(rate90, rs, sizeof(rate90));
         else if (band == 100) strlcpy(rate100, rs, sizeof(rate100));
     }
-    cJSON_Delete(s);
 
     auto often = [](const char *rate, bool monthly) {
         return !strcmp(rate, "daily") || !strcmp(rate, "weekly") || (monthly && !strcmp(rate, "monthly"));
@@ -597,6 +609,28 @@ static void subscription_json(cJSON *root)
         cJSON_AddNumberToObject(o, "phaseLimitVA", lround(sub / 3.0));
     }
     if (days30_80 >= 0) cJSON_AddNumberToObject(o, "days30Over80", days30_80);
+    // Graphe : plus fort appel (moyenne 1 min) de chaque mois connu, et la
+    // limite a laquelle le comparer (abonnement, ou phase en triphase)
+    cJSON_AddStringToObject(o, "basis", tri ? "phase" : "total");
+    cJSON_AddNumberToObject(o, "limitVA", tri ? lround(sub / 3.0) : sub);
+    cJSON *mp = cJSON_AddArrayToObject(o, "months");
+    cJSON_ArrayForEach(m, months) {
+        const cJSON *mk = cJSON_GetObjectItem(m, "month");
+        int v = -1;
+        if (tri) {
+            cJSON_ArrayForEach(p, cJSON_GetObjectItem(m, "phases")) {
+                int pv = jint(cJSON_GetObjectItem(p, "va1m"));
+                if (pv > v) v = pv;
+            }
+        } else {
+            v = jint(cJSON_GetObjectItem(m, "va1m"));
+        }
+        if (!cJSON_IsString(mk) || v <= 0) continue;
+        cJSON *e = cJSON_CreateArray();
+        cJSON_AddItemToArray(e, cJSON_CreateString(mk->valuestring));
+        cJSON_AddItemToArray(e, cJSON_CreateNumber(v));
+        cJSON_AddItemToArray(mp, e);
+    }
     char text[220];
     if (observed < SUB_MIN_DAYS)
         snprintf(text, sizeof(text), "Encore %d jours de mesures avant de juger l'abonnement.", SUB_MIN_DAYS - observed);
@@ -608,6 +642,7 @@ static void subscription_json(cJSON *root)
     else
         snprintf(text, sizeof(text), "Ton abonnement de %d kVA est bien taillé pour ta consommation.", kva);
     cJSON_AddStringToObject(o, "text", text);
+    cJSON_Delete(s);
 }
 
 // ============================================================================
@@ -655,6 +690,16 @@ static void month_json(cJSON *root)
         }
         double per_wh = (wh24 > 0 && eur24 > 0) ? eur24 / wh24 : es_avg_price() / 1000.0;
         if (per_wh > 0) cJSON_AddNumberToObject(o, "hourlyBudgetWh", round(eur_h / per_wh));
+        cJSON_AddNumberToObject(o, "budgetDay", round2(budget / len));
+    }
+    // Graphe : chaque jour du mois jusqu'a aujourd'hui (en cours compris),
+    // en EUR (energie, taxes, part d'abonnement) ou en kWh
+    cJSON *daily = cJSON_AddArrayToObject(o, "daily");
+    for (int d = 1; d <= now.tm_mday; d++) {
+        es_slot_t s;
+        double v = 0;
+        if (es_day_slot(now.tm_mday - d, &s) && s.wh > 0) v = euros ? s.eur : s.wh / 1000.0;
+        cJSON_AddItemToArray(daily, cJSON_CreateNumber(round2(v)));
     }
 }
 
