@@ -183,6 +183,7 @@ CHIP_ERROR ThermostatPresetsDelegate::CommitPendingPresets()
     memcpy(m_custom, next, sizeof(matter_preset_t) * next_count);
     m_custom_count = next_count;
     m_pending_count = 0;
+    m_commit_pending = true;   // voir SyncFromZone()/GetCustomPresetsSnapshot()
 
     if (s_thermo_preset_commit_cb) {
         esp_err_t err = s_thermo_preset_commit_cb(EndpointId());
