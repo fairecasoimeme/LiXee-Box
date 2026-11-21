@@ -32,20 +32,6 @@ project(lixee_matter_bridge)
 # managed_components/ etant retelecharge (et non versionne).
 idf_component_get_property(_matter_dir espressif__esp_matter COMPONENT_DIR)
 
-# Bugs du SDK vendore corriges localement (managed_components/ etant
-# retelecharge a l'identique, et non versionne, un simple Edit ne survivrait
-# pas) : voir tools/patch_esp_matter.py pour le detail de chaque patch.
-# Idempotent (re-execute a chaque configure sans effet si deja applique) ;
-# echoue fort si le fichier vendore a change de façon inattendue (montee de
-# version esp-matter), plutot que de laisser un contournement silencieusement
-# perdu.
-execute_process(
-    COMMAND ${PYTHON} "${CMAKE_CURRENT_LIST_DIR}/tools/patch_esp_matter.py" "${_matter_dir}"
-    RESULT_VARIABLE _patch_esp_matter_result)
-if(NOT _patch_esp_matter_result EQUAL 0)
-    message(FATAL_ERROR "tools/patch_esp_matter.py a echoue (voir message ci-dessus)")
-endif()
-
 set_source_files_properties(
     "${_matter_dir}/connectedhomeip/connectedhomeip/src/app/clusters/closure-control-server/closure-control-cluster-logic.cpp"
     DIRECTORY "${_matter_dir}"
