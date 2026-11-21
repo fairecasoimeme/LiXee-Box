@@ -472,6 +472,7 @@
               (d.lora ? '' :
                 '<button class="btn btn-warning btn-sm" id="zb-refresh" title="Relire fabricant, mod\u00e8le et version">Rafra\u00eechir</button>' +
                 '<button class="btn btn-secondary btn-sm" id="zb-config" title="Renvoyer bind et reporting du template">Reconfigurer</button>' +
+                '<button class="btn btn-secondary btn-sm" id="zb-rediscover" title="Relire endpoints, Device ID, profil et clusters">Redécouvrir</button>' +
                 (d.ha ? '<button class="btn btn-warning btn-sm" id="zb-discover">MQTT Discover</button>' : '')) +
               '<button class="btn btn-danger btn-sm" id="zb-delete">Supprimer</button>' +
             '</div>' +
@@ -588,6 +589,15 @@
     });
     $c.on('click.zbdev', '#zb-config', function() {
       confirmPost('Renvoyer le bind et la configuration du reporting \u00e0 l\'appareil ?', '/api/zigbee/configure', { ieee: ieee });
+    });
+    $c.on('click.zbdev', '#zb-rediscover', function() {
+      confirmPost('Relire les endpoints et le Device ID de l\'appareil ? La configuration (template, bind, reporting) sera ensuite relancée.\n\n' +
+        'Appareil sur pile : réveillez-le (appui sur son bouton) juste avant.',
+        '/api/zigbee/rediscover', { ieee: ieee }, function() {
+          // Reponses en quelques secondes (300 ms par endpoint, puis lecture Basic)
+          setTimeout(function() { load(false); }, 3000);
+          setTimeout(function() { load(false); }, 8000);
+        });
     });
     $c.on('click.zbdev', '#zb-discover', function() {
       confirmPost(null, '/api/zigbee/discover', { ieee: ieee });
@@ -811,7 +821,7 @@
               row('Manufacturer', esc(d.manufacturer || '')) +
               row('Model', esc(d.model || '')) +
               row('Short Addr', hex4(d.short)) +
-              row('Device Id', hex4(d.deviceId)) +
+              row('Device Id', hex4(d.deviceId) + ' <a class="zb-c" data-op="rediscover" data-ieee="' + esc(d.ieee) + '" title="Redécouvrir (endpoints, Device ID)">' + ICO.refresh + '</a>') +
               row('Soft Version', esc(d.swVersion || '') + ' <a class="zb-c" data-op="refresh" data-ieee="' + esc(d.ieee) + '" title="Relire la version">' + ICO.refresh + '</a>') +
               row('Last seen', esc(fmtSeen(d))) +
               row('LQI', hex2(d.lqi)) +
@@ -850,6 +860,10 @@
       if (op === 'delete') {
         confirmPost('Supprimer l\'appareil ' + ieee + ' ? Il quittera le réseau Zigbee et ses données seront effacées.',
           '/api/zigbee/delete', { ieee: ieee }, load);
+      } else if (op === 'rediscover') {
+        confirmPost('Relire les endpoints et le Device ID de ' + ieee + ' ? La configuration (template, bind, reporting) sera ensuite relancée.\n\n' +
+          'Appareil sur pile : réveillez-le (appui sur son bouton) juste avant.',
+          '/api/zigbee/rediscover', { ieee: ieee }, function() { setTimeout(load, 3000); setTimeout(load, 8000); });
       } else {
         confirmPost(null, '/api/zigbee/' + op, { ieee: ieee }, op === 'refresh' ? function() { setTimeout(load, 2500); } : null);
       }
