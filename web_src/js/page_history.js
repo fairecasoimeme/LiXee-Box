@@ -499,7 +499,7 @@
     // Gaz compte en energie (Wh / kWh) : empile avec l'electricite, en kWh ;
     // tarif gaz en €/kWh (comme le serveur, energy_service)
     var g = d.gas;
-    if (gasIsEnergy(g) && $.isArray(g.data)) {
+    if (g && gasIsEnergy(g) && $.isArray(g.data)) {   // pas de gaz dans la reponse : rien a empiler
       var wf = num(g.whFactor), gp = num(g.price);
       out.push({
         key: 'gas', name: String(g.name || 'Gaz'), type: 'gas', color: safeColor(g.color, '#e67e22'),
