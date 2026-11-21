@@ -213,7 +213,8 @@ static void process_received_data(const char *data, uint16_t len)
         end--;
     }
 
-    ESP_LOGI(TAG, "Processing: '%s'", start);
+    // Jamais le contenu "SSID|MOTDEPASSE" dans le journal
+    if (!strchr(start, '|')) ESP_LOGI(TAG, "Processing: '%s'", start);
 
     // Commande PING
     if (strcasecmp(start, "PING") == 0) {

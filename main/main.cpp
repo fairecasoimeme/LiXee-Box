@@ -917,6 +917,41 @@ static void push_notification_to_tunnel(const char *title, const char *message, 
 // Init sous-systemes
 // ============================================================================
 
+// ============================================================================
+// Bouton SW4 de la LiXee-Box Pro (GPIO 47) : appui long de 5 s -> redemarrage
+// avec le Bluetooth ouvert 10 min pour changer de WiFi avec LiXee-Assist,
+// identifiants actuels gardes (retour automatique si les nouveaux echouent).
+// Le Bluetooth ne s'ouvre plus de lui-meme sur une box deja configuree.
+// ============================================================================
+
+#define PRO_BUTTON_GPIO     47
+#define PRO_BUTTON_HOLD_MS  5000
+
+static void pro_button_task(void *arg)
+{
+    (void)arg;
+    gpio_config_t io = {};
+    io.pin_bit_mask = 1ULL << PRO_BUTTON_GPIO;
+    io.mode = GPIO_MODE_INPUT;
+    io.pull_up_en = GPIO_PULLUP_ENABLE;
+    gpio_config(&io);
+    vTaskDelay(pdMS_TO_TICKS(50));
+    // Niveau au repos lu au demarrage : aucun cablage suppose (vers la masse
+    // ou vers le 3,3 V)
+    const int idle = gpio_get_level((gpio_num_t)PRO_BUTTON_GPIO);
+    int held_ms = 0;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+        if (gpio_get_level((gpio_num_t)PRO_BUTTON_GPIO) == idle) { held_ms = 0; continue; }
+        held_ms += 50;
+        if (held_ms == PRO_BUTTON_HOLD_MS) {
+            ESP_LOGW(TAG, "Bouton : appui long, redemarrage avec le Bluetooth ouvert (10 min)");
+            status_led_set(LED_STATE_BLE_PROV, true);
+            wifi_mgr_request_ble_and_restart();
+        }
+    }
+}
+
 static esp_err_t init_nvs(void)
 {
     esp_err_t ret = nvs_flash_init();
@@ -1442,8 +1477,14 @@ extern "C" void app_main(void)
         // Sans WiFi : provisioning BLE en tache de fond, le pont demarre quand
         // meme (Zigbee, regles, delestage ; Ethernet branche plus tard)
         esp_err_t we = wifi_mgr_start();
-        if (we != ESP_OK) ESP_LOGW(TAG, "Reseau : WiFi non connecte (%s), provisioning BLE actif",
-                                   esp_err_to_name(we));
+        if (we != ESP_OK) ESP_LOGW(TAG, "Reseau : WiFi non connecte (%s)%s", esp_err_to_name(we),
+                                   wifi_mgr_is_ble_active() ? ", provisioning BLE actif"
+                                                            : ", nouvel essai en continu");
+    }
+    // Bluetooth demande par le bouton : ouvert aussi en Ethernet
+    if ((eth_mgr_has_ip() || eth_mgr_inhibits_wifi()) && wifi_mgr_ble_requested() &&
+        !wifi_mgr_is_ble_active()) {
+        wifi_mgr_start();
     }
 
     // 3b. NTP Sync (synchronisation de l'heure, necessaire avant MQTT/logs)
@@ -1461,6 +1502,9 @@ extern "C" void app_main(void)
     // 4. ZiGate driver (UART + reseau Zigbee)
     ESP_ERROR_CHECK(zigate_init());
     wifi_mgr_mdns_update_board();       // carte identifiee par la sonde ISP
+    if (board_type() == BOARD_PRO) {
+        xTaskCreate(pro_button_task, "pro_btn", 3072, NULL, 2, NULL);
+    }
     ESP_ERROR_CHECK(zigate_devices_init());
 
     // 4b. Device Data (valeurs cluster/attribut, templates, persistence)

@@ -34,6 +34,13 @@ static const char *TAG = "WIFI_MGR";
 #define NVS_NAMESPACE   "config"
 #define NVS_KEY_SSID    "wifi_ssid"
 #define NVS_KEY_PASS    "wifi_pass"
+// Identifiants precedents, gardes apres un changement par Bluetooth : si les
+// nouveaux ne fonctionnent pas au demarrage suivant, retour aux anciens
+#define NVS_KEY_SSID_PREV "wifi_ssid_p"
+#define NVS_KEY_PASS_PREV "wifi_pass_p"
+#define NVS_KEY_TRIAL     "wifi_trial"
+// Bluetooth demande (bouton de la Pro) pour le prochain demarrage
+#define NVS_KEY_BLE_REQ   "ble_req"
 
 // Event group bits
 #define WIFI_CONNECTED_BIT  BIT0
@@ -56,6 +63,8 @@ static esp_netif_t *s_sta_netif = NULL;
 static volatile bool s_eth_ip = false;       // Ethernet a obtenu une adresse (arret du BLE)
 static bool s_have_creds = false;            // identifiants NVS charges par wifi_mgr_start()
 static volatile bool s_wifi_stopped = false; // coupe volontairement (Ethernet prioritaire)
+static bool s_ble_forced = false;            // Bluetooth ouvert a la demande (fenetre limitee)
+static bool s_ble_req_read = false;
 
 // IP fixe (configWifi.json), appliquee au demarrage de l'interface STA
 static char s_static_ip[16], s_static_mask[16], s_static_gw[16];
@@ -354,9 +363,21 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 // Callback BLE: credentials recus via LiXee-Assist
 // ============================================================================
 
+static esp_err_t load_credentials(wifi_mgr_credentials_t *creds);
+static void save_prev_credentials(const wifi_mgr_credentials_t *old);
+
 static void on_ble_credentials(const char *ssid, const char *password, void *ctx)
 {
     ESP_LOGI(TAG, "Credentials received via BLE: SSID='%s'", ssid);
+
+    // Identifiants actuels gardes : retour automatique si les nouveaux ne
+    // permettent pas de se connecter (erreur de saisie, ou WiFi impose)
+    wifi_mgr_credentials_t old = {};
+    if (load_credentials(&old) == ESP_OK && old.valid &&
+        (strcmp(old.ssid, ssid) != 0 || strcmp(old.password, password ? password : "") != 0)) {
+        save_prev_credentials(&old);
+    }
+    memset(&old, 0, sizeof(old));
 
     // Sauvegarder en NVS
     esp_err_t err = wifi_mgr_set_credentials(ssid, password);
@@ -411,6 +432,76 @@ static esp_err_t load_credentials(wifi_mgr_credentials_t *creds)
     return creds->valid ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
+static void save_prev_credentials(const wifi_mgr_credentials_t *old)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) != ESP_OK) return;
+    if (nvs_set_str(nvs, NVS_KEY_SSID_PREV, old->ssid) == ESP_OK &&
+        nvs_set_str(nvs, NVS_KEY_PASS_PREV, old->password) == ESP_OK) {
+        nvs_set_u8(nvs, NVS_KEY_TRIAL, 1);
+    }
+    nvs_commit(nvs);
+    nvs_close(nvs);
+}
+
+/** Identifiants precedents, si les actuels sont a l'essai (recus par Bluetooth). */
+static bool load_prev_credentials(wifi_mgr_credentials_t *prev)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) return false;
+    uint8_t trial = 0;
+    size_t sl = sizeof(prev->ssid), pl = sizeof(prev->password);
+    bool ok = nvs_get_u8(nvs, NVS_KEY_TRIAL, &trial) == ESP_OK && trial &&
+              nvs_get_str(nvs, NVS_KEY_SSID_PREV, prev->ssid, &sl) == ESP_OK &&
+              nvs_get_str(nvs, NVS_KEY_PASS_PREV, prev->password, &pl) == ESP_OK;
+    nvs_close(nvs);
+    prev->valid = ok && prev->ssid[0];
+    return prev->valid;
+}
+
+static void clear_prev_credentials(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) != ESP_OK) return;
+    bool any = nvs_erase_key(nvs, NVS_KEY_TRIAL) == ESP_OK;
+    nvs_erase_key(nvs, NVS_KEY_SSID_PREV);
+    nvs_erase_key(nvs, NVS_KEY_PASS_PREV);
+    if (any) nvs_commit(nvs);
+    nvs_close(nvs);
+}
+
+bool wifi_mgr_ble_requested(void)
+{
+    if (!s_ble_req_read) {
+        s_ble_req_read = true;
+        nvs_handle_t nvs;
+        if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+            uint8_t v = 0;
+            if (nvs_get_u8(nvs, NVS_KEY_BLE_REQ, &v) == ESP_OK) {
+                // Lu une seule fois : un plantage ne la rejoue pas
+                nvs_erase_key(nvs, NVS_KEY_BLE_REQ);
+                nvs_commit(nvs);
+            }
+            nvs_close(nvs);
+            s_ble_forced = v != 0;
+        }
+    }
+    return s_ble_forced;
+}
+
+void wifi_mgr_request_ble_and_restart(void)
+{
+    nvs_handle_t nvs;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs) == ESP_OK) {
+        nvs_set_u8(nvs, NVS_KEY_BLE_REQ, 1);
+        nvs_commit(nvs);
+        nvs_close(nvs);
+    }
+    ESP_LOGW(TAG, "Bluetooth demande : redemarrage");
+    vTaskDelay(pdMS_TO_TICKS(500));
+    esp_restart();
+}
+
 // ============================================================================
 // Demarrage BLE provisioning
 // ============================================================================
@@ -447,13 +538,24 @@ static esp_err_t start_ble_provisioning(void)
 // s'arrete des qu'un reseau est disponible (WiFi ou Ethernet branche apres).
 // ============================================================================
 
-#define PROV_RETRY_MS (120 * 1000)
+#define PROV_RETRY_MS  (120 * 1000)
+#define BLE_WINDOW_MS  (10 * 60 * 1000)   // Bluetooth ouvert a la demande (bouton)
 
 static void prov_task(void *arg)
 {
     (void)arg;
-    TickType_t last_try = xTaskGetTickCount();
-    while (!s_wifi_connected && !s_eth_ip) {
+    // Ouvert a la demande sur une box deja configuree : 10 min, meme si le
+    // reseau est la (changer de WiFi), puis retour aux identifiants actuels
+    const bool window = s_ble_forced && s_have_creds;
+    const TickType_t t0 = xTaskGetTickCount();
+    TickType_t last_try = t0;
+    while (window ? (xTaskGetTickCount() - t0 < pdMS_TO_TICKS(BLE_WINDOW_MS))
+                  : (!s_wifi_connected && !s_eth_ip)) {
+        if (window) {
+            ble_prov_process_pending();
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
         // Identifiants recus : sauvegarde NVS puis redemarrage (pile interne)
         ble_prov_process_pending();
         if (s_have_creds && !s_sta_associated &&
@@ -465,10 +567,15 @@ static void prov_task(void *arg)
         }
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-    ESP_LOGI(TAG, "Reseau disponible (%s) : arret du provisioning BLE",
-             s_wifi_connected ? "WiFi" : "Ethernet");
+    if (window) {
+        ESP_LOGW(TAG, "Fenetre Bluetooth terminee : WiFi actuel conserve");
+    } else {
+        ESP_LOGI(TAG, "Reseau disponible (%s) : arret du provisioning BLE",
+                 s_wifi_connected ? "WiFi" : "Ethernet");
+    }
     ble_prov_stop(true);
     s_ble_active = false;
+    if (window && !s_eth_ip) wifi_mgr_connect_background();
     vTaskDelete(NULL);
 }
 
@@ -502,7 +609,11 @@ static esp_err_t try_wifi_connect(const wifi_mgr_credentials_t *creds)
     wifi_config.sta.threshold.authmode = strlen(creds->password) > 0 ?
                                            WIFI_AUTH_WPA2_PSK : WIFI_AUTH_OPEN;
 
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    esp_err_t sc = esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+    if (sc != ESP_OK) {
+        ESP_LOGE(TAG, "esp_wifi_set_config : %s", esp_err_to_name(sc));
+        return sc;
+    }
 
     uint32_t backoff_ms = s_config.backoff_base_ms;
 
@@ -640,22 +751,53 @@ esp_err_t wifi_mgr_start(void)
     }
     s_have_creds = true;
 
+    // Bluetooth demande par le bouton de la Pro : 10 min pour changer de WiFi
+    if (wifi_mgr_ble_requested()) {
+        ESP_LOGW(TAG, "Bluetooth ouvert a la demande (10 min), WiFi actuel '%s' conserve", creds.ssid);
+        return start_ble_background();
+    }
+
     // 2. Credentials trouves -> tenter connexion WiFi
     ESP_LOGI(TAG, "WiFi credentials found for SSID: '%s'", creds.ssid);
 
     ret = try_wifi_connect(&creds);
 
     if (ret == ESP_OK) {
-        // Connecte!
+        // Connecte! Identifiants recus par Bluetooth valides
         ESP_LOGI(TAG, "WiFi connection established");
+        clear_prev_credentials();
         return ESP_OK;
     }
 
-    // 3. Echec WiFi -> fallback BLE
-    ESP_LOGW(TAG, "WiFi connection failed after %d attempts — BLE fallback",
-             s_config.max_retries);
+    // Identifiants recus par Bluetooth qui ne fonctionnent pas : retour aux
+    // precedents (s'ils fonctionnent, sinon les nouveaux restent)
+    wifi_mgr_credentials_t prev = {};
+    if (load_prev_credentials(&prev)) {
+        ESP_LOGW(TAG, "Nouveau WiFi '%s' injoignable : essai du precedent '%s'", creds.ssid, prev.ssid);
+        esp_wifi_disconnect();
+        vTaskDelay(pdMS_TO_TICKS(500));
+        if (try_wifi_connect(&prev) == ESP_OK) {
+            wifi_mgr_set_credentials(prev.ssid, prev.password);
+            clear_prev_credentials();
+            memset(&prev, 0, sizeof(prev));
+            ESP_LOGW(TAG, "Retour au WiFi precedent");
+            return ESP_OK;
+        }
+        clear_prev_credentials();
+        memset(&prev, 0, sizeof(prev));
+        esp_wifi_disconnect();
+    }
 
-    return start_ble_background();
+    // 3. Echec WiFi : nouvel essai en continu. Le Bluetooth ne s'ouvre plus
+    // de lui-meme sur une box configuree : WiFi brouille ou box Internet plus
+    // lente apres une coupure de courant, n'importe qui a portee pouvait lui
+    // imposer son propre WiFi. Pour changer de WiFi : remise a zero (3
+    // demarrages rapides) ou appui long sur le bouton (Pro).
+    ESP_LOGW(TAG, "WiFi injoignable apres %d essais : nouvel essai en continu "
+                  "(changer de WiFi : remise a zero, ou appui long sur le bouton de la Pro)",
+             s_config.max_retries);
+    wifi_mgr_connect_background();
+    return ESP_ERR_TIMEOUT;
 }
 
 esp_err_t wifi_mgr_connect_background(void)

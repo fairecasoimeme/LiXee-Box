@@ -181,6 +181,17 @@ Répéter l'opération 3 fois et la LiXee-Box sera réinitialisée
 
 > **Note (v3.0+)** : elle remet aussi l'**Ethernet** en automatique (DHCP), utile après une IP fixe erronée. Les appareils, la configuration et l'appairage Matter sont conservés. La **LED verte** confirme la remise à zéro par 10 clignotements rapides, puis clignote lentement tant que la box attend LiXee-Assist en Bluetooth.
 
+### Changer de WiFi (à partir de la v3.3)
+
+Le Bluetooth ne s'ouvre de lui-même que sur une box **jamais configurée**. Une box déjà configurée dont le WiFi ne répond pas (box Internet en panne, plus lente à redémarrer après une coupure de courant) réessaie son WiFi en continu, sans ouvrir le Bluetooth : avant, n'importe qui à portée pouvait alors lui imposer son propre WiFi.
+
+Pour changer de WiFi :
+- **WiFi encore joignable**, ou **Ethernet** : page **Réseau** de l'interface web ;
+- **WiFi injoignable** : la **remise à zéro** ci-dessus (3 branchements), puis LiXee-Assist ;
+- **LiXee-Box Pro** : **appui long de 5 secondes** sur le bouton. La box redémarre avec le Bluetooth ouvert **10 minutes** pour LiXee-Assist ; la configuration (Ethernet, sécurité HTTP) n'est pas touchée.
+
+Si le nouveau WiFi ne permet pas de se connecter, la box revient automatiquement au WiFi précédent au démarrage suivant.
+
 ## 🔄 Migrer une LiXee-Box vers la v3
 
 Une LiXee-Box en **v2.x** (Arduino) passe en v3 **sans ordinateur**, par sa page de mise à jour.
