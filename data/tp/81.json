@@ -1486,7 +1486,7 @@
         {
           "name": "Tension",
           "cluster": "EF00",
-          "attribut": 100,
+          "attribut": 110,
           "mqtt_device_class": "voltage",
           "mqtt_icon": "home-lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1498,7 +1498,7 @@
         {
           "name": "Courant",
           "cluster": "EF00",
-          "attribut": 101,
+          "attribut": 111,
           "mqtt_device_class": "current",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1510,7 +1510,7 @@
         {
           "name": "Puissance",
           "cluster": "EF00",
-          "attribut": 102,
+          "attribut": 112,
           "mqtt_device_class": "power",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1747,7 +1747,7 @@
         {
           "name": "Tension",
           "cluster": "EF00",
-          "attribut": 100,
+          "attribut": 110,
           "mqtt_device_class": "voltage",
           "mqtt_icon": "home-lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1759,7 +1759,7 @@
         {
           "name": "Courant",
           "cluster": "EF00",
-          "attribut": 101,
+          "attribut": 111,
           "mqtt_device_class": "current",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1771,7 +1771,7 @@
         {
           "name": "Puissance",
           "cluster": "EF00",
-          "attribut": 102,
+          "attribut": 112,
           "mqtt_device_class": "power",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1839,7 +1839,7 @@
         {
           "name": "Tension",
           "cluster": "EF00",
-          "attribut": 100,
+          "attribut": 110,
           "mqtt_device_class": "voltage",
           "mqtt_icon": "home-lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1851,7 +1851,7 @@
         {
           "name": "Courant",
           "cluster": "EF00",
-          "attribut": 101,
+          "attribut": 111,
           "mqtt_device_class": "current",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1863,7 +1863,7 @@
         {
           "name": "Puissance",
           "cluster": "EF00",
-          "attribut": 102,
+          "attribut": 112,
           "mqtt_device_class": "power",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1931,7 +1931,7 @@
         {
           "name": "Tension",
           "cluster": "EF00",
-          "attribut": 100,
+          "attribut": 110,
           "mqtt_device_class": "voltage",
           "mqtt_icon": "home-lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1943,7 +1943,7 @@
         {
           "name": "Courant",
           "cluster": "EF00",
-          "attribut": 101,
+          "attribut": 111,
           "mqtt_device_class": "current",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
@@ -1955,7 +1955,7 @@
         {
           "name": "Puissance",
           "cluster": "EF00",
-          "attribut": 102,
+          "attribut": 112,
           "mqtt_device_class": "power",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
