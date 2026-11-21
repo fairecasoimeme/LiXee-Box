@@ -155,7 +155,6 @@ static energy_state_t s_energy[MATTER_BRIDGE_MAX_ENDPOINTS];
 // esp-matter 1.5.1 reference ce callback (cluster door_lock) sans plus le
 // fournir ; la 1.4.2 en avait une version faible vide. Meme comportement.
 void emberAfDoorLockClusterInitCallback(chip::EndpointId endpoint) {}
-
 static int s_energy_count = 0;
 
 // ============================================================================
@@ -429,6 +428,42 @@ static void add_linky_clusters(endpoint_t *ep)
     cluster::commodity_metering::create(ep, &cm_cfg, CLUSTER_FLAG_SERVER);
 }
 
+// Remplit le config_t Occupancy Sensing d'apres la techno reelle du capteur,
+// pour les deux chemins de creation de l'endpoint (sans template et par
+// profil, voir add_device_type_clusters/add_profile_clusters). Au moins une
+// feature de detection est obligatoire (conformance O.a+), sinon esp_matter
+// echoue sur une assertion et la box redemarre en boucle (issue #74).
+//
+// occupancy_sensor_type_bitmap/occupancy_sensor_type (legacy, conserves pour
+// compatibilite controleur) n'ont pas de valeur "Ultrasonic+PIR"/"Radar" :
+// mis au plus proche de la vraie techno plutot que de mentir en annoncant
+// PIR par defaut (issue #96). Verifie sur materiel reel (chip-tool) que seule
+// cette valeur initiale du config_t compte pour ces endpoints dynamiques : le
+// callback d'init connectedhomeip qui la derive habituellement du HAL ne
+// s'execute pas pour eux.
+static void fill_occupancy_sensor_config(endpoint::occupancy_sensor::config_t &cfg,
+                                          matter_occupancy_tech_t tech)
+{
+    switch (tech) {
+    case MATTER_OCC_TECH_RADAR:
+        cfg.occupancy_sensing.occupancy_sensor_type = 0;           // Pir (pas de valeur "Radar" dans cet enum legacy)
+        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x00; // aucune feature legacy plutot que de mentir
+        cfg.occupancy_sensing.feature_flags = cluster::occupancy_sensing::feature::radar::get_id();
+        break;
+    case MATTER_OCC_TECH_ULTRASONIC:
+        cfg.occupancy_sensing.occupancy_sensor_type = 1;           // Ultrasonic
+        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x02;
+        cfg.occupancy_sensing.feature_flags = cluster::occupancy_sensing::feature::ultrasonic::get_id();
+        break;
+    case MATTER_OCC_TECH_PIR:
+    default:
+        cfg.occupancy_sensing.occupancy_sensor_type = 0;           // Pir
+        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x01;
+        cfg.occupancy_sensing.feature_flags = cluster::occupancy_sensing::feature::passive_infrared::get_id();
+        break;
+    }
+}
+
 static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t device_type)
 {
     switch (device_type) {
@@ -464,24 +499,14 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
         break;
     }
     case MATTER_DEV_OCCUPANCY_SENSOR: {
-        // Appareil sans template : au moins une feature de detection est
-        // obligatoire, sinon esp_matter echoue sur une assertion et la box
-        // redemarre en boucle (issue #74). Radar (mmWave), pas PIR : seul
-        // appareil rencontre sur ce chemin generique a ce jour, un SONOFF
-        // SNZB-06P24 (radar 24 GHz) -- le FeatureMap (seul attribut qui
-        // compte pour la conformance) doit refleter sa vraie techno.
-        // occupancy_sensor_type_bitmap laisse a 0 (verifie sur materiel reel,
-        // issue #96) : le callback d'init connectedhomeip qui le derive
-        // habituellement du HAL (toujours Pir par defaut) ne semble pas
-        // s'executer pour ces endpoints dynamiques -- seule cette valeur
-        // initiale compte en pratique, et cet enum legacy n'a pas de valeur
-        // "Radar" de toute facon. occupancy_sensor_type (enum, pas de valeur
-        // "aucune" possible) laisse a Pir par defaut, le moins faux des 4.
+        // Appareil sans template (DeviceId Zigbee 0x0107 generique) : couvre
+        // tout capteur de presence inconnu, PIR dans la grande majorite des
+        // cas (ex: capteur de mouvement Hue) -- PIR par defaut, pas la techno
+        // d'un modele particulier (issue #97). Un appareil avec template
+        // (ex: SONOFF SNZB-06P24, radar) passe par add_profile_clusters
+        // ci-dessous, qui lit la vraie techno du template.
         endpoint::occupancy_sensor::config_t cfg;
-        cfg.occupancy_sensing.occupancy_sensor_type = 0;          // Pir (pas de valeur "aucune"/"Radar" dans cet enum)
-        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x00; // aucune feature legacy plutot que de mentir
-        cfg.occupancy_sensing.feature_flags =
-            cluster::occupancy_sensing::feature::radar::get_id();
+        fill_occupancy_sensor_config(cfg, MATTER_OCC_TECH_PIR);
         endpoint::occupancy_sensor::add(ep, &cfg);
         break;
     }
@@ -624,12 +649,10 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         endpoint::light_sensor::add(ep, &cfg);
     }
     if (caps & MCAP_OCCUPANCY) {
-        // Une fonctionnalite de detection est obligatoire (conformance O.a+)
+        // Techno reelle lue dans le template ("occupancy_tech", issue #97) ;
+        // PIR par defaut si le template ne la precise pas.
         endpoint::occupancy_sensor::config_t cfg;
-        cfg.occupancy_sensing.occupancy_sensor_type = 0;          // PIR
-        cfg.occupancy_sensing.occupancy_sensor_type_bitmap = 0x01;
-        cfg.occupancy_sensing.feature_flags =
-            cluster::occupancy_sensing::feature::passive_infrared::get_id();
+        fill_occupancy_sensor_config(cfg, p->occupancy_tech);
         endpoint::occupancy_sensor::add(ep, &cfg);
     }
     if (caps & MCAP_LEAK) {

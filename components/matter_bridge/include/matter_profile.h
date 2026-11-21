@@ -112,6 +112,20 @@ typedef struct {
     uint16_t mfr;
 } matter_cmd_t;
 
+/**
+ * Techno declaree par le template pour un capteur Occupancy Sensing (cluster
+ * 0406), champ "occupancy_tech" ("pir"/"ultrasonic"/"radar"). PIR par defaut
+ * (absent du template, ou chemin "sans template" qui couvre tout DeviceId
+ * 0x0107 generique -- la plupart des capteurs rencontres sont des PIR, voir
+ * matter_bridge.cpp:add_device_type_clusters). Decide le FeatureMap et
+ * l'attribut legacy OccupancySensorType(Bitmap) du cluster Matter (issue #97).
+ */
+typedef enum {
+    MATTER_OCC_TECH_PIR = 0,
+    MATTER_OCC_TECH_ULTRASONIC,
+    MATTER_OCC_TECH_RADAR,           // mmWave (ex: SONOFF SNZB-06P24)
+} matter_occupancy_tech_t;
+
 typedef struct {
     uint32_t      caps;
     bool          light;            // MCAP_ONOFF : lampe (sinon prise)
@@ -122,6 +136,7 @@ typedef struct {
                                      //                   vrai thermostat Zigbee (TRVZB, tetes Tuya, AC201A...)
     bool          cover_inverted;   // volet dont la position remontee est l'ouverture (252)
     bool          zlinky;
+    matter_occupancy_tech_t occupancy_tech;  // MCAP_OCCUPANCY (issue #97)
     int           link_count;
     matter_link_t links[MATTER_PROFILE_MAX_LINKS];
     matter_cmd_t  on, off;
