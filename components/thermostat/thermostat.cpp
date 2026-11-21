@@ -1156,7 +1156,14 @@ static esp_err_t matter_preset_commit_cb(int ep)
     for (int i = 0; i < THERMO_MAX_ZONES && !ours; i++) ours = (ep > 1 && s_vep[i] == ep);
     if (!ours) return ESP_ERR_NOT_FOUND;
     thermo_msg_t m = { MSG_PRESET_COMMIT, ep, 0, 0 };
-    if (s_q) xQueueSend(s_q, &m, 0);
+    // Delai (pas 0 comme les autres xQueueSend de ce fichier) : contrairement a
+    // MSG_WRITE/MSG_PRESET (un etat qui sera republie au prochain cycle), rater ce
+    // message laisse l'edition validee par le controleur jamais persistee (voir
+    // matter_apply_preset_commit()) -- la tache des thermostats draine la file en
+    // continu, 100 ms suffit largement sans risque de blocage cote tache CHIP.
+    if (s_q && xQueueSend(s_q, &m, pdMS_TO_TICKS(100)) != pdTRUE) {
+        ESP_LOGW(TAG, "Commit presets Matter sur l'endpoint %d : file pleine, edition perdue", ep);
+    }
     return ESP_OK;
 }
 

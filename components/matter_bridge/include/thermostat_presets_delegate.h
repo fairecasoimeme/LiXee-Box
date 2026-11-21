@@ -75,25 +75,35 @@ public:
         bool held = lixee_chip_lock();
         bool active_changed = !m_synced || m_frost_active != frost_active ||
             m_active_custom_handle != active_custom_handle;
-        bool presets_changed = m_comfort_sp != comfort || m_frost_sp != frost ||
-            m_custom_count != (uint8_t)custom_count;
-        if (!presets_changed) {
-            for (int i = 0; i < custom_count; i++) {
-                if (m_custom[i].handle != custom[i].handle ||
-                    m_custom[i].heating_setpoint != custom[i].heating_setpoint ||
-                    m_custom[i].scenario != custom[i].scenario ||
-                    strncmp(m_custom[i].name, custom[i].name, MATTER_PRESET_NAME_LEN) != 0) {
-                    presets_changed = true;
-                    break;
+        bool presets_changed = m_comfort_sp != comfort || m_frost_sp != frost;
+        // m_commit_pending (issue #80) : entre un CommitPendingPresets() (tache CHIP,
+        // ecrit m_custom/m_custom_count) et le traitement de la notification associee
+        // par thermostat.cpp (qui relit ce contenu via GetCustomPresetsSnapshot() --
+        // seul endroit qui efface ce drapeau -- et le reinjecte dans la zone), un
+        // SyncFromZone() periodique arrive ici avec l'ANCIEN tableau de la zone :
+        // l'ecraser serait perdre l'edition qu'on vient de valider (verifie sur
+        // materiel reel : suppression d'un preset perso silencieusement annulee).
+        // On saute cette seule partie tant que la zone n'a pas rattrape le commit.
+        if (!m_commit_pending) {
+            if (m_custom_count != (uint8_t)custom_count) presets_changed = true;
+            if (!presets_changed) {
+                for (int i = 0; i < custom_count; i++) {
+                    if (m_custom[i].handle != custom[i].handle ||
+                        m_custom[i].heating_setpoint != custom[i].heating_setpoint ||
+                        m_custom[i].scenario != custom[i].scenario ||
+                        strncmp(m_custom[i].name, custom[i].name, MATTER_PRESET_NAME_LEN) != 0) {
+                        presets_changed = true;
+                        break;
+                    }
                 }
             }
+            for (int i = 0; i < custom_count; i++) m_custom[i] = custom[i];
+            m_custom_count = (uint8_t)custom_count;
         }
         m_comfort_sp = comfort;
         m_frost_sp = frost;
         m_frost_active = frost_active;
         m_active_custom_handle = active_custom_handle;
-        for (int i = 0; i < custom_count; i++) m_custom[i] = custom[i];
-        m_custom_count = (uint8_t)custom_count;
         m_synced = true;
         if (presets_changed) {
             MatterReportingAttributeChangeCallback(m_endpoint_id, chip::app::Clusters::Thermostat::Id,
@@ -120,6 +130,7 @@ public:
         if (n > max_out) n = max_out;
         for (int i = 0; i < n; i++) out[i] = m_custom[i];
         *out_count = n;
+        m_commit_pending = false;   // la zone va rattraper ce contenu (voir SyncFromZone())
         lixee_chip_unlock(held);
     }
 
@@ -375,6 +386,10 @@ private:
     bool    m_synced = false;                // aucun SyncFromZone() recu depuis la creation
     matter_preset_t m_custom[MATTER_PRESET_MAX_CUSTOM] = {};
     uint8_t m_custom_count = 0;
+    // Mis a true par CommitPendingPresets() (tache CHIP), efface par
+    // GetCustomPresetsSnapshot() (tache des thermostats, seul appelant : voir
+    // matter_apply_preset_commit() dans thermostat.cpp) -- voir SyncFromZone().
+    bool    m_commit_pending = false;
 
     // --- Buffer de la transaction d'edition en cours : tache CHIP uniquement
     //     (Initialize/Append/Commit/Clear), jamais touche par la tache des
