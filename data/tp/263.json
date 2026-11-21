@@ -96,6 +96,7 @@
           "typewritable": 32
         }
       ],
+      "occupancy_tech": "radar",
       "bind": "1030",
       "report": [
         {
