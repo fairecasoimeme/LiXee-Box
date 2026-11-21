@@ -5,6 +5,7 @@
 #include "delestage.h"
 #include "zigate_devices.h"
 #include "zigate_driver.h"
+#include "zigate_actions.h"
 #include "device_data.h"
 #include "energy_service.h"
 #include "config_manager.h"
@@ -73,10 +74,28 @@ static void onoff_value(uint64_t ieee, char *out, size_t len)
 
 static bool is_on(const char *v) { return v && v[0] && strtol(v, NULL, 16) != 0; }
 
+/**
+ * Marche/arret d'UN appareil : action "ON"/"OFF" du template si declaree
+ * (ZCL On/Off ou datapoint Tuya booleen, ZB_ACT_TUYA_BOOL), sinon commande
+ * ZCL On/Off du cluster 0x0006. Necessaire pour les relais Tuya TS0601 sans
+ * cluster OnOff standard, dont le marche/arret passe par un datapoint EF00
+ * (issue #58) - memes principe que thermostat.cpp:fire_actuator_one().
+ */
 static void send_onoff(uint64_t ieee, bool on)
 {
     const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
     if (!d) return;
+    const devdata_template_t *t = device_data_get_template(ieee);
+    const char *name = on ? "ON" : "OFF";
+    for (int i = 0; t && i < t->action_count; i++) {
+        const devdata_template_action_t *a = &t->actions[i];
+        if (strcasecmp(a->name, name) != 0) continue;
+        uint8_t ep = a->endpoint ? a->endpoint : (d->endpoint ? d->endpoint : 1);
+        esp_err_t err = zigate_action_send(a->command, d->short_addr, ep, a->value,
+                                           a->cluster, a->manufacturer_code);
+        if (err != ESP_OK) ESP_LOGW(TAG, "Action %s -> 0x%04X : %s", name, d->short_addr, esp_err_to_name(err));
+        return;
+    }
     zigate_send_onoff(d->short_addr, d->endpoint ? d->endpoint : 1, on ? 1 : 0);
 }
 
