@@ -99,7 +99,8 @@ static esp_err_t thermo_get(httpd_req_t *req)
 
 static esp_err_t thermo_post(httpd_req_t *req)
 {
-    char r[24];
+    char r[24];double id = -1, v = 0;
+
     route_name(req, r, sizeof(r));
     cJSON *j = read_body(req);
     if (!j) return ESP_OK;
