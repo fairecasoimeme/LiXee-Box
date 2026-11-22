@@ -105,7 +105,6 @@ static esp_err_t thermo_post(httpd_req_t *req)
     cJSON *j = read_body(req);
     if (!j) return ESP_OK;
     esp_err_t ret;
-    double id = -1, v = 0;
     bool has_id = j_num(j, "id", &id);           // "new" : non numerique -> nouvelle zone
     if (!strcmp(r, "save")) {
         int n = thermostat_save_zone(has_id ? (int)id : -1, j);
