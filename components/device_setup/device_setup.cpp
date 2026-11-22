@@ -86,25 +86,35 @@ static bool load_template(const zigate_device_t *dev)
 {
     char file[64];
     snprintf(file, sizeof(file), "%u.json", (unsigned)dev->device_id);
+
+    // Cle utilisee pour choisir le modele dans le template : le manufacturer
+    // (ZCL Basic 0x0004), plus precis, est essaye en priorite quand le
+    // fichier du DeviceId le declare explicitement. Necessaire pour les
+    // appareils Tuya dont le ModelIdentifier (0x0005) generique ("TS0601")
+    // est partage par des produits tres differents - relais, vanne,
+    // capteur... - seul le manufacturer les distingue (issue #58).
+    const char *key = dev->model;
     if (dev->model[0]) {
         char other[64];
-        if (!device_data_template_has_model(file, dev->model) &&
-            device_data_template_find_model(dev->model, file, other, sizeof(other))) {
+        if (dev->manufacturer[0] && device_data_template_has_model(file, dev->manufacturer)) {
+            key = dev->manufacturer;
+        } else if (!device_data_template_has_model(file, dev->model) &&
+                   device_data_template_find_model(dev->model, file, other, sizeof(other))) {
             ESP_LOGI(TAG, "Modele '%s' (DeviceId 0x%04X) : template %s",
                      dev->model, dev->device_id, other);
             strlcpy(file, other, sizeof(file));
         }
     }
 
-    esp_err_t err = device_data_load_template(dev->ieee_addr, file, dev->model);
+    esp_err_t err = device_data_load_template(dev->ieee_addr, file, key);
     if (err != ESP_OK && is_zlinky(dev) && strcmp(file, ZLINKY_FALLBACK_TEMPLATE) != 0) {
         ESP_LOGI(TAG, "ZLinky en DeviceId 0x%04X : template %s", dev->device_id,
                  ZLINKY_FALLBACK_TEMPLATE);
-        err = device_data_load_template(dev->ieee_addr, ZLINKY_FALLBACK_TEMPLATE, dev->model);
+        err = device_data_load_template(dev->ieee_addr, ZLINKY_FALLBACK_TEMPLATE, key);
     }
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "0x%016llX : pas de template pour DeviceId %u / modele '%s'",
-                 (unsigned long long)dev->ieee_addr, (unsigned)dev->device_id, dev->model);
+                 (unsigned long long)dev->ieee_addr, (unsigned)dev->device_id, key);
         return false;
     }
     return true;
