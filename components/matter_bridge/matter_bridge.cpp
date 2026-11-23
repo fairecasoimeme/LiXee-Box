@@ -1671,6 +1671,16 @@ int matter_bridge_bridged_count(void)
     return n;
 }
 
+bool matter_bridge_endpoint_exists(int endpoint_id)
+{
+    if (!s_matter_node || endpoint_id < 0 || endpoint_id > 0xFFFE) return false;
+    bool held;
+    if (!stack_lock(&held)) return false;
+    bool found = endpoint::get(s_matter_node, (uint16_t)endpoint_id) != NULL;
+    stack_unlock(held);
+    return found;
+}
+
 int matter_bridge_bridged_max(void)
 {
     // La limite de la pile compte aussi la racine et l'agregateur

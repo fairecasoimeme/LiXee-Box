@@ -204,6 +204,9 @@ int matter_bridge_bridged_count(void);
 /** Nombre maximal d'appareils pontes (limite d'endpoints de la pile Matter). */
 int matter_bridge_bridged_max(void);
 
+/** Endpoint present dans le noeud Matter (diagnostic NVS : attributs orphelins). */
+bool matter_bridge_endpoint_exists(int endpoint_id);
+
 /**
  * Evenements d'un bouton poussoir (cluster Switch) : presses = nombre
  * d'appuis (1 simple, 2 double...), 0 = appui long.
