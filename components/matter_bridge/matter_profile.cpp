@@ -415,6 +415,12 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
     // Prix courant du kWh (CommodityPrice) sur l'EP du ZLinky (issue #67)
     if (p->zlinky) p->caps |= MCAP_LINKY_PRICE;
 
+    // Techno du capteur Occupancy Sensing, champ "occupancy_tech" du template
+    // (issue #97) ; PIR par defaut si absent/inconnu.
+    p->occupancy_tech = MATTER_OCC_TECH_PIR;
+    if (strcmp(tmpl->occupancy_tech, "radar") == 0) p->occupancy_tech = MATTER_OCC_TECH_RADAR;
+    else if (strcmp(tmpl->occupancy_tech, "ultrasonic") == 0) p->occupancy_tech = MATTER_OCC_TECH_ULTRASONIC;
+
     // Lampe : DeviceId d'eclairage ZCL (le ZLinky s'annonce a tort en 0x0101)
     p->light = (p->caps & MCAP_ONOFF) && !p->zlinky &&
                (zcl_device_id == 0x0100 || zcl_device_id == 0x0101 || zcl_device_id == 0x0102 ||
