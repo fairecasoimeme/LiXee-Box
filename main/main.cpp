@@ -55,6 +55,7 @@
 #include "eth_manager.h"
 #include "energy_service.h"
 #include "energy_advice.h"
+#include "ip_devices.h"
 #include "energy_archive.h"
 #include "power_stats.h"
 #include "zigate_ir.h"
@@ -660,6 +661,24 @@ static void on_zigbee_attribute_report(const zigate_attribute_report_t *report)
 
     // Propager vers Matter
     matter_device_manager_handle_zigbee_report(report);
+}
+
+/**
+ * Valeur relevee sur un appareil IP (tache "ipdev") : meme chemin que le
+ * Zigbee et le LoRa (fiche, regles, historique, MQTT). Matter : lot 2.
+ */
+static void on_ip_report(const ipdev_report_t *r)
+{
+    // Tache ipdev seule : rapport statique
+    static zigate_attribute_report_t rep;
+    memset(&rep, 0, sizeof(rep));
+    rep.cluster_id = r->cluster;
+    rep.attr_id    = r->attr;
+    rep.attr_type  = r->type;
+    rep.endpoint   = 1;
+    rep.data_len   = r->len;
+    memcpy(rep.data, r->data, r->len);
+    process_attribute(r->ieee, &rep);
 }
 
 /** Emetteur LoRa supprime (page LoRa) : son appareil Matter disparait aussi. */
@@ -1546,6 +1565,9 @@ extern "C" void app_main(void)
         esp_err_t le = lora_init();
         if (le != ESP_OK && le != ESP_ERR_NOT_FOUND) ESP_LOGW(TAG, "LoRa: %s", esp_err_to_name(le));
     }
+    // Appareils IP (Shelly, Tasmota...) : liste, templates tp/ip.json, releves
+    ip_devices_register_report_cb(on_ip_report);
+    ip_devices_init();
 
     // Enregistrer les callbacks ZiGate
     zigate_register_attribute_cb(on_zigbee_attribute_report);

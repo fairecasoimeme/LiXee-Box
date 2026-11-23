@@ -8,6 +8,7 @@ idf_component_register(
         "web_zigbee.cpp"
         "web_notif.cpp"
         "web_lora.cpp"
+        "web_ipdev.cpp"
         "web_tunnel.cpp"
         "web_maint.cpp"
         "web_thermostat.cpp"
@@ -24,6 +25,7 @@ idf_component_register(
         device_data
         energy_history
         energy_service
+        ip_devices
         log
     PRIV_REQUIRES
         board

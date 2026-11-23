@@ -1,0 +1,17 @@
+idf_component_register(
+    SRCS
+        "ip_devices.cpp"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        log
+    PRIV_REQUIRES
+        json
+        vfs
+        esp_timer
+        esp_http_client
+        esp_netif
+        lwip
+        device_data
+        config_manager
+)

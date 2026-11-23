@@ -55,6 +55,7 @@
 #include "config_manager.h"
 #include "matter_device_manager.h"
 #include "lora.h"
+#include "ip_devices.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -640,19 +641,27 @@ static esp_err_t get_cards(httpd_req_t *req)
         lora_emitter_info_t le = {};
         int lslot = lora_find_slot_by_ieee(dd->ieee_addr);
         if (lslot >= 0) lora_get_emitter(lslot, &le);
+        ipdev_info_t ipi;
+        bool ip = ip_devices_find(dd->ieee_addr, &ipi);
         jw_obj(&w);
         jw_kieee(&w, "ieee", dd->ieee_addr);
         jw_kstr(&w, "alias", dd->info.alias);
-        jw_kstr(&w, "model", le.model);
-        jw_kint(&w, "deviceId", atoi(le.device_id));
-        jw_kbool(&w, "lora", true);
+        jw_kstr(&w, "model", ip ? ipi.model : le.model);
+        jw_kint(&w, "deviceId", ip ? 0 : atoi(le.device_id));
+        jw_kbool(&w, "lora", !ip);
+        if (ip) { jw_kbool(&w, "ip", true); jw_kstr(&w, "addr", ipi.ip); }
         jw_kbool(&w, "tmpl", dd->tmpl && dd->tmpl->loaded);
-        jw_kint(&w, "radio", 0);
+        // Appareil IP injoignable : meme pastille que le Zigbee (D4)
+        jw_kint(&w, "radio", ip && !ipi.online && ipi.polls ? 0xD4 : 0);
         jw_kint(&w, "linkyMode", mode);
         jw_kint(&w, "cover", -1);
         write_card_states(&w, dd->ieee_addr, dd->tmpl, mode);
-        jw_key(&w, "actions");
-        jw_raw(&w, "[]");
+        if (ip) {
+            write_actions(&w, dd->ieee_addr, dd->tmpl);   // commandes par HTTP (ip_devices)
+        } else {
+            jw_key(&w, "actions");
+            jw_raw(&w, "[]");
+        }
         jw_obj_end(&w);
     }
     jw_arr_end(&w);
@@ -718,9 +727,12 @@ static esp_err_t get_values(httpd_req_t *req)
         if (!dd || (only && only != dd->ieee_addr)) continue;
         char ieee[20];
         snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)dd->ieee_addr);
+        ipdev_info_t ipi;
+        bool ip = ip_devices_find(dd->ieee_addr, &ipi);
         jw_key(&w, ieee);
         jw_obj(&w);
-        jw_kint(&w, "radio", 0);
+        jw_kint(&w, "radio", ip && !ipi.online && ipi.polls ? 0xD4 : 0);
+        if (ip) jw_kint(&w, "ago", ipi.age_s);
         jw_kint(&w, "cover", -1);
         write_changed_values(&w, dd->ieee_addr, dd->tmpl, display_mode_other(dd), since);
         jw_obj_end(&w);
@@ -854,6 +866,63 @@ static esp_err_t get_lora_device(httpd_req_t *req, uint64_t ieee, int slot)
     return jw_send(req, &w);
 }
 
+/** Chaine ZCL en hexadecimal (fiche device_data) -> texte. */
+static void ip_hex_text(const char *hex, char *out, size_t len)
+{
+    size_t n = 0;
+    for (size_t i = 0; hex[i] && hex[i + 1] && n + 1 < len; i += 2) {
+        char hx[3] = { hex[i], hex[i + 1], 0 };
+        char c = (char)strtol(hx, NULL, 16);
+        if (!c) break;
+        out[n++] = (c >= 32 && c < 127) ? c : ' ';
+    }
+    out[n] = 0;
+}
+
+/** Fiche d'un appareil IP : etats et actions du template, lien HTTP. */
+static esp_err_t get_ip_device(httpd_req_t *req, uint64_t ieee)
+{
+    ipdev_info_t ipi;
+    if (!ip_devices_find(ieee, &ipi)) return send_not_found(req, "Appareil inconnu");
+    const cfg_settings_t *cs = cfg_get_settings();
+    const cfg_general_t *g = cfg_get_general();
+    const device_data_t *dd = device_data_find(ieee);
+    const devdata_template_t *t = (dd && dd->tmpl && dd->tmpl->loaded) ? dd->tmpl : NULL;
+    char vendor[32] = "", model[64] = "";
+    const char *hv = device_data_get_value_ptr(ieee, 0x0000, 0x0004);
+    if (hv) ip_hex_text(hv, vendor, sizeof(vendor));
+    hv = device_data_get_value_ptr(ieee, 0x0000, 0x0005);
+    if (hv) ip_hex_text(hv, model, sizeof(model));
+
+    jw_t w = {};
+    jw_obj(&w);
+    jw_kieee(&w, "ieee", ieee);
+    jw_kbool(&w, "ip", true);
+    jw_kstr(&w, "alias", dd ? dd->info.alias : "");
+    jw_kstr(&w, "manufacturer", vendor);
+    jw_kstr(&w, "model", model[0] ? model : ipi.model);
+    jw_kstr(&w, "template", ipi.model);
+    jw_kstr(&w, "addr", ipi.ip);
+    jw_kint(&w, "port", ipi.port);
+    jw_kbool(&w, "online", ipi.online);
+    jw_kint(&w, "ago", ipi.age_s);
+    jw_kint(&w, "polls", ipi.polls);
+    jw_kint(&w, "errors", ipi.errors);
+    jw_kstr(&w, "lastError", ipi.last_error);
+    jw_kint(&w, "interval", ipi.interval_s);
+    jw_kint(&w, "radio", !ipi.online && ipi.polls ? 0xD4 : 0);
+    const bridge_device_mapping_t *m = matter_device_manager_get_mapping_by_ieee(ieee);
+    jw_kint(&w, "matterEndpoint", m ? m->matter_endpoint : -1);
+    jw_kint(&w, "linkyMode", -1);
+    jw_kbool(&w, "tmpl", t && !t->dyn_only);
+    jw_kbool(&w, "ha", cs->enable_mqtt && g->ha_mqtt);
+    jw_kstr(&w, "status", dd ? dd->info.status : "");
+    write_device_body(&w, ieee, t, dd, -1, now_s());
+    write_actions(&w, ieee, t);
+    jw_obj_end(&w);
+    return jw_send(req, &w);
+}
+
 static esp_err_t get_device(httpd_req_t *req)
 {
     const zigate_device_t *d = query_device(req);
@@ -864,6 +933,7 @@ static esp_err_t get_device(httpd_req_t *req)
             parse_ieee(v, &ieee)) {
             int slot = lora_find_slot_by_ieee(ieee);
             if (slot >= 0) return get_lora_device(req, ieee, slot);
+            if (ip_devices_is_ip(ieee)) return get_ip_device(req, ieee);
         }
         return send_not_found(req, "Appareil inconnu");
     }
@@ -1056,8 +1126,40 @@ static uint8_t device_endpoint(const zigate_device_t *d, const cJSON *j)
  * page envoie les champs d'une action, la valeur pouvant etre remplacee
  * (curseur de volet).
  */
+/** Action de template d'un appareil IP (par nom ou par index), envoyee par HTTP. */
+static esp_err_t post_ip_action(httpd_req_t *req, cJSON *j, uint64_t ieee)
+{
+    const devdata_template_t *t = device_data_get_template(ieee);
+    const char *name = json_str(j, "name");
+    long idx = -1;
+    json_long(j, "index", &idx);
+    const devdata_template_action_t *a = NULL;
+    for (int i = 0; t && t->loaded && i < t->action_count; i++) {
+        if ((idx >= 0 && i == idx) || (idx < 0 && name && strcasecmp(t->actions[i].name, name) == 0)) {
+            a = &t->actions[i];
+            break;
+        }
+    }
+    long command, value, ep;
+    if (a) {
+        command = a->command; value = a->value; ep = a->endpoint;
+        json_long(j, "value", &value);
+    } else {
+        if (!json_long(j, "command", &command)) return send_not_found(req, "Action absente du template");
+        value = 0; ep = 0;
+        json_long(j, "value", &value);
+        json_long(j, "endpoint", &ep);
+    }
+    esp_err_t e = ip_devices_send_action(ieee, (int)command, (uint8_t)ep, (int32_t)value);
+    if (e == ESP_ERR_INVALID_STATE) return send_bad(req, "Module Appareils IP arrete");
+    if (e != ESP_OK) return send_bad(req, "Commande refusee");
+    return send_ok(req);
+}
+
 static esp_err_t post_action(httpd_req_t *req, cJSON *j)
 {
+    uint64_t ip_ieee;
+    if (parse_ieee(json_str(j, "ieee"), &ip_ieee) && ip_devices_is_ip(ip_ieee)) return post_ip_action(req, j, ip_ieee);
     zigate_device_t *d = body_device(j);
     if (!d) return send_not_found(req, "Appareil inconnu");
 

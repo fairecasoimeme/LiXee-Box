@@ -8,6 +8,7 @@
 // file cadencee (rules_job_enqueue).
 // ============================================================================
 
+#include "ip_devices.h"
 #include "action_groups.h"
 #include "rules_internal.h"
 #include "config_manager.h"
@@ -365,6 +366,35 @@ char *action_groups_devices_json(void)
             const devdata_template_action_t *a = &t->actions[k];
             // Positionnement de volet : curseur, aucune position fixe a proposer
             if (!a->visible || a->command == 251 || a->command == 252) continue;
+            sb_putc(&sb, '{');
+            sb_kstr(&sb, "n", a->name);
+            sb_kint(&sb, "e", a->endpoint);
+            sb_close(&sb, '}');
+            sb_putc(&sb, ',');
+        }
+        sb_close(&sb, ']');
+        sb_close(&sb, '}');
+        sb_putc(&sb, ',');
+    }
+    // Appareils IP : actions de leur template (commandes par HTTP)
+    for (int i = 0; i < ip_devices_count(); i++) {
+        ipdev_info_t ipi;
+        if (!ip_devices_get(i, &ipi)) continue;
+        const devdata_template_t *t = device_data_get_template(ipi.ieee);
+        if (!t || !t->loaded || t->action_count == 0) continue;
+        char ieee[20], label[48];
+        snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)ipi.ieee);
+        const device_data_t *dd = device_data_find(ipi.ieee);
+        if (dd && dd->info.alias[0]) jcopy(label, sizeof(label), dd->info.alias);
+        else jcopy(label, sizeof(label), ipi.ip);
+        sb_putc(&sb, '{');
+        sb_kstr(&sb, "i", ieee);
+        sb_kstr(&sb, "n", label);
+        sb_key(&sb, "a");
+        sb_putc(&sb, '[');
+        for (int k = 0; k < t->action_count; k++) {
+            const devdata_template_action_t *a = &t->actions[k];
+            if (!a->visible) continue;
             sb_putc(&sb, '{');
             sb_kstr(&sb, "n", a->name);
             sb_kint(&sb, "e", a->endpoint);

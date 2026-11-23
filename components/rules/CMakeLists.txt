@@ -18,4 +18,5 @@ idf_component_register(
         config_manager
         ntp_sync
         board
+        ip_devices
 )

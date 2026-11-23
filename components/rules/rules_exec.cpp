@@ -13,6 +13,7 @@
 // rules_tick() et les routes web, dans leur propre tache.
 // ============================================================================
 
+#include "ip_devices.h"
 #include "rules_internal.h"
 #include "action_groups.h"
 #include "zigate_driver.h"
@@ -509,6 +510,23 @@ static bool exec_radio_action(const rules_job_t *job, uint16_t *sa_out, uint16_t
     origin_text(job->origin, org, sizeof(org));
 
     uint64_t ieee = rules_parse_ieee(a->IEEE);
+    // Appareil IP (Shelly, Tasmota...) : action du template envoyee par HTTP,
+    // sans trame radio a cadencer (la file des regles passe a la suivante)
+    if (ieee && ip_devices_is_ip(ieee)) {
+        const devdata_template_action_t *ta = a->actionName[0] ? find_tpl_action(ieee, a->actionName) : NULL;
+        int command = a->command >= 0 ? a->command : (ta ? ta->command : -1);
+        long v = ta ? ta->value : 0;
+        if (strcmp(a->type, "onoff") == 0) { command = 146; v = strtol(a->value, NULL, 10); }
+        else if (a->value[0] && !ta) v = strtol(a->value, NULL, 10);
+        if (command < 0) {
+            ESP_LOGE(TAG, "[Action] %s : action '%s' absente du template de %s", org, a->actionName, a->IEEE);
+            return false;
+        }
+        esp_err_t e = ip_devices_send_action(ieee, command, (uint8_t)(a->endpoint > 0 ? a->endpoint : 0), (int32_t)v);
+        ESP_LOGI(TAG, "[Action] %s : %s (IP) -> %s (cmd=%d val=%ld) %s", org, a->IEEE,
+                 a->actionName[0] ? a->actionName : a->type, command, v, e == ESP_OK ? "" : esp_err_to_name(e));
+        return false;   // rien a attendre de la ZiGate
+    }
     const zigate_device_t *z = ieee ? zigate_devices_find_by_ieee(ieee) : NULL;
     if (!z) {
         ESP_LOGE(TAG, "[Action] %s : appareil introuvable IEEE=%s", org, a->IEEE);

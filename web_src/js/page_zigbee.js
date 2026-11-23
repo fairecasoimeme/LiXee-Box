@@ -103,7 +103,8 @@
     if (!code) return '';
     var path = RADIO_PATHS[code] || RADIO_PATHS[0];
     var seen = d && (d.lastSeen > 1600000000 || d.ago >= 0) ? fmtSeen(d) : '';
-    var tip = esc(radioLabel(code) + ' (code ' + hex2(code) + ')' + (seen && seen !== '-' ? ' — dernier contact : ' + seen : ''));
+    var tip = esc((d && d.ip ? 'Appareil IP injoignable' : radioLabel(code) + ' (code ' + hex2(code) + ')') +
+                  (seen && seen !== '-' ? ' — dernier contact : ' + seen : ''));
     return '<span title="' + tip + '" aria-label="' + tip + '"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + path + '"/></svg></span>';
   }
 
@@ -282,7 +283,8 @@
       devs.forEach(function(d) {
         h += '<div class="col-12 col-md-6 col-lg-4 zb-col"><div class="zb-card">' +
           '<div class="zb-head"><a href="' + devLink(d) + '">' + devIcon(d) + '<span class="zb-name">' + esc(devName(d)) + '</span></a>' +
-            (d.lora ? '<span class="zb-tag" title="Re\u00e7u par radio LoRa 2.4 GHz">LoRa</span>'
+            (d.ip ? '<span class="zb-tag" title="Appareil IP (API HTTP locale) ' + esc(d.addr || '') + '">IP</span>'
+             : d.lora ? '<span class="zb-tag" title="Re\u00e7u par radio LoRa 2.4 GHz">LoRa</span>'
                     : '<span class="zb-tag" title="Re\u00e7u par Zigbee">' + SVG_ZB + 'Zigbee</span>') +
             '<span class="zb-radio" id="zb-radio-' + esc(d.ieee) + '">' + radioIcon(d.radio, d) + '</span></div>' +
           '<div class="zb-body">';
@@ -329,6 +331,24 @@
     var cur = null;
 
     function info(d) {
+      // Appareil IP : adresse, etat des releves HTTP
+      if (d.ip) {
+        var ago = d.ago >= 0 ? (d.ago < 60 ? 'il y a ' + d.ago + ' s' : 'il y a ' + Math.round(d.ago / 60) + ' min') : 'jamais';
+        var ir = [
+          ['Adresse', (d.addr || '-') + (d.port && d.port !== 80 ? ':' + d.port : '')],
+          ['Fabricant', d.manufacturer || '-'],
+          ['Mod\u00e8le', d.model || '-'],
+          ['Template', d.template || '-'],
+          ['\u00c9tat', d.online ? 'En ligne' : (d.polls ? 'Injoignable' + (d.lastError ? ' (' + d.lastError + ')' : '') : 'En attente')],
+          ['Dernier relev\u00e9 r\u00e9ussi', ago],
+          ['Relev\u00e9s', d.polls + ' dont ' + d.errors + ' en \u00e9chec, toutes les ' + d.interval + ' s'],
+          ['Endpoint Matter', d.matterEndpoint >= 0 ? d.matterEndpoint : '-'],
+          ['Statut', d.status || '-']
+        ];
+        var ih = '<table class="table table-sm zb-info">';
+        ir.forEach(function(r) { ih += '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>'; });
+        return ih + '</table><a class="small" href="#ipDevices">G\u00e9rer les appareils IP</a>';
+      }
       // Emetteur LoRa (comme la LiXee-Box) : ni adresse courte, ni endpoint,
       // ni LQI (metrique Zigbee) ; la qualite du lien se lit sur RSSI / SNR
       if (d.lora) {

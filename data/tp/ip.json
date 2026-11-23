@@ -1,0 +1,931 @@
+{
+ "Shelly-Gen2-PM": [
+  {
+   "http": {
+    "label": "Shelly Gen2/Plus avec mesure (1PM, Plug S...)",
+    "vendor": "Shelly",
+    "auth": "digest",
+    "poll": [
+     "/rpc/Switch.GetStatus?id=0"
+    ],
+    "detect": [
+     {
+      "url": "/shelly",
+      "path": "gen"
+     },
+     {
+      "url": "/rpc/Switch.GetStatus?id=0",
+      "path": "apower"
+     }
+    ],
+    "mac": {
+     "url": "/shelly",
+     "path": "mac"
+    },
+    "name": {
+     "url": "/shelly",
+     "path": "name"
+    }
+   },
+   "status": [
+    {
+     "name": "Etat",
+     "cluster": "0006",
+     "attribut": 0,
+     "json": "output",
+     "visible": 1,
+     "mqtt_device_class": "switch"
+    },
+    {
+     "name": "Puissance",
+     "cluster": "0B04",
+     "attribut": 1291,
+     "json": "apower",
+     "mqtt_device_class": "power",
+     "mqtt_icon": "lightning-bolt",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "jauge": "gauge",
+     "min": 0,
+     "max": 3600,
+     "unit": "W"
+    },
+    {
+     "name": "Tension",
+     "cluster": "0B04",
+     "attribut": 1285,
+     "json": "voltage",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage",
+     "mqtt_icon": "sine-wave",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V"
+    },
+    {
+     "name": "Courant",
+     "cluster": "0B04",
+     "attribut": 1288,
+     "json": "current",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current",
+     "mqtt_icon": "current-ac",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A"
+    },
+    {
+     "name": "Energie",
+     "cluster": "0702",
+     "attribut": 0,
+     "json": "aenergy.total",
+     "scale": 1,
+     "mqtt_device_class": "energy",
+     "mqtt_icon": "transmission-tower",
+     "mqtt_state_class": "total_increasing",
+     "type": "numeric",
+     "visible": 1,
+     "jauge": "text",
+     "unit": "Wh"
+    }
+   ],
+   "action": [
+    {
+     "name": "ON",
+     "command": 146,
+     "endpoint": 1,
+     "value": 1,
+     "http": "/rpc/Switch.Set?id=0&on=true"
+    },
+    {
+     "name": "OFF",
+     "command": 146,
+     "endpoint": 1,
+     "value": 0,
+     "http": "/rpc/Switch.Set?id=0&on=false"
+    },
+    {
+     "name": "TOGGLE",
+     "command": 146,
+     "endpoint": 1,
+     "value": 2,
+     "http": "/rpc/Switch.Toggle?id=0"
+    }
+   ]
+  }
+ ],
+ "Shelly-Gen2": [
+  {
+   "http": {
+    "label": "Shelly Gen2/Plus relais (Plus 1...)",
+    "vendor": "Shelly",
+    "auth": "digest",
+    "poll": [
+     "/rpc/Switch.GetStatus?id=0"
+    ],
+    "detect": [
+     {
+      "url": "/shelly",
+      "path": "gen"
+     },
+     {
+      "url": "/rpc/Switch.GetStatus?id=0",
+      "path": "output"
+     }
+    ],
+    "mac": {
+     "url": "/shelly",
+     "path": "mac"
+    },
+    "name": {
+     "url": "/shelly",
+     "path": "name"
+    }
+   },
+   "status": [
+    {
+     "name": "Etat",
+     "cluster": "0006",
+     "attribut": 0,
+     "json": "output",
+     "visible": 1,
+     "mqtt_device_class": "switch"
+    }
+   ],
+   "action": [
+    {
+     "name": "ON",
+     "command": 146,
+     "endpoint": 1,
+     "value": 1,
+     "http": "/rpc/Switch.Set?id=0&on=true"
+    },
+    {
+     "name": "OFF",
+     "command": 146,
+     "endpoint": 1,
+     "value": 0,
+     "http": "/rpc/Switch.Set?id=0&on=false"
+    },
+    {
+     "name": "TOGGLE",
+     "command": 146,
+     "endpoint": 1,
+     "value": 2,
+     "http": "/rpc/Switch.Toggle?id=0"
+    }
+   ]
+  }
+ ],
+ "Shelly-Pro-3EM": [
+  {
+   "http": {
+    "label": "Shelly Pro 3EM (triphasé)",
+    "vendor": "Shelly",
+    "auth": "digest",
+    "poll": [
+     "/rpc/EM.GetStatus?id=0",
+     "/rpc/EMData.GetStatus?id=0"
+    ],
+    "detect": [
+     {
+      "url": "/shelly",
+      "path": "gen"
+     },
+     {
+      "url": "/rpc/EM.GetStatus?id=0",
+      "path": "total_act_power"
+     }
+    ],
+    "mac": {
+     "url": "/shelly",
+     "path": "mac"
+    },
+    "name": {
+     "url": "/shelly",
+     "path": "name"
+    }
+   },
+   "status": [
+    {
+     "name": "Puissance totale",
+     "cluster": "0B04",
+     "attribut": 772,
+     "json": "total_act_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "W",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "power",
+     "mqtt_icon": "lightning-bolt",
+     "jauge": "gauge",
+     "min": 0,
+     "max": 12000
+    },
+    {
+     "name": "Puissance phase 1",
+     "cluster": "0B04",
+     "attribut": 1291,
+     "json": "a_act_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "W",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "power"
+    },
+    {
+     "name": "Puissance phase 2",
+     "cluster": "0B04",
+     "attribut": 2315,
+     "json": "b_act_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "W",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "power"
+    },
+    {
+     "name": "Puissance phase 3",
+     "cluster": "0B04",
+     "attribut": 2571,
+     "json": "c_act_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "W",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "power"
+    },
+    {
+     "name": "Tension phase 1",
+     "cluster": "0B04",
+     "attribut": 1285,
+     "json": "a_voltage",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V",
+     "mqtt_state_class": "measurement",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage"
+    },
+    {
+     "name": "Tension phase 2",
+     "cluster": "0B04",
+     "attribut": 2309,
+     "json": "b_voltage",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V",
+     "mqtt_state_class": "measurement",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage"
+    },
+    {
+     "name": "Tension phase 3",
+     "cluster": "0B04",
+     "attribut": 2565,
+     "json": "c_voltage",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V",
+     "mqtt_state_class": "measurement",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage"
+    },
+    {
+     "name": "Courant phase 1",
+     "cluster": "0B04",
+     "attribut": 1288,
+     "json": "a_current",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A",
+     "mqtt_state_class": "measurement",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current"
+    },
+    {
+     "name": "Courant phase 2",
+     "cluster": "0B04",
+     "attribut": 2312,
+     "json": "b_current",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A",
+     "mqtt_state_class": "measurement",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current"
+    },
+    {
+     "name": "Courant phase 3",
+     "cluster": "0B04",
+     "attribut": 2568,
+     "json": "c_current",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A",
+     "mqtt_state_class": "measurement",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current"
+    },
+    {
+     "name": "Energie consommee",
+     "cluster": "0702",
+     "attribut": 0,
+     "json": "total_act",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "mqtt_icon": "transmission-tower"
+    },
+    {
+     "name": "Energie reinjectee",
+     "cluster": "0702",
+     "attribut": 1,
+     "json": "total_act_ret",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "mqtt_icon": "solar-power"
+    }
+   ],
+   "action": []
+  }
+ ],
+ "Shelly-Pro-3EM-Mono": [
+  {
+   "http": {
+    "label": "Shelly Pro 3EM (3 x monophasé)",
+    "vendor": "Shelly",
+    "auth": "digest",
+    "poll": [
+     "/rpc/EM1.GetStatus?id=0",
+     "/rpc/EM1.GetStatus?id=1",
+     "/rpc/EM1.GetStatus?id=2",
+     "/rpc/EM1Data.GetStatus?id=0",
+     "/rpc/EM1Data.GetStatus?id=1",
+     "/rpc/EM1Data.GetStatus?id=2"
+    ],
+    "detect": [
+     {
+      "url": "/shelly",
+      "path": "gen"
+     },
+     {
+      "url": "/rpc/EM1.GetStatus?id=0",
+      "path": "act_power"
+     }
+    ],
+    "mac": {
+     "url": "/shelly",
+     "path": "mac"
+    },
+    "name": {
+     "url": "/shelly",
+     "path": "name"
+    }
+   },
+   "status": [
+    {
+     "name": "Puissance voie 1",
+     "cluster": "0B04",
+     "attribut": 1291,
+     "json": "act_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "W",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "power",
+     "src": 0
+    },
+    {
+     "name": "Tension voie 1",
+     "cluster": "0B04",
+     "attribut": 1285,
+     "json": "voltage",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V",
+     "mqtt_state_class": "measurement",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage",
+     "src": 0
+    },
+    {
+     "name": "Courant voie 1",
+     "cluster": "0B04",
+     "attribut": 1288,
+     "json": "current",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A",
+     "mqtt_state_class": "measurement",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current",
+     "src": 0
+    },
+    {
+     "name": "Puissance voie 2",
+     "cluster": "0B04",
+     "attribut": 2315,
+     "json": "act_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "W",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "power",
+     "src": 1
+    },
+    {
+     "name": "Tension voie 2",
+     "cluster": "0B04",
+     "attribut": 2309,
+     "json": "voltage",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V",
+     "mqtt_state_class": "measurement",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage",
+     "src": 1
+    },
+    {
+     "name": "Courant voie 2",
+     "cluster": "0B04",
+     "attribut": 2312,
+     "json": "current",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A",
+     "mqtt_state_class": "measurement",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current",
+     "src": 1
+    },
+    {
+     "name": "Puissance voie 3",
+     "cluster": "0B04",
+     "attribut": 2571,
+     "json": "act_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "W",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "power",
+     "src": 2
+    },
+    {
+     "name": "Tension voie 3",
+     "cluster": "0B04",
+     "attribut": 2565,
+     "json": "voltage",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V",
+     "mqtt_state_class": "measurement",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage",
+     "src": 2
+    },
+    {
+     "name": "Courant voie 3",
+     "cluster": "0B04",
+     "attribut": 2568,
+     "json": "current",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A",
+     "mqtt_state_class": "measurement",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current",
+     "src": 2
+    },
+    {
+     "name": "Energie voie 1",
+     "cluster": "FC01",
+     "attribut": 0,
+     "json": "total_act_energy",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "src": 3
+    },
+    {
+     "name": "Reinjection voie 1",
+     "cluster": "FC01",
+     "attribut": 1,
+     "json": "total_act_ret_energy",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "src": 3
+    },
+    {
+     "name": "Energie voie 2",
+     "cluster": "FC01",
+     "attribut": 2,
+     "json": "total_act_energy",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "src": 4
+    },
+    {
+     "name": "Reinjection voie 2",
+     "cluster": "FC01",
+     "attribut": 3,
+     "json": "total_act_ret_energy",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "src": 4
+    },
+    {
+     "name": "Energie voie 3",
+     "cluster": "FC01",
+     "attribut": 4,
+     "json": "total_act_energy",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "src": 5
+    },
+    {
+     "name": "Reinjection voie 3",
+     "cluster": "FC01",
+     "attribut": 5,
+     "json": "total_act_ret_energy",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "Wh",
+     "mqtt_state_class": "total_increasing",
+     "mqtt_device_class": "energy",
+     "src": 5
+    }
+   ],
+   "action": []
+  }
+ ],
+ "Shelly-Gen1-PM": [
+  {
+   "http": {
+    "label": "Shelly Gen1 avec mesure (1PM, Plug S...)",
+    "vendor": "Shelly",
+    "auth": "basic",
+    "poll": [
+     "/status"
+    ],
+    "detect": [
+     {
+      "url": "/shelly",
+      "path": "type"
+     },
+     {
+      "url": "/shelly",
+      "path": "num_meters",
+      "gt": 0
+     }
+    ],
+    "mac": {
+     "url": "/shelly",
+     "path": "mac"
+    }
+   },
+   "status": [
+    {
+     "name": "Etat",
+     "cluster": "0006",
+     "attribut": 0,
+     "json": "relays[0].ison",
+     "visible": 1,
+     "mqtt_device_class": "switch"
+    },
+    {
+     "name": "Puissance",
+     "cluster": "0B04",
+     "attribut": 1291,
+     "json": "meters[0].power",
+     "mqtt_device_class": "power",
+     "mqtt_icon": "lightning-bolt",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "jauge": "gauge",
+     "min": 0,
+     "max": 3600,
+     "unit": "W"
+    },
+    {
+     "name": "Energie",
+     "cluster": "0702",
+     "attribut": 0,
+     "json": "meters[0].total",
+     "scale": 0.016666666666666666,
+     "mqtt_device_class": "energy",
+     "mqtt_icon": "transmission-tower",
+     "mqtt_state_class": "total_increasing",
+     "type": "numeric",
+     "visible": 1,
+     "jauge": "text",
+     "unit": "Wh"
+    }
+   ],
+   "action": [
+    {
+     "name": "ON",
+     "command": 146,
+     "endpoint": 1,
+     "value": 1,
+     "http": "/relay/0?turn=on"
+    },
+    {
+     "name": "OFF",
+     "command": 146,
+     "endpoint": 1,
+     "value": 0,
+     "http": "/relay/0?turn=off"
+    },
+    {
+     "name": "TOGGLE",
+     "command": 146,
+     "endpoint": 1,
+     "value": 2,
+     "http": "/relay/0?turn=toggle"
+    }
+   ]
+  }
+ ],
+ "Shelly-Gen1": [
+  {
+   "http": {
+    "label": "Shelly Gen1 relais (Shelly 1...)",
+    "vendor": "Shelly",
+    "auth": "basic",
+    "poll": [
+     "/status"
+    ],
+    "detect": [
+     {
+      "url": "/shelly",
+      "path": "type"
+     },
+     {
+      "url": "/shelly",
+      "path": "num_outputs",
+      "gt": 0
+     }
+    ],
+    "mac": {
+     "url": "/shelly",
+     "path": "mac"
+    }
+   },
+   "status": [
+    {
+     "name": "Etat",
+     "cluster": "0006",
+     "attribut": 0,
+     "json": "relays[0].ison",
+     "visible": 1,
+     "mqtt_device_class": "switch"
+    }
+   ],
+   "action": [
+    {
+     "name": "ON",
+     "command": 146,
+     "endpoint": 1,
+     "value": 1,
+     "http": "/relay/0?turn=on"
+    },
+    {
+     "name": "OFF",
+     "command": 146,
+     "endpoint": 1,
+     "value": 0,
+     "http": "/relay/0?turn=off"
+    },
+    {
+     "name": "TOGGLE",
+     "command": 146,
+     "endpoint": 1,
+     "value": 2,
+     "http": "/relay/0?turn=toggle"
+    }
+   ]
+  }
+ ],
+ "Tasmota-Prise": [
+  {
+   "http": {
+    "label": "Tasmota prise avec mesure",
+    "vendor": "Tasmota",
+    "auth": "tasmota",
+    "poll": [
+     "/cm?cmnd=Status%200"
+    ],
+    "detect": [
+     {
+      "url": "/cm?cmnd=Status%2010",
+      "path": "StatusSNS.ENERGY"
+     }
+    ],
+    "mac": {
+     "url": "/cm?cmnd=Status%205",
+     "path": "StatusNET.Mac"
+    },
+    "name": {
+     "url": "/cm?cmnd=Status",
+     "path": "Status.DeviceName"
+    }
+   },
+   "status": [
+    {
+     "name": "Etat",
+     "cluster": "0006",
+     "attribut": 0,
+     "json": "StatusSTS.POWER",
+     "visible": 1,
+     "mqtt_device_class": "switch",
+     "map": {
+      "ON": 1,
+      "OFF": 0
+     }
+    },
+    {
+     "name": "Puissance",
+     "cluster": "0B04",
+     "attribut": 1291,
+     "json": "StatusSNS.ENERGY.Power",
+     "mqtt_device_class": "power",
+     "mqtt_icon": "lightning-bolt",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "jauge": "gauge",
+     "min": 0,
+     "max": 3600,
+     "unit": "W"
+    },
+    {
+     "name": "Tension",
+     "cluster": "0B04",
+     "attribut": 1285,
+     "json": "StatusSNS.ENERGY.Voltage",
+     "scale": 10,
+     "coefficient": 0.1,
+     "mqtt_device_class": "voltage",
+     "mqtt_icon": "sine-wave",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "V"
+    },
+    {
+     "name": "Courant",
+     "cluster": "0B04",
+     "attribut": 1288,
+     "json": "StatusSNS.ENERGY.Current",
+     "scale": 1000,
+     "coefficient": 0.001,
+     "mqtt_device_class": "current",
+     "mqtt_icon": "current-ac",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "A"
+    },
+    {
+     "name": "Energie",
+     "cluster": "0702",
+     "attribut": 0,
+     "json": "StatusSNS.ENERGY.Total",
+     "scale": 1000,
+     "mqtt_device_class": "energy",
+     "mqtt_icon": "transmission-tower",
+     "mqtt_state_class": "total_increasing",
+     "type": "numeric",
+     "visible": 1,
+     "jauge": "text",
+     "unit": "Wh"
+    }
+   ],
+   "action": [
+    {
+     "name": "ON",
+     "command": 146,
+     "endpoint": 1,
+     "value": 1,
+     "http": "/cm?cmnd=Power%20On"
+    },
+    {
+     "name": "OFF",
+     "command": 146,
+     "endpoint": 1,
+     "value": 0,
+     "http": "/cm?cmnd=Power%20Off"
+    },
+    {
+     "name": "TOGGLE",
+     "command": 146,
+     "endpoint": 1,
+     "value": 2,
+     "http": "/cm?cmnd=Power%20Toggle"
+    }
+   ]
+  }
+ ],
+ "Tasmota-Relais": [
+  {
+   "http": {
+    "label": "Tasmota relais",
+    "vendor": "Tasmota",
+    "auth": "tasmota",
+    "poll": [
+     "/cm?cmnd=Status%2011"
+    ],
+    "detect": [
+     {
+      "url": "/cm?cmnd=Status%2011",
+      "path": "StatusSTS.POWER"
+     }
+    ],
+    "mac": {
+     "url": "/cm?cmnd=Status%205",
+     "path": "StatusNET.Mac"
+    },
+    "name": {
+     "url": "/cm?cmnd=Status",
+     "path": "Status.DeviceName"
+    }
+   },
+   "status": [
+    {
+     "name": "Etat",
+     "cluster": "0006",
+     "attribut": 0,
+     "json": "StatusSTS.POWER",
+     "visible": 1,
+     "mqtt_device_class": "switch",
+     "map": {
+      "ON": 1,
+      "OFF": 0
+     }
+    }
+   ],
+   "action": [
+    {
+     "name": "ON",
+     "command": 146,
+     "endpoint": 1,
+     "value": 1,
+     "http": "/cm?cmnd=Power%20On"
+    },
+    {
+     "name": "OFF",
+     "command": 146,
+     "endpoint": 1,
+     "value": 0,
+     "http": "/cm?cmnd=Power%20Off"
+    },
+    {
+     "name": "TOGGLE",
+     "command": 146,
+     "endpoint": 1,
+     "value": 2,
+     "http": "/cm?cmnd=Power%20Toggle"
+    }
+   ]
+  }
+ ]
+}
