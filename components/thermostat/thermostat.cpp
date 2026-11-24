@@ -105,6 +105,7 @@ typedef struct {
 
 static zone_t *s_z;
 static int s_count;
+static uint32_t s_last_uid;              // plus grand uid jamais attribue (lastUid du fichier)
 static SemaphoreHandle_t s_lock;
 
 static struct { uint64_t ieee; int64_t last_s; } s_pres[PRESENCE_SLOTS];
@@ -173,12 +174,20 @@ static void device_label(const char *ieee_s, char *out, size_t len)
     strlcpy(out, ieee_s, len);
 }
 
-/** Identifiant stable suivant (plus grand uid des zones + 1). */
+/**
+ * Identifiant stable suivant, jamais reutilise : l'uid fait l'UniqueID Matter
+ * de la zone, et une nouvelle zone qui reprenait celui d'une zone supprimee
+ * heritait de son retrait de Matter et de son identite chez le controleur.
+ * Les uid retires de Matter sans zone (fichiers d'avant lastUid) sont sautes.
+ */
 static uint32_t next_uid(void)
 {
-    uint32_t m = 0;
+    uint32_t m = s_last_uid;
     for (int i = 0; i < s_count; i++) if (s_z[i].uid > m) m = s_z[i].uid;
-    return m + 1;
+    m++;
+    while (matter_device_manager_is_excluded(MATTER_UID_BASE | m)) m++;
+    s_last_uid = m;
+    return m;
 }
 
 static void zone_defaults(zone_t *t)
@@ -589,6 +598,7 @@ static double r3(float v) { return round((double)v * 1000.0) / 1000.0; }
 static bool save_locked(void)
 {
     cJSON *root = cJSON_CreateObject();
+    cJSON_AddNumberToObject(root, "lastUid", s_last_uid);
     cJSON *arr = cJSON_AddArrayToObject(root, "thermostats");
     for (int i = 0; i < s_count; i++) {
         const zone_t *t = &s_z[i];
@@ -649,6 +659,7 @@ static bool save_locked(void)
 static void load_config(void)
 {
     s_count = 0;
+    s_last_uid = 0;
     FILE *f = fopen(CFG_PATH, "r");
     if (!f) { ESP_LOGI(TAG, "Aucun thermostat configure"); return; }
     char *buf = (char *)heap_caps_malloc(CFG_MAX_SIZE + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
@@ -660,6 +671,9 @@ static void load_config(void)
     cJSON *root = cJSON_Parse(buf);
     free(buf);
     const cJSON *arr = root ? cJSON_GetObjectItem(root, "thermostats") : NULL;
+    int last = 0;
+    if (root) j_int(root, "lastUid", &last);
+    if (last > 0) s_last_uid = (uint32_t)last;
     const cJSON *o;
     cJSON_ArrayForEach(o, arr) {
         if (s_count >= THERMO_MAX_ZONES) break;
@@ -706,6 +720,7 @@ static void load_config(void)
         s_count++;
     }
     cJSON_Delete(root);
+    for (int i = 0; i < s_count; i++) if (s_z[i].uid > s_last_uid) s_last_uid = s_z[i].uid;
     for (int i = 0; i < s_count; i++) if (!s_z[i].uid) s_z[i].uid = next_uid();   // anciens fichiers
     ESP_LOGI(TAG, "%d zone(s) chargee(s)", s_count);
 }
@@ -1362,7 +1377,9 @@ bool thermostat_delete(int id)
     lock();
     zone_t *t = zone_get(id);
     bool ok = t != NULL;
+    uint64_t matter_uid = 0;
     if (t) {
+        matter_uid = MATTER_UID_BASE | t->uid;
         // L'appareil d'une zone supprimee en marche est coupe (la LiXee-Box le
         // laissait allume), et son thermostat Matter disparait
         if (t->output) send_actuator(t, false);
@@ -1374,5 +1391,9 @@ bool thermostat_delete(int id)
         ok = save_locked();
     }
     unlock();
+    // Le retrait de Matter d'une zone supprimee ne sert plus : il occupait une
+    // place de la liste (hors verrou : le rappel d'exposition peut y revenir)
+    if (matter_uid && matter_device_manager_is_excluded(matter_uid))
+        matter_device_manager_set_excluded(matter_uid, false);
     return ok;
 }
