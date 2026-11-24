@@ -250,8 +250,25 @@ public:
 
         matter_preset_t &slot = m_pending[m_pending_count];
         if (handle == kHandleComfort || handle == kHandleFrost) {
-            // Resoumis tel quel par le controleur (ReplaceAll) : contenu ignore, le
-            // commit saute ces entrees (pilotees par la zone, voir SyncFromZone()).
+            // Normalement resoumis tel quel par le controleur (ReplaceAll) : contenu
+            // ignore, le commit saute ces entrees (pilotees par la zone, voir
+            // SyncFromZone()). Mais si le controleur soumet une consigne ou un nom
+            // different de l'etat courant, c'est une tentative explicite de
+            // modification de Confort/Hors-gel via ce flux -- refusee plutot
+            // qu'ignoree silencieusement (revue PR #83), ces presets fixes n'etant
+            // editables que depuis la zone elle-meme.
+            bool frost = (handle == kHandleFrost);
+            auto heatOpt = preset.GetHeatingSetpoint();
+            if (heatOpt.HasValue() && heatOpt.Value() != (frost ? m_frost_sp : m_comfort_sp)) {
+                return CHIP_IM_GLOBAL_STATUS(ConstraintError);
+            }
+            auto nameOpt = preset.GetName();
+            if (nameOpt.HasValue() && !nameOpt.Value().IsNull()) {
+                CharSpan expectedName = frost ? CharSpan::fromCharString("Hors-gel") : CharSpan::fromCharString("Confort");
+                if (!nameOpt.Value().Value().data_equal(expectedName)) {
+                    return CHIP_IM_GLOBAL_STATUS(ConstraintError);
+                }
+            }
             slot.handle = handle;
             slot.name[0] = '\0';
             slot.heating_setpoint = 0;
@@ -262,8 +279,9 @@ public:
 
         // Preset personnalise (nouveau si handle encore a 0, edite sinon) : nom et
         // consigne obligatoires, bornes reprises de thermostat.cpp (clamp32(sp,700,3000)
-        // pousse vers l'attribut HeatingSetpoint ; EnforceHeatingSetpointLimits() cote
-        // SDK ne les applique pas reellement sur cette version, voir TODO_PRESETS.md).
+        // pousse vers l'attribut HeatingSetpoint) ; EnforceHeatingSetpointLimits() cote
+        // SDK esp_matter vendore ici modifie une copie locale sans effet reel sur
+        // cette version, d'ou la validation faite ici cote delegate (revue PR #83).
         auto nameOpt = preset.GetName();
         if (!nameOpt.HasValue() || nameOpt.Value().IsNull() || nameOpt.Value().Value().empty()) {
             return CHIP_IM_GLOBAL_STATUS(ConstraintError);

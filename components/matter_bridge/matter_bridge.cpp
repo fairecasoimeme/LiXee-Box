@@ -167,6 +167,15 @@ static int s_price_count = 0;
 // le persiste.
 CHIP_ERROR ThermostatPresetsDelegate::CommitPendingPresets()
 {
+    // Copie de l'ancienne liste, pour pouvoir la restaurer si la notification
+    // ci-dessous echoue (voir plus bas) : seul GetCustomPresetsSnapshot() leve
+    // m_commit_pending, donc sans notification recue par la tache des
+    // thermostats, m_commit_pending resterait leve ad vitam et SyncFromZone()
+    // ne recopierait plus jamais les presets perso de la zone (revue PR #83).
+    matter_preset_t prev[MATTER_PRESET_MAX_CUSTOM];
+    uint8_t prev_count = m_custom_count;
+    memcpy(prev, m_custom, sizeof(matter_preset_t) * prev_count);
+
     matter_preset_t next[MATTER_PRESET_MAX_CUSTOM];
     uint8_t next_count = 0;
     uint8_t next_free = 0x03;
@@ -185,11 +194,21 @@ CHIP_ERROR ThermostatPresetsDelegate::CommitPendingPresets()
     m_pending_count = 0;
     m_commit_pending = true;   // voir SyncFromZone()/GetCustomPresetsSnapshot()
 
-    if (s_thermo_preset_commit_cb) {
-        esp_err_t err = s_thermo_preset_commit_cb(EndpointId());
+    esp_err_t err = s_thermo_preset_commit_cb ? s_thermo_preset_commit_cb(EndpointId()) : ESP_OK;
+    if (err != ESP_OK) {
+        // Notification non recue par la tache des thermostats (file pleine ou
+        // zone introuvable) : rien n'a ete persiste, donc on restaure l'ancienne
+        // liste de presets perso plutot que de garder celle qu'on vient de
+        // construire, on relache m_commit_pending nous-memes (GetCustomPresetsSnapshot()
+        // ne sera jamais appele pour ca), et on signale l'echec au controleur
+        // au lieu de CHIP_NO_ERROR.
+        memcpy(m_custom, prev, sizeof(matter_preset_t) * prev_count);
+        m_custom_count = prev_count;
+        m_commit_pending = false;
         if (err == ESP_ERR_NOT_FOUND) {
             ESP_LOGW(TAG, "Commit presets Matter sur l'endpoint %d : zone introuvable", EndpointId());
         }
+        return CHIP_ERROR_INTERNAL;
     }
     return CHIP_NO_ERROR;
 }

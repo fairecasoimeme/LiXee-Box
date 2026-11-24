@@ -1176,8 +1176,13 @@ static esp_err_t matter_preset_commit_cb(int ep)
     // message laisse l'edition validee par le controleur jamais persistee (voir
     // matter_apply_preset_commit()) -- la tache des thermostats draine la file en
     // continu, 100 ms suffit largement sans risque de blocage cote tache CHIP.
-    if (s_q && xQueueSend(s_q, &m, pdMS_TO_TICKS(100)) != pdTRUE) {
+    // Erreur renvoyee (pas ESP_OK) si l'envoi echoue : CommitPendingPresets()
+    // (matter_bridge.cpp) en a besoin pour restaurer l'ancienne liste de presets
+    // perso et lever l'edition en erreur vers le controleur plutot que de laisser
+    // croire que l'edition a ete persistee (issue #80, revue PR #83).
+    if (!s_q || xQueueSend(s_q, &m, pdMS_TO_TICKS(100)) != pdTRUE) {
         ESP_LOGW(TAG, "Commit presets Matter sur l'endpoint %d : file pleine, edition perdue", ep);
+        return ESP_ERR_TIMEOUT;
     }
     return ESP_OK;
 }
