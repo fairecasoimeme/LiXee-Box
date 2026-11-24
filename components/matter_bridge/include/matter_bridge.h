@@ -50,6 +50,14 @@ typedef enum {
 esp_err_t matter_bridge_init(void);
 
 /**
+ * Efface de la NVS les donnees Matter qu'une version precedente gardait et
+ * que la pile ne relit plus (abonnements persistes, cache de reprise de
+ * session plus grand). A appeler avant matter_bridge_init(), y compris quand
+ * le demarrage de Matter est saute (issue #107).
+ */
+void matter_bridge_nvs_cleanup(void);
+
+/**
  * Demarre le stack Matter (apres init)
  */
 esp_err_t matter_bridge_start(void);

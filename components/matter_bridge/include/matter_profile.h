@@ -136,6 +136,8 @@ typedef struct {
     bool          presets;          // MCAP_THERMOSTAT : feature Matter Presets (zones virtuelles uniquement)
     bool          virtual_zone;     //                   endpoint de zone virtuelle (matter_sync_zone), pas un
                                      //                   vrai thermostat Zigbee (TRVZB, tetes Tuya, AC201A...)
+    bool          ltne;             //                   feature LocalTemperatureNotExposed : zone sans capteur
+                                     //                   de temperature assigne (issue #109)
     bool          cover_inverted;   // volet dont la position remontee est l'ouverture (252)
     bool          zlinky;
     matter_occupancy_tech_t occupancy_tech;  // MCAP_OCCUPANCY (issue #97)

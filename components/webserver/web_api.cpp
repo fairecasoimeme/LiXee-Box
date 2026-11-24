@@ -47,6 +47,7 @@
 #include "esp_heap_caps.h"
 #include "driver/temperature_sensor.h"
 #include "cJSON.h"
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -296,19 +297,243 @@ static int matter_kvs_key_endpoint(const char *key)
     return out[0] | (out[1] << 8);
 }
 
+// Cles de la pile Matter (namespace CHIP_KVS, connectedhomeip
+// DefaultStorageKeyAllocator) : "f/<fabric hex>/..." par fabric, "g/su/..."
+// abonnements persistes, "g/s/<id>" et "f/<fabric>/s/<noeud>" reprises de
+// session CASE. Une cle de plus de 15 caracteres est remplacee par le hash
+// SHA1 (15 chiffres hexa) de son nom : seules les reprises de session en ont.
+#define CHIP_DIAG_FABRIC_MAX 16
+#define CHIP_DIAG_OTHER_MAX  24
+
+typedef struct { uint16_t keys; uint32_t bytes; uint16_t entries; } chip_cnt_t;
+typedef struct {
+    uint8_t    index;
+    bool       noc, icac, rcac, opkey;
+    bool       has_meta;            // f/<n>/m lu : fabricant et libelle du controleur
+    uint16_t   vendor;
+    char       label[33];
+    chip_cnt_t c;
+} chip_fabric_stat_t;
+typedef struct {
+    chip_fabric_stat_t fabrics[CHIP_DIAG_FABRIC_MAX];
+    int        n_fabrics;
+    chip_cnt_t sessions, subscriptions, other;
+    char       other_keys[CHIP_DIAG_OTHER_MAX][16];
+    int        n_other;
+    // g/fidx : prochain numero de fabric et liste des fabrics de la table
+    int        next_index;          // -1 inconnu
+    uint8_t    table[CHIP_DIAG_FABRIC_MAX];
+    int        n_table;
+    bool       has_index;
+} chip_kvs_stat_t;
+
+// Lecture minimale d'un TLV Matter (structure de premier niveau) : appelle
+// cb pour chaque element a etiquette de contexte de la structure externe,
+// et pour chaque entier non signe d'un tableau (in_array = etiquette du tableau).
+typedef void (*tlv_cb_t)(void *ctx, int tag, int in_array, uint8_t type,
+                         uint64_t uval, const uint8_t *str, size_t slen);
+
+static void tlv_scan(const uint8_t *b, size_t len, tlv_cb_t cb, void *ctx)
+{
+    size_t p = 0;
+    int depth = 0, array_tag = -1;
+    while (p < len) {
+        uint8_t ctl = b[p++];
+        uint8_t type = ctl & 0x1F, form = ctl >> 5;
+        int tag = -1;
+        if (form == 1) { if (p >= len) return; tag = b[p++]; }
+        else if (form != 0) return;                             // etiquettes longues : absentes ici
+        if (type == 0x18) { if (--depth == 1) array_tag = -1; if (depth <= 0) return; continue; }
+        if (type == 0x15 || type == 0x16 || type == 0x17) {
+            depth++;
+            if (depth == 2 && type == 0x16) array_tag = tag;
+            continue;
+        }
+        uint64_t v = 0;
+        const uint8_t *s = NULL;
+        size_t sl = 0;
+        if (type <= 0x07) {                                     // entier signe / non signe
+            size_t n = (size_t)1 << (type & 3);
+            if (p + n > len) return;
+            for (size_t i = 0; i < n; i++) v |= (uint64_t)b[p + i] << (8 * i);
+            p += n;
+        } else if (type == 0x08 || type == 0x09) {              // booleen
+            v = type & 1;
+        } else if (type == 0x0A || type == 0x0B) {              // flottant
+            p += type == 0x0A ? 4 : 8;
+        } else if (type >= 0x0C && type <= 0x13) {              // chaine / octets
+            size_t n = (size_t)1 << (type & 3);
+            if (p + n > len) return;
+            for (size_t i = 0; i < n; i++) sl |= (size_t)b[p + i] << (8 * i);
+            p += n;
+            if (p + sl > len) return;
+            s = b + p;
+            p += sl;
+        } else if (type != 0x14) {                              // null : sans valeur
+            return;
+        }
+        if (depth == 1 && tag >= 0) cb(ctx, tag, -1, type, v, s, sl);
+        else if (depth == 2 && array_tag >= 0) cb(ctx, -1, array_tag, type, v, s, sl);
+    }
+}
+
+static void fabric_meta_cb(void *ctx, int tag, int, uint8_t type, uint64_t v, const uint8_t *s, size_t sl)
+{
+    chip_fabric_stat_t *f = (chip_fabric_stat_t *)ctx;
+    if (tag == 0 && type <= 0x07) f->vendor = (uint16_t)v;
+    else if (tag == 1 && type >= 0x0C && type <= 0x0F && s) {
+        size_t n = sl < sizeof(f->label) - 1 ? sl : sizeof(f->label) - 1;
+        memcpy(f->label, s, n);
+        f->label[n] = '\0';
+    }
+}
+
+static void fabric_index_cb(void *ctx, int tag, int in_array, uint8_t type, uint64_t v, const uint8_t *, size_t)
+{
+    chip_kvs_stat_t *s = (chip_kvs_stat_t *)ctx;
+    if (tag == 0) s->next_index = type <= 0x07 ? (int)v : -1;
+    else if (in_array == 1 && type <= 0x07 && s->n_table < CHIP_DIAG_FABRIC_MAX) s->table[s->n_table++] = (uint8_t)v;
+}
+
+static bool chip_key_hashed(const char *k)
+{
+    if (strlen(k) != 15) return false;
+    for (const char *p = k; *p; p++) if (!isxdigit((unsigned char)*p)) return false;
+    return true;
+}
+
+static void chip_cnt_add(chip_cnt_t *c, uint32_t bytes, uint16_t entries)
+{
+    c->keys++;
+    c->bytes += bytes;
+    c->entries += entries;
+}
+
+/** Classe une cle CHIP_KVS ; h : handle en lecture du namespace (0 si absent). */
+static void chip_kvs_account(chip_kvs_stat_t *s, nvs_handle_t h, const nvs_entry_info_t *info)
+{
+    // Taille : un blob occupe son index, l'en-tete de son bloc et 32 octets par entree
+    size_t len = 0;
+    uint16_t entries = 1;
+    if (h && info->type == NVS_TYPE_BLOB && nvs_get_blob(h, info->key, NULL, &len) == ESP_OK)
+        entries = (uint16_t)(2 + (len + 31) / 32);
+    else if (h && info->type == NVS_TYPE_STR && nvs_get_str(h, info->key, NULL, &len) == ESP_OK)
+        entries = (uint16_t)(1 + (len + 31) / 32);
+    const char *k = info->key;
+
+    if (k[0] == 'f' && k[1] == '/') {
+        char *end = NULL;
+        unsigned long fi = strtoul(k + 2, &end, 16);
+        if (end && *end == '/' && fi > 0 && fi < 255) {
+            const char *rest = end + 1;
+            if (rest[0] == 's' && rest[1] == '/') {     // reprise de session (cle courte improbable)
+                chip_cnt_add(&s->sessions, len, entries);
+                return;
+            }
+            int i;
+            for (i = 0; i < s->n_fabrics && s->fabrics[i].index != fi; i++) {}
+            if (i == s->n_fabrics && s->n_fabrics < CHIP_DIAG_FABRIC_MAX) s->fabrics[s->n_fabrics++].index = (uint8_t)fi;
+            if (i < s->n_fabrics) {
+                chip_fabric_stat_t *f = &s->fabrics[i];
+                if (!strcmp(rest, "n")) f->noc = true;
+                else if (!strcmp(rest, "i")) f->icac = true;
+                else if (!strcmp(rest, "r")) f->rcac = true;
+                else if (!strcmp(rest, "o")) f->opkey = true;
+                else if (!strcmp(rest, "m") && h && len > 0 && len <= 64) {
+                    uint8_t mb[64];
+                    size_t ml = sizeof(mb);
+                    if (nvs_get_blob(h, k, mb, &ml) == ESP_OK) {
+                        f->has_meta = true;
+                        tlv_scan(mb, ml, fabric_meta_cb, f);
+                    }
+                }
+                chip_cnt_add(&f->c, len, entries);
+                return;
+            }
+        }
+    }
+    if (!strcmp(k, "g/fidx") && h && len > 0 && len <= 64) {
+        uint8_t ib[64];
+        size_t il = sizeof(ib);
+        if (nvs_get_blob(h, k, ib, &il) == ESP_OK) {
+            s->has_index = true;
+            tlv_scan(ib, il, fabric_index_cb, s);
+        }
+    }
+    if (chip_key_hashed(k) || !strcmp(k, "g/sri") || !strncmp(k, "g/s/", 4)) {
+        chip_cnt_add(&s->sessions, len, entries);
+    } else if (!strncmp(k, "g/su/", 5) || !strcmp(k, "g/sum")) {
+        chip_cnt_add(&s->subscriptions, len, entries);
+    } else {
+        chip_cnt_add(&s->other, len, entries);
+        if (s->n_other < CHIP_DIAG_OTHER_MAX) strlcpy(s->other_keys[s->n_other++], k, sizeof(s->other_keys[0]));
+    }
+}
+
+static void chip_cnt_json(cJSON *o, const chip_cnt_t *c)
+{
+    cJSON_AddNumberToObject(o, "keys", c->keys);
+    cJSON_AddNumberToObject(o, "bytes", c->bytes);
+    cJSON_AddNumberToObject(o, "entries", c->entries);
+}
+
+static void chip_kvs_json(cJSON *root, const chip_kvs_stat_t *s)
+{
+    cJSON *ck = cJSON_AddObjectToObject(root, "chipKvs");
+    cJSON *fa = cJSON_AddArrayToObject(ck, "fabrics");
+    for (int i = 0; i < s->n_fabrics; i++) {
+        const chip_fabric_stat_t *f = &s->fabrics[i];
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddNumberToObject(o, "index", f->index);
+        chip_cnt_json(o, &f->c);
+        // Fabric complet : certificat d'operateur (NOC), racine (RCAC) et cle
+        cJSON_AddBoolToObject(o, "complete", f->noc && f->rcac && f->opkey);
+        cJSON_AddBoolToObject(o, "icac", f->icac);
+        // Controleur : identifiant fabricant (Apple 0x1349, Google 0x6006,
+        // Nabu Casa 0x134B, test / chip-tool 0xFFF1...) et libelle
+        if (f->has_meta) {
+            char vid[8];
+            snprintf(vid, sizeof(vid), "0x%04X", f->vendor);
+            cJSON_AddStringToObject(o, "vendorId", vid);
+            cJSON_AddStringToObject(o, "label", f->label);
+        }
+        bool listed = false;
+        for (int t = 0; t < s->n_table; t++) if (s->table[t] == f->index) listed = true;
+        if (s->has_index) cJSON_AddBoolToObject(o, "inTable", listed);
+        cJSON_AddItemToArray(fa, o);
+    }
+    if (s->has_index) {
+        cJSON *ti = cJSON_AddObjectToObject(ck, "fabricTable");
+        if (s->next_index >= 0) cJSON_AddNumberToObject(ti, "nextIndex", s->next_index);
+        cJSON *ta = cJSON_AddArrayToObject(ti, "indexes");
+        for (int t = 0; t < s->n_table; t++) cJSON_AddItemToArray(ta, cJSON_CreateNumber(s->table[t]));
+    }
+    chip_cnt_json(cJSON_AddObjectToObject(ck, "sessionResumption"), &s->sessions);
+    chip_cnt_json(cJSON_AddObjectToObject(ck, "subscriptions"), &s->subscriptions);
+    cJSON *ot = cJSON_AddObjectToObject(ck, "other");
+    chip_cnt_json(ot, &s->other);
+    cJSON *names = cJSON_AddArrayToObject(ot, "names");
+    for (int i = 0; i < s->n_other; i++) cJSON_AddItemToArray(names, cJSON_CreateString(s->other_keys[i]));
+}
+
 static esp_err_t api_system_nvs_handler(httpd_req_t *req)
 {
     struct ns_stat_t { char name[16]; uint16_t keys; };
     struct ep_stat_t { uint16_t ep; uint16_t keys; };
     ns_stat_t *nss = (ns_stat_t *)calloc(NVS_DIAG_NS_MAX, sizeof(ns_stat_t));
     ep_stat_t *eps = (ep_stat_t *)calloc(NVS_DIAG_EP_MAX, sizeof(ep_stat_t));
-    if (!nss || !eps) {
+    chip_kvs_stat_t *cks = (chip_kvs_stat_t *)calloc(1, sizeof(chip_kvs_stat_t));
+    if (!nss || !eps || !cks) {
         free(nss);
         free(eps);
+        free(cks);
         httpd_resp_set_status(req, "503 Service Unavailable");
         return httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Mémoire insuffisante\"}");
     }
+    cks->next_index = -1;
     int n_ns = 0, n_ep = 0, matter_keys = 0;
+    nvs_handle_t chip_h = 0;
+    if (nvs_open_from_partition("nvs", "CHIP_KVS", NVS_READONLY, &chip_h) != ESP_OK) chip_h = 0;
 
     nvs_iterator_t it = NULL;
     esp_err_t res = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY, &it);
@@ -328,10 +553,13 @@ static esp_err_t api_system_nvs_handler(httpd_req_t *req)
                 if (k == n_ep && n_ep < NVS_DIAG_EP_MAX) eps[n_ep++].ep = (uint16_t)ep;
                 if (k < n_ep) eps[k].keys++;
             }
+        } else if (strcmp(info.namespace_name, "CHIP_KVS") == 0) {
+            chip_kvs_account(cks, chip_h, &info);
         }
         res = nvs_entry_next(&it);
     }
     nvs_release_iterator(it);
+    if (chip_h) nvs_close(chip_h);
 
     cJSON *root = cJSON_CreateObject();
     nvs_stats_t st = {};
@@ -378,8 +606,11 @@ static esp_err_t api_system_nvs_handler(httpd_req_t *req)
         cJSON_AddNumberToObject(m, "orphanEndpoints", orphan_eps);
         cJSON_AddNumberToObject(m, "orphanKeys", orphan_keys);
     }
+    // Detail de la pile Matter : fabrics, reprises de session, abonnements
+    chip_kvs_json(root, cks);
     free(nss);
     free(eps);
+    free(cks);
 
     char *json = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);

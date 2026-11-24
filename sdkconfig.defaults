@@ -169,6 +169,11 @@ CONFIG_NVS_ALLOCATE_CACHE_IN_SPIRAM=y
 
 # Identite Matter du pont (fabricant, produit) : main/CHIPProjectConfig.h
 CONFIG_CHIP_PROJECT_CONFIG="main/CHIPProjectConfig.h"
+
+# Abonnements Matter non persistes en NVS (issue #107) : la partition de
+# 20 Ko saturait. Apres un redemarrage de la box, les controleurs se
+# reabonnent d eux-memes. Les anciennes cles sont effacees au demarrage.
+# CONFIG_ENABLE_PERSIST_SUBSCRIPTIONS is not set
 CONFIG_DEVICE_SOFTWARE_VERSION_NUMBER=303
 
 # Code d appairage Matter propre a chaque passerelle (matter_bridge.cpp)
