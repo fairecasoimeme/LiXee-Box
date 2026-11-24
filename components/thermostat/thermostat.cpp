@@ -1118,11 +1118,17 @@ static esp_err_t matter_preset_cb(int ep, bool frost)
     return ESP_OK;
 }
 
-/** Types d'appareil Matter de la zone : bit 0 chauffage, bit 1 froid. */
+/**
+ * Types d'appareil Matter de la zone : bit 0 chauffage, bit 1 froid, bit 2
+ * LTNE (pas de capteur de temperature assigne, issue #109). Determine aussi
+ * quand l'endpoint Matter doit etre recree (matter_sync_zone, m_feat).
+ */
 static uint8_t zone_features(const zone_t *t)
 {
     bool rev = t->action_heat[0] && t->action_cool[0];
-    return (uint8_t)((t->heating || rev ? 1 : 0) | (!t->heating || rev ? 2 : 0));
+    uint8_t f = (uint8_t)((t->heating || rev ? 1 : 0) | (!t->heating || rev ? 2 : 0));
+    if (!t->sensor[0]) f |= 4;
+    return f;
 }
 
 static void vep_rebuild(void)
@@ -1146,8 +1152,9 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
     }
     uint8_t feat = zone_features(t);
     if (t->m_created && t->m_feat != feat) {
-        // Chauffage / froid changes : les fonctions du cluster Thermostat sont
-        // fixees a la creation, l'endpoint est recree
+        // Chauffage / froid changes, ou capteur ajoute/retire (LTNE, issue #109) :
+        // les fonctions du cluster Thermostat sont fixees a la creation, l'endpoint
+        // est recree
         matter_bridge_remove_endpoint(t->matter_ep);
         t->m_created = false;
         t->matter_ep = 0;
@@ -1161,6 +1168,7 @@ static void matter_sync_zone(zone_t *t, bool *dirty)
         p->cool = (feat & 2) != 0;
         p->presets = feat & 1;        // Confort/Hors-gel (issue #51) : chauffage uniquement
         p->virtual_zone = true;       // zone virtuelle (pas un vrai thermostat Zigbee, issue #78)
+        p->ltne = (feat & 4) != 0;    // pas de capteur assigne (issue #109)
         p->link_count = 1;
         p->links[0].target = ML_TH_RUNNING;          // cree ThermostatRunningState
         int ep = matter_bridge_add_virtual_endpoint(MATTER_UID_BASE | t->uid, p, t->name,
