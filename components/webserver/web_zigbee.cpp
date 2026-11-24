@@ -866,15 +866,23 @@ static esp_err_t get_lora_device(httpd_req_t *req, uint64_t ieee, int slot)
     return jw_send(req, &w);
 }
 
-/** Chaine ZCL en hexadecimal (fiche device_data) -> texte. */
+/** Chaine ZCL en hexadecimal (fiche device_data) -> texte UTF-8 ("triphasé"). */
 static void ip_hex_text(const char *hex, char *out, size_t len)
 {
     size_t n = 0;
     for (size_t i = 0; hex[i] && hex[i + 1] && n + 1 < len; i += 2) {
         char hx[3] = { hex[i], hex[i + 1], 0 };
-        char c = (char)strtol(hx, NULL, 16);
+        unsigned char c = (unsigned char)strtol(hx, NULL, 16);
         if (!c) break;
-        out[n++] = (c >= 32 && c < 127) ? c : ' ';
+        out[n++] = (c >= 32 && c != 127) ? (char)c : ' ';
+    }
+    // Dernier caractere multi-octets coupe par la taille du tampon : retire
+    size_t k = n;
+    while (k > 0 && ((unsigned char)out[k - 1] & 0xC0) == 0x80) k--;
+    if (k > 0 && ((unsigned char)out[k - 1] & 0xC0) == 0xC0) {
+        unsigned char lead = (unsigned char)out[k - 1];
+        size_t need = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : 2;
+        if (n - (k - 1) < need) n = k - 1;
     }
     out[n] = 0;
 }

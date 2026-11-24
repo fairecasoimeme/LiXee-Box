@@ -51,6 +51,9 @@ static int s_excl_count;
 static bool s_excl_loaded;
 static portMUX_TYPE s_excl_mux = portMUX_INITIALIZER_UNLOCKED;
 static matter_exposure_cb_t s_exposure_cb;
+static matter_ext_cmd_cb_t s_ext_cmd_cb;
+
+void matter_device_manager_set_ext_cmd_cb(matter_ext_cmd_cb_t cb) { s_ext_cmd_cb = cb; }
 
 static void excl_load(void)
 {
@@ -458,10 +461,10 @@ int matter_device_manager_map_lora_device(uint64_t ieee, const char *model,
             m->last_lift100 = -1;
             m->last_move_us = 0;
             replay_stored_values(m);
-            ESP_LOGI(TAG, "Mapped LoRa %016llX (%s) -> Matter endpoint %d",
+            ESP_LOGI(TAG, "Mapped %016llX (%s, sans radio Zigbee) -> Matter endpoint %d",
                      (unsigned long long)ieee, model, ep_id);
         } else {
-            ESP_LOGE(TAG, "Endpoint Matter impossible pour LoRa %016llX", (unsigned long long)ieee);
+            ESP_LOGE(TAG, "Endpoint Matter impossible pour %016llX (sans radio Zigbee)", (unsigned long long)ieee);
         }
     }
     map_unlock();
@@ -974,7 +977,15 @@ static esp_err_t profile_command(bridge_device_mapping_t *m, uint32_t cluster_id
                                  const esp_matter_attr_val_t *val)
 {
     const matter_profile_t *p = m->profile;
-    if (m->zigbee_short_addr == 0xFFFF) return ESP_OK;     // emetteur LoRa : pas de commande
+    if (m->zigbee_short_addr == 0xFFFF) {
+        // Sans radio Zigbee : appareil IP (marche / arret par son template),
+        // emetteur LoRa (pas de commande)
+        if (cluster_id != 0x0006 || attr_id != 0x0000 || !s_ext_cmd_cb) return ESP_OK;
+        bool on = val->val.b;
+        const matter_cmd_t *c = on ? &p->on : &p->off;
+        return c->valid ? s_ext_cmd_cb(m->zigbee_ieee, c->command, c->endpoint, c->value)
+                        : s_ext_cmd_cb(m->zigbee_ieee, 146, 0, on ? 1 : 0);
+    }
 
     // Adresse et endpoint courants (copies : la base peut bouger)
     zigate_device_t *dev = zigate_devices_find_by_ieee(m->zigbee_ieee);

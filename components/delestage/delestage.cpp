@@ -9,6 +9,7 @@
 #include "energy_service.h"
 #include "config_manager.h"
 #include "notifications.h"
+#include "ip_devices.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -73,11 +74,34 @@ static void onoff_value(uint64_t ieee, char *out, size_t len)
 
 static bool is_on(const char *v) { return v && v[0] && strtol(v, NULL, 16) != 0; }
 
+/** Prise connue : Zigbee, ou appareil IP (Shelly, Tasmota...). */
+static bool plug_known(uint64_t ieee)
+{
+    return zigate_devices_find_by_ieee(ieee) || ip_devices_is_ip(ieee);
+}
+
 static void send_onoff(uint64_t ieee, bool on)
 {
+    if (ip_devices_is_ip(ieee)) {
+        esp_err_t e = ip_devices_send_onoff(ieee, on);
+        if (e != ESP_OK) ESP_LOGW(TAG, "Prise IP %016llX : %s", (unsigned long long)ieee, esp_err_to_name(e));
+        return;
+    }
     const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
     if (!d) return;
     zigate_send_onoff(d->short_addr, d->endpoint ? d->endpoint : 1, on ? 1 : 0);
+}
+
+/** Nom affiche : alias / modele Zigbee, sinon alias de la fiche (appareil IP). */
+static void plug_name(uint64_t ieee, char *out, size_t len)
+{
+    out[0] = '\0';
+    const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
+    if (d) { strlcpy(out, d->alias[0] ? d->alias : d->model, len); return; }
+    const device_data_t *dd = device_data_find(ieee);
+    ipdev_info_t ip;
+    if (dd && dd->info.alias[0]) strlcpy(out, dd->info.alias, len);
+    else if (ip_devices_find(ieee, &ip)) strlcpy(out, ip.model, len);
 }
 
 /** Prises de la configuration ("ieee1,ieee2") : fn(ieee) pour chaque entree. */
@@ -179,7 +203,7 @@ static void trigger_locked(const char *reason)
     for_each_configured([](const char *id) {
         if (s_count >= DL_MAX) return;
         uint64_t ieee = ieee_of(id);
-        if (!zigate_devices_find_by_ieee(ieee)) return;
+        if (!plug_known(ieee)) return;
         strlcpy(s_dev[s_count].ieee, id, sizeof(s_dev[0].ieee));
         onoff_value(ieee, s_dev[s_count].prev, sizeof(s_dev[0].prev));
         s_count++;
@@ -205,7 +229,7 @@ static bool restore_locked(bool manual)
     for (int i = 0; i < s_count; i++) {
         if (!is_on(s_dev[i].prev)) continue;         // eteinte avant la coupure : laissee eteinte
         uint64_t ieee = ieee_of(s_dev[i].ieee);
-        if (!zigate_devices_find_by_ieee(ieee)) continue;
+        if (!plug_known(ieee)) continue;
         send_onoff(ieee, true);
         n++;
     }
@@ -379,10 +403,11 @@ char *delestage_json(void)
             const cJSON *e = cJSON_GetObjectItem(o, "ieee");
             if (cJSON_IsString(e) && !strcasecmp(e->valuestring, id)) return;
         }
-        const zigate_device_t *d = zigate_devices_find_by_ieee(ieee_of(id));
+        char name[40];
+        plug_name(ieee_of(id), name, sizeof(name));
         cJSON *n = cJSON_CreateObject();
         cJSON_AddStringToObject(n, "ieee", id);
-        cJSON_AddStringToObject(n, "name", d ? (d->alias[0] ? d->alias : d->model) : "");
+        cJSON_AddStringToObject(n, "name", name);
         cJSON_AddBoolToObject(n, "cut", cut);
         cJSON_AddItemToArray(arr, n);
     };

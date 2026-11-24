@@ -2978,9 +2978,14 @@
       $.getJSON(url).done(function(r) { d.resolve(r || []); }).fail(function() { d.resolve([]); });
       return d.promise();
     }
-    $.when(devList('/api/zigbee/devices'), devList('/api/lora/devices')).done(function(zb, lora) {
+    $.when(devList('/api/zigbee/devices'), devList('/api/lora/devices'), devList('/api/ip/devices')).done(function(zb, lora, ipr) {
+      // Appareils IP (Shelly, Tasmota...) au format des appareils Zigbee
+      var ipd = ((ipr && ipr.devices) || []).map(function(d) {
+        return { ieee: d.id, alias: d.alias, model: d.label || d.model, onoff: d.onoff, temperature: d.temperature };
+      });
       // Delestage : prises et relais pilotables en marche/arret
-      var plugs = zb.filter(function(d) { return d && d.onoff; });
+      var plugs = zb.filter(function(d) { return d && d.onoff; })
+        .concat(ipd.filter(function(d) { return d.onoff; }));
       $('#dl-plugs').html(plugs.length ? '' : '<span class="text-muted">Aucune prise d&eacute;tect&eacute;e.</span>');
       plugs.forEach(function(d) {
         var id = 'dl-' + d.ieee;
@@ -2990,7 +2995,8 @@
       });
 
       // Temperature : seuls les appareils dotes du cluster Temperature Measurement (0x0402)
-      var temps = zb.filter(function(d) { return d && d.temperature; });
+      var temps = zb.filter(function(d) { return d && d.temperature; })
+        .concat(ipd.filter(function(d) { return d.temperature; }));
       $('#temp-sensors').html(temps.length ? '' : '<span class="text-muted">Aucune sonde de temp&eacute;rature d&eacute;tect&eacute;e.</span>');
       temps.forEach(function(d) {
         var id = 'ts-' + d.ieee;

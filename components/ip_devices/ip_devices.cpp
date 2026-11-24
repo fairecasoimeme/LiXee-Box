@@ -25,6 +25,10 @@ esp_err_t ip_devices_update(uint64_t, const char *, uint16_t, const char *, cons
                             char *, size_t) { return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t ip_devices_remove(uint64_t, bool) { return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t ip_devices_set_matter_endpoint(uint64_t, uint16_t) { return ESP_ERR_NOT_SUPPORTED; }
+void ip_devices_register_removed_cb(ipdev_removed_cb_t) {}
+bool ip_devices_has_cluster(uint64_t, uint16_t) { return false; }
+esp_err_t ip_devices_send_onoff(uint64_t, bool) { return ESP_ERR_NOT_SUPPORTED; }
+esp_err_t ip_devices_send_named_action(uint64_t, const char *) { return ESP_ERR_NOT_SUPPORTED; }
 #else
 
 #include "device_data.h"
@@ -143,6 +147,7 @@ static bool              s_enabled;
 static TaskHandle_t      s_task;
 static QueueHandle_t     s_q;
 static ipdev_report_cb_t s_cb;
+static ipdev_removed_cb_t s_removed_cb;
 
 typedef enum { JOB_POLL = 1, JOB_ACTION } job_kind_t;
 typedef struct { job_kind_t kind; uint64_t ieee; int command; uint8_t endpoint; int32_t value; } job_t;
@@ -193,27 +198,30 @@ static void parse_urlpath(const cJSON *o, urlpath_t *out)
     if (cJSON_IsNumber(g)) { out->has_gt = true; out->gt = g->valuedouble; }
 }
 
-static void load_models(void)
+/**
+ * Modeles d'un fichier de templates. Un modele deja connu (meme cle) est
+ * remplace a sa place : tpu/ip.json, lu apres tp/ip.json, ajoute ses modeles
+ * et remplace ceux du meme nom, comme device_data le fait modele par modele.
+ */
+static void add_models(const char *path)
 {
-    if (!s_models) {
-        s_models = (model_t *)heap_caps_calloc(M_MAX, sizeof(model_t), MALLOC_CAP_SPIRAM);
-        if (!s_models) s_models = (model_t *)calloc(M_MAX, sizeof(model_t));
-        if (!s_models) return;
-    }
-    s_nmodels = 0;
-    char *txt = read_file(TPL_USER, 64 * 1024);
-    if (!txt) txt = read_file(TPL_BASE, 64 * 1024);
-    if (!txt) { ESP_LOGW(TAG, "Templates %s introuvables", IPDEV_TEMPLATE_FILE); return; }
+    char *txt = read_file(path, 64 * 1024);
+    if (!txt) return;
     cJSON *root = cJSON_Parse(txt);
     free(txt);
-    if (!root) { ESP_LOGE(TAG, "%s illisible", IPDEV_TEMPLATE_FILE); return; }
+    if (!root) { ESP_LOGE(TAG, "%s illisible", path); return; }
     const cJSON *it;
     cJSON_ArrayForEach(it, root) {
-        if (s_nmodels >= M_MAX) break;
         const cJSON *m = cJSON_GetArrayItem(it, 0);
         const cJSON *h = cJSON_GetObjectItem(m, "http");
         if (!it->string || !cJSON_IsObject(h)) continue;
-        model_t *md = &s_models[s_nmodels];
+        int slot = -1;
+        for (int i = 0; i < s_nmodels && slot < 0; i++) if (!strcmp(s_models[i].key, it->string)) slot = i;
+        if (slot < 0) {
+            if (s_nmodels >= M_MAX) { ESP_LOGW(TAG, "Plus de %d modeles : %s ignore", M_MAX, it->string); continue; }
+            slot = s_nmodels++;
+        }
+        model_t *md = &s_models[slot];
         memset(md, 0, sizeof(*md));
         strlcpy(md->key, it->string, sizeof(md->key));
         jstr(h, "label", md->label, sizeof(md->label));
@@ -263,10 +271,22 @@ static void load_models(void)
             ac->endpoint = (uint8_t)jnum(p, "endpoint", 0);
             strlcpy(ac->url, u->valuestring, sizeof(ac->url));
         }
-        s_nmodels++;
     }
     cJSON_Delete(root);
-    ESP_LOGI(TAG, "%d modele(s) d'appareil IP", s_nmodels);
+}
+
+static void load_models(void)
+{
+    if (!s_models) {
+        s_models = (model_t *)heap_caps_calloc(M_MAX, sizeof(model_t), MALLOC_CAP_SPIRAM);
+        if (!s_models) s_models = (model_t *)calloc(M_MAX, sizeof(model_t));
+        if (!s_models) return;
+    }
+    s_nmodels = 0;
+    add_models(TPL_BASE);
+    add_models(TPL_USER);
+    if (!s_nmodels) ESP_LOGW(TAG, "Templates %s introuvables", IPDEV_TEMPLATE_FILE);
+    else ESP_LOGI(TAG, "%d modele(s) d'appareil IP", s_nmodels);
 }
 
 // ----------------------------------------------------------------------------
@@ -706,8 +726,9 @@ static void start_task(void)
 {
     if (s_task) return;
     if (!s_q) s_q = xQueueCreate(16, sizeof(job_t));
-    // Pile interne : la tache ecrit la flash (fiche, liste) et fait du reseau
-    if (xTaskCreate(ipdev_task, "ipdev", 6144, NULL, 3, &s_task) != pdPASS) {
+    // Pile interne : la tache ecrit la flash (fiche, liste), fait du reseau et
+    // cree l'endpoint Matter d'un appareil ajoute (7 Ko, comme la tache LoRa)
+    if (xTaskCreate(ipdev_task, "ipdev", 7168, NULL, 3, &s_task) != pdPASS) {
         s_task = NULL;
         ESP_LOGE(TAG, "Tache ipdev impossible");
     }
@@ -850,6 +871,10 @@ char *ip_devices_list_json(void)
         cJSON_AddNumberToObject(o, "polls", in.polls);
         cJSON_AddNumberToObject(o, "errors", in.errors);
         cJSON_AddStringToObject(o, "lastError", in.last_error);
+        cJSON_AddBoolToObject(o, "onoff", ip_devices_has_cluster(in.ieee, 0x0006));
+        cJSON_AddBoolToObject(o, "temperature", ip_devices_has_cluster(in.ieee, 0x0402));
+        cJSON_AddBoolToObject(o, "energy", ip_devices_has_cluster(in.ieee, 0x0702));
+        cJSON_AddNumberToObject(o, "matterEndpoint", in.matter_ep);
         cJSON_AddItemToArray(arr, o);
     }
     char *s = cJSON_PrintUnformatted(root);
@@ -1091,6 +1116,7 @@ esp_err_t ip_devices_remove(uint64_t ieee, bool remove_data)
     unlock();
     if (!d) return ESP_ERR_NOT_FOUND;
     save_list();
+    if (s_removed_cb) s_removed_cb(ieee);        // endpoint Matter retire (main.cpp)
     if (remove_data) device_data_remove(ieee);
     ESP_LOGI(TAG, "Appareil IP supprime : %016llX", (unsigned long long)ieee);
     return ESP_OK;
@@ -1100,11 +1126,40 @@ esp_err_t ip_devices_set_matter_endpoint(uint64_t ieee, uint16_t ep)
 {
     lock();
     ipdev_entry_t *d = find_dev(ieee);
+    bool changed = d && d->matter_ep != ep;
     if (d) d->matter_ep = ep;
     unlock();
     if (!d) return ESP_ERR_NOT_FOUND;
-    save_list();
+    if (changed) save_list();
     return ESP_OK;
+}
+
+void ip_devices_register_removed_cb(ipdev_removed_cb_t cb) { s_removed_cb = cb; }
+
+bool ip_devices_has_cluster(uint64_t ieee, uint16_t cluster)
+{
+    if (!ip_devices_is_ip(ieee)) return false;
+    if (device_data_get_attr(ieee, cluster, 0x0000)) return true;
+    const devdata_template_t *t = device_data_get_template(ieee);
+    for (int i = 0; t && i < t->state_count; i++)
+        if (t->states[i].cluster == cluster) return true;
+    return false;
+}
+
+esp_err_t ip_devices_send_onoff(uint64_t ieee, bool on)
+{
+    return ip_devices_send_action(ieee, 146, 0, on ? 1 : 0);
+}
+
+esp_err_t ip_devices_send_named_action(uint64_t ieee, const char *name)
+{
+    const devdata_template_t *t = device_data_get_template(ieee);
+    if (!t || !name || !name[0]) return ESP_ERR_NOT_FOUND;
+    for (int i = 0; i < t->action_count; i++) {
+        const devdata_template_action_t *a = &t->actions[i];
+        if (strcasecmp(a->name, name) == 0) return ip_devices_send_action(ieee, a->command, a->endpoint, a->value);
+    }
+    return ESP_ERR_NOT_FOUND;
 }
 
 #endif  // CONFIG_LIXEE_IP_DEVICES

@@ -206,3 +206,45 @@ Toutes ces routes demandent la session (sauf `/api/ip/wake`) et passent par les 
 **Limites du lot 1 :**
 - une seule voie par appareil (`id=0`, `relays[0]`) : pas de Shelly 2PM ni de 2.5 ;
 - pas de Matter, délestage, thermostats ni sous-compteurs (lot 2).
+
+## 13. État du lot 2 (24/11/2026)
+
+**Fait :**
+- **`ip_devices`** :
+  - `ip_devices_has_cluster()` : 0006 relais, 0402 température, 0702 index ;
+  - `ip_devices_send_onoff()` et `ip_devices_send_named_action()` ;
+  - rappel de suppression ;
+  - champs `onoff`, `temperature`, `energy` et `matterEndpoint` dans `/api/ip/devices` ;
+  - pile de la tâche passée à 7 Ko, comme celle du LoRa, pour créer un endpoint Matter.
+- **Délestage** : une prise IP peut être coupée et remise. La page Config la propose avec les prises Zigbee.
+- **Thermostats virtuels** :
+  - appareil commandé IP, en marche/arrêt ou par action nommée du template ;
+  - sonde IP, fraîche tant que l'âge du dernier relevé est sous le délai de la zone ;
+  - les deux sont proposés dans les listes de la zone.
+- **Matter** :
+  - l'appareil est ponté d'après son template, comme un émetteur LoRa (`matter_device_manager_map_lora_device`) ;
+  - endpoint mémorisé dans `ip_devices.json` et repris au démarrage ;
+  - créé au premier relevé s'il est ajouté après le démarrage ;
+  - retiré à la suppression, remis par la page Matter.
+  - Les commandes On/Off d'un contrôleur passent par `matter_device_manager_set_ext_cmd_cb()`, puis `ip_devices_send_action()`.
+- **Sous-compteurs** : une prise IP avec un index 0702/0000 est proposée (`/api/energy/submeters/eligible`).
+- **Page Config** : les sondes de température IP sont proposées.
+
+**Testé sur la LiXee-Box Pro** avec le modèle de test qui relève la box elle-même. Ses actions ON/OFF appellent `/setThermostatSetpoint`, ce qui laisse une trace visible :
+- une zone forcée en marche puis à l'arrêt appelle bien les URL ON et OFF (consigne passée à 21, puis à 17 °C) ;
+- l'appareil apparaît dans les sous-compteurs éligibles, les choix des thermostats et la liste du délestage.
+
+**Testé avec un vrai Shelly Pro 3EM** (firmware 1.4.4, profil triphasé, sans authentification) :
+- détecté comme « Shelly Pro 3EM (triphasé) » ;
+- puissances, tensions, courants et énergies identiques à ce que renvoie le Shelly ;
+- proposé en sous-compteur ;
+- ponté dans Matter à son premier relevé (endpoint 11), endpoint repris après redémarrage.
+
+**Corrigé pendant ce test :**
+- `tpu/ip.json` remplaçait entièrement `tp/ip.json` (un seul modèle personnel faisait perdre tous les autres). Les deux fichiers sont maintenant fusionnés modèle par modèle, comme dans `device_data`.
+- Le nom du modèle perdait ses accents dans la fiche (« triphas␣␣ ») : l'UTF-8 est conservé.
+
+**Non testé :**
+- l'affichage des valeurs dans un contrôleur Matter (le Pro n'est appairé à aucun contrôleur) ;
+- une vraie coupure de délestage, déclenchée seulement par le compteur ;
+- un Shelly avec authentification (Digest), le profil monophasé, un Tasmota.

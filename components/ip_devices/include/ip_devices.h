@@ -103,8 +103,24 @@ esp_err_t ip_devices_update(uint64_t ieee, const char *ip, uint16_t port, const 
 
 esp_err_t ip_devices_remove(uint64_t ieee, bool remove_data);
 
-/** Endpoint Matter memorise (lot 2). */
+/** Endpoint Matter memorise (repris au demarrage suivant). */
 esp_err_t ip_devices_set_matter_endpoint(uint64_t ieee, uint16_t ep);
+
+/** Appareil supprime (endpoint Matter a retirer). */
+typedef void (*ipdev_removed_cb_t)(uint64_t ieee);
+void ip_devices_register_removed_cb(ipdev_removed_cb_t cb);
+
+/**
+ * true si l'appareil IP a des valeurs de ce cluster (template ou releve) :
+ * 0006 relais (delestage, thermostats), 0402 temperature, 0702 index.
+ */
+bool ip_devices_has_cluster(uint64_t ieee, uint16_t cluster);
+
+/** Marche / arret (commande 146 du template), comme zigate_send_onoff(). */
+esp_err_t ip_devices_send_onoff(uint64_t ieee, bool on);
+
+/** Action nommee du template (sans la casse), ex. "Chauffage" d'un thermostat. */
+esp_err_t ip_devices_send_named_action(uint64_t ieee, const char *name);
 
 #ifdef __cplusplus
 }

@@ -215,6 +215,28 @@ static bool lora_map_to_matter(const lora_emitter_info_t *info)
 }
 
 /**
+ * Pont Matter d'un appareil IP (Shelly, Tasmota...) d'apres son template :
+ * endpoint repris de ip_devices.json s'il existe, nouveau sinon (memorise).
+ */
+static bool ip_map_to_matter(const ipdev_info_t *info)
+{
+    char label[sizeof(((device_data_t *)0)->info.alias)] = "";
+    const device_data_t *dd = device_data_find(info->ieee);
+    if (dd) strlcpy(label, dd->info.alias, sizeof(label));
+    int ep = matter_device_manager_map_lora_device(info->ieee, info->model, label, info->matter_ep);
+    if (ep < 0) return false;
+    if ((uint16_t)ep != info->matter_ep) ip_devices_set_matter_endpoint(info->ieee, (uint16_t)ep);
+    return true;
+}
+
+/** Commande d'un controleur Matter vers un appareil IP. */
+static esp_err_t on_matter_ext_cmd(uint64_t ieee, int command, uint8_t endpoint, int32_t value)
+{
+    if (!ip_devices_is_ip(ieee)) return ESP_ERR_NOT_FOUND;
+    return ip_devices_send_action(ieee, command, endpoint, value);
+}
+
+/**
  * Appareil retire de Matter ou remis (page Passerelle -> Matter). Le retrait
  * d'un appareil Zigbee / LoRa est fait par le gestionnaire ; ici, la remise
  * (endpoint repris) et les thermostats virtuels.
@@ -236,6 +258,8 @@ static void on_matter_exposure(uint64_t ieee, bool excluded)
     for (int i = 0; i < n; i++) {
         if (lem[i].ieee == ieee && lem[i].identified) lora_map_to_matter(&lem[i]);
     }
+    ipdev_info_t ip;
+    if (ip_devices_find(ieee, &ip)) ip_map_to_matter(&ip);
 }
 
 /**
@@ -684,10 +708,36 @@ static void on_ip_report(const ipdev_report_t *r)
     rep.data_len   = r->len;
     memcpy(rep.data, r->data, r->len);
     process_attribute(r->ieee, &rep);
+
+    // Matter : appareil ponte a son premier releve s'il a ete ajoute apres le
+    // demarrage ; un echec n'est retente qu'apres 60 s
+    if (!matter_enabled || !matter_bridge_is_started()) return;
+    ipdev_info_t info;
+    if (!ip_devices_find(r->ieee, &info)) return;
+    if (!matter_device_manager_get_mapping_by_ieee(r->ieee)) {
+        static uint64_t s_ieee[IPDEV_MAX];
+        static uint32_t s_next_try_s[IPDEV_MAX];
+        int slot = -1;
+        for (int i = 0; i < IPDEV_MAX && slot < 0; i++) if (s_ieee[i] == r->ieee) slot = i;
+        for (int i = 0; i < IPDEV_MAX && slot < 0; i++) if (!s_ieee[i]) { slot = i; s_ieee[i] = r->ieee; }
+        uint32_t now_s = (uint32_t)(esp_timer_get_time() / 1000000);
+        if (slot >= 0 && now_s < s_next_try_s[slot]) return;
+        if (matter_device_manager_is_excluded(r->ieee) || !ip_map_to_matter(&info)) {
+            if (slot >= 0) s_next_try_s[slot] = now_s + 60;
+            return;
+        }
+    }
+    matter_device_manager_handle_report_for_ieee(r->ieee, info.model, &rep);
 }
 
 /** Emetteur LoRa supprime (page LoRa) : son appareil Matter disparait aussi. */
 static void on_lora_removed(uint64_t ieee)
+{
+    matter_device_manager_unmap_device(ieee);
+}
+
+/** Appareil IP supprime (page Appareils IP) : son appareil Matter aussi. */
+static void on_ip_removed(uint64_t ieee)
 {
     matter_device_manager_unmap_device(ieee);
 }
@@ -1572,6 +1622,7 @@ extern "C" void app_main(void)
     }
     // Appareils IP (Shelly, Tasmota...) : liste, templates tp/ip.json, releves
     ip_devices_register_report_cb(on_ip_report);
+    ip_devices_register_removed_cb(on_ip_removed);
     ip_devices_init();
 
     // Enregistrer les callbacks ZiGate
@@ -1708,6 +1759,14 @@ extern "C" void app_main(void)
             int nlem = lora_get_emitters(lem, LORA_MAX_EMITTERS);
             for (int i = 0; i < nlem; i++) {
                 if (lem[i].identified) lora_map_to_matter(&lem[i]);
+            }
+
+            // Appareils IP, sur leur endpoint memorise dans ip_devices.json ;
+            // leurs commandes Matter passent par HTTP
+            matter_device_manager_set_ext_cmd_cb(on_matter_ext_cmd);
+            for (int i = 0; i < ip_devices_count(); i++) {
+                ipdev_info_t ip;
+                if (ip_devices_get(i, &ip)) ip_map_to_matter(&ip);
             }
 
             // Thermostats virtuels : un thermostat ponte par zone

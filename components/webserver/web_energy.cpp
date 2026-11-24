@@ -18,6 +18,7 @@
 #include "zigate_devices.h"
 #include "device_data.h"
 #include "lora.h"
+#include "ip_devices.h"
 #include "esp_log.h"
 #include "cJSON.h"
 
@@ -415,6 +416,20 @@ static esp_err_t submeters_eligible_handler(httpd_req_t *req)
         cJSON_AddStringToObject(o, "alias", d->alias);
         cJSON_AddStringToObject(o, "model", d->model);
         cJSON_AddStringToObject(o, "manufacturer", d->manufacturer);
+        cJSON_AddItemToArray(arr, o);
+    }
+    // Prises IP avec index d'energie (0702/0000, en Wh comme une prise Zigbee)
+    for (int i = 0; i < ip_devices_count(); i++) {
+        ipdev_info_t ip;
+        if (!ip_devices_get(i, &ip) || !device_data_get_value_ptr(ip.ieee, 0x0702, 0)) continue;
+        char ieee[20];
+        snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)ip.ieee);
+        const device_data_t *dd = device_data_find(ip.ieee);
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "IEEE", ieee);
+        cJSON_AddStringToObject(o, "alias", dd ? dd->info.alias : "");
+        cJSON_AddStringToObject(o, "model", ip.model);
+        cJSON_AddStringToObject(o, "manufacturer", "IP");
         cJSON_AddItemToArray(arr, o);
     }
     char *json = cJSON_PrintUnformatted(arr);
