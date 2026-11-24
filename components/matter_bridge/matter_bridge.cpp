@@ -51,8 +51,13 @@
 #include <crypto/CHIPCryptoPAL.h>
 #include <setup_payload/SetupPayload.h>
 #include <esp_matter_providers.h>
+#include <lib/core/TLV.h>
+#include <lib/support/Base64.h>
+#include <lib/support/DefaultStorageKeyAllocator.h>
+#include <platform/KeyValueStoreManager.h>
 #include "nvs.h"
 #include "esp_random.h"
+#include "sdkconfig.h"
 
 using namespace esp_matter;
 using namespace chip::app::Clusters;
@@ -1331,6 +1336,102 @@ private:
 };
 
 static LxCommissionableData s_commissionable;
+
+// ----------------------------------------------------------------------------
+// NVS de la pile Matter (issue #107) : la partition de 20 Ko se remplissait.
+// Les abonnements ne sont plus persistes et le cache de reprise de session
+// est reduit (main/CHIPProjectConfig.h). Les donnees ecrites par une version
+// precedente sont effacees ici, avant le demarrage de la pile, meme quand
+// celui-ci est saute (plantages en boucle dus a une NVS pleine) :
+//   - abonnements persistes (g/su/<n>, g/sum), plus jamais relus ;
+//   - reprises de session si l'index (g/sri) compte plus d'entrees que le
+//     nouveau cache : la pile ne saurait plus le relire et laisserait ses
+//     cles en place. Les controleurs refont une ouverture de session complete.
+// ----------------------------------------------------------------------------
+
+static void purge_subscription_keys(void)
+{
+#if !CONFIG_ENABLE_PERSIST_SUBSCRIPTIONS
+    char keys[24][NVS_KEY_NAME_MAX_SIZE];
+    int n = 0;
+    nvs_iterator_t it = NULL;
+    esp_err_t res = nvs_entry_find("nvs", "CHIP_KVS", NVS_TYPE_ANY, &it);
+    while (res == ESP_OK && n < 24) {
+        nvs_entry_info_t info;
+        nvs_entry_info(it, &info);
+        if (strncmp(info.key, "g/su/", 5) == 0 || strcmp(info.key, "g/sum") == 0)
+            strlcpy(keys[n++], info.key, sizeof(keys[0]));
+        res = nvs_entry_next(&it);
+    }
+    nvs_release_iterator(it);
+    if (!n) return;
+    nvs_handle_t h;
+    if (nvs_open_from_partition("nvs", "CHIP_KVS", NVS_READWRITE, &h) != ESP_OK) return;
+    for (int i = 0; i < n; i++) nvs_erase_key(h, keys[i]);
+    nvs_commit(h);
+    nvs_close(h);
+    ESP_LOGW(TAG, "NVS : %d cle(s) d'abonnements persistes effacee(s)", n);
+#endif
+}
+
+static void purge_session_resumption(void)
+{
+    using namespace chip;
+    auto &kvs = DeviceLayer::PersistedStorage::KeyValueStoreMgr();
+    const StorageKeyName index_name = DefaultStorageKeyAllocator::SessionResumptionIndex();
+    const char *index_key = index_name.KeyName();
+    uint8_t buf[512];
+    size_t len = 0;
+    if (kvs.Get(index_key, buf, sizeof(buf), &len) != CHIP_NO_ERROR) return;
+
+    struct { FabricIndex fabric; NodeId node; } nodes[32];
+    size_t count = 0;
+    TLV::ContiguousBufferTLVReader r;
+    r.Init(buf, len);
+    TLV::TLVType arr, st;
+    if (r.Next(TLV::kTLVType_Array, TLV::AnonymousTag()) == CHIP_NO_ERROR && r.EnterContainer(arr) == CHIP_NO_ERROR) {
+        while (count < 32 && r.Next(TLV::kTLVType_Structure, TLV::AnonymousTag()) == CHIP_NO_ERROR) {
+            if (r.EnterContainer(st) != CHIP_NO_ERROR) break;
+            if (r.Next(TLV::ContextTag(1)) == CHIP_NO_ERROR && r.Get(nodes[count].fabric) == CHIP_NO_ERROR &&
+                r.Next(TLV::ContextTag(2)) == CHIP_NO_ERROR && r.Get(nodes[count].node) == CHIP_NO_ERROR)
+                count++;
+            if (r.ExitContainer(st) != CHIP_NO_ERROR) break;
+        }
+    }
+    if (count <= CHIP_CONFIG_CASE_SESSION_RESUME_CACHE_SIZE) return;   // relisible par la pile
+
+    for (size_t i = 0; i < count; i++) {
+        StorageKeyName state_key = DefaultStorageKeyAllocator::FabricSession(nodes[i].fabric, nodes[i].node);
+        uint8_t sb[160];
+        size_t sl = 0;
+        // Etat : { 3 : identifiant de reprise, 4 : secret, 5 : CAT } -> lien g/s/<base64(id)>
+        if (kvs.Get(state_key.KeyName(), sb, sizeof(sb), &sl) == CHIP_NO_ERROR) {
+            TLV::ContiguousBufferTLVReader sr;
+            sr.Init(sb, sl);
+            TLV::TLVType o;
+            ByteSpan rid;
+            if (sr.Next(TLV::kTLVType_Structure, TLV::AnonymousTag()) == CHIP_NO_ERROR &&
+                sr.EnterContainer(o) == CHIP_NO_ERROR &&
+                sr.Next(TLV::ContextTag(3)) == CHIP_NO_ERROR && sr.Get(rid) == CHIP_NO_ERROR &&
+                rid.size() > 0 && rid.size() <= 16) {
+                char b64[BASE64_ENCODED_LEN(16) + 1];
+                uint16_t bl = Base64Encode(rid.data(), static_cast<uint16_t>(rid.size()), b64);
+                b64[bl] = '\0';
+                kvs.Delete(DefaultStorageKeyAllocator::SessionResumption(b64).KeyName());
+            }
+        }
+        kvs.Delete(state_key.KeyName());
+    }
+    kvs.Delete(index_key);
+    ESP_LOGW(TAG, "NVS : %u reprise(s) de session effacee(s) (cache reduit a %d)",
+             (unsigned)count, (int)CHIP_CONFIG_CASE_SESSION_RESUME_CACHE_SIZE);
+}
+
+void matter_bridge_nvs_cleanup(void)
+{
+    purge_subscription_keys();
+    purge_session_resumption();
+}
 
 esp_err_t matter_bridge_start(void)
 {

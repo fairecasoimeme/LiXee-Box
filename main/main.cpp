@@ -1611,6 +1611,8 @@ extern "C" void app_main(void)
     // 5. Config Matter : lue avant le WiFi (partage du mDNS)
 
     // 6. Matter Bridge (conditionne a matter_enabled)
+    // Purge NVS d'abord : une NVS pleine peut etre la cause des plantages
+    if (matter_enabled) matter_bridge_nvs_cleanup();
     if (matter_enabled && s_crash_loop) {
         matter_boot_failed("Redémarrages en boucle au démarrage : Matter sauté pour ce démarrage", ESP_OK);
     } else if (matter_enabled) {
