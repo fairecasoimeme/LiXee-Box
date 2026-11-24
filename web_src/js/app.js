@@ -2543,6 +2543,7 @@
   function loadMatterDevices() {
     var urls = ['/api/zigbee/devices'];
     if (activeModules && activeModules.lora) urls.push('/api/lora/devices');
+    if (activeModules && activeModules.ip) urls.push('/api/ip/devices');
     urls.push('/api/thermostats/config');
     urls.push('/api/actiongroups/list');
     var list = [], excluded = [], pending = urls.length + 1;
@@ -2557,6 +2558,15 @@
             var key = '4C584147' + ('00000000' + Number(g.matterUid).toString(16).toUpperCase()).slice(-8);
             list.push({ key: key, alias: g.name, model: 'Groupe d\'actions', ieee: '', radio: 'virtual',
                         ep: g.matterEp || 0, active: g.enabled !== false });
+          });
+          return;
+        }
+        if (devices && $.isArray(devices.devices)) {
+          // Appareils IP (Shelly, Tasmota...) : UniqueID = cle EUI-64 de la MAC
+          devices.devices.forEach(function(d) {
+            if (!d || !d.id) return;
+            list.push({ key: d.id, alias: d.alias, model: d.label || d.model, ieee: d.id, radio: 'ip',
+                        ep: d.matterEndpoint, active: d.online });
           });
           return;
         }
@@ -2592,7 +2602,7 @@
       var html = '<div class="table-responsive"><table class="table table-sm mb-0 align-middle"><thead><tr><th>Nom</th><th>Mod&egrave;le</th><th>IEEE</th><th>Radio</th><th>Endpoint</th><th>Actif</th><th>Dans Matter</th></tr></thead><tbody>';
       list.forEach(function(d) {
         html += '<tr' + (d.excluded ? ' class="text-muted"' : '') + '><td>' + escHtml(d.alias || '--') + '</td><td>' + escHtml(d.model || '--') + '</td><td><small>' + escHtml(d.ieee) + '</small></td>' +
-                '<td>' + (d.radio === 'lora' ? 'LoRa' : (d.radio === 'virtual' ? 'Virtuel' : 'Zigbee')) + '</td>' +
+                '<td>' + (d.radio === 'lora' ? 'LoRa' : (d.radio === 'virtual' ? 'Virtuel' : (d.radio === 'ip' ? 'IP' : 'Zigbee'))) + '</td>' +
                 '<td>' + (d.bridged ? d.ep : '&mdash;') + '</td>' +
                 '<td>' + (d.active ? '<span class="badge bg-success">Oui</span>' : '<span class="badge bg-secondary">Non</span>') + '</td>' +
                 '<td><div class="form-check form-switch m-0"><input class="form-check-input mt-expose" type="checkbox" role="switch" style="cursor:pointer;"' +
@@ -3196,12 +3206,36 @@
               .then(saved('Sous-compteur supprim&eacute;'), failed)
               .always(loadSubmeters);
           });
+        // Renommage : le nom devient un champ (Entree enregistre, Echap annule)
+        var $name = $('<td></td>').text(item.alias || '');
+        var $edit = $('<button type="button" class="btn btn-sm btn-outline-primary me-1">Modifier</button>');
+        var $ok = $('<button type="button" class="btn btn-sm btn-primary me-1">Enregistrer</button>').hide();
+        var $cancel = $('<button type="button" class="btn btn-sm btn-outline-secondary me-1">Annuler</button>').hide();
+        var $input = $('<input type="text" class="form-control form-control-sm" maxlength="31">');
+        function editMode(on) {
+          $edit.toggle(!on); $del.toggle(!on); $ok.toggle(on); $cancel.toggle(on);
+          if (on) { $name.empty().append($input.val(item.alias || '')); $input.trigger('focus').trigger('select'); }
+          else $name.empty().text(item.alias || '');
+        }
+        function commitName() {
+          var alias = String($input.val() || '').trim();
+          if (!alias) { showAlert('Indiquez un nom', 'danger'); return; }
+          if (alias === item.alias) { editMode(false); return; }
+          saveSubmeter(item, { alias: alias });
+        }
+        $edit.on('click', function() { editMode(true); });
+        $cancel.on('click', function() { editMode(false); });
+        $ok.on('click', commitName);
+        $input.on('keydown', function(e) {
+          if (e.key === 'Enter') { e.preventDefault(); commitName(); }
+          else if (e.key === 'Escape') editMode(false);
+        });
         $tb.append($('<tr></tr>').append(
-          $('<td></td>').text(item.alias || ''),
+          $name,
           $('<td class="small text-muted"></td>').text(item.IEEE || ''),
           $('<td></td>').append($color),
           $('<td></td>').append($sw),
-          $('<td class="text-end"></td>').append($del)
+          $('<td class="text-end text-nowrap"></td>').append($edit, $ok, $cancel, $del)
         ));
       });
       $('#sm-count').text(sm.max ? '(' + sm.list.length + ' / ' + sm.max + ')' : '');
