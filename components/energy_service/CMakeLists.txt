@@ -14,6 +14,7 @@ idf_component_register(
         device_data
         config_manager
         zigate
+        poll_engine
         ntp_sync
         vfs
         esp_timer

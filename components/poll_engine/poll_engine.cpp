@@ -46,6 +46,85 @@ static uint32_t now_ms(void)
     return (uint32_t)(esp_timer_get_time() / 1000ULL);
 }
 
+// ============================================================================
+// Lectures ponctuelles (poll_engine_read_later)
+// ============================================================================
+
+#define POLL_ONESHOT_MAX 4
+
+typedef struct {
+    bool     used;
+    uint64_t ieee;
+    uint16_t cluster;
+    uint16_t attr;
+    uint32_t due_ms;
+} oneshot_t;
+
+static oneshot_t s_oneshot[POLL_ONESHOT_MAX];
+static portMUX_TYPE s_oneshot_mux = portMUX_INITIALIZER_UNLOCKED;
+
+/** Code fabricant de l'attribut : poll list, sinon etat du template. */
+static uint16_t mfr_code_for(const device_data_t *dd, uint16_t cluster, uint16_t attr)
+{
+    for (int i = 0; i < dd->poll_count; i++)
+        if (dd->poll_list[i].cluster_id == cluster && dd->poll_list[i].attr_id == attr)
+            return dd->poll_list[i].manufacturer_code;
+    if (dd->tmpl && dd->tmpl->loaded) {
+        for (int i = 0; i < dd->tmpl->state_count; i++)
+            if (dd->tmpl->states[i].cluster == cluster && dd->tmpl->states[i].attribute == attr)
+                return dd->tmpl->states[i].manufacturer_code;
+    }
+    return 0;
+}
+
+esp_err_t poll_engine_read_later(uint64_t ieee_addr, uint16_t cluster, uint16_t attribute,
+                                 uint32_t delay_ms)
+{
+    if (!s_running) return ESP_ERR_INVALID_STATE;
+    uint32_t due = now_ms() + delay_ms;
+    esp_err_t ret = ESP_ERR_NO_MEM;
+    portENTER_CRITICAL(&s_oneshot_mux);
+    int slot = -1;
+    for (int i = 0; i < POLL_ONESHOT_MAX; i++) {
+        oneshot_t *o = &s_oneshot[i];
+        if (o->used && o->ieee == ieee_addr && o->cluster == cluster && o->attr == attribute) { slot = i; break; }
+        if (!o->used && slot < 0) slot = i;
+    }
+    if (slot >= 0) {
+        s_oneshot[slot] = (oneshot_t){ true, ieee_addr, cluster, attribute, due };
+        ret = ESP_OK;
+    }
+    portEXIT_CRITICAL(&s_oneshot_mux);
+    return ret;
+}
+
+/** Envoie les lectures ponctuelles echues (tache du poll engine). */
+static void run_oneshots(void)
+{
+    uint32_t now = now_ms();
+    for (int i = 0; i < POLL_ONESHOT_MAX; i++) {
+        oneshot_t o;
+        portENTER_CRITICAL(&s_oneshot_mux);
+        o = s_oneshot[i];
+        bool due = o.used && (int32_t)(now - o.due_ms) >= 0;
+        if (due) s_oneshot[i].used = false;
+        portEXIT_CRITICAL(&s_oneshot_mux);
+        if (!due) continue;
+
+        zigate_device_t *zdev = zigate_devices_find_by_ieee(o.ieee);
+        device_data_t *dd = device_data_find(o.ieee);
+        if (!zdev || !zdev->active || !dd) continue;
+        uint8_t kep = 0;
+        uint16_t attr = device_data_resolve_key(o.ieee, o.cluster, o.attr, &kep);
+        uint8_t ep = kep ? kep : zdev->endpoint;
+        uint16_t mfr = mfr_code_for(dd, o.cluster, o.attr);
+        esp_err_t ret = mfr ? zigate_read_attribute_mfr(zdev->short_addr, ep, o.cluster, attr, mfr)
+                            : zigate_read_attribute(zdev->short_addr, ep, o.cluster, attr);
+        ESP_LOGI(TAG, "Lecture ponctuelle 0x%016llX %04X/%04X : %s", (unsigned long long)o.ieee,
+                 o.cluster, o.attr, esp_err_to_name(ret));
+    }
+}
+
 /**
  * Scan un device: parcourt sa poll list et envoie les read_attribute
  * dont l'intervalle est depasse.
@@ -225,6 +304,7 @@ static void poll_engine_task(void *arg)
         while (waited < s_interval_ms && s_running && !s_trigger_now) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             waited += 1000;
+            run_oneshots();
         }
 
         if (!s_running) break;

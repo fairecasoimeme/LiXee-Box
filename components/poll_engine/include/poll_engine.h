@@ -91,6 +91,15 @@ esp_err_t poll_engine_reload_poll_lists(void);
  */
 esp_err_t poll_engine_load_device_poll_list(uint64_t ieee_addr);
 
+/**
+ * Lecture ponctuelle d'un attribut dans delay_ms (resolution 1 s), par la
+ * tache du poll engine. Code fabricant : celui de la poll list ou du
+ * template pour cet attribut. Une demande deja en attente pour le meme
+ * attribut est simplement reportee.
+ */
+esp_err_t poll_engine_read_later(uint64_t ieee_addr, uint16_t cluster, uint16_t attribute,
+                                 uint32_t delay_ms);
+
 #ifdef __cplusplus
 }
 #endif
