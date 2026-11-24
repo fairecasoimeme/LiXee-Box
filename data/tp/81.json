@@ -1693,6 +1693,282 @@
       ]
     }
   ],
+  "_TZE200_qhlxve78": [
+    {
+      "status": [
+        {
+          "name": "Energie",
+          "cluster": "EF00",
+          "attribut": 1,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "jauge": "text",
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie exportee",
+          "cluster": "EF00",
+          "attribut": 2,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Facteur de puissance",
+          "cluster": "EF00",
+          "attribut": 15,
+          "mqtt_device_class": "power_factor",
+          "mqtt_icon": "angle-acute",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%"
+        },
+        {
+          "name": "Frequence",
+          "cluster": "EF00",
+          "attribut": 201,
+          "mqtt_device_class": "frequency",
+          "mqtt_icon": "sine-wave",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "Hz"
+        },
+        {
+          "name": "Tension",
+          "cluster": "EF00",
+          "attribut": 110,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "Courant",
+          "cluster": "EF00",
+          "attribut": 111,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.001,
+          "unit": "A"
+        },
+        {
+          "name": "Puissance",
+          "cluster": "EF00",
+          "attribut": 112,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 8000,
+          "unit": "W"
+        }
+      ]
+    }
+  ],
+  "_TZE284_qhlxve78": [
+    {
+      "status": [
+        {
+          "name": "Energie",
+          "cluster": "EF00",
+          "attribut": 1,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "jauge": "text",
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie exportee",
+          "cluster": "EF00",
+          "attribut": 2,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Facteur de puissance",
+          "cluster": "EF00",
+          "attribut": 15,
+          "mqtt_device_class": "power_factor",
+          "mqtt_icon": "angle-acute",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%"
+        },
+        {
+          "name": "Frequence",
+          "cluster": "EF00",
+          "attribut": 201,
+          "mqtt_device_class": "frequency",
+          "mqtt_icon": "sine-wave",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "Hz"
+        },
+        {
+          "name": "Tension",
+          "cluster": "EF00",
+          "attribut": 110,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "Courant",
+          "cluster": "EF00",
+          "attribut": 111,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.001,
+          "unit": "A"
+        },
+        {
+          "name": "Puissance",
+          "cluster": "EF00",
+          "attribut": 112,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 8000,
+          "unit": "W"
+        }
+      ]
+    }
+  ],
+  "_TZE204_qhlxve78": [
+    {
+      "status": [
+        {
+          "name": "Energie",
+          "cluster": "EF00",
+          "attribut": 1,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "jauge": "text",
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie exportee",
+          "cluster": "EF00",
+          "attribut": 2,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Facteur de puissance",
+          "cluster": "EF00",
+          "attribut": 15,
+          "mqtt_device_class": "power_factor",
+          "mqtt_icon": "angle-acute",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%"
+        },
+        {
+          "name": "Frequence",
+          "cluster": "EF00",
+          "attribut": 201,
+          "mqtt_device_class": "frequency",
+          "mqtt_icon": "sine-wave",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "Hz"
+        },
+        {
+          "name": "Tension",
+          "cluster": "EF00",
+          "attribut": 110,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "Courant",
+          "cluster": "EF00",
+          "attribut": 111,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.001,
+          "unit": "A"
+        },
+        {
+          "name": "Puissance",
+          "cluster": "EF00",
+          "attribut": 112,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 8000,
+          "unit": "W"
+        }
+      ]
+    }
+  ],
   "MINI-ZB1GP": [
     {
       "status": [

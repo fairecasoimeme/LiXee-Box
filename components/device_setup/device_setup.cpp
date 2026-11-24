@@ -86,7 +86,16 @@ static bool load_template(const zigate_device_t *dev)
 {
     char file[64];
     snprintf(file, sizeof(file), "%u.json", (unsigned)dev->device_id);
-    if (dev->model[0]) {
+
+    // Certains Tuya EF00 (TS0601...) renvoient un modele ZCL generique alors
+    // que leurs datapoints different selon le fabricant exact (ManufacturerName,
+    // 0x0004) : si le fichier du DeviceId declare une cle exacte sur ce nom
+    // fabricant, elle prime sur le modele (pas de recherche inter-fichiers pour
+    // elle, contrairement au modele ci-dessous).
+    const char *key = dev->model;
+    if (dev->manufacturer[0] && device_data_template_has_model(file, dev->manufacturer)) {
+        key = dev->manufacturer;
+    } else if (dev->model[0]) {
         char other[64];
         if (!device_data_template_has_model(file, dev->model) &&
             device_data_template_find_model(dev->model, file, other, sizeof(other))) {
@@ -96,7 +105,7 @@ static bool load_template(const zigate_device_t *dev)
         }
     }
 
-    esp_err_t err = device_data_load_template(dev->ieee_addr, file, dev->model);
+    esp_err_t err = device_data_load_template(dev->ieee_addr, file, key);
     if (err != ESP_OK && is_zlinky(dev) && strcmp(file, ZLINKY_FALLBACK_TEMPLATE) != 0) {
         ESP_LOGI(TAG, "ZLinky en DeviceId 0x%04X : template %s", dev->device_id,
                  ZLINKY_FALLBACK_TEMPLATE);

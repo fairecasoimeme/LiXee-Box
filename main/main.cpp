@@ -451,22 +451,43 @@ static void on_zigbee_onoff_command(uint16_t short_addr, uint8_t endpoint, uint8
 }
 
 /**
- * Compteur d'energie Tuya (TS0601 dont le template est celui d'un compteur :
- * tension en EF00/100) : DP ramenes aux attributs du template, comme
- * energymeter.cpp de la LiXee-Box. Phases X/Y/Z (DP 6, 7, 8, brut 8 octets :
- * tension/10 sur 2, courant mA sur 3, puissance W sur 3) -> 100/101/102,
- * 110/111/112, 120/121/122 ; DDS238 (18 courant, 19 puissance, 20 tension) ;
- * variantes 103..123 ; 32 -> energie (1), 101 -> frequence (201), 111 -> 200.
+ * Base d'attributs (100 ou 110) du compteur d'energie Tuya declare par le
+ * template de cet appareil (TS0601 dont le template est celui d'un
+ * compteur, DP ramenes aux attributs du template comme energymeter.cpp de la
+ * LiXee-Box), ou -1 si ce n'en est pas un. Le template declare soit
+ * l'attribut EF00/100 (DDS238 et compteurs usuels), soit le triplet complet
+ * EF00/110-111-112 sans 100 : cas du Zemismart SPM01V2 (_TZE200_qhlxve78 et
+ * variantes _TZE284_/_TZE204_), qui envoie par ailleurs dans la meme salve
+ * que le DP6 paquete (voir tuya_meter_report()) des DP natifs a plat
+ * 100/101/102 sans rapport avec ces grandeurs (102 duplique la tension, pas
+ * une puissance) qui ecrasaient la synthese correcte de DP6 selon l'ordre
+ * d'arrivee - meme en les ignorant explicitement en entree (tente d'abord,
+ * insuffisant : l'ecrasement persistait tant que la synthese visait encore
+ * 100-102). Decaler la synthese sur 110-112 suffit : ces DP natifs tombent
+ * alors sur des attributs que le template de ce fabricant ne declare pas,
+ * ils ne genent plus sans qu'il soit necessaire de les ignorer. Le triplet
+ * complet (110 ET 111 ET 112) est exige, pas 110 seul : la vanne QOTO QT-05M
+ * (_TZE200_arge1ptm, meme modele ZCL TS0601) declare 110 pour sa batterie,
+ * sans rapport avec une tension.
  */
-static bool tuya_is_meter(const zigate_device_t *d)
+static int tuya_meter_base(const zigate_device_t *d)
 {
-    if (!d || strcmp(d->model, "TS0601") != 0) return false;
+    if (!d || strcmp(d->model, "TS0601") != 0) return -1;
     const devdata_template_t *t = device_data_get_template(d->ieee_addr);
-    if (!t || !t->loaded) return false;
+    if (!t || !t->loaded) return -1;
+    bool has100 = false, has110 = false, has111 = false, has112 = false;
     for (int i = 0; i < t->state_count; i++) {
-        if (t->states[i].cluster == 0xEF00 && t->states[i].attribute == 100) return true;
+        if (t->states[i].cluster != 0xEF00) continue;
+        switch (t->states[i].attribute) {
+        case 100: has100 = true; break;
+        case 110: has110 = true; break;
+        case 111: has111 = true; break;
+        case 112: has112 = true; break;
+        }
     }
-    return false;
+    if (has100) return 100;
+    if (has110 && has111 && has112) return 110;
+    return -1;
 }
 
 static int tuya_meter_attr(uint8_t dp)
@@ -494,13 +515,19 @@ static bool tuya_meter_report(const zigate_attribute_report_t *report)
     static bool s_inside;                        // les rapports convertis ne repassent pas ici
     if (s_inside || report->cluster_id != 0xEF00 || report->attr_id > 0xFF) return false;
     const zigate_device_t *d = zigate_devices_find_by_short(report->short_addr);
-    if (!tuya_is_meter(d)) return false;
+    int meter_base = tuya_meter_base(d);
+    if (meter_base < 0) return false;
+    bool shifted = meter_base == 110;
     uint8_t dp = (uint8_t)report->attr_id;
     static zigate_attribute_report_t r;          // tache de traitement ZiGate seule
     s_inside = true;
     if (dp >= 6 && dp <= 8 && report->data_len >= 8) {
         const uint8_t *b = report->data;
-        uint16_t base = (uint16_t)(100 + (dp - 6) * 10);
+        // Base decalee sur 110 (2e phase, jamais utilisee par cet appareil
+        // monophase) pour ne jamais partager un attribut avec un DP natif -
+        // voir tuya_meter_base(). Autres appareils (phases multiples
+        // reelles) : convention standard 100/110/120.
+        uint16_t base = (shifted && dp == 6) ? 110 : (uint16_t)(100 + (dp - 6) * 10);
         r = *report;
         r.attr_id = base;                        // tension (dV)
         r.attr_type = 0x21;
