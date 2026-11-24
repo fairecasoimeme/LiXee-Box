@@ -55,6 +55,14 @@ static matter_ext_cmd_cb_t s_ext_cmd_cb;
 
 void matter_device_manager_set_ext_cmd_cb(matter_ext_cmd_cb_t cb) { s_ext_cmd_cb = cb; }
 
+static void reset_phases(bridge_device_mapping_t *m)
+{
+    memset(m->ph_v, 0, sizeof(m->ph_v));
+    memset(m->ph_i, 0, sizeof(m->ph_i));
+    memset(m->ph_p, 0, sizeof(m->ph_p));
+    m->ph_seen = 0;
+}
+
 static void excl_load(void)
 {
     if (s_excl_loaded) return;
@@ -344,6 +352,7 @@ static int map_device_locked(const zigate_device_t *zigbee_dev)
     m->profile = profile;
     m->last_lift100 = -1;
     m->last_move_us = 0;
+    reset_phases(m);
     s_mapping_count++;
     replay_stored_values(m);        // dernieres valeurs connues, sans attendre les rapports
 
@@ -460,6 +469,7 @@ int matter_device_manager_map_lora_device(uint64_t ieee, const char *model,
             m->profile = profile;
             m->last_lift100 = -1;
             m->last_move_us = 0;
+            reset_phases(m);
             replay_stored_values(m);
             ESP_LOGI(TAG, "Mapped %016llX (%s, sans radio Zigbee) -> Matter endpoint %d",
                      (unsigned long long)ieee, model, ep_id);
@@ -601,6 +611,7 @@ static void apply_link(bridge_device_mapping_t *m, const matter_link_t *l, doubl
         upd(ep, 0x0202, 0x0000, esp_matter_enum8((uint8_t)clamp64(raw, 0, 6)));
         break;
     case ML_EL_ACTIVE_POWER:
+    case ML_EL_TOTAL_ACTIVE:
     case ML_EL_APPARENT_POWER:
     case ML_EL_TOTAL_APPARENT:
     case ML_EL_VOLTAGE:
@@ -608,12 +619,25 @@ static void apply_link(bridge_device_mapping_t *m, const matter_link_t *l, doubl
         ElecPowerDelegate *elec = matter_bridge_get_elec_delegate(ep);
         if (!elec) break;
         int64_t milli = clamp64(v * 1000, INT64_MIN / 2, INT64_MAX / 2);
-        if (l->target == ML_EL_ACTIVE_POWER) elec->SetActivePower(milli);
-        else if (l->target == ML_EL_APPARENT_POWER) elec->SetApparentPower(milli);
-        else if (l->target == ML_EL_TOTAL_APPARENT) elec->SetTotalApparentPower(milli);
-        else if (l->target == ML_EL_CURRENT) elec->SetRMSCurrent(milli);
+        if (l->target == ML_EL_TOTAL_ACTIVE) { elec->SetTotalActivePower(milli); break; }
+        if (l->target == ML_EL_APPARENT_POWER) { elec->SetApparentPower(milli); break; }
+        if (l->target == ML_EL_TOTAL_APPARENT) { elec->SetTotalApparentPower(milli); break; }
+
+        // Tension, courant, puissance d'une phase : Matter n'en a qu'un jeu par
+        // endpoint, celui de la premiere phase qui a une tension (phase A par
+        // defaut, et tant qu'aucune tension n'est connue)
+        const int ph = (l->phase >= 1 && l->phase <= 3) ? l->phase - 1 : 0;
+        if (l->target == ML_EL_VOLTAGE)      { m->ph_v[ph] = milli; m->ph_seen |= 1u << ph; }
+        else if (l->target == ML_EL_CURRENT) { m->ph_i[ph] = milli; m->ph_seen |= 1u << (3 + ph); }
+        else                                 { m->ph_p[ph] = milli; m->ph_seen |= 1u << (6 + ph); }
+        int sel = 0;
+        for (int k = 0; k < 3; k++) {
+            if ((m->ph_seen & (1u << k)) && m->ph_v[k] != 0) { sel = k; break; }
+        }
         // 0 V : tension non transmise (TIC historique), "inconnu" plutot que 0
-        else if (milli != 0) elec->SetRMSVoltage(milli);
+        if (m->ph_v[sel] != 0) elec->SetRMSVoltage(m->ph_v[sel]);
+        if (m->ph_seen & (1u << (3 + sel))) elec->SetRMSCurrent(m->ph_i[sel]);
+        if (m->ph_seen & (1u << (6 + sel))) elec->SetActivePower(m->ph_p[sel]);
         break;
     }
     case ML_EL_ENERGY:

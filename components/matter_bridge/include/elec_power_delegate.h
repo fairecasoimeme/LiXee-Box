@@ -53,11 +53,16 @@ public:
     // l'approximation par la puissance apparente (voir SetApparentPower).
     void SetActivePower(int64_t mw)
     {
-        // Premiere mesure : ActivePower passe de "estimee" a "mesuree" dans
-        // la liste Accuracy, a signaler aussi.
-        bool first = !m_active_is_measured;
-        m_active_is_measured = true;
-        Update(m_active_power, mw, lixee_epm_attr::ActivePower::Id, first);
+        if (m_has_total_active) return;          // total (0x0304) prioritaire sur une phase
+        PublishActive(mw);
+    }
+
+    // Puissance active TOTALE (0B04/0x0304, compteur triphase : Shelly Pro
+    // 3EM...). Prioritaire sur la puissance d'une phase.
+    void SetTotalActivePower(int64_t mw)
+    {
+        m_has_total_active = true;
+        PublishActive(mw);
     }
 
     // Les mesures RMS du ZLinky sont publiees sur Voltage et ActiveCurrent,
@@ -84,6 +89,15 @@ public:
     }
 
 private:
+    void PublishActive(int64_t mw)
+    {
+        // Premiere mesure : ActivePower passe de "estimee" a "mesuree" dans
+        // la liste Accuracy, a signaler aussi.
+        bool first = !m_active_is_measured;
+        m_active_is_measured = true;
+        Update(m_active_power, mw, lixee_epm_attr::ActivePower::Id, first);
+    }
+
     void PublishApparent(int64_t mva)
     {
         Update(m_apparent_power, mva, lixee_epm_attr::ApparentPower::Id);
@@ -235,6 +249,7 @@ private:
     chip::app::DataModel::Nullable<int64_t> m_apparent_power;
     bool    m_active_is_measured = false;
     bool    m_has_total_apparent = false;
+    bool    m_has_total_active = false;
 
     // Voltage, ActiveCurrent, ActivePower, ApparentPower
     static constexpr uint8_t kMeasurementTypeCount = 4;

@@ -24,6 +24,11 @@ typedef struct {
     matter_profile_t *profile;
     int32_t  last_lift100;              // derniere fermeture publiee (volet), -1 inconnue
     int64_t  last_move_us;              // dernier ordre de mouvement envoye au volet (0 : aucun)
+    // Dernieres mesures par phase (mV, mA, mW) : Matter recoit celles de la
+    // premiere phase qui a une tension. Bits de 'ph_seen' : valeur recue
+    // (0..2 tension, 3..5 courant, 6..8 puissance des phases A..C)
+    int64_t  ph_v[3], ph_i[3], ph_p[3];
+    uint16_t ph_seen;
 } bridge_device_mapping_t;
 
 /**

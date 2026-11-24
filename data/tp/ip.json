@@ -228,6 +228,17 @@
      "max": 12000
     },
     {
+     "name": "Puissance apparente totale",
+     "cluster": "0B04",
+     "attribut": 774,
+     "json": "total_aprt_power",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "VA",
+     "mqtt_state_class": "measurement",
+     "mqtt_device_class": "apparent_power"
+    },
+    {
      "name": "Puissance phase 1",
      "cluster": "0B04",
      "attribut": 1291,

@@ -63,6 +63,7 @@ typedef enum {
     ML_EL_ENERGY,           // energie cumulee importee
     ML_SWITCH_PRESS,        // bouton : un appui par rapport
     ML_SWITCH_MULTI,        // bouton : valeur = nombre d'appuis (0 = appui long)
+    ML_EL_TOTAL_ACTIVE,     // puissance active totale (0B04/0x0304), prioritaire sur les phases
 } matter_link_target_t;
 
 // Capacites de l'endpoint (types d'appareil / clusters Matter a creer)
@@ -98,6 +99,7 @@ typedef struct {
     uint8_t  write_type;    // type ZCL d'ecriture (type de DP pour EF00), 0 = defaut
     uint16_t mfr;           // code fabricant de l'etat
     uint16_t energy_attr;   // ML_EL_ENERGY : attribut 0702 transmis (0x0000 hors 0702)
+    uint8_t  phase;         // tension / courant / puissance : 1..3 (0B04 05xx, 09xx, 0Axx), 0 sinon
     float    scale;         // physique = brute x scale (coefficient du template)
     float    unit_mul;      // unite du template -> unite de base de la cible
 } matter_link_t;
