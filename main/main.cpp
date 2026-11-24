@@ -585,6 +585,38 @@ static void sonoff_pm_report(const zigate_attribute_report_t *report)
 }
 
 /**
+ * Compteurs d'energie Tuya EF00 (TS0601, voir tuya_meter_base()) : l'index
+ * total (EF00/1, kWh x100) est aussi remonte en index d'energie standard
+ * 0702/0000 (Wh) - meme principe que sonoff_pm_report() pour le SONOFF
+ * MINI-ZB1GP - afin que l'historique et les sous-compteurs de la page Energie
+ * le reconnaissent (issue #112 : ces compteurs n'apparaissaient pas dans la
+ * liste des sous-compteurs, qui ne regarde que 0x0702). Le compteur Matter ne
+ * le reconnait pas pour autant : son profil est construit d'apres le
+ * template, et les templates Tuya ne declarent pas 0702/0.
+ */
+static void tuya_meter_energy_report(const zigate_attribute_report_t *report)
+{
+    static bool s_inside;
+    if (s_inside || report->cluster_id != 0xEF00 || report->attr_id != 1 ||
+        report->data_len < 4) return;
+    const zigate_device_t *d = zigate_devices_find_by_short(report->short_addr);
+    if (tuya_meter_base(d) < 0) return;
+    uint32_t raw = 0;
+    for (int i = 0; i < 4; i++) raw = (raw << 8) | report->data[report->data_len - 4 + i];
+    uint64_t wh = (uint64_t)raw * 10;   // EF00/1 : kWh x100 -> Wh
+    static zigate_attribute_report_t r;          // tache de traitement ZiGate seule
+    r = *report;
+    r.cluster_id = 0x0702;
+    r.attr_id = 0x0000;
+    r.attr_type = 0x25;                          // uint48, comme un index Zigbee
+    r.data_len = 6;
+    for (int i = 0; i < 6; i++) r.data[i] = (uint8_t)(wh >> (8 * (5 - i)));
+    s_inside = true;
+    on_zigbee_attribute_report(&r);
+    s_inside = false;
+}
+
+/**
  * Codes IR enregistres d'une telecommande : une action par code (commande 201,
  * valeur = numero du code), apres les actions du template. Ils apparaissent
  * ainsi sur la fiche de l'appareil, dans les regles, les groupes d'actions,
@@ -622,6 +654,7 @@ static void on_zigbee_attribute_report(const zigate_attribute_report_t *report)
 {
     if (tuya_meter_report(report)) return;
     sonoff_pm_report(report);
+    tuya_meter_energy_report(report);
 
     // SONOFF SNZB-01M (4 boutons) : FC12/0000 depuis l'endpoint du bouton, type
     // d'appui en valeur (1 simple, 2 double, 3 long, 4 triple). Action unique au
