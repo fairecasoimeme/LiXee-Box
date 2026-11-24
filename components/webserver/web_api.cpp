@@ -47,6 +47,7 @@
 #include "esp_heap_caps.h"
 #include "driver/temperature_sensor.h"
 #include "cJSON.h"
+#include <stdlib.h>
 #include <string.h>
 #include <math.h>
 
@@ -253,6 +254,141 @@ static esp_err_t api_matter_status_handler(httpd_req_t *req)
 // POST /api/matter/open-window {"seconds":900} - fenetre d'appairage
 // (ajout d'un second controleur avec le code habituel du pont)
 // ============================================================================
+
+// ----------------------------------------------------------------------------
+// GET /api/system/nvs : occupation de la NVS par namespace (issue #107).
+// Les attributs persistants d'esp-matter (namespace esp_matter_kvs) ont pour
+// cle le base64 de endpoint(2) + cluster(4) + attribut(4) : on les regroupe
+// par endpoint pour reperer ceux d'endpoints qui n'existent plus.
+// ----------------------------------------------------------------------------
+
+#define NVS_DIAG_NS_MAX 40
+#define NVS_DIAG_EP_MAX 64
+
+static int b64_val(char c)
+{
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+/** Endpoint d'une cle esp_matter_kvs (14 caracteres base64 -> 10 octets), -1 sinon. */
+static int matter_kvs_key_endpoint(const char *key)
+{
+    if (strlen(key) != 14) return -1;
+    uint8_t out[10];
+    uint32_t acc = 0;
+    int bits = 0, n = 0;
+    for (int i = 0; i < 14; i++) {
+        int v = b64_val(key[i]);
+        if (v < 0) return -1;
+        acc = (acc << 6) | (uint32_t)v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            if (n < 10) out[n++] = (uint8_t)(acc >> bits);
+        }
+    }
+    if (n != 10) return -1;
+    return out[0] | (out[1] << 8);
+}
+
+static esp_err_t api_system_nvs_handler(httpd_req_t *req)
+{
+    struct ns_stat_t { char name[16]; uint16_t keys; };
+    struct ep_stat_t { uint16_t ep; uint16_t keys; };
+    ns_stat_t *nss = (ns_stat_t *)calloc(NVS_DIAG_NS_MAX, sizeof(ns_stat_t));
+    ep_stat_t *eps = (ep_stat_t *)calloc(NVS_DIAG_EP_MAX, sizeof(ep_stat_t));
+    if (!nss || !eps) {
+        free(nss);
+        free(eps);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Mémoire insuffisante\"}");
+    }
+    int n_ns = 0, n_ep = 0, matter_keys = 0;
+
+    nvs_iterator_t it = NULL;
+    esp_err_t res = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY, &it);
+    while (res == ESP_OK) {
+        nvs_entry_info_t info;
+        nvs_entry_info(it, &info);
+        int i;
+        for (i = 0; i < n_ns && strcmp(nss[i].name, info.namespace_name) != 0; i++) {}
+        if (i == n_ns && n_ns < NVS_DIAG_NS_MAX) strlcpy(nss[n_ns++].name, info.namespace_name, sizeof(nss[0].name));
+        if (i < n_ns) nss[i].keys++;
+        if (strcmp(info.namespace_name, "esp_matter_kvs") == 0) {
+            int ep = matter_kvs_key_endpoint(info.key);
+            if (ep >= 0) {
+                matter_keys++;
+                int k;
+                for (k = 0; k < n_ep && eps[k].ep != ep; k++) {}
+                if (k == n_ep && n_ep < NVS_DIAG_EP_MAX) eps[n_ep++].ep = (uint16_t)ep;
+                if (k < n_ep) eps[k].keys++;
+            }
+        }
+        res = nvs_entry_next(&it);
+    }
+    nvs_release_iterator(it);
+
+    cJSON *root = cJSON_CreateObject();
+    nvs_stats_t st = {};
+    const esp_partition_t *np = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_NVS, "nvs");
+    if (nvs_get_stats("nvs", &st) == ESP_OK) {
+        cJSON_AddNumberToObject(root, "size", np ? np->size : 0);
+        cJSON_AddNumberToObject(root, "usedEntries", st.used_entries);
+        cJSON_AddNumberToObject(root, "freeEntries", st.free_entries);
+        cJSON_AddNumberToObject(root, "availableEntries", st.available_entries);
+        cJSON_AddNumberToObject(root, "totalEntries", st.total_entries);
+    }
+    // Entrees occupees par namespace (une valeur longue ou un blob en prend plusieurs)
+    cJSON *arr = cJSON_AddArrayToObject(root, "namespaces");
+    for (int i = 0; i < n_ns; i++) {
+        size_t used = 0;
+        nvs_handle_t h;
+        if (nvs_open_from_partition("nvs", nss[i].name, NVS_READONLY, &h) == ESP_OK) {
+            nvs_get_used_entry_count(h, &used);
+            nvs_close(h);
+        }
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddStringToObject(o, "name", nss[i].name);
+        cJSON_AddNumberToObject(o, "keys", nss[i].keys);
+        cJSON_AddNumberToObject(o, "entries", (double)used);
+        cJSON_AddItemToArray(arr, o);
+    }
+    // Attributs Matter persistants par endpoint
+    bool started = matter_bridge_is_started();
+    cJSON *m = cJSON_AddObjectToObject(root, "matterAttributes");
+    cJSON_AddBoolToObject(m, "matterStarted", started);
+    cJSON_AddNumberToObject(m, "keys", matter_keys);
+    int orphan_eps = 0, orphan_keys = 0;
+    cJSON *ea = cJSON_AddArrayToObject(m, "endpoints");
+    for (int k = 0; k < n_ep; k++) {
+        bool present = started && matter_bridge_endpoint_exists(eps[k].ep);
+        if (started && !present) { orphan_eps++; orphan_keys += eps[k].keys; }
+        cJSON *o = cJSON_CreateObject();
+        cJSON_AddNumberToObject(o, "endpoint", eps[k].ep);
+        cJSON_AddNumberToObject(o, "keys", eps[k].keys);
+        if (started) cJSON_AddBoolToObject(o, "present", present);
+        cJSON_AddItemToArray(ea, o);
+    }
+    if (started) {
+        cJSON_AddNumberToObject(m, "orphanEndpoints", orphan_eps);
+        cJSON_AddNumberToObject(m, "orphanKeys", orphan_keys);
+    }
+    free(nss);
+    free(eps);
+
+    char *json = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    esp_err_t err = httpd_resp_sendstr(req, json ? json : "{}");
+    free(json);
+    return err;
+}
 
 static esp_err_t api_matter_open_window_handler(httpd_req_t *req)
 {
@@ -1886,6 +2022,10 @@ esp_err_t web_api_register_handlers(httpd_handle_t server)
     // --- Matter API ---
     uri = { .uri = "/api/matter/status", .method = HTTP_GET,
             .handler = api_matter_status_handler, .user_ctx = NULL };
+    web_server_register_uri(server, &uri);
+
+    uri = { .uri = "/api/system/nvs", .method = HTTP_GET,
+            .handler = api_system_nvs_handler, .user_ctx = NULL };
     web_server_register_uri(server, &uri);
 
     uri = { .uri = "/api/matter/open-window", .method = HTTP_POST,

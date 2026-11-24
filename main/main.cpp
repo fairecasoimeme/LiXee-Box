@@ -292,6 +292,11 @@ static void process_attribute(uint64_t ieee, const zigate_attribute_report_t *re
     int64_t num_value = 0;
     bool has_num = zcl_to_int64(report->data, report->data_len,
                                 report->attr_type, &num_value);
+    // Tarif en cours du ZLinky : NTARF relu apres chaque nouveau libelle (#104)
+    if (report->cluster_id == 0xFF66) {
+        if (report->attr_id == 0x0010) energy_tariff_label_received(ieee);
+        else if (report->attr_id == 0x0201 && has_num) energy_tariff_ntarf_received(ieee, (int)num_value);
+    }
     // Statistiques de puissance (pics, tranches de charge) du ZLinky configure
     if (has_num && report->cluster_id == 0x0B04) {
         power_stats_on_attribute(ieee, report->cluster_id, report->attr_id, num_value);

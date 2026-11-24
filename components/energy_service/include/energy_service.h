@@ -131,6 +131,15 @@ bool energy_tariff_available(void);
 /** Periode en cours (getCurrentTariffAttributeId de la LiXee-Box), 256 sans ZLinky. */
 uint16_t energy_tariff_current_index(void);
 
+/**
+ * Libelle du tarif en cours (FF66/16) recu d'un ZLinky Zigbee : en standard,
+ * NTARF (FF66/513) est relu ~2 s apres un nouveau libelle et donne l'index.
+ */
+void energy_tariff_label_received(uint64_t ieee);
+
+/** NTARF (FF66/513) recu d'un ZLinky. */
+void energy_tariff_ntarf_received(uint64_t ieee, int ntarf);
+
 /** Periodes de l'abonnement : Base {256}, HC/HP et EJP {256,258}, Tempo {256..266}. */
 int energy_tariff_periods(uint16_t *out, int max);
 

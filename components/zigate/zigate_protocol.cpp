@@ -101,61 +101,80 @@ static void touch_device(uint16_t short_addr, uint8_t lqi)
     if (now > 1600000000) zigate_devices_mark_seen(dev, (uint32_t)now);
 }
 
-// --- Nettoyage des fantomes (reponse 0x8602) ---
-// Table JN5189 : en-tete de 64 octets puis N entrees de 16 octets
-// (IEEE little-endian sur 8 octets, adresse courte sur 2, bourrage). La table
-// est renvoyee entiere (0x0603), entrees inconnues mises a zero : la tronquer
-// faisait redemarrer la ZiGate (constat de la LiXee-Box).
+// --- Nettoyage des fantomes (reponse 0x8602, ZiGatev2 3.24) ---
+// Structure tsNwkRecoveryExt version 2 (app_network_recovery.h du firmware) :
+//  - tsNwkRecovery, 72 octets : version [0], ext PAN [8], IEEE du
+//    coordinateur [16], PAN [24], canal [28], cle reseau [32..47],
+//    compteurs de trames [52..59], Trust Center [64..71] ;
+//  - nombre d'appareils [72], puis la table a l'octet 80 (alignement sur
+//    8) : entrees de 16 octets, IEEE little-endian [0..7], adresse courte
+//    [8..9], drapeaux [10].
+// La ZiGate envoie 76 + 16 x n octets (il manque les 4 octets de bourrage
+// de la derniere entree), suivis du LQI. L'ancienne lecture (en-tete de 64
+// octets, reprise de la LiXee-Box) prenait le Trust Center pour la premiere
+// entree et ne verifiait jamais le dernier appareil.
+// Restauration (0x0603) : la ZiGate ajoute ou met a jour les entrees de la
+// table recue, sans en retirer aucune. Les inconnues sont retirees de la
+// table renvoyee, mais restent dans la table d'adresses de la ZiGate tant
+// que son firmware ne sait pas les effacer.
 static void handle_recovery_table(const zigate_packet_t *pkt)
 {
-    const int HEADER = 64, ENTRY = 16;
+    const int COUNT_OFS = 72, DEV_OFS = 80, ENTRY = 16, ENTRY_SENT = 12;
     if (!g_zigate_coord.ghost_pending) return;
     g_zigate_coord.ghost_pending = false;
-    if (pkt->length < HEADER + 10 || pkt->length > sizeof(pkt->payload)) {
-        ESP_LOGW(TAG, "Table de recuperation invalide (%u octets)", (unsigned)pkt->length);
+    const int len = (int)pkt->length - 1;                 // sans le LQI
+    if (len < COUNT_OFS + 4 || pkt->length > sizeof(pkt->payload) || pkt->payload[0] != 0x02) {
+        ESP_LOGW(TAG, "Table de recuperation non reconnue (version %u, %d octets)",
+                 pkt->length ? pkt->payload[0] : 0, len);
+        zigate_console_printf("Nettoyage des fantomes : table non reconnue (firmware ZiGate 3.24 requis)");
         g_zigate_coord.ghost_result = 0;
         return;
     }
 
     static uint8_t table[sizeof(((zigate_packet_t *)0)->payload)];   // tache unique
-    memcpy(table, pkt->payload, pkt->length);
+    memset(table, 0, sizeof(table));
+    memcpy(table, pkt->payload, len);
 
     uint64_t coord = 0;
     memcpy(&coord, &table[16], 8);
-    int ghosts = 0;
-    int count = (pkt->length - HEADER) / ENTRY;
+    int count = table[COUNT_OFS];
+    int avail = len >= DEV_OFS + ENTRY_SENT ? (len - DEV_OFS - ENTRY_SENT) / ENTRY + 1 : 0;
+    if (count > avail) count = avail;
+
+    int kept = 0, ghosts = 0;
     for (int d = 0; d < count; d++) {
-        uint8_t *e = &table[HEADER + d * ENTRY];
+        uint8_t *e = &table[DEV_OFS + d * ENTRY];
         uint64_t ieee = 0;
         uint16_t sa = 0;
         memcpy(&ieee, e, 8);
         memcpy(&sa, e + 8, 2);
-        if (ieee == 0 || sa == 0 || ieee == coord) continue;
-
-        // Texte de debug du JN5189 parfois present dans la table : une IEEE
-        // valide a au moins un octet > 0x7E. Ces entrees ne sont pas touchees.
-        bool valid = false;
-        for (int b = 0; b < 8; b++) if (e[b] > 0x7E) { valid = true; break; }
-        if (!valid) continue;
-
-        // Doublon d'une entree precedente : efface
-        bool dup = false;
-        for (int k = 0; k < d; k++) {
-            uint64_t other = 0;
-            memcpy(&other, &table[HEADER + k * ENTRY], 8);
-            if (other == ieee) { dup = true; break; }
+        bool ghost = false, dup = false;
+        if (ieee != 0 && sa != 0 && ieee != coord) {
+            for (int k = 0; k < kept && !dup; k++) {
+                uint64_t other = 0;
+                memcpy(&other, &table[DEV_OFS + k * ENTRY], 8);
+                dup = other == ieee;
+            }
+            ghost = dup || !zigate_devices_find_by_ieee(ieee);
         }
-        if (dup || !zigate_devices_find_by_ieee(ieee)) {
-            ESP_LOGW(TAG, "Fantome efface : SA=0x%04X IEEE=%016llX%s", sa,
+        if (ghost) {
+            ESP_LOGW(TAG, "Fantome : SA=0x%04X IEEE=%016llX%s", sa,
                      (unsigned long long)ieee, dup ? " (doublon)" : "");
-            memset(e, 0, ENTRY);
+            zigate_console_printf("Fantome : 0x%04X %016llX%s", sa, (unsigned long long)ieee,
+                                  dup ? " (doublon)" : "");
             ghosts++;
+            continue;
         }
+        if (kept != d) memmove(&table[DEV_OFS + kept * ENTRY], e, ENTRY);
+        kept++;
     }
     g_zigate_coord.ghost_result = ghosts;
-    zigate_console_printf("Nettoyage des fantomes : %d entree(s) effacee(s)", ghosts);
+    zigate_console_printf("Nettoyage des fantomes : %d inconnu(s) sur %d appareil(s) de la table", ghosts, count);
     if (ghosts > 0) {
-        zigate_send_command(ZIGATE_CMD_NWK_RECOVERY_RESTORE, table, pkt->length);
+        table[COUNT_OFS] = (uint8_t)kept;
+        int out = DEV_OFS + kept * ENTRY;
+        if (out < COUNT_OFS + 4) out = COUNT_OFS + 4;
+        zigate_send_command(ZIGATE_CMD_NWK_RECOVERY_RESTORE, table, (uint16_t)out);
     }
 }
 

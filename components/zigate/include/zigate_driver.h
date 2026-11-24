@@ -290,9 +290,12 @@ esp_err_t zigate_set_raw_mode(bool on);
 esp_err_t zigate_leave_request(uint64_t ieee_addr);
 
 /**
- * Nettoyage des appareils "fantomes" de la table de la ZiGate : extraction
- * (0x0602), mise a zero des entrees inconnues de zigate_devices, puis
- * restauration (0x0603). Asynchrone : resultat dans zigate_coord_info_t.
+ * Nettoyage des appareils "fantomes" de la table de la ZiGate (firmware
+ * 3.24) : extraction (0x0602), retrait des entrees inconnues de
+ * zigate_devices, puis restauration (0x0603), qui relance aussi le reseau.
+ * La restauration n'efface rien dans la ZiGate : les fantomes sont comptes
+ * et signales, leur effacement attend une evolution du firmware.
+ * Asynchrone : resultat (nombre de fantomes) dans zigate_coord_info_t.
  */
 esp_err_t zigate_clean_ghosts(void);
 

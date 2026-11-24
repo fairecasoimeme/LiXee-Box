@@ -78,8 +78,32 @@ static bool j_num(const cJSON *j, const char *k, double *out)
     const cJSON *it = cJSON_GetObjectItem(j, k);
     if (cJSON_IsNumber(it)) { *out = it->valuedouble; return true; }
     if (cJSON_IsBool(it)) { *out = cJSON_IsTrue(it) ? 1 : 0; return true; }
-    if (cJSON_IsString(it) && it->valuestring[0]) { *out = strtod(it->valuestring, NULL); return true; }
+    if (cJSON_IsString(it) && it->valuestring[0]) {
+        // Nombre decimal complet uniquement : "new", "12abc", "0x1" refuses (#98)
+        const char *str = it->valuestring;
+        if (strspn(str, "0123456789+-.eE ") != strlen(str)) return false;
+        char *end = NULL;
+        double d = strtod(it->valuestring, &end);
+        while (end && *end == ' ') end++;
+        if (!end || end == it->valuestring || *end) return false;
+        *out = d;
+        return true;
+    }
     return false;
+}
+
+/** Identifiant de zone : absent ou "new" -> nouvelle zone (-1), sinon entier >= 0 exige. */
+static bool zone_id(const cJSON *j, int *out)
+{
+    const cJSON *it = cJSON_GetObjectItem(j, "id");
+    if (!it || cJSON_IsNull(it) || (cJSON_IsString(it) && (!it->valuestring[0] || !strcmp(it->valuestring, "new")))) {
+        *out = -1;
+        return true;
+    }
+    double d;
+    if (cJSON_IsBool(it) || !j_num(j, "id", &d) || d < 0 || d != (double)(int)d) return false;
+    *out = (int)d;
+    return true;
 }
 
 static esp_err_t thermo_get(httpd_req_t *req)
@@ -104,11 +128,14 @@ static esp_err_t thermo_post(httpd_req_t *req)
     cJSON *j = read_body(req);
     if (!j) return ESP_OK;
     esp_err_t ret;
-    double id = -1, v = 0;
-    bool has_id = j_num(j, "id", &id);           // "new" : non numerique -> nouvelle zone
+    int id = -1;
+    double v = 0;
+    bool has_id = zone_id(j, &id);               // "new" ou absent : -1 (nouvelle zone)
     if (!strcmp(r, "save")) {
-        int n = thermostat_save_zone(has_id ? (int)id : -1, j);
-        if (n < 0) {
+        int n = has_id ? thermostat_save_zone(id, j) : -2;
+        if (n == -2) {
+            ret = send_status(req, "400 Bad Request", "Identifiant de zone invalide");
+        } else if (n < 0) {
             ret = send_status(req, "400 Bad Request", "Nombre maximal de zones atteint");
         } else {
             char buf[64];
@@ -120,20 +147,20 @@ static esp_err_t thermo_post(httpd_req_t *req)
         return ret;
     }
     bool ok = false;
-    if (!has_id) {
+    if (!has_id || id < 0) {
         ok = false;
     } else if (!strcmp(r, "setpoint")) {
-        ok = j_num(j, "value", &v) && thermostat_set_setpoint((int)id, (float)v);
+        ok = j_num(j, "value", &v) && thermostat_set_setpoint(id, (float)v);
     } else if (!strcmp(r, "force")) {
-        ok = j_num(j, "mode", &v) && thermostat_set_force((int)id, (int)v);
+        ok = j_num(j, "mode", &v) && thermostat_set_force(id, (int)v);
     } else if (!strcmp(r, "mode")) {
-        ok = j_num(j, "heat", &v) && thermostat_set_mode((int)id, v != 0);
+        ok = j_num(j, "heat", &v) && thermostat_set_mode(id, v != 0);
     } else if (!strcmp(r, "frost")) {
-        ok = j_num(j, "on", &v) && thermostat_set_frost((int)id, v != 0);
+        ok = j_num(j, "on", &v) && thermostat_set_frost(id, v != 0);
     } else if (!strcmp(r, "toggle")) {
-        ok = thermostat_toggle((int)id);
+        ok = thermostat_toggle(id);
     } else if (!strcmp(r, "delete")) {
-        ok = thermostat_delete((int)id);
+        ok = thermostat_delete(id);
     } else {
         cJSON_Delete(j);
         return send_status(req, "404 Not Found", "Route inconnue");
@@ -151,8 +178,10 @@ static bool legacy_num(httpd_req_t *req, const char *key, double *out)
     char q[64], v[16];
     if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK ||
         httpd_query_key_value(q, key, v, sizeof(v)) != ESP_OK || !v[0]) return false;
-    *out = strtod(v, NULL);
-    return true;
+    if (strspn(v, "0123456789+-.eE") != strlen(v)) return false;
+    char *end = NULL;
+    *out = strtod(v, &end);
+    return end && end != v && !*end;             // "abc" ne vaut pas 0 (#98)
 }
 
 static esp_err_t legacy_result(httpd_req_t *req, bool ok)

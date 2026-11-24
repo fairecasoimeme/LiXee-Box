@@ -868,6 +868,15 @@ static esp_err_t parse_template_json(devdata_template_t *tmpl, const char *json_
         }
     }
 
+    // "occupancy_tech" : techno declaree par le template pour le capteur
+    // Occupancy Sensing (issue #97), repris par matter_profile_build().
+    tmpl->occupancy_tech[0] = '\0';
+    cJSON *occ_tech = cJSON_GetObjectItem(model_obj, "occupancy_tech");
+    if (occ_tech && cJSON_IsString(occ_tech) && occ_tech->valuestring) {
+        strncpy(tmpl->occupancy_tech, occ_tech->valuestring, sizeof(tmpl->occupancy_tech) - 1);
+        tmpl->occupancy_tech[sizeof(tmpl->occupancy_tech) - 1] = '\0';
+    }
+
     tmpl->loaded = true;
     cJSON_Delete(root);
 

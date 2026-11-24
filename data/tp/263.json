@@ -45,7 +45,8 @@
           "attribut": 32,
           "type": "numeric",
           "writable": true,
-          "typewritable": 33
+          "typewritable": 33,
+          "visible": 0
         },
         {
           "name": "occupancy_sensitivity",
@@ -53,15 +54,17 @@
           "attribut": 34,
           "type": "numeric",
           "writable": true,
-          "typewritable": 32
+          "typewritable": 32,
+          "visible": 0
         },
         {
           "name": "illumination",
           "cluster": "FC11",
-          "attribut": 0
+          "attribut": 8193
         }
       ],
       "bind": "1030",
+      "occupancy_tech": "radar",
       "report": [
         {
           "cluster": "0406",

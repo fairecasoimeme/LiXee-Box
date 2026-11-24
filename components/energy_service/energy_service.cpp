@@ -21,6 +21,7 @@
 #include "device_data.h"
 #include "config_manager.h"
 #include "zigate_devices.h"
+#include "poll_engine.h"
 #include "ntp_sync.h"
 
 #include "esp_log.h"
@@ -236,6 +237,96 @@ static int linky_mode(uint64_t zl)
 
 static bool mode_is_tri(int mode)       { return mode == 2 || mode == 3 || mode == 7; }
 static bool mode_is_histo(int mode)     { return mode == 0 || mode == 2; }
+
+// ============================================================================
+// NTARF relu a chaque changement de libelle (issue #104)
+//
+// En standard, le libelle LTARF (FF66/16) est envoye par le ZLinky a chaque
+// changement, mais son texte depend de l'offre ("HEURE WEEK-END"...). NTARF
+// (FF66/513) donne l'index de toutes les offres, mais n'etait relu que toutes
+// les 60 min : il retardait le prix d'une heure. Il est donc relu ~2 s apres
+// chaque nouveau libelle, et ne sert d'index que s'il a ete recu depuis. Si
+// sa valeur n'a pas bouge, il est relu une fois de plus (trame TIC pas encore
+// traitee par le ZLinky au moment du rapport du libelle).
+// ============================================================================
+
+#define NTARF_ZL_MAX       4
+#define NTARF_READ_MS      2000
+#define NTARF_RETRY_MS     3000
+
+typedef struct {
+    uint64_t ieee;
+    char     label[24];
+    int      ntarf;          // derniere valeur recue (0 : inconnue)
+    int      before;         // valeur au changement de libelle
+    bool     fresh;          // NTARF recu depuis le dernier changement de libelle
+    uint8_t  retries;
+} ntarf_state_t;
+
+static ntarf_state_t s_nt[NTARF_ZL_MAX];
+static portMUX_TYPE s_nt_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static ntarf_state_t *nt_find(uint64_t ieee)
+{
+    for (int i = 0; i < NTARF_ZL_MAX; i++) if (s_nt[i].ieee == ieee) return &s_nt[i];
+    return NULL;
+}
+
+void energy_tariff_label_received(uint64_t ieee)
+{
+    // Mode du ZLinky lui-meme seulement : juste apres l'appairage, le libelle
+    // arrive avant FF66/0300 et le mode par defaut de la config (historique)
+    // faisait ignorer ce premier libelle jusqu'au rapport suivant (5 min)
+    int64_t mode;
+    if (!ieee || !zigate_devices_find_by_ieee(ieee) ||
+        (dd_num(ieee, 0xFF66, 0x0300, &mode) && mode_is_histo((int)mode))) return;
+    char label[24];
+    dd_str(ieee, 0xFF66, 16, label, sizeof(label));
+    int64_t cur = 0;
+    if (!dd_num(ieee, 0xFF66, 513, &cur)) cur = 0;
+    bool changed = false;
+    portENTER_CRITICAL(&s_nt_mux);
+    ntarf_state_t *st = nt_find(ieee);
+    if (!st) st = nt_find(0);
+    if (!st) st = &s_nt[0];                      // plus de 4 ZLinky : le premier est recycle
+    if (st->ieee != ieee) { memset(st, 0, sizeof(*st)); st->ieee = ieee; }
+    if (strcmp(st->label, label) != 0) {
+        strlcpy(st->label, label, sizeof(st->label));
+        st->before = (int)cur;
+        st->fresh = false;
+        st->retries = 1;
+        changed = true;
+    }
+    portEXIT_CRITICAL(&s_nt_mux);
+    if (changed) poll_engine_read_later(ieee, 0xFF66, 513, NTARF_READ_MS);
+}
+
+void energy_tariff_ntarf_received(uint64_t ieee, int ntarf)
+{
+    bool reread = false;
+    portENTER_CRITICAL(&s_nt_mux);
+    ntarf_state_t *st = ieee ? nt_find(ieee) : NULL;
+    if (st) {
+        if (!st->fresh) {
+            if (ntarf == st->before && st->retries > 0) { st->retries--; reread = true; }
+            else st->fresh = true;
+        }
+        st->ntarf = ntarf;
+    }
+    portEXIT_CRITICAL(&s_nt_mux);
+    if (reread) poll_engine_read_later(ieee, 0xFF66, 513, NTARF_RETRY_MS);
+}
+
+/** NTARF (1..10) relu depuis le dernier libelle, sinon 0. */
+static int ntarf_fresh(uint64_t ieee)
+{
+    int v = 0;
+    portENTER_CRITICAL(&s_nt_mux);
+    ntarf_state_t *st = ieee ? nt_find(ieee) : NULL;
+    if (st && st->fresh && st->ntarf >= 1 && st->ntarf <= 10) v = st->ntarf;
+    portEXIT_CRITICAL(&s_nt_mux);
+    return v;
+}
 
 static const char *mode_label(int mode)
 {
@@ -2449,6 +2540,7 @@ typedef struct {
     int      tomorrow;
     uint16_t index;
     bool     known;      // tarif identifie : sinon index = 256 par defaut, sans prix affiche
+    const char *source;  // origine de l'index : "ptec", "ntarf", "label", "ntarfLora", "none"
 } tariff_info_t;
 
 /**
@@ -2470,11 +2562,13 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
     ti->today = ti->tomorrow = 0;
     ti->index = 256;
     ti->known = false;
+    ti->source = "none";
 
     if (mode_is_histo(mode)) {
         char ptec[16];
         tariff_text(zl, ptec, sizeof(ptec));
         ti->index = ptec_to_index(ptec);
+        ti->source = "ptec";
         static const struct { const char *p; const char *name; const char *bg; int tempo; } T[] = {
             { "HCJB", "HC Bleu", "#2980b9", 1 },  { "HPJB", "HP Bleu", "#154360", 1 },
             { "HCJW", "HC Blanc", "#7f8c8d", 2 }, { "HPJW", "HP Blanc", "#000000", 2 },
@@ -2513,28 +2607,39 @@ static void tariff_info(uint64_t zl, int mode, tariff_info_t *ti)
     bool is_hp = strstr(up, "HP") || strstr(up, "PLEINE");
     bool is_hc = strstr(up, "HC") || strstr(up, "CREUSE");
     int color = strstr(up, "BLEU") ? 0 : strstr(up, "BLANC") ? 1 : strstr(up, "ROUGE") ? 2 : -1;
-    // Index d'apres le seul libelle FF66/16, envoye a chaque changement, avec
-    // la numerotation de l'historique (HC 256, HP 258 ; Tempo HC/HP Bleu
-    // 256/258, Blanc 260/262, Rouge 264/266 ; EJP HN 256, PM 258). NTARF
-    // (FF66/513) n'etait relu que toutes les 60 min : le prix restait celui
-    // du tarif precedent (ex. HP Blanc affiche au prix HP Bleu).
+    // Index : NTARF relu juste apres le dernier libelle (ntarf_fresh, toutes
+    // les offres, ex. "HEURE WEEK-END" -> EASF03, issue #104). En attendant
+    // sa reponse, ou s'il ne repond pas, d'apres le libelle FF66/16 avec la
+    // numerotation de l'historique (HC 256, HP 258 ; Tempo HC/HP Bleu
+    // 256/258, Blanc 260/262, Rouge 264/266 ; EJP HN 256, PM 258). Jamais
+    // le NTARF du poll horaire : le prix restait celui du tarif precedent
+    // (ex. HP Blanc affiche au prix HP Bleu).
     // Emetteur LoRa (absent des appareils Zigbee) : NTARF arrive dans chaque
     // trame de releve, alors que le libelle depend d'une trame a part ; il
     // donne l'index en repli d'un libelle absent ou inconnu.
     int64_t ntarf, stge;
-    if (is_hp != is_hc) {
+    int nt = ntarf_fresh(zl);
+    if (nt) {
+        ti->index = (uint16_t)(256 + 2 * (nt - 1));
+        ti->known = true;
+        ti->source = "ntarf";
+    } else if (is_hp != is_hc) {
         ti->index = (uint16_t)(256 + (color >= 0 ? 4 * color : 0) + (is_hp ? 2 : 0));
         ti->known = true;
+        ti->source = "label";
     } else if (strstr(up, "POINTE")) {
         ti->index = 258;
         ti->known = true;
+        ti->source = "label";
     } else if (!strncmp(up, "BASE", 4) || strstr(up, "TOUTE") || strstr(up, "NORMALE")) {
         ti->index = 256;
         ti->known = true;
+        ti->source = "label";
     } else if (!zigate_devices_find_by_ieee(zl) &&
                dd_num(zl, 0xFF66, 513, &ntarf) && ntarf >= 1 && ntarf <= 10) {
         ti->index = (uint16_t)(256 + 2 * (ntarf - 1));
         ti->known = true;
+        ti->source = "ntarfLora";
     }
     if (dd_stge(zl, &stge)) {
         ti->today = (int)((stge >> 24) & 3);
@@ -2641,6 +2746,7 @@ char *energy_tariff_json(void)
     double pr = ti.known ? price_for_attr(ti.index) : 0;
     if (ti.known) cJSON_AddNumberToObject(root, "index", ti.index);
     else cJSON_AddNullToObject(root, "index");
+    cJSON_AddStringToObject(root, "indexSource", ti.source);
     if (pr > 0) cJSON_AddNumberToObject(root, "price", round(pr * 10000.0) / 10000.0);
     else cJSON_AddNullToObject(root, "price");
     // Prochain changement (powerStatsNextChange de la Box) : aucun en Base,

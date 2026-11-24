@@ -1071,8 +1071,8 @@
       '<h5 class="card-title mb-4 mt-4">Réseau Zigbee</h5>' +
       '<div class="card mx-auto shadow-sm"><div class="card-body">' +
         '<div><button class="btn btn-secondary zb-cmd" data-cmd="CleanGhosts" ' +
-          'title="Efface de la table de la ZiGate les appareils qu\'elle connaît encore mais que la box ne connaît plus (appareils supprimés, fantômes)." ' +
-          'data-confirm="Effacer de la table de la ZiGate les appareils inconnus de la passerelle ?">Nettoyer la table de la ZiGate</button> ' +
+          'title="Cherche dans la table de la ZiGate les appareils qu\'elle connaît encore mais que la box ne connaît plus (appareils supprimés, fantômes), les retire de la table restaurée et relance le réseau Zigbee." ' +
+          'data-confirm="Chercher les fantômes dans la table de la ZiGate et relancer son réseau ?">Nettoyer la table de la ZiGate</button> ' +
         '<span id="zb-ghost" class="small text-muted"></span></div>' +
       '</div></div>' +
       // Outil de lecture d'attribut a la demande
@@ -1113,7 +1113,7 @@
         }
         $('#zb-ghost').text(c.ghostPending ? 'en cours...' :
           c.ghostResult === -2 ? 'pas de r\u00e9ponse de la ZiGate' :
-          (c.ghostResult >= 0 ? c.ghostResult + ' entr\u00e9e(s) effac\u00e9e(s)' : ''));
+          (c.ghostResult >= 0 ? c.ghostResult + ' fant\u00f4me(s) trouv\u00e9(s), d\u00e9tail dans la console' : ''));
       }).fail(function() { $('#zb-coord').html('<div class="text-danger">Erreur de chargement.</div>'); });
     }
 
