@@ -694,6 +694,11 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         if (p->heat) f |= cluster::thermostat::feature::heating::get_id();
         if (p->cool) f |= cluster::thermostat::feature::cooling::get_id();
         if (p->presets) f |= cluster::thermostat::feature::presets::get_id();
+        // LTNE (issue #109) : zone virtuelle sans capteur de temperature assigne ->
+        // LocalTemperature (mandatoryConform, nullable) ne sera jamais renseigne,
+        // on le signale au controleur plutot que de laisser un null permanent
+        // indiscernable d'un capteur simplement pas encore lu.
+        if (p->ltne) f |= cluster::thermostat::feature::local_temperature_not_exposed::get_id();
         cfg.thermostat.feature_flags = f;
         // ControlSequenceOfOperation : 2 chauffage seul, 0 froid seul, 4 les deux
         cfg.thermostat.control_sequence_of_operation = (p->heat && p->cool) ? 4 : (p->heat ? 2 : 0);
@@ -723,8 +728,9 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         // thermostat Zigbee (TRVZB, tetes Tuya, AC201A...) mesure sa propre temperature et ne
         // doit pas l'annoncer comme distante. LocalTemperature d'un thermostat virtuel vient
         // toujours d'un capteur Zigbee distant (jamais d'un capteur integre a l'endpoint) ->
-        // bit kLocalTemperature (0x01) systematique sur ce chemin.
-        if (th && p->virtual_zone) cluster::thermostat::attribute::create_remote_sensing(th, 0x01);
+        // bit kLocalTemperature (0x01) systematique sur ce chemin, sauf si LTNE
+        // (issue #109) : pas de capteur du tout, donc rien a annoncer comme distant.
+        if (th && p->virtual_zone && !p->ltne) cluster::thermostat::attribute::create_remote_sensing(th, 0x01);
         if (presets_delegate) {
             if (s_thermo_preset_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
                 s_thermo_preset_delegates[s_thermo_preset_delegate_count] = presets_delegate;
