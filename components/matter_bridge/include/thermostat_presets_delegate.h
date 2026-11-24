@@ -250,25 +250,13 @@ public:
 
         matter_preset_t &slot = m_pending[m_pending_count];
         if (handle == kHandleComfort || handle == kHandleFrost) {
-            // Normalement resoumis tel quel par le controleur (ReplaceAll) : contenu
-            // ignore, le commit saute ces entrees (pilotees par la zone, voir
-            // SyncFromZone()). Mais si le controleur soumet une consigne ou un nom
-            // different de l'etat courant, c'est une tentative explicite de
-            // modification de Confort/Hors-gel via ce flux -- refusee plutot
-            // qu'ignoree silencieusement (revue PR #83), ces presets fixes n'etant
-            // editables que depuis la zone elle-meme.
-            bool frost = (handle == kHandleFrost);
-            auto heatOpt = preset.GetHeatingSetpoint();
-            if (heatOpt.HasValue() && heatOpt.Value() != (frost ? m_frost_sp : m_comfort_sp)) {
-                return CHIP_IM_GLOBAL_STATUS(ConstraintError);
-            }
-            auto nameOpt = preset.GetName();
-            if (nameOpt.HasValue() && !nameOpt.Value().IsNull()) {
-                CharSpan expectedName = frost ? CharSpan::fromCharString("Hors-gel") : CharSpan::fromCharString("Confort");
-                if (!nameOpt.Value().Value().data_equal(expectedName)) {
-                    return CHIP_IM_GLOBAL_STATUS(ConstraintError);
-                }
-            }
+            // Resoumis tel quel par le controleur (ReplaceAll) : contenu ignore, le
+            // commit saute ces entrees (pilotees par la zone, voir SyncFromZone()).
+            // Un rejet sur ecart avec l'etat courant a ete essaye (revue PR #83) et
+            // retire (ConstraintError sur un simple ajout de preset, confirme sur
+            // materiel reel) : la valeur resoumise par le controleur est celle lue
+            // avant l'edition, qui peut differer legerement de l'etat live au moment
+            // du commit sans qu'il y ait eu de modification volontaire.
             slot.handle = handle;
             slot.name[0] = '\0';
             slot.heating_setpoint = 0;
