@@ -307,6 +307,9 @@ typedef struct { uint16_t keys; uint32_t bytes; uint16_t entries; } chip_cnt_t;
 typedef struct {
     uint8_t    index;
     bool       noc, icac, rcac, opkey;
+    bool       has_meta;            // f/<n>/m lu : fabricant et libelle du controleur
+    uint16_t   vendor;
+    char       label[33];
     chip_cnt_t c;
 } chip_fabric_stat_t;
 typedef struct {
@@ -315,7 +318,80 @@ typedef struct {
     chip_cnt_t sessions, subscriptions, other;
     char       other_keys[CHIP_DIAG_OTHER_MAX][16];
     int        n_other;
+    // g/fidx : prochain numero de fabric et liste des fabrics de la table
+    int        next_index;          // -1 inconnu
+    uint8_t    table[CHIP_DIAG_FABRIC_MAX];
+    int        n_table;
+    bool       has_index;
 } chip_kvs_stat_t;
+
+// Lecture minimale d'un TLV Matter (structure de premier niveau) : appelle
+// cb pour chaque element a etiquette de contexte de la structure externe,
+// et pour chaque entier non signe d'un tableau (in_array = etiquette du tableau).
+typedef void (*tlv_cb_t)(void *ctx, int tag, int in_array, uint8_t type,
+                         uint64_t uval, const uint8_t *str, size_t slen);
+
+static void tlv_scan(const uint8_t *b, size_t len, tlv_cb_t cb, void *ctx)
+{
+    size_t p = 0;
+    int depth = 0, array_tag = -1;
+    while (p < len) {
+        uint8_t ctl = b[p++];
+        uint8_t type = ctl & 0x1F, form = ctl >> 5;
+        int tag = -1;
+        if (form == 1) { if (p >= len) return; tag = b[p++]; }
+        else if (form != 0) return;                             // etiquettes longues : absentes ici
+        if (type == 0x18) { if (--depth == 1) array_tag = -1; if (depth <= 0) return; continue; }
+        if (type == 0x15 || type == 0x16 || type == 0x17) {
+            depth++;
+            if (depth == 2 && type == 0x16) array_tag = tag;
+            continue;
+        }
+        uint64_t v = 0;
+        const uint8_t *s = NULL;
+        size_t sl = 0;
+        if (type <= 0x07) {                                     // entier signe / non signe
+            size_t n = (size_t)1 << (type & 3);
+            if (p + n > len) return;
+            for (size_t i = 0; i < n; i++) v |= (uint64_t)b[p + i] << (8 * i);
+            p += n;
+        } else if (type == 0x08 || type == 0x09) {              // booleen
+            v = type & 1;
+        } else if (type == 0x0A || type == 0x0B) {              // flottant
+            p += type == 0x0A ? 4 : 8;
+        } else if (type >= 0x0C && type <= 0x13) {              // chaine / octets
+            size_t n = (size_t)1 << (type & 3);
+            if (p + n > len) return;
+            for (size_t i = 0; i < n; i++) sl |= (size_t)b[p + i] << (8 * i);
+            p += n;
+            if (p + sl > len) return;
+            s = b + p;
+            p += sl;
+        } else if (type != 0x14) {                              // null : sans valeur
+            return;
+        }
+        if (depth == 1 && tag >= 0) cb(ctx, tag, -1, type, v, s, sl);
+        else if (depth == 2 && array_tag >= 0) cb(ctx, -1, array_tag, type, v, s, sl);
+    }
+}
+
+static void fabric_meta_cb(void *ctx, int tag, int, uint8_t type, uint64_t v, const uint8_t *s, size_t sl)
+{
+    chip_fabric_stat_t *f = (chip_fabric_stat_t *)ctx;
+    if (tag == 0 && type <= 0x07) f->vendor = (uint16_t)v;
+    else if (tag == 1 && type >= 0x0C && type <= 0x0F && s) {
+        size_t n = sl < sizeof(f->label) - 1 ? sl : sizeof(f->label) - 1;
+        memcpy(f->label, s, n);
+        f->label[n] = '\0';
+    }
+}
+
+static void fabric_index_cb(void *ctx, int tag, int in_array, uint8_t type, uint64_t v, const uint8_t *, size_t)
+{
+    chip_kvs_stat_t *s = (chip_kvs_stat_t *)ctx;
+    if (tag == 0) s->next_index = type <= 0x07 ? (int)v : -1;
+    else if (in_array == 1 && type <= 0x07 && s->n_table < CHIP_DIAG_FABRIC_MAX) s->table[s->n_table++] = (uint8_t)v;
+}
 
 static bool chip_key_hashed(const char *k)
 {
@@ -361,9 +437,25 @@ static void chip_kvs_account(chip_kvs_stat_t *s, nvs_handle_t h, const nvs_entry
                 else if (!strcmp(rest, "i")) f->icac = true;
                 else if (!strcmp(rest, "r")) f->rcac = true;
                 else if (!strcmp(rest, "o")) f->opkey = true;
+                else if (!strcmp(rest, "m") && h && len > 0 && len <= 64) {
+                    uint8_t mb[64];
+                    size_t ml = sizeof(mb);
+                    if (nvs_get_blob(h, k, mb, &ml) == ESP_OK) {
+                        f->has_meta = true;
+                        tlv_scan(mb, ml, fabric_meta_cb, f);
+                    }
+                }
                 chip_cnt_add(&f->c, len, entries);
                 return;
             }
+        }
+    }
+    if (!strcmp(k, "g/fidx") && h && len > 0 && len <= 64) {
+        uint8_t ib[64];
+        size_t il = sizeof(ib);
+        if (nvs_get_blob(h, k, ib, &il) == ESP_OK) {
+            s->has_index = true;
+            tlv_scan(ib, il, fabric_index_cb, s);
         }
     }
     if (chip_key_hashed(k) || !strcmp(k, "g/sri") || !strncmp(k, "g/s/", 4)) {
@@ -395,7 +487,24 @@ static void chip_kvs_json(cJSON *root, const chip_kvs_stat_t *s)
         // Fabric complet : certificat d'operateur (NOC), racine (RCAC) et cle
         cJSON_AddBoolToObject(o, "complete", f->noc && f->rcac && f->opkey);
         cJSON_AddBoolToObject(o, "icac", f->icac);
+        // Controleur : identifiant fabricant (Apple 0x1349, Google 0x6006,
+        // Nabu Casa 0x134B, test / chip-tool 0xFFF1...) et libelle
+        if (f->has_meta) {
+            char vid[8];
+            snprintf(vid, sizeof(vid), "0x%04X", f->vendor);
+            cJSON_AddStringToObject(o, "vendorId", vid);
+            cJSON_AddStringToObject(o, "label", f->label);
+        }
+        bool listed = false;
+        for (int t = 0; t < s->n_table; t++) if (s->table[t] == f->index) listed = true;
+        if (s->has_index) cJSON_AddBoolToObject(o, "inTable", listed);
         cJSON_AddItemToArray(fa, o);
+    }
+    if (s->has_index) {
+        cJSON *ti = cJSON_AddObjectToObject(ck, "fabricTable");
+        if (s->next_index >= 0) cJSON_AddNumberToObject(ti, "nextIndex", s->next_index);
+        cJSON *ta = cJSON_AddArrayToObject(ti, "indexes");
+        for (int t = 0; t < s->n_table; t++) cJSON_AddItemToArray(ta, cJSON_CreateNumber(s->table[t]));
     }
     chip_cnt_json(cJSON_AddObjectToObject(ck, "sessionResumption"), &s->sessions);
     chip_cnt_json(cJSON_AddObjectToObject(ck, "subscriptions"), &s->subscriptions);
@@ -419,6 +528,7 @@ static esp_err_t api_system_nvs_handler(httpd_req_t *req)
         httpd_resp_set_status(req, "503 Service Unavailable");
         return httpd_resp_sendstr(req, "{\"status\":\"error\",\"message\":\"Mémoire insuffisante\"}");
     }
+    cks->next_index = -1;
     int n_ns = 0, n_ep = 0, matter_keys = 0;
     nvs_handle_t chip_h = 0;
     if (nvs_open_from_partition("nvs", "CHIP_KVS", NVS_READONLY, &chip_h) != ESP_OK) chip_h = 0;
