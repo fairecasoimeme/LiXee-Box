@@ -613,6 +613,13 @@ static void apply_link(bridge_device_mapping_t *m, const matter_link_t *l, doubl
         else if (milli != 0) elec->SetRMSVoltage(milli);
         break;
     }
+    case ML_EL_POWER_FACTOR: {
+        ElecPowerDelegate *elec = matter_bridge_get_elec_delegate(ep);
+        if (!elec) break;
+        // Gabarit en %, cible Matter en 1/100e de % (-10000..10000)
+        elec->SetPowerFactor(clamp64(v * 100, -10000, 10000));
+        break;
+    }
     case ML_EL_ENERGY:
         if (v >= 0) matter_bridge_report_energy_index(ep, l->energy_attr, (uint64_t)clamp64(v, 0, INT64_MAX / 2000));
         break;

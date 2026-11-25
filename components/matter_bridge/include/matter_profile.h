@@ -60,6 +60,7 @@ typedef enum {
     ML_EL_TOTAL_APPARENT,
     ML_EL_VOLTAGE,
     ML_EL_CURRENT,
+    ML_EL_POWER_FACTOR,
     ML_EL_ENERGY,           // energie cumulee importee
     ML_SWITCH_PRESS,        // bouton : un appui par rapport
     ML_SWITCH_MULTI,        // bouton : valeur = nombre d'appuis (0 = appui long)

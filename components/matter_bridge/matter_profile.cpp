@@ -182,6 +182,7 @@ static cls_t classify_standard(const devdata_template_state_t *s, bool has_onoff
         else if (a == 0x050B && !zlinky) c.target = ML_EL_ACTIVE_POWER;
         else if (a == 0x050F) c.target = ML_EL_APPARENT_POWER;
         else if (a == 0x0306) c.target = ML_EL_TOTAL_APPARENT;
+        else if (a == 0x0510) c.target = ML_EL_POWER_FACTOR;
         break;
     case 0x0B01:        // Meter Identification (ZLinky)
     case 0xFF66:        // TIC du ZLinky : pas d'equivalent Matter
@@ -228,6 +229,8 @@ static cls_t classify_generic(const devdata_template_state_t *s)
         c.target = ML_EL_ACTIVE_POWER;
     } else if (ieq(dc, "apparent_power") || (!dc[0] && (!strcmp(u, "VA") || !strcmp(u, "kVA")))) {
         c.target = ML_EL_APPARENT_POWER;
+    } else if (ieq(dc, "power_factor")) {
+        c.target = ML_EL_POWER_FACTOR;
     } else if ((ieq(dc, "energy") || (!dc[0] && (!strcmp(u, "Wh") || !strcmp(u, "kWh")))) &&
                !name_is_export(n)) {
         c.target = ML_EL_ENERGY;
@@ -319,7 +322,8 @@ static uint32_t cap_of(uint8_t target)
     case ML_EL_APPARENT_POWER:
     case ML_EL_TOTAL_APPARENT:
     case ML_EL_VOLTAGE:
-    case ML_EL_CURRENT:        return MCAP_ELECTRICAL;
+    case ML_EL_CURRENT:
+    case ML_EL_POWER_FACTOR:   return MCAP_ELECTRICAL;
     case ML_EL_ENERGY:         return MCAP_ENERGY;
     case ML_SWITCH_PRESS:
     case ML_SWITCH_MULTI:      return MCAP_SWITCH;
@@ -494,6 +498,7 @@ const char *matter_link_target_name(uint8_t t)
     case ML_EL_TOTAL_APPARENT: return "Puissance apparente totale";
     case ML_EL_VOLTAGE:        return "Tension";
     case ML_EL_CURRENT:        return "Courant";
+    case ML_EL_POWER_FACTOR:   return "Facteur de puissance";
     case ML_EL_ENERGY:         return "Energie";
     case ML_SWITCH_PRESS:      return "Bouton";
     case ML_SWITCH_MULTI:      return "Bouton multi";

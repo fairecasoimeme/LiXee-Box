@@ -548,6 +548,7 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
             cluster::electrical_power_measurement::attribute::create_voltage(epm, nullable<int64_t>());
             cluster::electrical_power_measurement::attribute::create_active_current(epm, nullable<int64_t>());
             cluster::electrical_power_measurement::attribute::create_apparent_power(epm, nullable<int64_t>());
+            cluster::electrical_power_measurement::attribute::create_power_factor(epm, nullable<int64_t>());
         }
 
         // Energie cumulee importee (index du compteur, en mWh). Absente du
@@ -605,6 +606,7 @@ static void add_electrical_clusters(endpoint_t *ep, bool with_power, bool with_e
             cluster::electrical_power_measurement::attribute::create_voltage(epm, nullable<int64_t>());
             cluster::electrical_power_measurement::attribute::create_active_current(epm, nullable<int64_t>());
             cluster::electrical_power_measurement::attribute::create_apparent_power(epm, nullable<int64_t>());
+            cluster::electrical_power_measurement::attribute::create_power_factor(epm, nullable<int64_t>());
         }
         if (s_elec_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
             s_elec_delegates[s_elec_delegate_count] = delegate;
