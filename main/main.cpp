@@ -794,6 +794,24 @@ static void on_device_setup_progress(uint64_t ieee, const char *step)
 }
 
 /**
+ * Cause courte d'un echec de remise 0x8702 (codes MAC, NWK et APS Zigbee),
+ * pour le bandeau ; NULL si le code n'est pas reconnu (code seul).
+ */
+static const char *radio_fail_reason(uint8_t status)
+{
+    switch (status) {
+    case 0xE9: return "pas d'accusé radio";
+    case 0xA7: return "pas d'accusé de l'appareil";
+    case 0xD4: return "pas de route vers l'appareil";
+    case 0xD0: return "route cassée";
+    case 0xCF: return "route introuvable";
+    case 0xE1: return "canal radio occupé";
+    case 0xF0: return "non récupéré, appareil en veille";
+    default:   return NULL;
+    }
+}
+
+/**
  * Accuses radio : regles, et bandeau d'erreur pour un paquet non remis a un
  * appareil (0x8702, comme la LiXee-Box), au plus un par appareil et par minute.
  */
@@ -815,10 +833,12 @@ static void on_zigate_radio(uint16_t msg_type, uint16_t short_addr, uint8_t stat
         ESP_LOGI(TAG, "Erreur paquet %02x vers 0x%04X (inconnue du pont) : pas d'alerte", status, short_addr);
         return;
     }
-    char name[64], msg[128];
+    char name[64], msg[160];
     device_name(d->ieee_addr, name, sizeof(name));
     if (!name[0]) return;
-    snprintf(msg, sizeof(msg), "Erreur paquet : %02x - Appareil : %s", status, name);
+    const char *why = radio_fail_reason(status);
+    if (why) snprintf(msg, sizeof(msg), "Erreur paquet %02X (%s) - Appareil : %s", status, why, name);
+    else     snprintf(msg, sizeof(msg), "Erreur paquet %02X - Appareil : %s", status, name);
     notifications_toast(1, msg);
 }
 
