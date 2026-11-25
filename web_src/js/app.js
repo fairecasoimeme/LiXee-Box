@@ -2824,8 +2824,10 @@
                 '<h5>Tarifs <button class="btn btn-link btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#tarifLinky">+/-</button></h5>' +
                 '<div class="collapse" id="tarifLinky">' +
                   '<div class="mb-3"><label>Tarif abonnement (&euro; / mois)</label><input class="form-control decimal-input" id="cfg-tarifAbo" type="text"></div>' +
-                  '<div class="mb-3"><label>Accise sur l\'Electricit&eacute; (&euro; / kWh)</label><input class="form-control decimal-input" id="cfg-tarifCSPE" type="text"></div>' +
-                  '<div class="mb-3"><label>CTA (&euro; / mois)</label><input class="form-control decimal-input" id="cfg-tarifCTA" type="text"></div>' +
+                  '<div class="mb-3"><label>Accise sur l\'Electricit&eacute; (&euro; / kWh)</label><input class="form-control decimal-input" id="cfg-tarifCSPE" type="text">' +
+                    '<div class="form-text">Ancienne CSPE : taxe par kWh consomm&eacute;, ligne &laquo; Accise sur l\'&eacute;lectricit&eacute; &raquo; du d&eacute;tail des taxes de la facture.</div></div>' +
+                  '<div class="mb-3"><label>CTA (&euro; / mois)</label><input class="form-control decimal-input" id="cfg-tarifCTA" type="text">' +
+                    '<div class="form-text">Contribution Tarifaire d\'Acheminement : montant fixe, ligne &laquo; CTA &raquo; de la facture, &agrave; c&ocirc;t&eacute; de l\'abonnement. Ramener au mois si la facture couvre plusieurs mois.</div></div>' +
                   '<div class="mb-3"><label>Tarif BASE/HC/EJPHN/BBRHCJB/EASF01 (&euro; / kWh)</label><input class="form-control decimal-input" id="cfg-tarifIdx2" type="text"></div>' +
                   '<div class="mb-3"><label>Tarif HP/EJPHPM/BBRHPJB/EASF02 (&euro; / kWh)</label><input class="form-control decimal-input" id="cfg-tarifIdx3" type="text"></div>' +
                   '<div class="mb-3"><label>Tarif BBRHCJW/EASF03 (&euro; / kWh)</label><input class="form-control decimal-input" id="cfg-tarifIdx4" type="text"></div>' +
