@@ -247,4 +247,12 @@ Toutes ces routes demandent la session (sauf `/api/ip/wake`) et passent par les 
 **Non testé :**
 - l'affichage des valeurs dans un contrôleur Matter (le Pro n'est appairé à aucun contrôleur) ;
 - une vraie coupure de délestage, déclenchée seulement par le compteur ;
-- un Shelly avec authentification (Digest), le profil monophasé, un Tasmota.
+- un Shelly avec authentification (Digest), le profil monophasé.
+
+**Testé avec une vraie prise Tasmota** (NOUS A1T, ESP8266, Tasmota 16.0.0, sans mot de passe) :
+- détectée comme « Tasmota prise avec mesure », MAC et nom lus ;
+- état, puissance, tension, courant et énergie identiques à ce que renvoie la prise ;
+- ON / OFF depuis la box, état relu aussitôt ;
+- pontée dans Matter (endpoint 17).
+
+**Corrigé pendant ce test :** le relevé par `Status 0` (3 Ko) prenait 2,7 à 4,3 s sur cet ESP8266 au signal faible, au-delà du délai HTTP de 3 s : la prise passait injoignable alors que les commandes passaient. Le modèle relève maintenant `Status 10` (mesures) et `Status 11` (état), 0,15 s chacun.

@@ -763,7 +763,8 @@
     "vendor": "Tasmota",
     "auth": "tasmota",
     "poll": [
-     "/cm?cmnd=Status%200"
+     "/cm?cmnd=Status%2010",
+     "/cm?cmnd=Status%2011"
     ],
     "detect": [
      {
