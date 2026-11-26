@@ -92,11 +92,15 @@ L'appareil peut être configuré via un site web local
 - Compatible **Home Assistant**, **Apple Maison**, **Amazon Alexa** et les contrôleurs Matter qui acceptent les appareils non certifiés
 - Code d'appairage **propre à chaque box**, choix des appareils publiés appareil par appareil
 - **Matter 1.5** (à partir de la v3.2) : le ZLinky est publié comme compteur électrique, avec l'identification du compteur et ses index par période tarifaire
+- **Prix du kWh en cours** publié sur le ZLinky (Commodity Price), et numéro de série propre à chaque box (adresse MAC) (à partir de la v3.3)
 
 ### 📊 Surveillance et Tableau de Bord
 - Tableau de bord énergétique avec jauges et graphiques
 - Surveillance de la consommation en temps réel
 - Graphiques de tendance et historiques
+- Page **Historique** (à partir de la v3.3) : archive datée sur 13 mois, de l'heure à l'année, comparaison avec la période ou l'année précédente, export CSV
+- Page **Économies** (à partir de la v3.3) : météo de l'électricité, coût de l'instant, consommation de fond, budget du mois, comparaison Base / Heures creuses / Tempo
+- Températures de sondes Zigbee sur le graphe d'usage (à partir de la v3.3)
 - Données Linky intégrées
 
 ### 🌐 Connectivité
@@ -127,6 +131,8 @@ L'appareil peut être configuré via un site web local
 - Page de connexion dédiée avec redirection automatique, et retour sur la page demandée après connexion
 - Compatibilité Basic Auth pour les clients API
 - Tunnel d'accès distant autorisé uniquement si l'accès sécurisé est activé **avec un identifiant et un mot de passe** (à partir de la v2.23)
+- Tunnel durci (à partir de la v3.3) : contrôle de l'origine des requêtes, protection contre l'intégration dans une autre page, cookie `__Host-`, connexion freinée après des échecs
+- Bluetooth de configuration fermé sur une box déjà configurée : il ne s'ouvre que par la remise à zéro, ou par un appui long sur le bouton de la LiXee-Box Pro (à partir de la v3.3)
 - Masquage des mots de passe et tokens dans l'interface
 - Protection contre le path traversal
 
@@ -199,7 +205,7 @@ Une LiXee-Box en **v2.x** (Arduino) passe en v3 **sans ordinateur**, par sa page
 ### Avant de commencer
 - Faites une **sauvegarde** : **A propos → Sauvegarde**. Elle sert si vous voulez un jour revenir en v2.x.
 - Faites la mise à jour depuis le **réseau local** (adresse IP de la box), plutôt que par l'accès distant (tunnel).
-- La box doit avoir environ **4,5 Mo libres** pendant l'installation : le paquet (3,5 Mo) et les fichiers qu'il installe cohabitent un moment. La v2.x ne vérifie pas cette place lors d'un envoi manuel : une box très chargée (nombreuses sauvegardes, historiques, journaux de debug) peut se retrouver en v3 avec une interface incomplète.
+- La box doit avoir environ **4,5 Mo libres** pendant l'installation : le paquet (3,6 Mo) et les fichiers qu'il installe cohabitent un moment. La v2.x ne vérifie pas cette place lors d'un envoi manuel : une box très chargée (nombreuses sauvegardes, historiques, journaux de debug) peut se retrouver en v3 avec une interface incomplète.
 
 ### Mise à jour
 - **Manuelle** : téléchargez le fichier `update.tar` de la [release v3](https://github.com/fairecasoimeme/LiXee-Box/releases), puis **A propos → Mise à jour** et envoyez-le

@@ -1,5 +1,53 @@
 # Changelog
 
+## v3.3
+
+### Énergie
+- **Page Économies** (menu Mesures) : météo de l'électricité (tarif en cours et prochain changement), coût de l'instant, consommation de fond, budget du mois, alertes et comparaison Base / Heures creuses / Tempo au tarif réglementé, avec graphiques (24 h, jours du mois, pics mensuels). Calculs faits par la box (`GET /api/energy/advice`)
+- **Page Historique** (Mesures → Énergie → Historique) : archive datée sur 13 mois, heure par heure, jour, semaine, mois ou année ; calendrier, période libre, kWh / €, comparaison avec la période ou l'année précédente, export CSV
+- **Températures sur le graphe d'usage** : 1 à 4 sondes Zigbee à choisir dans Config Énergie → Température
+- **Gaz en kWh** : coefficient de conversion m³ → kWh de la facture ; le gaz compté en énergie s'empile avec l'électricité dans le tableau de bord et l'historique
+- **Tarif en cours** : l'index vient de NTARF, relu juste après chaque changement de libellé du ZLinky ; le prix suit le bon index pour toute offre, quel que soit le libellé du fournisseur ([#104](https://github.com/fairecasoimeme/LiXee-Box/issues/104))
+- **Triphasé en TIC historique** : la puissance de chaque phase est la PAPP répartie au prorata des intensités, la somme des phases vaut la PAPP
+- **Puissance apparente temps réel** en aires empilées ; la première barre des graphes glissants n'est plus vide
+- **Répartition** : les noms des compteurs ne sont plus tronqués sur une carte étroite ([#70](https://github.com/fairecasoimeme/LiXee-Box/issues/70))
+- **Config Énergie** : aide sous les champs Accise et CTA ([#114](https://github.com/fairecasoimeme/LiXee-Box/issues/114))
+- **Compteurs Tuya EF00** : index d'énergie aussi remonté en 0x0702, ils deviennent éligibles aux sous-compteurs et à l'historique ([#112](https://github.com/fairecasoimeme/LiXee-Box/issues/112), [PR #113](https://github.com/fairecasoimeme/LiXee-Box/pull/113))
+- **Templates ZLinky** : l'index 6 s'appelle BBRHPJR / EASF06 (et non BBRHPJB)
+
+### Pont Matter
+- **NVS saturée avec plusieurs contrôleurs** : une reprise de session par contrôleur au lieu de trois, abonnements non enregistrés (les contrôleurs se réabonnent seuls après un redémarrage), purge des anciennes données au démarrage. Diagnostic détaillé par `GET /api/system/nvs` ([#107](https://github.com/fairecasoimeme/LiXee-Box/issues/107))
+- **Prix du kWh en cours** publié sur l'endpoint du ZLinky (cluster standard Commodity Price) ([#67](https://github.com/fairecasoimeme/LiXee-Box/issues/67), [PR #79](https://github.com/fairecasoimeme/LiXee-Box/pull/79))
+- **Numéro de série** : l'adresse MAC de la box, au lieu de TEST_SN ([#92](https://github.com/fairecasoimeme/LiXee-Box/issues/92))
+- **Thermostat virtuel** : zone sans capteur exposée sans température locale (feature LTNE) ([#109](https://github.com/fairecasoimeme/LiXee-Box/issues/109), [PR #110](https://github.com/fairecasoimeme/LiXee-Box/pull/110)) ; attribut RemoteSensing ([#78](https://github.com/fairecasoimeme/LiXee-Box/issues/78), [PR #87](https://github.com/fairecasoimeme/LiXee-Box/pull/87)) ; l'identifiant d'une zone supprimée n'est plus réutilisé
+- **Capteurs de présence** : technologie (PIR, ultrasons, radar) lue dans le template ([#96](https://github.com/fairecasoimeme/LiXee-Box/issues/96), [#97](https://github.com/fairecasoimeme/LiXee-Box/issues/97), [PR #97](https://github.com/fairecasoimeme/LiXee-Box/pull/97)) ; un capteur sans template ne fait plus redémarrer la box en boucle et sa présence remonte ([#74](https://github.com/fairecasoimeme/LiXee-Box/issues/74), [#75](https://github.com/fairecasoimeme/LiXee-Box/issues/75))
+- **UniqueID** des appareils pontés correctement renseigné ([#71](https://github.com/fairecasoimeme/LiXee-Box/issues/71))
+
+### Zigbee
+- **Nouveaux templates** : compteur Tuya Zemismart SPM01V2 (TS0601) ([PR #95](https://github.com/fairecasoimeme/LiXee-Box/pull/95)), capteur de présence SONOFF SNZB-06P24 ([PR #77](https://github.com/fairecasoimeme/LiXee-Box/pull/77)) ; SNZB-06P : éclairement corrigé ([#99](https://github.com/fairecasoimeme/LiXee-Box/issues/99))
+- **Templates personnels** (`tpu/`) prioritaires sur les templates livrés, et conservés lors des mises à jour ([#84](https://github.com/fairecasoimeme/LiXee-Box/issues/84))
+- **Erreur de paquet** : le bandeau donne la cause en clair (pas d'accusé, pas de route, canal occupé, appareil en veille…) ([#102](https://github.com/fairecasoimeme/LiXee-Box/issues/102))
+- **Table des appareils fantômes** de la ZiGate 3.24 lue correctement
+- **Dernière activité** des appareils conservée aux redémarrages
+- **Page coordinateur** plus explicite : « Redémarrer la ZiGate (module radio Zigbee) » ([#86](https://github.com/fairecasoimeme/LiXee-Box/issues/86))
+- **Thermostats** : un identifiant non numérique n'écrase plus la zone 0 ([#98](https://github.com/fairecasoimeme/LiXee-Box/issues/98))
+
+### LoRa
+- **Assistant d'appairage** : cause de l'échec et conseil adapté ; fenêtre portée à 40 s
+- **État radio des émetteurs** (trames, RSSI, SNR, dernière activité) conservé aux redémarrages
+- **Chien de garde de la réception** adapté aux émetteurs qui ne parlent que sur événement (ZiPulses) : plus de réarmement toutes les 15 s
+
+### Sécurité
+- **Tunnel** : contrôle de l'origine des requêtes (une page d'un autre sous-domaine lixee-box.fr ne peut plus agir sur la box), protection contre l'intégration dans une autre page, cookie `__Host-`, connexion freinée après des échecs (un attaquant sur Internet ne bloque plus l'accès local), mot de passe HTTP d'au moins 8 caractères pour activer le tunnel
+- **Bluetooth** : une box déjà configurée dont le WiFi ne répond plus n'ouvre plus le provisionnement Bluetooth d'elle-même ; il s'ouvre par la remise à zéro (3 branchements) ou, sur la LiXee-Box Pro, par un appui long sur le bouton
+
+### Mises à jour
+- **Bouton de mise à jour** : « Réinstaller » si la version publiée est déjà installée, « Rétrograder » si la version installée est plus récente
+- Journal de débogage : messages WiFi complets, moins de bruit
+
+### Build
+- Ethernet SPI W5500 dans `sdkconfig.defaults` ([#90](https://github.com/fairecasoimeme/LiXee-Box/issues/90))
+
 ## v3.2
 
 ### MQTT
