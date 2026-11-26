@@ -116,7 +116,7 @@
   var DAY_SHORT = ['', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   var MONTHS = ['', 'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août',
                 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
-  var COVER_POSITION_CMDS = [251, 252];
+  var COVER_POSITION_CMDS = [251, 252, 253];   // 253 : niveau 0..100 %
 
   // --------------------------------------------------------------------------
   // Appareils et templates

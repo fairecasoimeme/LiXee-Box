@@ -348,6 +348,29 @@ static void drop_target(matter_profile_t *p, uint8_t target)
     p->link_count = j;
 }
 
+/** Cible qui n'existe qu'une fois par endpoint Matter (une seule source) */
+static bool target_is_single(uint8_t t)
+{
+    switch (t) {
+    case ML_ONOFF:
+    case ML_TEMPERATURE:
+    case ML_HUMIDITY:
+    case ML_PRESSURE:
+    case ML_ILLUMINANCE:
+    case ML_ILLUMINANCE_ZCL:
+    case ML_OCCUPANCY:
+    case ML_CONTACT:
+    case ML_LEAK:
+    case ML_BAT_PERCENT:
+    case ML_BAT_VOLTAGE:
+    case ML_COVER_LIFT:
+    case ML_FAN_MODE:
+        return true;
+    default:
+        return false;
+    }
+}
+
 matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const char *model,
                                        uint16_t zcl_device_id, matter_meter_role_t meter_role)
 {
@@ -366,16 +389,39 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
 
     for (int i = 0; i < tmpl->state_count; i++) {
         const devdata_template_state_t *s = &tmpl->states[i];
+        // Ligne propre a un endpoint ("endpoint": 3) : cle composee 0x3000 |
+        // attribut. Classee d'apres l'attribut reel, sinon elle n'etait jamais
+        // reconnue (0402/0x3000 n'est pas une temperature) ; la liaison garde
+        // la cle composee, celle des valeurs enregistrees.
+        devdata_template_state_t real;
+        const devdata_template_state_t *cs = s;
+        if (s->endpoint && s->attribute >= 0x2000) {
+            real = *s;
+            real.attribute = s->attribute & 0x0FFF;
+            cs = &real;
+        }
         bool handled = false;
-        cls_t c = classify_standard(s, has_onoff_action, p->zlinky, meter_role, &handled);
-        if (!handled) c = classify_generic(s);
+        cls_t c = classify_standard(cs, has_onoff_action, p->zlinky, meter_role, &handled);
+        if (!handled) c = classify_generic(cs);
         if (c.target == ML_NONE) continue;
 
-        // Un meme attribut n'est lie qu'une fois (deux voies "On/Off L1/L2"
-        // partagent 0006/0000 : device_data ne les distingue pas)
+        // Un meme attribut n'est lie qu'une fois
         bool dup = false;
         for (int k = 0; k < p->link_count; k++)
             if (p->links[k].cluster == s->cluster && p->links[k].attr == s->attribute) dup = true;
+        // Une mesure unique de l'endpoint Matter (temperature, humidite, etat
+        // on/off...) n'a qu'une source : la premiere ligne. Deux sondes sur
+        // deux endpoints Zigbee (Ztriac : ballon et etage de puissance) ou
+        // deux voies On/Off s'ecrasaient sinon a chaque rapport.
+        if (!dup && target_is_single(c.target)) {
+            for (int k = 0; k < p->link_count; k++) {
+                if (p->links[k].target == c.target) {
+                    ESP_LOGI(TAG, "'%s' : %s deja lie, ligne ignoree pour Matter",
+                             s->name, matter_link_target_name(c.target));
+                    dup = true;
+                }
+            }
+        }
         if (dup) continue;
         if (p->link_count >= MATTER_PROFILE_MAX_LINKS) {
             ESP_LOGW(TAG, "Plus de %d liaisons : '%s' ignore", MATTER_PROFILE_MAX_LINKS, s->name);
@@ -391,7 +437,7 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
         l->writable = s->writable;
         l->write_type = (uint8_t)(s->type_writable > 0 ? s->type_writable : 0);
         l->mfr = s->manufacturer_code;
-        l->scale = spec_scale(s->cluster, s->attribute, s->coefficient);
+        l->scale = spec_scale(s->cluster, cs->attribute, s->coefficient);
         l->unit_mul = (c.target == ML_EL_ENERGY && !unit_is_energy(s->unit)) ? 1.0f : unit_factor(s->unit);
     }
 
@@ -457,6 +503,8 @@ bool matter_profile_raw_value(const uint8_t *data, uint16_t len, uint8_t t, doub
         return true;
     }
     if (t == 0x41 || t == 0x42 || t == 0x43 || t == 0x44) return false;   // chaines
+    // int16 0x8000 : mesure invalide ZCL (sonde absente), pas -327,68 degC
+    if (t == 0x29 && len == 2 && data[0] == 0x80 && data[1] == 0x00) return false;
     int n = len > 8 ? 8 : len;
     uint64_t v = 0;
     for (int i = 0; i < n; i++) v = (v << 8) | data[i];

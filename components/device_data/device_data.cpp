@@ -842,6 +842,13 @@ static esp_err_t parse_template_json(devdata_template_t *tmpl, const char *json_
             cJSON *to = cJSON_GetObjectItem(r, "timeout");
             if (to && cJSON_IsNumber(to)) e->timeout = (uint16_t)to->valuedouble;
 
+            // "endpoint" facultatif : sinon le reporting part vers le ou les
+            // endpoints qui portent le cluster (voir device_setup.cpp)
+            cJSON *ep = cJSON_GetObjectItem(r, "endpoint");
+            if (ep && cJSON_IsNumber(ep) && ep->valuedouble > 0 && ep->valuedouble < 241) {
+                e->endpoint = (uint8_t)ep->valuedouble;
+            }
+
             cJSON *mf = cJSON_GetObjectItem(r, "manufacturerSpecific");
             if (mf) {
                 e->manufacturer_code = cJSON_IsString(mf) ? (uint16_t)strtoul(mf->valuestring, NULL, 16)
@@ -1369,6 +1376,48 @@ static char *read_resolved_template(const char *file, const char *model, bool *u
     return pick;
 }
 
+int device_data_template_keep_clusters(uint64_t ieee_addr, const uint16_t *clusters, int n)
+{
+    if (!clusters || n <= 0) return 0;
+    auto known = [&](uint16_t c) {
+        for (int i = 0; i < n; i++) if (clusters[i] == c) return true;
+        return false;
+    };
+    int removed = 0;
+    dd_lock();
+    device_data_t *dd = device_data_find(ieee_addr);
+    devdata_template_t *t = dd ? dd->tmpl : NULL;
+    if (t && t->loaded && !t->dyn_only) {
+        int j = 0;
+        for (int i = 0; i < t->state_count; i++) {
+            if (!known(t->states[i].cluster)) {
+                ESP_LOGI(TAG, "0x%016llX : '%s' (%04X) absent de l'appareil, retire du template generique",
+                         (unsigned long long)ieee_addr, t->states[i].name, t->states[i].cluster);
+                removed++;
+                continue;
+            }
+            if (j != i) t->states[j] = t->states[i];
+            j++;
+        }
+        t->state_count = j;
+        j = 0;
+        for (int i = 0; i < t->report_count; i++) {
+            if (!known(t->reports[i].cluster)) continue;
+            if (j != i) t->reports[j] = t->reports[i];
+            j++;
+        }
+        t->report_count = j;
+        j = 0;
+        for (int i = 0; i < t->bind_count; i++) {
+            if (!known(t->bind_clusters[i])) continue;
+            t->bind_clusters[j++] = t->bind_clusters[i];
+        }
+        t->bind_count = j;
+    }
+    dd_unlock();
+    return removed;
+}
+
 bool device_data_template_exists(const char *file)
 {
     char path[96];
@@ -1719,11 +1768,31 @@ static int hex_nibble(char c)
     return -1;
 }
 
+bool device_data_value_invalid(const char *hex, uint8_t zcl_type,
+                               uint16_t cluster_id, uint16_t attr_id)
+{
+    size_t n = 0;
+    if (!hex || !is_hex_string(hex, &n) || n != 4) return false;
+    // Cle composee d'une ligne d'endpoint (0x3000 | attribut) : attribut reel
+    uint16_t a = attr_id >= 0x2000 ? (attr_id & 0x0FFF) : attr_id;
+    unsigned v = (unsigned)strtoul(hex, NULL, 16);
+    // Humidite (uint16) : 0xFFFF = mesure invalide
+    if (cluster_id == 0x0405 && a == 0x0000) return v == 0xFFFF;
+    // int16 : 0x8000 = mesure invalide (temperature, pression, temperature
+    // locale du thermostat, puissance... : sonde absente ou en defaut)
+    bool s16 = zcl_type == 0x29 ||
+               (zcl_type == 0 && (forced_signed_width(cluster_id, a) == 2 ||
+                                  known_signed_width(cluster_id, a) == 2));
+    return s16 && v == 0x8000;
+}
+
 bool device_data_hex_to_int64(const char *hex, uint8_t zcl_type,
                               uint16_t cluster_id, uint16_t attr_id, int64_t *out)
 {
     size_t n = 0;
     if (!hex || !out || !is_hex_string(hex, &n) || n > 16) return false;
+    // Mesure invalide (0x8000...) : pas une valeur, jamais -327,68 degC
+    if (device_data_value_invalid(hex, zcl_type, cluster_id, attr_id)) return false;
 
     uint64_t u = strtoull(hex, NULL, 16);
     int sw = forced_signed_width(cluster_id, attr_id);
@@ -1801,6 +1870,8 @@ size_t device_data_format_value(uint16_t cluster_id, uint16_t attr_id, const cha
 
     size_t n = 0;
     bool hexok = is_hex_string(hex, &n);
+    // Mesure invalide (sonde absente) : valeur inconnue, affichee "-"
+    if (device_data_value_invalid(hex, zcl_type, cluster_id, attr_id)) return 0;
     bool t_float   = tmpl_type && strcmp(tmpl_type, "float") == 0;
     bool t_numeric = tmpl_type && strcmp(tmpl_type, "numeric") == 0;
 

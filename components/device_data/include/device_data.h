@@ -147,6 +147,7 @@ typedef struct {
     uint32_t change;            // Variation minimale declenchant un rapport
     uint16_t manufacturer_code;
     uint8_t  mode_mask;         // Bit n = mode Linky n concerne ; 0 = tous modes
+    uint8_t  endpoint;          // "endpoint" du template ; 0 = endpoint(s) qui portent le cluster
 } devdata_template_report_t;
 
 /** Template complet (alloue en heap/PSRAM a la demande) */
@@ -328,6 +329,22 @@ esp_err_t device_data_load_template(uint64_t ieee_addr,
                                      const char *device_id_file,
                                      const char *model_name);
 const devdata_template_t* device_data_get_template(uint64_t ieee_addr);
+
+/**
+ * Template GENERIQUE ("default" d'un DeviceId) : retire les lignes, rapports
+ * et binds dont le cluster n'est pas dans la liste des clusters serveur de
+ * l'appareil (issue #56 : humidite et pile affichees pour une simple sonde
+ * de temperature). Renvoie le nombre de lignes retirees.
+ */
+int device_data_template_keep_clusters(uint64_t ieee_addr, const uint16_t *clusters, int n);
+
+/**
+ * true si la valeur est la "non-valeur" ZCL d'une mesure : 0x8000 en int16
+ * (temperature, pression...), 0xFFFF pour l'humidite. Elle n'est alors ni
+ * affichee, ni publiee, ni convertie en nombre.
+ */
+bool device_data_value_invalid(const char *hex, uint8_t zcl_type,
+                               uint16_t cluster_id, uint16_t attr_id);
 
 /** true si <file> existe dans tpu/ ou tp/. */
 bool device_data_template_exists(const char *file);

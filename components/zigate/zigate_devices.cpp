@@ -6,6 +6,7 @@
 #include "zigate_devices.h"
 #include "esp_log.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -200,6 +201,131 @@ esp_err_t zigate_devices_set_matter_endpoint(uint64_t ieee_addr, int matter_ep)
 }
 
 // ============================================================================
+// Endpoints multiples
+// ============================================================================
+
+bool zigate_device_has_cluster(const zigate_device_t *dev, uint16_t cluster)
+{
+    if (!dev) return false;
+    for (int i = 0; i < dev->in_cluster_count && i < ZIGATE_MAX_CLUSTERS; i++) {
+        if (dev->in_clusters[i] == cluster) return true;
+    }
+    return false;
+}
+
+uint8_t zigate_device_cluster_ep(const zigate_device_t *dev, uint16_t cluster)
+{
+    if (!dev) return 1;
+    uint8_t main_ep = dev->endpoint ? dev->endpoint : 1;
+    uint8_t first = 0;
+    for (int i = 0; i < dev->in_cluster_count && i < ZIGATE_MAX_CLUSTERS; i++) {
+        if (dev->in_clusters[i] != cluster) continue;
+        uint8_t ep = dev->in_cluster_eps[i] ? dev->in_cluster_eps[i] : main_ep;
+        if (ep == main_ep) return main_ep;
+        if (!first) first = ep;
+    }
+    return first ? first : main_ep;
+}
+
+void zigate_device_clear_endpoints(zigate_device_t *dev)
+{
+    if (!dev) return;
+    dev->ep_count = 0;
+    dev->in_cluster_count = 0;
+    dev->out_cluster_count = 0;
+}
+
+/** Retire de la liste (clusters, endpoints) les entrees de l'endpoint ep */
+static uint8_t drop_ep(uint16_t *cl, uint8_t *eps, uint8_t count, uint8_t ep, uint8_t main_ep)
+{
+    uint8_t j = 0;
+    for (uint8_t i = 0; i < count && i < ZIGATE_MAX_CLUSTERS; i++) {
+        uint8_t e = eps[i] ? eps[i] : main_ep;
+        if (e == ep) continue;
+        cl[j] = cl[i];
+        eps[j] = e;
+        j++;
+    }
+    return j;
+}
+
+/** Ajoute les clusters de l'endpoint ep (tronque au-dela de ZIGATE_MAX_CLUSTERS) */
+static uint8_t add_ep(uint16_t *cl, uint8_t *eps, uint8_t count, uint8_t ep,
+                      const uint16_t *src, int n)
+{
+    for (int i = 0; i < n; i++) {
+        if (count >= ZIGATE_MAX_CLUSTERS) {
+            ESP_LOGW(TAG, "Plus de %d clusters : endpoint %u tronque", ZIGATE_MAX_CLUSTERS, ep);
+            break;
+        }
+        cl[count] = src[i];
+        eps[count] = ep;
+        count++;
+    }
+    return count;
+}
+
+/**
+ * Endpoint principal : premier endpoint de profil HA (0x0104), sinon ZLL
+ * (0xC05E), dans l'ordre des numeros. Un capteur Hue (ZLL sur 1, HA sur 2)
+ * garde ainsi le 2 ; un Ztriac (1, 3, 4) le 1.
+ */
+static const zigate_ep_info_t *main_endpoint(const zigate_device_t *dev)
+{
+    const zigate_ep_info_t *ha = NULL, *zll = NULL;
+    for (int i = 0; i < dev->ep_count && i < ZIGATE_MAX_EPS; i++) {
+        const zigate_ep_info_t *e = &dev->eps[i];
+        if (e->profile_id == 0x0104) { if (!ha || e->ep < ha->ep) ha = e; }
+        else if (!zll || e->ep < zll->ep) zll = e;
+    }
+    return ha ? ha : zll;
+}
+
+void zigate_device_set_endpoint_desc(zigate_device_t *dev, uint8_t ep, uint16_t profile_id,
+                                     uint16_t device_id, const uint16_t *in, int n_in,
+                                     const uint16_t *out, int n_out)
+{
+    if (!dev || !ep) return;
+    devs_lock();
+    uint8_t old_main = dev->endpoint ? dev->endpoint : ep;
+
+    // Endpoint : mis a jour s'il est connu, ajoute sinon
+    int slot = -1;
+    for (int i = 0; i < dev->ep_count && i < ZIGATE_MAX_EPS; i++) {
+        if (dev->eps[i].ep == ep) slot = i;
+    }
+    if (slot < 0 && dev->ep_count < ZIGATE_MAX_EPS) slot = dev->ep_count++;
+    if (slot < 0) {
+        ESP_LOGW(TAG, "0x%016llX : plus de %d endpoints, %u ignore",
+                 (unsigned long long)dev->ieee_addr, ZIGATE_MAX_EPS, ep);
+        devs_unlock();
+        return;
+    }
+    dev->eps[slot].ep = ep;
+    dev->eps[slot].profile_id = profile_id;
+    dev->eps[slot].device_id = device_id;
+
+    // Clusters de cet endpoint remplaces (entrees sans endpoint, d'avant la
+    // v3.4 : celles de l'ancien endpoint principal)
+    dev->in_cluster_count = drop_ep(dev->in_clusters, dev->in_cluster_eps,
+                                    dev->in_cluster_count, ep, old_main);
+    dev->out_cluster_count = drop_ep(dev->out_clusters, dev->out_cluster_eps,
+                                     dev->out_cluster_count, ep, old_main);
+    dev->in_cluster_count = add_ep(dev->in_clusters, dev->in_cluster_eps,
+                                   dev->in_cluster_count, ep, in, n_in);
+    dev->out_cluster_count = add_ep(dev->out_clusters, dev->out_cluster_eps,
+                                    dev->out_cluster_count, ep, out, n_out);
+
+    const zigate_ep_info_t *m = main_endpoint(dev);
+    if (m) {
+        dev->endpoint = m->ep;
+        dev->device_id = m->device_id;
+        dev->profile_id = m->profile_id;
+    }
+    devs_unlock();
+}
+
+// ============================================================================
 // Persistance JSON / LittleFS
 // ============================================================================
 
@@ -228,6 +354,27 @@ esp_err_t zigate_devices_save(void)
         cJSON_AddNumberToObject(obj, "matter_ep", s_devices[i].matter_endpoint);
         cJSON_AddBoolToObject(obj, "cfg", s_devices[i].configured);
         cJSON_AddNumberToObject(obj, "lqi", s_devices[i].lqi);
+        // Endpoints [ep, profil, deviceId] et clusters [cluster, ep] (v3.4)
+        const zigate_device_t *d = &s_devices[i];
+        if (d->ep_count) {
+            cJSON *a = cJSON_AddArrayToObject(obj, "eps");
+            for (int k = 0; a && k < d->ep_count && k < ZIGATE_MAX_EPS; k++) {
+                int v[3] = { d->eps[k].ep, d->eps[k].profile_id, d->eps[k].device_id };
+                cJSON_AddItemToArray(a, cJSON_CreateIntArray(v, 3));
+            }
+        }
+        static const char *const KEYS[2] = { "in", "out" };
+        for (int s = 0; s < 2; s++) {
+            const uint16_t *cl = s ? d->out_clusters : d->in_clusters;
+            const uint8_t *ce = s ? d->out_cluster_eps : d->in_cluster_eps;
+            int n = s ? d->out_cluster_count : d->in_cluster_count;
+            if (!n) continue;
+            cJSON *a = cJSON_AddArrayToObject(obj, KEYS[s]);
+            for (int k = 0; a && k < n && k < ZIGATE_MAX_CLUSTERS; k++) {
+                int v[2] = { cl[k], ce[k] ? ce[k] : d->endpoint };
+                cJSON_AddItemToArray(a, cJSON_CreateIntArray(v, 2));
+            }
+        }
         cJSON_AddItemToArray(root, obj);
     }
 
@@ -340,12 +487,15 @@ static esp_err_t zigate_devices_load_locked(void)
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    if (fsize <= 0 || fsize > 32768) {
+    // Depuis la v3.4 le fichier porte aussi les endpoints et les clusters :
+    // ~0,7 Ko par appareil, soit ~45 Ko pour 64 appareils (32 Ko avant)
+    if (fsize <= 0 || fsize > 160 * 1024) {
         fclose(f);
         return ESP_ERR_INVALID_SIZE;
     }
 
-    char *buf = (char *)malloc(fsize + 1);
+    char *buf = (char *)heap_caps_malloc(fsize + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!buf) buf = (char *)malloc(fsize + 1);
     if (!buf) { fclose(f); return ESP_ERR_NO_MEM; }
     fread(buf, 1, fsize, f);
     buf[fsize] = '\0';
@@ -383,6 +533,29 @@ static esp_err_t zigate_devices_load_locked(void)
             strncpy(dev->model, j->valuestring, 32);
         if ((j = cJSON_GetObjectItem(obj, "alias")) && j->valuestring)
             strncpy(dev->alias, j->valuestring, 32);
+
+        // Endpoints et clusters (v3.4 ; absents des fichiers plus anciens)
+        cJSON *e;
+        cJSON *eps = cJSON_GetObjectItem(obj, "eps");
+        cJSON_ArrayForEach(e, eps) {
+            if (dev->ep_count >= ZIGATE_MAX_EPS || cJSON_GetArraySize(e) < 3) break;
+            zigate_ep_info_t *x = &dev->eps[dev->ep_count++];
+            x->ep = (uint8_t)cJSON_GetArrayItem(e, 0)->valueint;
+            x->profile_id = (uint16_t)cJSON_GetArrayItem(e, 1)->valueint;
+            x->device_id = (uint16_t)cJSON_GetArrayItem(e, 2)->valueint;
+        }
+        for (int s = 0; s < 2; s++) {
+            uint16_t *cl = s ? dev->out_clusters : dev->in_clusters;
+            uint8_t *ce = s ? dev->out_cluster_eps : dev->in_cluster_eps;
+            uint8_t *cnt = s ? &dev->out_cluster_count : &dev->in_cluster_count;
+            cJSON *arr = cJSON_GetObjectItem(obj, s ? "out" : "in");
+            cJSON_ArrayForEach(e, arr) {
+                if (*cnt >= ZIGATE_MAX_CLUSTERS || cJSON_GetArraySize(e) < 2) break;
+                cl[*cnt] = (uint16_t)cJSON_GetArrayItem(e, 0)->valueint;
+                ce[*cnt] = (uint8_t)cJSON_GetArrayItem(e, 1)->valueint;
+                (*cnt)++;
+            }
+        }
 
         s_device_count++;
     }

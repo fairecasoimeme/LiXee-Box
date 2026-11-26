@@ -487,6 +487,26 @@ esp_err_t zigate_send_onoff(uint16_t short_addr, uint8_t endpoint, uint8_t actio
     return zigate_send_command(ZIGATE_CMD_ONOFF, data, sizeof(data));
 }
 
+esp_err_t zigate_send_level(uint16_t short_addr, uint8_t endpoint, uint8_t level, bool with_onoff,
+                            uint16_t transition_ds)
+{
+    // 0x0081 : mode d'adresse, adresse, endpoints source / destination,
+    // With On/Off (1 : allume si niveau > 0, eteint a 0), niveau, transition
+    // en dixiemes de seconde
+    if (level > 254) level = 254;
+    uint8_t data[9];
+    data[0] = 0x02;                          // Addr mode: short
+    data[1] = (short_addr >> 8) & 0xFF;
+    data[2] = short_addr & 0xFF;
+    data[3] = 0x01;                          // Src endpoint
+    data[4] = endpoint;                      // Dst endpoint
+    data[5] = with_onoff ? 1 : 0;
+    data[6] = level;
+    data[7] = (transition_ds >> 8) & 0xFF;
+    data[8] = transition_ds & 0xFF;
+    return zigate_send_command(ZIGATE_CMD_MOVE_TO_LEVEL, data, sizeof(data));
+}
+
 esp_err_t zigate_remove_device(uint64_t ieee_addr)
 {
     uint8_t data[8];

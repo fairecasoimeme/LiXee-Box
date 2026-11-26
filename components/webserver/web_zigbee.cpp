@@ -395,7 +395,7 @@ static void basic_text(uint64_t ieee, uint16_t attr, char *out, size_t len)
  */
 static bool has_occupancy(const zigate_device_t *d)
 {
-    for (int i = 0; i < d->in_cluster_count && i < 32; i++) if (d->in_clusters[i] == 0x0406) return true;
+    for (int i = 0; i < d->in_cluster_count && i < ZIGATE_MAX_CLUSTERS; i++) if (d->in_clusters[i] == 0x0406) return true;
     if (device_data_get_attr(d->ieee_addr, 0x0406, 0x0000)) return true;
     const devdata_template_t *t = device_data_get_template(d->ieee_addr);
     for (int i = 0; t && i < t->state_count; i++) if (t->states[i].cluster == 0x0406) return true;
@@ -405,7 +405,7 @@ static bool has_occupancy(const zigate_device_t *d)
 /** Sonde de temperature (0x0402) : declaree, deja remontee ou decrite par le template. */
 static bool has_temperature(const zigate_device_t *d)
 {
-    for (int i = 0; i < d->in_cluster_count && i < 32; i++) if (d->in_clusters[i] == 0x0402) return true;
+    for (int i = 0; i < d->in_cluster_count && i < ZIGATE_MAX_CLUSTERS; i++) if (d->in_clusters[i] == 0x0402) return true;
     if (device_data_get_attr(d->ieee_addr, 0x0402, 0x0000)) return true;
     const devdata_template_t *t = device_data_get_template(d->ieee_addr);
     for (int i = 0; t && i < t->state_count; i++) if (t->states[i].cluster == 0x0402) return true;
@@ -417,17 +417,74 @@ static bool has_onoff(const zigate_device_t *d)
 {
     const device_data_t *dd = device_data_find(d->ieee_addr);
     if (dd && !strcmp(dd->info.power_socket, "1")) return true;
-    for (int i = 0; i < d->in_cluster_count && i < 32; i++) if (d->in_clusters[i] == 0x0006) return true;
+    for (int i = 0; i < d->in_cluster_count && i < ZIGATE_MAX_CLUSTERS; i++) if (d->in_clusters[i] == 0x0006) return true;
     if (device_data_get_attr(d->ieee_addr, 0x0006, 0x0000)) return true;
     const devdata_template_t *t = device_data_get_template(d->ieee_addr);
     for (int i = 0; t && i < t->state_count; i++) if (t->states[i].cluster == 0x0006) return true;
     return false;
 }
 
+/**
+ * Liste de clusters sans doublon (un meme cluster peut venir de plusieurs
+ * endpoints), au format "0x%04X" ou "%04X".
+ */
+static void write_cluster_list(jw_t *w, const char *key, const uint16_t *cl, int n, bool prefix)
+{
+    jw_key(w, key);
+    jw_arr(w);
+    for (int c = 0; c < n && c < ZIGATE_MAX_CLUSTERS; c++) {
+        bool dup = false;
+        for (int k = 0; k < c && !dup; k++) dup = (cl[k] == cl[c]);
+        if (dup) continue;
+        char s[12];
+        snprintf(s, sizeof(s), prefix ? "0x%04X" : "%04X", cl[c]);
+        jw_vstr(w, s);
+    }
+    jw_arr_end(w);
+}
+
+/**
+ * Endpoints applicatifs de l'appareil, chacun avec son profil, son Device ID
+ * et ses clusters : [{"ep":1,"profile":260,"deviceId":"0101","main":true,
+ * "in":["0000",...],"out":[...]}]. Vide pour un appareil decouvert avant la
+ * v3.4 (endpoints non enregistres).
+ */
+static void write_endpoints(jw_t *w, const zigate_device_t *d)
+{
+    jw_key(w, "endpoints");
+    jw_arr(w);
+    for (int e = 0; e < d->ep_count && e < ZIGATE_MAX_EPS; e++) {
+        const zigate_ep_info_t *x = &d->eps[e];
+        char id[8];
+        jw_obj(w);
+        jw_kint(w, "ep", x->ep);
+        jw_kint(w, "profile", x->profile_id);
+        snprintf(id, sizeof(id), "%04X", x->device_id);
+        jw_kstr(w, "deviceId", id);
+        jw_kbool(w, "main", x->ep == d->endpoint);
+        for (int s = 0; s < 2; s++) {
+            const uint16_t *cl = s ? d->out_clusters : d->in_clusters;
+            const uint8_t *ce = s ? d->out_cluster_eps : d->in_cluster_eps;
+            int n = s ? d->out_cluster_count : d->in_cluster_count;
+            jw_key(w, s ? "out" : "in");
+            jw_arr(w);
+            for (int c = 0; c < n && c < ZIGATE_MAX_CLUSTERS; c++) {
+                if ((ce[c] ? ce[c] : d->endpoint) != x->ep) continue;
+                char t[8];
+                snprintf(t, sizeof(t), "%04X", cl[c]);
+                jw_vstr(w, t);
+            }
+            jw_arr_end(w);
+        }
+        jw_obj_end(w);
+    }
+    jw_arr_end(w);
+}
+
 /** Telecommande infrarouge Zosung : clusters E004 / ED00, ou modele connu. */
 static bool has_ir(const zigate_device_t *d)
 {
-    for (int i = 0; i < d->in_cluster_count && i < 32; i++)
+    for (int i = 0; i < d->in_cluster_count && i < ZIGATE_MAX_CLUSTERS; i++)
         if (d->in_clusters[i] == 0xE004 || d->in_clusters[i] == 0xED00) return true;
     return !strcmp(d->model, "TS1201") || !strncmp(d->model, "ZS06", 4) || !strncmp(d->model, "UFO-R11", 7);
 }
@@ -471,6 +528,7 @@ static void write_actions(jw_t *w, uint64_t ieee, const devdata_template_t *t)
         if (a->cluster) jw_kint(w, "cl", a->cluster);
         if (a->manufacturer_code) jw_kint(w, "m", a->manufacturer_code);
         if (zigate_action_is_cover_position(a->command)) jw_kbool(w, "cover", true);
+        if (zigate_action_is_level(a->command)) jw_kbool(w, "level", true);
         if (zigate_action_is_setpoint(a->command)) {
             // Consigne : la fiche affiche un champ de temperature, prerempli
             // avec la consigne enregistree (0x0011 froid, 0x0012 chaud)
@@ -482,6 +540,17 @@ static void write_actions(jw_t *w, uint64_t ieee, const devdata_template_t *t)
         jw_obj_end(w);
     }
     jw_arr_end(w);
+}
+
+/** Niveau courant (0x0008/0x0000, 0..254) en %, -1 inconnu. */
+static int level_pct(uint64_t ieee)
+{
+    const char *v = device_data_get_value_ptr(ieee, 0x0008, 0x0000);
+    if (!v || !v[0]) return -1;
+    long l = strtol(v, NULL, 16);
+    if (l < 0) l = 0;
+    if (l > 254) l = 254;
+    return (int)((l * 100 + 127) / 254);
 }
 
 /** Position de levage brute (0x0102/0x0008, 0..100 = fermeture), -1 inconnue. */
@@ -514,14 +583,8 @@ static esp_err_t get_devices(httpd_req_t *req, bool full)
         basic_text(d->ieee_addr, 0x4000, sw, sizeof(sw));
         jw_kstr(&w, "swVersion", sw);
         if (full) {
-            jw_key(&w, "inClusters");
-            jw_arr(&w);
-            for (int c = 0; c < d->in_cluster_count && c < 32; c++) {
-                char cl[12];
-                snprintf(cl, sizeof(cl), "0x%04X", d->in_clusters[c]);
-                jw_vstr(&w, cl);
-            }
-            jw_arr_end(&w);
+            write_cluster_list(&w, "inClusters", d->in_clusters, d->in_cluster_count, true);
+            write_endpoints(&w, d);
             const device_data_t *dd = device_data_find(d->ieee_addr);
             if (dd) {
                 jw_key(&w, "values");
@@ -628,6 +691,7 @@ static esp_err_t get_cards(httpd_req_t *req)
         jw_kbool(&w, "tmpl", t && !t->dyn_only);
         jw_kint(&w, "linkyMode", mode);
         jw_kint(&w, "cover", cover_lift(d->ieee_addr));
+        jw_kint(&w, "level", level_pct(d->ieee_addr));
         write_card_states(&w, d->ieee_addr, t, mode);
         write_actions(&w, d->ieee_addr, t);
         jw_obj_end(&w);
@@ -710,6 +774,7 @@ static esp_err_t get_values(httpd_req_t *req)
         jw_kint(&w, "lastSeen", d->last_seen);           // infobulle de l'etat radio
         jw_kint(&w, "ago", d->last_rx_s ? (long long)(zigate_uptime_s() - d->last_rx_s) : -1);
         jw_kint(&w, "cover", cover_lift(d->ieee_addr));
+        jw_kint(&w, "level", level_pct(d->ieee_addr));
         write_changed_values(&w, d->ieee_addr, device_template(d), display_mode(d), since);
         jw_obj_end(&w);
     }
@@ -886,27 +951,15 @@ static esp_err_t get_device(httpd_req_t *req)
     jw_kbool(&w, "ha", cs->enable_mqtt && g->ha_mqtt);
     jw_kbool(&w, "mqttConnected", mqtt_manager_is_connected());
     jw_kint(&w, "cover", cover_lift(d->ieee_addr));
+    jw_kint(&w, "level", level_pct(d->ieee_addr));
     char sw[40];
     basic_text(d->ieee_addr, 0x4000, sw, sizeof(sw));
     jw_kstr(&w, "swVersion", sw);
     jw_kstr(&w, "status", dd ? dd->info.status : "");
 
-    jw_key(&w, "inClusters");
-    jw_arr(&w);
-    for (int c = 0; c < d->in_cluster_count && c < 32; c++) {
-        char cl[12];
-        snprintf(cl, sizeof(cl), "%04X", d->in_clusters[c]);
-        jw_vstr(&w, cl);
-    }
-    jw_arr_end(&w);
-    jw_key(&w, "outClusters");
-    jw_arr(&w);
-    for (int c = 0; c < d->out_cluster_count && c < 32; c++) {
-        char cl[12];
-        snprintf(cl, sizeof(cl), "%04X", d->out_clusters[c]);
-        jw_vstr(&w, cl);
-    }
-    jw_arr_end(&w);
+    write_cluster_list(&w, "inClusters", d->in_clusters, d->in_cluster_count, false);
+    write_cluster_list(&w, "outClusters", d->out_clusters, d->out_cluster_count, false);
+    write_endpoints(&w, d);
 
     write_device_body(&w, d->ieee_addr, t, dd, mode, now);
     jw_obj_end(&w);
@@ -1043,10 +1096,15 @@ static esp_err_t get_console(httpd_req_t *req)
 // POST
 // ============================================================================
 
-static uint8_t device_endpoint(const zigate_device_t *d, const cJSON *j)
+/**
+ * Endpoint d'une requete : celui du corps s'il est donne, sinon celui qui
+ * porte le cluster (endpoint principal en priorite), sinon le principal.
+ */
+static uint8_t device_endpoint(const zigate_device_t *d, const cJSON *j, long cluster = -1)
 {
     long ep;
     if (json_long(j, "endpoint", &ep) && ep > 0 && ep <= 240) return (uint8_t)ep;
+    if (cluster >= 0 && cluster <= 0xFFFF) return zigate_device_cluster_ep(d, (uint16_t)cluster);
     return d->endpoint ? d->endpoint : 1;
 }
 
@@ -1160,7 +1218,7 @@ static esp_err_t post_write(httpd_req_t *req, cJSON *j)
     uint16_t zat = device_data_resolve_key(d->ieee_addr, (uint16_t)cl, (uint16_t)at, &kep);
     ESP_LOGI(TAG, "Ecriture 0x%04X cl=0x%04lX at=0x%04X type=0x%02lX val=%s",
              d->short_addr, cl, zat, type, text);
-    return send_zigate_result(req, zigate_write_attribute_mfr(d->short_addr, kep ? kep : device_endpoint(d, j),
+    return send_zigate_result(req, zigate_write_attribute_mfr(d->short_addr, kep ? kep : device_endpoint(d, j, cl),
                                                               (uint16_t)cl, zat, (uint8_t)type,
                                                               buf, (uint16_t)n, (uint16_t)mfr));
 }
@@ -1174,13 +1232,13 @@ static esp_err_t post_read(httpd_req_t *req, cJSON *j)
     if (!body_cluster_attr(j, &cl, &at)) return send_bad(req, "cluster / attr invalides");
     if (cl == 0xEF00) {
         // Tuya : pas de lecture d'un DP isole, demande de tous les DP
-        return send_zigate_result(req, zigate_tuya_dp_query(d->short_addr, device_endpoint(d, j)));
+        return send_zigate_result(req, zigate_tuya_dp_query(d->short_addr, device_endpoint(d, j, cl)));
     }
     long mfr;
     if (!json_long(j, "mfr", &mfr)) mfr = template_mfr(d, (uint16_t)cl, (uint16_t)at);
     uint8_t kep = 0;
     uint16_t zat = device_data_resolve_key(d->ieee_addr, (uint16_t)cl, (uint16_t)at, &kep);
-    return send_zigate_result(req, zigate_read_attribute_mfr(d->short_addr, kep ? kep : device_endpoint(d, j),
+    return send_zigate_result(req, zigate_read_attribute_mfr(d->short_addr, kep ? kep : device_endpoint(d, j, cl),
                                                              (uint16_t)cl, zat, (uint16_t)mfr));
 }
 

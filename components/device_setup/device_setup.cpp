@@ -116,6 +116,15 @@ static bool load_template(const zigate_device_t *dev)
                  (unsigned long long)dev->ieee_addr, (unsigned)dev->device_id, dev->model);
         return false;
     }
+    // Template generique ("default" du DeviceId, pas de cle pour ce modele) :
+    // seulement les clusters que l'appareil declare (#56). Appareil decouvert
+    // avant la v3.4 : clusters inconnus, template garde tel quel.
+    if (dev->in_cluster_count > 0 && !(key && key[0] && device_data_template_has_model(file, key))) {
+        int n = device_data_template_keep_clusters(dev->ieee_addr, dev->in_clusters,
+                                                   dev->in_cluster_count);
+        if (n) ESP_LOGI(TAG, "0x%016llX : %d ligne(s) du template generique retiree(s)",
+                        (unsigned long long)dev->ieee_addr, n);
+    }
     return true;
 }
 
@@ -181,6 +190,75 @@ static int zlinky_specific(const zigate_device_t *dev)
     return -1;
 }
 
+/**
+ * Endpoints ou configurer un cluster (bind, reporting) : l'endpoint impose
+ * par le template s'il y en a un ; sinon celui qui porte le cluster
+ * (l'endpoint principal en priorite) et ceux des lignes du template
+ * declarees sur un autre endpoint ("endpoint": 3). Avant la v3.4, tout
+ * partait vers l'endpoint de l'appareil : la sonde 0x0402 d'un endpoint 3 ou
+ * 4 n'etait jamais configuree.
+ */
+static int cluster_targets(const zigate_device_t *dev, const devdata_template_t *tmpl,
+                           uint16_t cluster, uint8_t forced_ep, uint8_t *out, int max)
+{
+    int n = 0;
+    auto add = [&](uint8_t ep) {
+        if (!ep) return;
+        for (int i = 0; i < n; i++) if (out[i] == ep) return;
+        if (n < max) out[n++] = ep;
+    };
+    if (forced_ep) {
+        add(forced_ep);
+        return n;
+    }
+    add(zigate_device_cluster_ep(dev, cluster));
+    for (int i = 0; i < tmpl->state_count; i++) {
+        const devdata_template_state_t *s = &tmpl->states[i];
+        if (s->cluster == cluster && s->endpoint) add(s->endpoint);
+    }
+    return n;
+}
+
+#define SETUP_INITIAL_READS_MAX 24
+
+/**
+ * Lecture initiale des lignes du template, juste apres le bind et le
+ * reporting : un appareil ne rapporte qu'au changement d'une valeur ou au
+ * bout de l'intervalle maximal (5 min souvent), et sa fiche restait vide
+ * jusque-la. Chaque attribut est lu sur son endpoint (ligne propre a un
+ * endpoint, sinon celui qui porte le cluster). Pas pour le ZLinky (lectures
+ * propres, dizaines d'attributs) ni pour les datapoints Tuya (EF00).
+ */
+static void send_initial_reads(const zigate_device_t *dev, const devdata_template_t *tmpl)
+{
+    int sent = 0;
+    for (int i = 0; i < tmpl->state_count && sent < SETUP_INITIAL_READS_MAX; i++) {
+        const devdata_template_state_t *s = &tmpl->states[i];
+        if (s->cluster == 0xEF00) continue;
+        // Cluster absent de l'appareil (quand ses clusters sont connus)
+        if (dev->in_cluster_count && !zigate_device_has_cluster(dev, s->cluster)) continue;
+        // Meme attribut deja lu (deux lignes sur une meme valeur)
+        bool dup = false;
+        for (int k = 0; k < i && !dup; k++) {
+            dup = tmpl->states[k].cluster == s->cluster && tmpl->states[k].attribute == s->attribute;
+        }
+        if (dup) continue;
+        uint8_t ep = s->endpoint ? s->endpoint : zigate_device_cluster_ep(dev, s->cluster);
+        uint16_t attr = s->endpoint ? (uint16_t)(s->attribute & 0x0FFF) : s->attribute;
+        if (s->manufacturer_code) {
+            zigate_read_attribute_mfr(dev->short_addr, ep, s->cluster, attr, s->manufacturer_code);
+        } else {
+            zigate_read_attribute(dev->short_addr, ep, s->cluster, attr);
+        }
+        sent++;
+        wait_ms(SETUP_FRAME_GAP_MS);
+    }
+    if (sent) {
+        ESP_LOGI(TAG, "Lecture initiale 0x%016llX : %d attribut(s)",
+                 (unsigned long long)dev->ieee_addr, sent);
+    }
+}
+
 static void send_binds(const zigate_device_t *dev, const devdata_template_t *tmpl)
 {
     if (tmpl->bind_count == 0) return;
@@ -191,10 +269,14 @@ static void send_binds(const zigate_device_t *dev, const devdata_template_t *tmp
         return;
     }
     for (int i = 0; i < tmpl->bind_count; i++) {
-        zigate_bind(dev->ieee_addr, dev->endpoint, tmpl->bind_clusters[i], coord, 0x01);
-        ESP_LOGI(TAG, "Bind 0x%016llX cluster 0x%04X -> coordinateur",
-                 (unsigned long long)dev->ieee_addr, tmpl->bind_clusters[i]);
-        wait_ms(SETUP_FRAME_GAP_MS);
+        uint8_t eps[ZIGATE_MAX_EPS];
+        int n = cluster_targets(dev, tmpl, tmpl->bind_clusters[i], 0, eps, ZIGATE_MAX_EPS);
+        for (int k = 0; k < n; k++) {
+            zigate_bind(dev->ieee_addr, eps[k], tmpl->bind_clusters[i], coord, 0x01);
+            ESP_LOGI(TAG, "Bind 0x%016llX ep %u cluster 0x%04X -> coordinateur",
+                     (unsigned long long)dev->ieee_addr, eps[k], tmpl->bind_clusters[i]);
+            wait_ms(SETUP_FRAME_GAP_MS);
+        }
     }
 }
 
@@ -212,11 +294,15 @@ static void send_reports(const zigate_device_t *dev, const devdata_template_t *t
             continue;
         }
 
-        zigate_configure_reporting(dev->short_addr, dev->endpoint, r->cluster, r->attribute,
-                                   r->type, r->min_interval, r->max_interval, r->timeout,
-                                   r->change, r->manufacturer_code);
-        sent++;
-        wait_ms(SETUP_FRAME_GAP_MS);
+        uint8_t eps[ZIGATE_MAX_EPS];
+        int n = cluster_targets(dev, tmpl, r->cluster, r->endpoint, eps, ZIGATE_MAX_EPS);
+        for (int k = 0; k < n; k++) {
+            zigate_configure_reporting(dev->short_addr, eps[k], r->cluster, r->attribute,
+                                       r->type, r->min_interval, r->max_interval, r->timeout,
+                                       r->change, r->manufacturer_code);
+            sent++;
+            wait_ms(SETUP_FRAME_GAP_MS);
+        }
     }
     ESP_LOGI(TAG, "Config report 0x%016llX : %d envoye(s), %d hors mode",
              (unsigned long long)dev->ieee_addr, sent, filtered);
@@ -265,6 +351,7 @@ static void setup_device(const setup_request_t *req)
         send_binds(&snap, tmpl);
         if (s_progress_cb) s_progress_cb(snap.ieee_addr, "Configuration des rapports...");
         send_reports(&snap, tmpl, linky_mode);
+        if (!is_zlinky(&snap)) send_initial_reads(&snap, tmpl);
         zigate_devices_set_configured(snap.ieee_addr, true);
         if (s_progress_cb) s_progress_cb(snap.ieee_addr, "Configuration OK");
     }

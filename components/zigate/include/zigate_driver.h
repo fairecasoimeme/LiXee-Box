@@ -246,6 +246,10 @@ esp_err_t zigate_write_attribute_mfr(uint16_t short_addr, uint8_t endpoint,
  */
 esp_err_t zigate_send_onoff(uint16_t short_addr, uint8_t endpoint, uint8_t action);
 
+/** Move To Level (0x0081) : niveau 0..254, with_onoff = variante With On/Off. */
+esp_err_t zigate_send_level(uint16_t short_addr, uint8_t endpoint, uint8_t level, bool with_onoff,
+                            uint16_t transition_ds);
+
 /**
  * Commande Window Covering (0x00FA) : cmd ZCL (0 monter, 1 descendre, 2 stop,
  * 5 aller a un pourcentage...) suivie de 'extra_len' octets de parametres.

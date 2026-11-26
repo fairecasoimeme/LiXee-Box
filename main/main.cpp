@@ -291,6 +291,12 @@ static void process_attribute(uint64_t ieee, const zigate_attribute_report_t *re
     int64_t num_value = 0;
     bool has_num = zcl_to_int64(report->data, report->data_len,
                                 report->attr_type, &num_value);
+    // Mesure invalide ZCL (0x8000 : sonde absente) : pas un nombre, ni pour
+    // l'historique ni pour MQTT
+    if (has_num && device_data_value_invalid(hex_value, report->attr_type,
+                                             report->cluster_id, report->attr_id)) {
+        has_num = false;
+    }
     // Tarif en cours du ZLinky : NTARF relu apres chaque nouveau libelle (#104)
     if (report->cluster_id == 0xFF66) {
         if (report->attr_id == 0x0010) energy_tariff_label_received(ieee);

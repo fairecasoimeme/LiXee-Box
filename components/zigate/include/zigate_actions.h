@@ -23,6 +23,7 @@ extern "C" {
 #define ZB_ACT_COVER                250   // value : 0 monter, 1 descendre, 2 stop
 #define ZB_ACT_COVER_POSITION       251   // value : ouverture 0..100 %
 #define ZB_ACT_COVER_POSITION_INV   252   // idem, appareil qui inverse le sens
+#define ZB_ACT_LEVEL                253   // value : niveau 0..100 % (Move To Level With On/Off)
 #define ZB_ACT_TUYA_BOOL            300   // endpoint = numero de DP
 #define ZB_ACT_TUYA_VALUE           301
 #define ZB_ACT_TUYA_ENUM            302
@@ -61,6 +62,9 @@ bool zigate_action_is_setpoint(int command);
 
 /** true pour les commandes de position de volet, affichees en curseur. */
 bool zigate_action_is_cover_position(int command);
+
+/** true pour la commande de niveau (253), affichee en curseur 0..100 %. */
+bool zigate_action_is_level(int command);
 
 /**
  * Execute une action de template.

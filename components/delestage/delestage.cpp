@@ -77,7 +77,7 @@ static void send_onoff(uint64_t ieee, bool on)
 {
     const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
     if (!d) return;
-    zigate_send_onoff(d->short_addr, d->endpoint ? d->endpoint : 1, on ? 1 : 0);
+    zigate_send_onoff(d->short_addr, zigate_device_cluster_ep(d, 0x0006), on ? 1 : 0);
 }
 
 /** Prises de la configuration ("ieee1,ieee2") : fn(ieee) pour chaque entree. */

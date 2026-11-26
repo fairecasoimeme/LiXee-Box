@@ -724,9 +724,14 @@ static esp_err_t apply_profile(bridge_device_mapping_t *m, const zigate_attribut
     const matter_profile_t *p = m->profile;
     double raw = 0;
     bool have_raw = false, found = false;
+    // Rapport d'un endpoint secondaire : cle de la ligne du template propre
+    // a cet endpoint (0x3000 | attribut), comme a l'enregistrement de la valeur
+    const uint16_t key = report->endpoint >= 2
+        ? device_data_storage_attr(m->zigbee_ieee, report->cluster_id, report->attr_id, report->endpoint)
+        : report->attr_id;
     for (int i = 0; i < p->link_count; i++) {
         const matter_link_t *l = &p->links[i];
-        if (l->cluster != report->cluster_id || l->attr != report->attr_id) continue;
+        if (l->cluster != report->cluster_id || l->attr != key) continue;
         found = true;
         if (!have_raw && (l->target == ML_SWITCH_PRESS || l->target == ML_SWITCH_MULTI) &&
             report->attr_type >= 0x41 && report->attr_type <= 0x44) {
@@ -980,7 +985,9 @@ static esp_err_t profile_command(bridge_device_mapping_t *m, uint32_t cluster_id
     zigate_device_t *dev = zigate_devices_find_by_ieee(m->zigbee_ieee);
     if (!dev) return ESP_ERR_NOT_FOUND;
     const uint16_t sa = dev->short_addr;
-    const uint8_t dep = dev->endpoint;
+    // Endpoint qui porte le cluster (identifiants Matter et ZCL identiques
+    // pour OnOff, Level, Window Covering, Thermostat, Fan Control)
+    const uint8_t dep = zigate_device_cluster_ep(dev, (uint16_t)cluster_id);
     esp_err_t err = ESP_OK;
 
     switch (cluster_id) {
@@ -1082,7 +1089,7 @@ esp_err_t matter_device_manager_handle_matter_command(int matter_endpoint,
     case 0x0006:  // OnOff
         if (command_id == 0x0000) {  // OnOff attribute write
             uint8_t action = val->val.b ? 1 : 0;
-            zigate_send_onoff(dev->short_addr, dev->endpoint, action);
+            zigate_send_onoff(dev->short_addr, zigate_device_cluster_ep(dev, 0x0006), action);
         }
         break;
 

@@ -1061,5 +1061,199 @@
         }
       ]
     }
+  ],
+  "Ztriac": [
+    {
+      "status": [
+        {
+          "name": "Sortie",
+          "cluster": "0006",
+          "attribut": 0,
+          "mqtt_device_class": "switch",
+          "mqtt_icon": "power",
+          "visible": 1
+        },
+        {
+          "name": "Niveau de puissance",
+          "cluster": "0008",
+          "attribut": 0,
+          "mqtt_icon": "brightness-percent",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "coefficient": 0.3937,
+          "unit": "%",
+          "visible": 1
+        },
+        {
+          "name": "Courant",
+          "cluster": "0B04",
+          "attribut": 1288,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "current-ac",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "coefficient": 0.001,
+          "unit": "A",
+          "visible": 1
+        },
+        {
+          "name": "Puissance",
+          "cluster": "0B04",
+          "attribut": 1291,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "unit": "W",
+          "visible": 1,
+          "jauge": "gauge",
+          "min": 0,
+          "max": 3000
+        },
+        {
+          "name": "Puissance apparente",
+          "cluster": "0B04",
+          "attribut": 1295,
+          "mqtt_device_class": "apparent_power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "unit": "VA",
+          "visible": 1
+        },
+        {
+          "name": "Énergie routée",
+          "cluster": "0702",
+          "attribut": 0,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "coefficient": 0.001,
+          "unit": "kWh",
+          "visible": 1
+        },
+        {
+          "name": "Température ballon",
+          "cluster": "0402",
+          "attribut": 0,
+          "endpoint": 3,
+          "mqtt_device_class": "temperature",
+          "mqtt_icon": "water-boiler",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "coefficient": 0.01,
+          "unit": "°C",
+          "visible": 1,
+          "poll": 1
+        },
+        {
+          "name": "Température étage de puissance",
+          "cluster": "0402",
+          "attribut": 0,
+          "endpoint": 4,
+          "mqtt_device_class": "temperature",
+          "mqtt_icon": "thermometer-alert",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "coefficient": 0.01,
+          "unit": "°C",
+          "visible": 1,
+          "poll": 1
+        }
+      ],
+      "bind": "6;8;1794;2820;1026",
+      "report": [
+        {
+          "cluster": "0006",
+          "attribut": 0,
+          "type": 16,
+          "min": 0,
+          "max": 300,
+          "timeout": 0,
+          "change": 0
+        },
+        {
+          "cluster": "0008",
+          "attribut": 0,
+          "type": 32,
+          "min": 1,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0702",
+          "attribut": 0,
+          "type": 37,
+          "min": 10,
+          "max": 300,
+          "timeout": 0,
+          "change": 1
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1288,
+          "type": 33,
+          "min": 5,
+          "max": 300,
+          "timeout": 0,
+          "change": 50
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1291,
+          "type": 41,
+          "min": 5,
+          "max": 300,
+          "timeout": 0,
+          "change": 10
+        },
+        {
+          "cluster": "0B04",
+          "attribut": 1295,
+          "type": 33,
+          "min": 5,
+          "max": 300,
+          "timeout": 0,
+          "change": 10
+        },
+        {
+          "cluster": "0402",
+          "attribut": 0,
+          "type": 41,
+          "min": 10,
+          "max": 300,
+          "timeout": 0,
+          "change": 10
+        }
+      ],
+      "action": [
+        {
+          "name": "ON",
+          "command": 146,
+          "endpoint": 1,
+          "value": 1
+        },
+        {
+          "name": "OFF",
+          "command": 146,
+          "endpoint": 1,
+          "value": 0
+        },
+        {
+          "name": "TOGGLE",
+          "command": 146,
+          "endpoint": 1,
+          "value": 2
+        },
+        {
+          "name": "Puissance",
+          "command": 253,
+          "endpoint": 1,
+          "value": 0
+        }
+      ]
+    }
   ]
 }

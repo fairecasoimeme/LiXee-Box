@@ -34,6 +34,11 @@ bool zigate_action_is_cover_position(int command)
     return command == ZB_ACT_COVER_POSITION || command == ZB_ACT_COVER_POSITION_INV;
 }
 
+bool zigate_action_is_level(int command)
+{
+    return command == ZB_ACT_LEVEL;
+}
+
 // ----------------------------------------------------------------------------
 // Types ZCL
 // ----------------------------------------------------------------------------
@@ -262,6 +267,14 @@ esp_err_t zigate_action_send_ex(int command, uint16_t short_addr, uint8_t endpoi
         opcode = ZIGATE_CMD_ONOFF;
         err = zigate_send_onoff(short_addr, endpoint, (uint8_t)value);
         break;
+
+    case ZB_ACT_LEVEL: {
+        // Niveau en % (curseur, regles) -> 0..254 ZCL ; 0 eteint (With On/Off)
+        if (value < 0 || value > 100) return ESP_ERR_INVALID_ARG;
+        opcode = ZIGATE_CMD_MOVE_TO_LEVEL;
+        err = zigate_send_level(short_addr, endpoint, (uint8_t)((value * 254 + 50) / 100), true, 0);
+        break;
+    }
 
     case ZB_ACT_COVER: {
         if (value < 0 || value > 2) return ESP_ERR_INVALID_ARG;

@@ -165,11 +165,13 @@
   function actionsHtml(d) {
     var h = '', temps = '';
     (d.actions || []).forEach(function(a) {
-      if (a.cover) {
-        var o = coverOpen(d.cover, a.c);
+      if (a.cover || a.level) {
+        // Volet : ouverture ; niveau (variateur, routeur solaire) : 0..100 %
+        var o = a.level ? (d.level == null || d.level < 0 ? null : d.level) : coverOpen(d.cover, a.c);
         h += '<div class="zb-cover"><span class="small text-muted fw-semibold">' + esc(a.n) + '</span>' +
           '<input type="range" class="zb-cover-range" min="0" max="100" step="1" value="' + (o == null ? 0 : o) + '"' +
-          ' data-ieee="' + esc(d.ieee) + '" data-i="' + a.i + '" data-c="' + a.c + '" aria-label="' + esc(a.n) + '">' +
+          ' data-ieee="' + esc(d.ieee) + '" data-i="' + a.i + '" data-c="' + a.c + '"' +
+          (a.level ? ' data-level="1"' : '') + ' aria-label="' + esc(a.n) + '">' +
           '<span class="zb-cover-val">' + (o == null ? '–' : o + ' %') + '</span></div>';
       } else if (a.temp) {
         // Consigne : temperature choisie puis envoyee (valeur en 0,01 degC)
@@ -229,12 +231,13 @@
     });
   }
 
-  // Recale les curseurs de volet sur la position reelle (sauf en manipulation)
-  function syncCovers(ieee, lift) {
+  // Recale les curseurs de volet sur la position reelle, et ceux de niveau
+  // sur le niveau reel (sauf en manipulation)
+  function syncCovers(ieee, lift, level) {
     $('.zb-cover-range[data-ieee="' + ieee + '"]').each(function() {
       var $r = $(this);
       if ($r.data('drag')) return;
-      var o = coverOpen(lift, $r.data('c'));
+      var o = $r.data('level') ? (level == null || level < 0 ? null : level) : coverOpen(lift, $r.data('c'));
       if (o == null) return;
       $r.val(o);
       $r.next('.zb-cover-val').text(o + ' %');
@@ -311,7 +314,7 @@
           $.each(d.v || {}, function(k, v) {
             setText(document.getElementById('zb-v-' + ieee + '-' + k), v === '' ? '-' : v);
           });
-          syncCovers(ieee, d.cover);
+          syncCovers(ieee, d.cover, d.level);
         });
       });
     }, 5000);
@@ -366,6 +369,19 @@
         ['Clusters entrants', (d.inClusters || []).join(' ') || '-'],
         ['Clusters sortants', (d.outClusters || []).join(' ') || '-']
       ];
+      // Appareil a plusieurs endpoints (routeur Ztriac 1/3/4...) : endpoint
+      // principal, puis les clusters endpoint par endpoint
+      var eps = d.endpoints || [];
+      if (eps.length > 1) {
+        var others = eps.filter(function(e) { return !e.main; }).map(function(e) { return e.ep; });
+        rows[3][1] = rows[3][1] + ' (endpoint ' + d.endpoint + ')';
+        rows[4][1] = d.endpoint + ' (principal) ; autres : ' + others.join(', ');
+        rows.splice(rows.length - 2, 2);
+        eps.forEach(function(e) {
+          rows.push(['Endpoint ' + e.ep + ' (Device ID 0x' + e.deviceId + ')',
+            'entrants : ' + ((e['in'] || []).join(' ') || '-') + ' — sortants : ' + ((e.out || []).join(' ') || '-')]);
+        });
+      }
       if (d.zlinky) rows.splice(9, 0, ['Mode TIC', d.linkyMode >= 0 ? d.linkyMode : 'inconnu']);
       var h = '<table class="table table-sm zb-info">';
       rows.forEach(function(r) { h += '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td></tr>'; });
@@ -467,7 +483,7 @@
         }
       });
       $('#zb-raw').html(rawTable(d));
-      syncCovers(d.ieee, d.cover);
+      syncCovers(d.ieee, d.cover, d.level);
     }
 
     function load(first) {
@@ -648,7 +664,7 @@
             if (g) { try { g.refresh(num(v)); } catch (e) {} }
             else setText(document.getElementById(id), v === '' ? '-' : v);
           });
-          syncCovers(ieee, d.cover);
+          syncCovers(ieee, d.cover, d.level);
         });
       });
     }, 5000);

@@ -420,7 +420,7 @@ static void fire_actuator_one(const char *ieee_s, bool on, const char *name)
     if (name[0] && fire_device_action(ieee, name)) return;
     const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
     if (!d) return;
-    zigate_send_onoff(d->short_addr, d->endpoint ? d->endpoint : 1, on ? 1 : 0);
+    zigate_send_onoff(d->short_addr, zigate_device_cluster_ep(d, 0x0006), on ? 1 : 0);
 }
 
 static void send_actuator(zone_t *t, bool on)
@@ -855,8 +855,7 @@ enum { KIND_TEMP = 0, KIND_ACTUATOR, KIND_PRESENCE, KIND_CONTACT };
 
 static bool has_cluster(const zigate_device_t *d, uint16_t c)
 {
-    for (int i = 0; i < d->in_cluster_count && i < 32; i++) if (d->in_clusters[i] == c) return true;
-    return false;
+    return zigate_device_has_cluster(d, c);
 }
 
 static bool model_has(const zigate_device_t *d, const char *const *words)

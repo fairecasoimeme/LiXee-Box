@@ -27,6 +27,171 @@ extern zigate_device_discovery_done_cb_t s_discovery_done_cb;
 // (le Device Announce arrive souvent 2 fois)
 static uint16_t s_discovery_in_progress_addr = 0xFFFF;
 
+// ----------------------------------------------------------------------------
+// Decouverte des endpoints (Active Endpoint -> un Simple Descriptor par
+// endpoint). Tous les endpoints applicatifs sont enregistres ; la fin de
+// decouverte (lecture Basic sur l'endpoint principal, puis configuration de
+// l'appareil) ne part qu'UNE fois, quand tous les endpoints ont repondu, ou
+// au plus tard DESC_TIMEOUT_MS apres la reponse Active Endpoint. Avant la
+// v3.4 elle partait a chaque endpoint, et le dernier devenait l'endpoint de
+// l'appareil.
+// ----------------------------------------------------------------------------
+#include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#define DESC_TIMEOUT_MS 8000
+
+static portMUX_TYPE s_desc_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint16_t s_desc_addr = 0xFFFF;   // appareil en cours de description
+static uint8_t  s_desc_expected;        // endpoints annonces
+static uint8_t  s_desc_seen;            // Simple Descriptors recus
+static bool     s_desc_app;             // au moins un endpoint applicatif
+static esp_timer_handle_t s_desc_timer;
+
+// Redecouverte des endpoints d'un appareil deja configure (decouvert avant
+// la v3.4) : sa fin ne reconfigure l'appareil que si l'endpoint principal ou
+// le Device ID ont change
+static uint16_t s_refresh_addr = 0xFFFF;
+static uint8_t  s_refresh_old_ep;
+static uint16_t s_refresh_old_devid;
+static uint32_t s_refresh_last_s;
+#define REFRESH_SPACING_S 15
+#define REFRESH_RETRY_S   1800    // appareil sur pile endormi avant la reponse
+
+/** Fin de decouverte d'un appareil : lecture Basic puis configuration */
+static void discovery_finish(uint16_t short_addr)
+{
+    zigate_device_t *dev = zigate_devices_find_by_short(short_addr);
+    if (!dev) return;
+    const uint64_t ieee = dev->ieee_addr;
+    const uint8_t ep = dev->endpoint ? dev->endpoint : 1;
+    ESP_LOGI(TAG, "Device 0x%04X discovery complete: devId=0x%04X ep=%d (%d endpoint(s))",
+             short_addr, dev->device_id, ep, dev->ep_count);
+    zigate_devices_save();
+    if (s_refresh_addr == short_addr) {
+        s_refresh_addr = 0xFFFF;
+        if (ep == s_refresh_old_ep && dev->device_id == s_refresh_old_devid) {
+            ESP_LOGI(TAG, "0x%04X : endpoints enregistres, configuration inchangee", short_addr);
+            return;
+        }
+        ESP_LOGI(TAG, "0x%04X : endpoint principal %u -> %u, reconfiguration",
+                 short_addr, s_refresh_old_ep, ep);
+    }
+    zigate_read_basic_attributes(short_addr, ep);
+    if (s_discovery_done_cb) s_discovery_done_cb(short_addr, ieee);
+}
+
+/** Reclame la fin de la decouverte en cours (une seule fois) */
+static bool desc_claim(uint16_t short_addr, bool *app)
+{
+    bool mine = false;
+    taskENTER_CRITICAL(&s_desc_mux);
+    if (s_desc_addr == short_addr) {
+        mine = true;
+        *app = s_desc_app;
+        s_desc_addr = 0xFFFF;
+    }
+    taskEXIT_CRITICAL(&s_desc_mux);
+    return mine;
+}
+
+static volatile uint16_t s_desc_timer_addr = 0xFFFF;
+
+/** Sur la tache de traitement ZiGate : endpoints manquants, on termine */
+static void desc_timeout_proc(void *arg)
+{
+    uint16_t addr = (uint16_t)(uintptr_t)arg;
+    bool app = false;
+    if (desc_claim(addr, &app) && app) {
+        ESP_LOGW(TAG, "0x%04X : endpoints incomplets apres %d ms, decouverte terminee",
+                 addr, DESC_TIMEOUT_MS);
+        discovery_finish(addr);
+    }
+}
+
+/** Rappel esp_timer : renvoye vers la tache ZiGate (sauvegarde, emission) */
+static void desc_timeout_cb(void *arg)
+{
+    (void)arg;
+    zigate_run_on_proc(desc_timeout_proc, (void *)(uintptr_t)s_desc_timer_addr);
+}
+
+static void desc_begin(uint16_t short_addr, uint8_t ep_count)
+{
+    if (!s_desc_timer) {
+        esp_timer_create_args_t a = {};
+        a.callback = desc_timeout_cb;
+        a.name = "zb_desc";
+        if (esp_timer_create(&a, &s_desc_timer) != ESP_OK) s_desc_timer = NULL;
+    }
+    // Une decouverte precedente inachevee (un seul appareil a la fois) se
+    // termine avec ce qu'elle a
+    uint16_t prev = 0xFFFF;
+    bool prev_app = false;
+    taskENTER_CRITICAL(&s_desc_mux);
+    if (s_desc_addr != 0xFFFF && s_desc_addr != short_addr) { prev = s_desc_addr; prev_app = s_desc_app; }
+    s_desc_addr = short_addr;
+    s_desc_expected = ep_count;
+    s_desc_seen = 0;
+    s_desc_app = false;
+    taskEXIT_CRITICAL(&s_desc_mux);
+    if (prev != 0xFFFF && prev_app) discovery_finish(prev);
+    if (s_desc_timer) {
+        esp_timer_stop(s_desc_timer);           // ESP_ERR_INVALID_STATE s'il ne tournait pas
+        s_desc_timer_addr = short_addr;
+        esp_timer_start_once(s_desc_timer, (uint64_t)DESC_TIMEOUT_MS * 1000);
+    }
+}
+
+/**
+ * Appareil sans endpoints enregistres (decouvert avant la v3.4) qui vient
+ * d'envoyer une valeur : Active Endpoint redemande, un appareil a la fois, au
+ * plus toutes les REFRESH_SPACING_S secondes, et pour un meme appareil toutes
+ * les REFRESH_RETRY_S secondes tant qu'il n'a pas repondu.
+ * Ses clusters sont ainsi connus sans le reappairer.
+ */
+static void maybe_refresh_endpoints(uint16_t short_addr)
+{
+    zigate_device_t *dev = zigate_devices_find_by_short(short_addr);
+    if (!dev || dev->ep_count) return;
+    uint32_t now = zigate_uptime_s();
+    if (dev->ep_refresh_s && now - dev->ep_refresh_s < REFRESH_RETRY_S) return;
+    if (s_refresh_last_s && now - s_refresh_last_s < REFRESH_SPACING_S) return;
+    bool busy;
+    taskENTER_CRITICAL(&s_desc_mux);
+    busy = (s_desc_addr != 0xFFFF);
+    taskEXIT_CRITICAL(&s_desc_mux);
+    if (busy || s_discovery_in_progress_addr == short_addr) return;
+
+    dev->ep_refresh_s = now ? now : 1;
+    s_refresh_last_s = now;
+    s_refresh_addr = short_addr;
+    s_refresh_old_ep = dev->endpoint;
+    s_refresh_old_devid = dev->device_id;
+    ESP_LOGI(TAG, "0x%04X : endpoints inconnus, Active Endpoint redemande", short_addr);
+    zigate_request_active_endpoints(short_addr);
+}
+
+/**
+ * Un Simple Descriptor de plus pour short_addr. Renvoie true s'il complete la
+ * decouverte en cours (tous les endpoints ont repondu), false sinon ; *in_seq
+ * dit si l'appareil est bien en cours de decouverte.
+ */
+static bool desc_note(uint16_t short_addr, bool app, bool *in_seq)
+{
+    bool done = false;
+    taskENTER_CRITICAL(&s_desc_mux);
+    *in_seq = (s_desc_addr == short_addr);
+    if (*in_seq) {
+        s_desc_seen++;
+        if (app) s_desc_app = true;
+        done = s_desc_seen >= s_desc_expected;
+    }
+    taskEXIT_CRITICAL(&s_desc_mux);
+    return done;
+}
+
 // Adresse IEEE du coordinateur (reponse 0x8009). Necessaire pour lier les
 // clusters d'un appareil au coordinateur ; jusqu'ici seulement journalisee.
 static volatile uint64_t s_coordinator_ieee = 0;
@@ -602,6 +767,9 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
             }
             s_discovery_in_progress_addr = short_addr;
             s_discovery_start_tick = now;
+            // Annonce (appairage, retour sur le reseau) : decouverte complete,
+            // jamais un simple rafraichissement des endpoints
+            if (s_refresh_addr == short_addr) s_refresh_addr = 0xFFFF;
 
             // Lancer la decouverte automatique apres un delai de securite
             // (laisser le temps au Transport Key d'etre envoye)
@@ -641,6 +809,10 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
                      status, short_addr, ep_count);
 
             if (status == 0 && ep_count > 0) {
+                // Nombre d'endpoints reellement presents dans la trame
+                int n_eps = 0;
+                while (n_eps < ep_count && (idx + n_eps) < pkt->length) n_eps++;
+                desc_begin(short_addr, (uint8_t)n_eps);
                 // Pour chaque endpoint, demander le Simple Descriptor
                 for (int i = 0; i < ep_count && (idx + i) < pkt->length; i++) {
                     uint8_t ep = pkt->payload[idx + i];
@@ -675,109 +847,80 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
             ESP_LOGI(TAG, "Simple Desc: status=%d addr=0x%04X ep=%d profile=0x%04X devId=0x%04X ver=%d",
                      status, short_addr, endpoint, profile_id, device_id, dev_version);
 
+            // Endpoint applicatif : profil HA ou ZLL. Green Power (ep 242,
+            // profil 0xA1E0) et les autres profils sont ignores.
+            bool app = status == 0 &&
+                       (profile_id == 0x0104 || profile_id == 0xC05E) && endpoint != 242;
+
             if (status == 0) {
-                // Mettre a jour le device dans la base
-                zigate_device_t *dev = zigate_devices_find_by_short(short_addr);
-                if (dev) {
-                    // Ignorer les endpoints non-Home Automation (ex: Green Power ep=242, profile=0xA1E0)
-                    // pour ne pas ecraser les clusters de l'endpoint applicatif principal
-                    bool is_ha_endpoint = (profile_id == 0x0104 || profile_id == 0xC05E) && endpoint != 242;
-
-                    if (is_ha_endpoint) {
-                        dev->device_id = device_id;
-                        dev->profile_id = profile_id;
-                        dev->endpoint = endpoint;
-                    } else {
-                        ESP_LOGI(TAG, "Non-HA endpoint %d (profile=0x%04X), skipping cluster update",
-                                 endpoint, profile_id);
+                // Clusters lus dans la trame. Le compteur est celui des
+                // clusters REELLEMENT lus : une trame tronquee n'en annonce
+                // pas plus qu'elle n'en contient.
+                uint16_t in_cl[64], out_cl[64];
+                int n_in = 0, n_out = 0;
+                bool in_complete = true;
+                if (idx < pkt->length) {
+                    uint8_t nb_in = pkt->payload[idx++];
+                    ESP_LOGI(TAG, "  In clusters (%d):", nb_in);
+                    for (int i = 0; i < nb_in && idx + 1 < pkt->length; i++) {
+                        uint16_t cl = (pkt->payload[idx] << 8) | pkt->payload[idx + 1]; idx += 2;
+                        if (n_in < 64) in_cl[n_in++] = cl;
+                        ESP_LOGI(TAG, "    0x%04X", cl);
                     }
-
-                    const int max_in  = (int)(sizeof(dev->in_clusters)  / sizeof(dev->in_clusters[0]));
-                    const int max_out = (int)(sizeof(dev->out_clusters) / sizeof(dev->out_clusters[0]));
-
-                    // Aucun compteur ne doit survivre a une trame qui ne le reecrit
-                    // pas (trame s'arretant apres l'en-tete, ou bloc OUT absent) :
-                    // on repart de zero et on ne declare que ce qui est lu.
-                    if (is_ha_endpoint) {
-                        dev->in_cluster_count  = 0;
-                        dev->out_cluster_count = 0;
+                    if (n_in < nb_in) {
+                        ESP_LOGW(TAG, "Truncated Simple Desc: %d/%d in clusters read", n_in, nb_in);
+                        in_complete = false;
                     }
-
-                    // Parser les clusters IN (toujours les loguer, mais ne les stocker que pour HA)
-                    // Le compteur n'est publie qu'APRES la boucle, avec le nombre
-                    // reellement lu : sur trame tronquee, l'ancien code annoncait
-                    // le compte de la trame et laissait les entrees non reecrites
-                    // a leur valeur precedente.
-                    bool in_complete = true;
-                    if (idx < pkt->length) {
-                        uint8_t nb_in = pkt->payload[idx++];
-                        ESP_LOGI(TAG, "  In clusters (%d):", nb_in);
-                        int read_in = 0;
-                        for (int i = 0; i < nb_in && idx + 1 < pkt->length; i++) {
-                            uint16_t cl = (pkt->payload[idx] << 8) | pkt->payload[idx + 1]; idx += 2;
-                            if (is_ha_endpoint && i < max_in) dev->in_clusters[i] = cl;
-                            read_in++;
-                            ESP_LOGI(TAG, "    0x%04X", cl);
-                        }
-                        if (read_in < nb_in) {
-                            ESP_LOGW(TAG, "Truncated Simple Desc: %d/%d in clusters read",
-                                     read_in, nb_in);
-                            in_complete = false;
-                        }
-                        if (is_ha_endpoint) {
-                            dev->in_cluster_count = (read_in > max_in) ? max_in : read_in;
-                        }
-                    }
-
-                    // Parser les clusters OUT, uniquement si le bloc IN est complet :
-                    // sinon idx est desynchronise et l'octet lu serait la moitie
-                    // d'un identifiant de cluster, pas un compteur.
-                    if (in_complete && idx < pkt->length) {
-                        uint8_t nb_out = pkt->payload[idx++];
-                        ESP_LOGI(TAG, "  Out clusters (%d):", nb_out);
-                        int read_out = 0;
-                        for (int i = 0; i < nb_out && idx + 1 < pkt->length; i++) {
-                            uint16_t cl = (pkt->payload[idx] << 8) | pkt->payload[idx + 1]; idx += 2;
-                            if (is_ha_endpoint && i < max_out) dev->out_clusters[i] = cl;
-                            read_out++;
-                            ESP_LOGI(TAG, "    0x%04X", cl);
-                        }
-                        if (read_out < nb_out) {
-                            ESP_LOGW(TAG, "Truncated Simple Desc: %d/%d out clusters read",
-                                     read_out, nb_out);
-                        }
-                        if (is_ha_endpoint) {
-                            dev->out_cluster_count = (read_out > max_out) ? max_out : read_out;
-                        }
-                    }
-
-                    // Sauvegarder les modifications
-                    zigate_devices_save();
-
-                    ESP_LOGI(TAG, "Device 0x%04X discovery complete: devId=0x%04X ep=%d",
-                             short_addr, device_id, endpoint);
-
-                    // Correction : l'IEEE est copiee AVANT les attentes ci-dessous.
-                    // 'dev' pointe dans la table de zigate_devices, qu'une
-                    // suppression decale : apres les vTaskDelay, dev->ieee_addr
-                    // pouvait designer un autre appareil (ou une case videe).
-                    const uint64_t ieee = dev->ieee_addr;
-                    dev = NULL;                     // ne plus l'utiliser au-dela
-
-                    // Pour les endpoints HA: lire les attributs Basic et signaler la decouverte
-                    if (is_ha_endpoint) {
-                        // Lire les attributs Basic (manufacturer, model)
-                        vTaskDelay(pdMS_TO_TICKS(300));
-                        zigate_read_basic_attributes(short_addr, endpoint);
-
-                        // Signaler que la decouverte est terminee
-                        if (s_discovery_done_cb) {
-                            s_discovery_done_cb(short_addr, ieee);
-                        }
-                    }
-                } else {
-                    ESP_LOGW(TAG, "Device 0x%04X not found in database for Simple Desc update", short_addr);
                 }
+                // Clusters OUT, uniquement si le bloc IN est complet : sinon
+                // idx est desynchronise et l'octet lu serait la moitie d'un
+                // identifiant de cluster, pas un compteur.
+                if (in_complete && idx < pkt->length) {
+                    uint8_t nb_out = pkt->payload[idx++];
+                    ESP_LOGI(TAG, "  Out clusters (%d):", nb_out);
+                    for (int i = 0; i < nb_out && idx + 1 < pkt->length; i++) {
+                        uint16_t cl = (pkt->payload[idx] << 8) | pkt->payload[idx + 1]; idx += 2;
+                        if (n_out < 64) out_cl[n_out++] = cl;
+                        ESP_LOGI(TAG, "    0x%04X", cl);
+                    }
+                    if (n_out < nb_out) {
+                        ESP_LOGW(TAG, "Truncated Simple Desc: %d/%d out clusters read", n_out, nb_out);
+                    }
+                }
+
+                zigate_device_t *dev = zigate_devices_find_by_short(short_addr);
+                if (!dev) {
+                    ESP_LOGW(TAG, "Device 0x%04X not found in database for Simple Desc update", short_addr);
+                } else if (app) {
+                    // Chaque endpoint garde ses clusters ; l'endpoint principal
+                    // (premier endpoint HA) fixe Device ID et profil
+                    zigate_device_set_endpoint_desc(dev, endpoint, profile_id, device_id,
+                                                    in_cl, n_in, out_cl, n_out);
+                    ESP_LOGI(TAG, "0x%04X : endpoint %d enregistre (principal %d, devId 0x%04X)",
+                             short_addr, endpoint, dev->endpoint, dev->device_id);
+                } else {
+                    ESP_LOGI(TAG, "Non-HA endpoint %d (profile=0x%04X), ignored", endpoint, profile_id);
+                }
+            }
+
+            // Fin de decouverte : une seule fois, quand tous les endpoints
+            // annonces ont repondu (echec compris). Un Simple Descriptor hors
+            // decouverte (demande isolee) la declenche tout de suite.
+            bool in_seq = false;
+            bool done = desc_note(short_addr, app, &in_seq);
+            if (in_seq) {
+                bool any_app = false;
+                if (done && desc_claim(short_addr, &any_app)) {
+                    if (s_desc_timer) esp_timer_stop(s_desc_timer);
+                    if (any_app) {
+                        vTaskDelay(pdMS_TO_TICKS(300));
+                        discovery_finish(short_addr);
+                    }
+                }
+            } else if (app) {
+                zigate_devices_save();
+                vTaskDelay(pdMS_TO_TICKS(300));
+                discovery_finish(short_addr);
             }
         }
         break;
@@ -851,6 +994,10 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
                 if (s_attr_cb) {
                     s_attr_cb(&report);
                 }
+                // Appareil decouvert avant la v3.4 (endpoints non enregistres) :
+                // il vient de parler, donc il est eveille, on lui redemande ses
+                // endpoints
+                maybe_refresh_endpoints(report.short_addr);
             }
         }
         break;

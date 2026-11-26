@@ -1394,7 +1394,10 @@ esp_err_t mqtt_manager_publish_attr(uint64_t ieee_addr, uint16_t cluster, uint16
         device_data_format_value(cluster, zat, hex, zcl_type, "", 1.0f, txt, sizeof(txt));
         return mqtt_manager_publish_value(ieee, cl, at, txt, true, 0);
     }
-    return mqtt_manager_publish_value(ieee, cl, at, hex, false, has_num ? num : 0);
+    // Valeur non numerique (mesure invalide 0x8000 : sonde absente...) : rien
+    // publie, plutot qu'un 0 ou -32768 que Home Assistant prendrait au mot
+    if (!has_num) return ESP_OK;
+    return mqtt_manager_publish_value(ieee, cl, at, hex, false, num);
 }
 
 esp_err_t mqtt_manager_publish_device(uint64_t ieee_addr)

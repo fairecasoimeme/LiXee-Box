@@ -116,7 +116,7 @@ static void run_oneshots(void)
         if (!zdev || !zdev->active || !dd) continue;
         uint8_t kep = 0;
         uint16_t attr = device_data_resolve_key(o.ieee, o.cluster, o.attr, &kep);
-        uint8_t ep = kep ? kep : zdev->endpoint;
+        uint8_t ep = kep ? kep : zigate_device_cluster_ep(zdev, o.cluster);
         uint16_t mfr = mfr_code_for(dd, o.cluster, o.attr);
         esp_err_t ret = mfr ? zigate_read_attribute_mfr(zdev->short_addr, ep, o.cluster, attr, mfr)
                             : zigate_read_attribute(zdev->short_addr, ep, o.cluster, attr);
@@ -163,7 +163,7 @@ static int scan_device(device_data_t *dd)
         // Ligne propre a un endpoint : attribut reel lu sur cet endpoint
         uint8_t kep = 0;
         uint16_t attr = device_data_resolve_key(dd->ieee_addr, pi->cluster_id, pi->attr_id, &kep);
-        uint8_t ep = kep ? kep : zdev->endpoint;
+        uint8_t ep = kep ? kep : zigate_device_cluster_ep(zdev, pi->cluster_id);
         esp_err_t ret;
         if (pi->manufacturer_code != 0) {
             ret = zigate_read_attribute_mfr(zdev->short_addr, ep,
