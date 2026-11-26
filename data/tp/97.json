@@ -79,7 +79,7 @@
           "unit": "Wh"
         },
         {
-          "name": "BBRHPJB / EASF06",
+          "name": "BBRHPJR / EASF06",
           "cluster": "0702",
           "attribut": 266,
           "mqtt_device_class": "energy",
