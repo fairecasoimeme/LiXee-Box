@@ -437,7 +437,7 @@
          "<div id='xactBox' style='border:1px solid #dee2e6;border-radius:8px;padding:10px;margin-bottom:4px;'>" +
          deviceChecks(opts.actuators, 'xact', t.actuatorsExtra, null, 'Aucune prise suppl&eacute;mentaire disponible.') + '</div>';
     h += "<div class='form-text mb-3'>Prises/relais pilot&eacute;s <b>en parall&egrave;le</b> du principal (m&ecirc;me marche/arr&ecirc;t). Utile pour chauffer une zone avec plusieurs appareils.</div>";
-    h += "<div class='alert alert-warning py-2 small mb-3'>&#9888;&#65039; <b>Climatiseur / PAC air-air</b> : ne le pilotez pas comme une simple prise on/off. Couper l'alimentation d'un compresseur en marche (plut&ocirc;t que de lui envoyer sa commande Arr&ecirc;t) peut l'endommager et d&eacute;clencher ses s&eacute;curit&eacute;s. Renseignez les actions <b>Chaud / Froid / Arr&ecirc;t</b> ci-dessous pour que la box le pilote comme sa t&eacute;l&eacute;commande, pas par coupure de courant.</div>";
+    h += "<div id='climWarn' class='alert alert-warning py-2 small mb-3' style='display:none;'>&#9888;&#65039; <b>Climatiseur / PAC air-air</b> : ne le pilotez pas comme une simple prise on/off. Couper l'alimentation d'un compresseur en marche (plut&ocirc;t que de lui envoyer sa commande Arr&ecirc;t) peut l'endommager et d&eacute;clencher ses s&eacute;curit&eacute;s. V&eacute;rifiez que l'action <b>Froid</b> ci-dessous pilote bien la t&eacute;l&eacute;commande/API de la clim, pas une coupure de courant.</div>";
     h += "<label class='form-label'>" + IC_THERMO + "Action Chaud</label><select class='form-select' id='aHeat'>" + actionOptions([], '') + '</select>';
     h += "<div class='form-text mb-2'>Action quand la zone doit <b>chauffer</b> (ex : <b>HEAT</b>, <b>CONFORT</b>). Laissez sur &laquo; Marche/Arr&ecirc;t simple &raquo; pour une prise on/off.</div>";
     h += "<label class='form-label'>" + IC_SNOW + "Action Froid <span class='text-muted'>(clim r&eacute;versible)</span></label><select class='form-select' id='aCool'>" + actionOptions([], '') + '</select>';
@@ -530,21 +530,27 @@
     $('#schedList').on('click', '.sched-del', function() { $(this).closest('.sched-row').remove(); });
 
     // Listes d'actions selon l'appareil principal (deviceActions)
+    // climWarn ne concerne que la clim/PAC air-air : visible seulement quand
+    // une action Froid est renseignee (donc hors convecteur/plancher chauffant).
+    function upClimWarn() { $('#climWarn').toggle(!!$('#aCool').val()); }
     function fillActions(ieee, keep) {
       var cur = keep || { h: $('#aHeat').val(), c: $('#aCool').val(), o: $('#aOff').val() };
       if (!ieee) {
         $('#aHeat').html(actionOptions([], ''));
         $('#aCool').html(actionOptions([], ''));
         $('#aOff').html(actionOptions([], ''));
+        upClimWarn();
         return;
       }
       $.getJSON('/api/thermostats/actions?ieee=' + encodeURIComponent(ieee)).done(function(a) {
         $('#aHeat').html(actionOptions(a, cur.h));
         $('#aCool').html(actionOptions(a, cur.c));
         $('#aOff').html(actionOptions(a, cur.o));
+        upClimWarn();
       });
     }
     $('#actSel').on('change', function() { fillActions(this.value); });
+    $('#aCool').on('change', upClimWarn);
     fillActions(t.actuatorIEEE, { h: t.actionHeat, c: t.actionCool, o: t.actionOff });
 
     $('#thermoForm').on('submit', function(e) {
