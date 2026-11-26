@@ -626,8 +626,7 @@
   var SUBMETER_CATEGORIES = [
     ['heating', 'Chauffage'], ['cooling', 'Climatisation'], ['hot_water', 'Eau chaude'],
     ['appliance', 'Électroménager'], ['electronics', 'Électronique'], ['lighting', 'Éclairage'],
-    ['outdoor', 'Extérieur'], ['solar', 'Panneau PV'], ['battery', 'Batterie'],
-    ['other', 'Autre']
+    ['outdoor', 'Extérieur'], ['other', 'Autre']
   ];
   var SUBMETER_CATEGORY_OPTIONS = SUBMETER_CATEGORIES.map(function(c) {
     return '<option value="' + c[0] + '">' + c[1] + '</option>';

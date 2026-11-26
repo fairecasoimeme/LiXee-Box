@@ -436,8 +436,7 @@ static bool ieee_valid(const char *s)
 
 /** Categories predefinies d'un sous-compteur (diagnostic de repartition). */
 static const char *const SUBMETER_CATEGORIES[] = {
-    "heating", "cooling", "hot_water", "appliance", "electronics", "lighting", "outdoor",
-    "solar", "battery", "other"
+    "heating", "cooling", "hot_water", "appliance", "electronics", "lighting", "outdoor", "other"
 };
 
 static const char *submeter_category_valid(const cJSON *category)
@@ -471,7 +470,8 @@ static esp_err_t submeters_post_handler(httpd_req_t *req)
     for (int i = 0; i < g->sub_meter_count; i++) {
         if (strcasecmp(g->sub_meters[i].IEEE, key) == 0) { idx = i; break; }
     }
-    if (idx < 0) {
+    bool is_new = (idx < 0);
+    if (is_new) {
         if (g->sub_meter_count >= CFG_MAX_SUBMETERS) {
             cJSON_Delete(j);
             return send_status(req, "400 Bad Request", "Nombre maximum de sous-compteurs atteint");
@@ -482,11 +482,21 @@ static esp_err_t submeters_post_handler(httpd_req_t *req)
     }
     cfg_submeter_t *s = &g->sub_meters[idx];
     strlcpy(s->alias, alias->valuestring, sizeof(s->alias));
-    const char *col = (cJSON_IsString(color) && color->valuestring[0] == '#' && strlen(color->valuestring) <= 7)
-                      ? color->valuestring : "#3498db";
-    strlcpy(s->color, col, sizeof(s->color));
+
+    // "color"/"category" absents de la requete : conserves tels quels (un appelant qui ne
+    // connait pas encore ces champs ne doit pas effacer la valeur existante) ; absents sur un
+    // nouveau sous-compteur : valeur par defaut.
+    if (cJSON_IsString(color) && color->valuestring[0] == '#' && strlen(color->valuestring) <= 7) {
+        strlcpy(s->color, color->valuestring, sizeof(s->color));
+    } else if (color || is_new) {
+        strlcpy(s->color, "#3498db", sizeof(s->color));
+    }
     s->enabled = !cJSON_IsBool(enabled) || cJSON_IsTrue(enabled);
-    strlcpy(s->category, submeter_category_valid(category), sizeof(s->category));
+    if (category) {
+        strlcpy(s->category, submeter_category_valid(category), sizeof(s->category));
+    } else if (is_new) {
+        strlcpy(s->category, "other", sizeof(s->category));
+    }
     cJSON_Delete(j);
 
     if (cfg_save_general() != ESP_OK) return send_status(req, "500 Internal Server Error", "Echec d'enregistrement");
