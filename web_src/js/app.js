@@ -624,8 +624,9 @@
 
   // Categories de sous-compteur (diagnostic de repartition de la conso)
   var SUBMETER_CATEGORIES = [
-    ['heating', 'Chauffage'], ['hot_water', 'Eau chaude'], ['appliance', 'Électroménager'],
-    ['electronics', 'Électronique'], ['lighting', 'Éclairage'], ['outdoor', 'Extérieur'],
+    ['heating', 'Chauffage'], ['cooling', 'Climatisation'], ['hot_water', 'Eau chaude'],
+    ['appliance', 'Électroménager'], ['electronics', 'Électronique'], ['lighting', 'Éclairage'],
+    ['outdoor', 'Extérieur'], ['solar', 'Panneau PV'], ['battery', 'Batterie'],
     ['other', 'Autre']
   ];
   var SUBMETER_CATEGORY_OPTIONS = SUBMETER_CATEGORIES.map(function(c) {

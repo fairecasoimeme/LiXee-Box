@@ -436,7 +436,8 @@ static bool ieee_valid(const char *s)
 
 /** Categories predefinies d'un sous-compteur (diagnostic de repartition). */
 static const char *const SUBMETER_CATEGORIES[] = {
-    "heating", "hot_water", "appliance", "electronics", "lighting", "outdoor", "other"
+    "heating", "cooling", "hot_water", "appliance", "electronics", "lighting", "outdoor",
+    "solar", "battery", "other"
 };
 
 static const char *submeter_category_valid(const cJSON *category)
