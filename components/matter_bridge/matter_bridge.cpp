@@ -24,6 +24,7 @@
 #include "device_data.h"
 #include "esp_log.h"
 #include "esp_err.h"
+#include "esp_mac.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
@@ -1224,7 +1225,18 @@ esp_err_t matter_bridge_init(void)
         return ESP_FAIL;
     }
 
-    // Le root endpoint (endpoint 0) est cree automatiquement par esp-matter
+    // Le root endpoint (endpoint 0) est cree automatiquement par esp-matter.
+    // SerialNumber est facultatif dans Basic Information et esp-matter ne le
+    // cree pas : sans lui, le numero de serie (MAC, cf. HwNameInstanceInfo)
+    // n'etait jamais lu (issue #92). Valeur geree par le fournisseur d'identite.
+    {
+        endpoint_t *root = endpoint::get(s_matter_node, 0);
+        cluster_t *bi = root ? cluster::get(root, chip::app::Clusters::BasicInformation::Id) : NULL;
+        if (bi && !attribute::get(bi, chip::app::Clusters::BasicInformation::Attributes::SerialNumber::Id)) {
+            cluster::basic_information::attribute::create_serial_number(bi, NULL, 0);
+        }
+    }
+
     // On cree le endpoint "aggregator" (bridge, device type 0x000E)
     endpoint::aggregator::config_t agg_config;
     s_aggregator_endpoint = endpoint::aggregator::create(s_matter_node, &agg_config,
@@ -1722,7 +1734,7 @@ esp_err_t matter_bridge_set_number(int endpoint_id, uint32_t cluster_id, uint32_
 }
 
 // Fournisseur d'identite du pont : celui de la pile, sauf la version
-// materielle (nom de la box, comme son nom mDNS)
+// materielle (nom de la box, comme son nom mDNS) et le numero de serie (MAC)
 class HwNameInstanceInfo : public chip::DeviceLayer::DeviceInstanceInfoProvider {
 public:
     chip::DeviceLayer::DeviceInstanceInfoProvider *base = nullptr;
@@ -1734,7 +1746,16 @@ public:
     CHIP_ERROR GetPartNumber(char *b, size_t n) override { return base->GetPartNumber(b, n); }
     CHIP_ERROR GetProductURL(char *b, size_t n) override { return base->GetProductURL(b, n); }
     CHIP_ERROR GetProductLabel(char *b, size_t n) override { return base->GetProductLabel(b, n); }
-    CHIP_ERROR GetSerialNumber(char *b, size_t n) override { return base->GetSerialNumber(b, n); }
+    // Numero de serie : adresse MAC de la box, la meme que sur la page
+    // Systeme (au lieu de TEST_SN, commun a toutes les box ; issue #92)
+    CHIP_ERROR GetSerialNumber(char *b, size_t n) override
+    {
+        uint8_t mac[6];
+        if (esp_read_mac(mac, ESP_MAC_WIFI_STA) != ESP_OK) return base->GetSerialNumber(b, n);
+        if (n < 13) return CHIP_ERROR_BUFFER_TOO_SMALL;
+        snprintf(b, n, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        return CHIP_NO_ERROR;
+    }
     CHIP_ERROR GetManufacturingDate(uint16_t &y, uint8_t &m, uint8_t &d) override { return base->GetManufacturingDate(y, m, d); }
     CHIP_ERROR GetHardwareVersion(uint16_t &v) override { return base->GetHardwareVersion(v); }
     CHIP_ERROR GetHardwareVersionString(char *b, size_t n) override
