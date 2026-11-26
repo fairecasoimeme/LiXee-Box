@@ -45,7 +45,14 @@ namespace lixee_epm_attr = chip::app::Clusters::ElectricalPowerMeasurement::Attr
 class ElecPowerDelegate : public chip::app::Clusters::ElectricalPowerMeasurement::Delegate
 {
 public:
-    ElecPowerDelegate() = default;
+    // has_power_factor : vrai si l'endpoint a une liaison de profil vers
+    // PowerFactor (voir matter_bridge.cpp) -- sinon ni l'attribut ni son
+    // entree Accuracy n'existent sur l'endpoint, et il ne faut pas les
+    // annoncer ici (sinon Home Assistant cree une entite "Facteur de
+    // puissance" permanemment inconnue, ex. ZLinky, Shelly Pro 3EM).
+    explicit ElecPowerDelegate(bool has_power_factor = true)
+        : m_measurement_type_count(has_power_factor ? kMeasurementTypeCountMax : kMeasurementTypeCountMax - 1)
+    {}
 
     // --- Setters (appeles depuis la tache de reception ZiGate) ---
 
@@ -109,7 +116,7 @@ public:
 
     // Types de mesure pris en charge : ceux dont l'attribut existe sur
     // l'endpoint (voir matter_bridge.cpp), meme si leur valeur est encore nulle.
-    uint8_t GetNumberOfMeasurementTypes() override { return kMeasurementTypeCount; }
+    uint8_t GetNumberOfMeasurementTypes() override { return m_measurement_type_count; }
 
     // --- Accuracy list (obligatoire) : une entree par type de mesure, ---
     // --- ActivePower compris (exige par la specification)            ---
@@ -123,15 +130,17 @@ public:
         // Plages et precision (resolution d'une unite entiere : V, A, W, VA,
         // celle de la TIC Linky et des prises Zigbee). La specification veut
         // au moins une plage par type, avec FixedMax ou PercentMax.
-        static Range s_ranges[kMeasurementTypeCount];
-        static const struct { MeasurementTypeEnum type; int64_t min; int64_t max; uint64_t fixed; } k_types[kMeasurementTypeCount] = {
+        // PowerFactor (dernier) n'est inclus que si l'endpoint a une liaison
+        // de profil vers lui (m_measurement_type_count, voir le constructeur).
+        static Range s_ranges[kMeasurementTypeCountMax];
+        static const struct { MeasurementTypeEnum type; int64_t min; int64_t max; uint64_t fixed; } k_types[kMeasurementTypeCountMax] = {
             { MeasurementTypeEnum::kVoltage,       0,      400000,    1000 },  // 400 V en mV
             { MeasurementTypeEnum::kActiveCurrent, 0,      100000,    1000 },  // 100 A en mA
             { MeasurementTypeEnum::kActivePower,   0,      100000000, 1000 },  // 100 kW en mW
             { MeasurementTypeEnum::kApparentPower, 0,      100000000, 1000 },  // 100 kVA en mVA
             { MeasurementTypeEnum::kPowerFactor,   -10000, 10000,     100 },   // +/-100.00%, resolution 1%
         };
-        if (index >= kMeasurementTypeCount) return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
+        if (index >= m_measurement_type_count) return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
 
         Range &r = s_ranges[index];
         r.rangeMin = k_types[index].min;
@@ -240,7 +249,8 @@ private:
     chip::app::DataModel::Nullable<int64_t> m_power_factor;
     bool    m_active_is_measured = false;
     bool    m_has_total_apparent = false;
+    const uint8_t m_measurement_type_count;
 
     // Voltage, ActiveCurrent, ActivePower, ApparentPower, PowerFactor
-    static constexpr uint8_t kMeasurementTypeCount = 5;
+    static constexpr uint8_t kMeasurementTypeCountMax = 5;
 };

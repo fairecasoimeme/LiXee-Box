@@ -331,7 +331,7 @@ static uint32_t cap_of(uint8_t target)
     }
 }
 
-static bool has_target(const matter_profile_t *p, uint8_t target)
+bool matter_profile_has_target(const matter_profile_t *p, uint8_t target)
 {
     for (int i = 0; i < p->link_count; i++)
         if (p->links[i].target == target) return true;
@@ -404,15 +404,15 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
     //    un simple capteur ;
     //  - une seule fonction BooleanState par endpoint : la fuite l'emporte ;
     //  - un bouton qui remonte le nombre d'appuis ne compte pas deux fois
-    p->heat = has_target(p, ML_TH_HEAT_SP);
-    p->cool = has_target(p, ML_TH_COOL_SP);
+    p->heat = matter_profile_has_target(p, ML_TH_HEAT_SP);
+    p->cool = matter_profile_has_target(p, ML_TH_COOL_SP);
     if (!p->heat && !p->cool) {
         retarget(p, ML_TH_LOCAL_TEMP, ML_TEMPERATURE);
         drop_target(p, ML_TH_SYSTEM_MODE);
         drop_target(p, ML_TH_RUNNING);
     }
-    if (has_target(p, ML_LEAK)) drop_target(p, ML_CONTACT);
-    if (has_target(p, ML_SWITCH_MULTI)) drop_target(p, ML_SWITCH_PRESS);
+    if (matter_profile_has_target(p, ML_LEAK)) drop_target(p, ML_CONTACT);
+    if (matter_profile_has_target(p, ML_SWITCH_MULTI)) drop_target(p, ML_SWITCH_PRESS);
 
     for (int i = 0; i < p->link_count; i++) p->caps |= cap_of(p->links[i].target);
 
