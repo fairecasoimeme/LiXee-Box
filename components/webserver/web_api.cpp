@@ -51,7 +51,7 @@
 #include <math.h>
 
 #ifndef VERSION
-#define VERSION "3.3"
+#define VERSION "3.4"
 #endif
 
 // Fonctions definies dans main.cpp pour le parametre Matter enable/disable
