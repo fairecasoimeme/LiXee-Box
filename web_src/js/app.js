@@ -828,23 +828,33 @@
     return n + ' Wh';
   }
   function renderBreakdown(s) {
-    // Grille a colonnes fixes (carre, nom, energie, cout) : en vue jour, mois ou
-    // annee les valeurs s'allongent ; une ligne flexible passait alors le cout
-    // a la ligne, sous le carre. Ici seul le nom se reduit (points de
-    // suspension, nom complet en infobulle) et les chiffres restent alignes.
+    // Une ligne par compteur : [carre + nom] puis [energie, cout] cales a
+    // droite. La liste n'a que ~150 px entre 992 et 1200 px de large : une
+    // grille a colonnes fixes donnait alors toute la place aux valeurs et
+    // reduisait le nom a "EA..." (issue #70). Ici, si le nom et les valeurs ne
+    // tiennent pas cote a cote, les valeurs passent sous le nom (et le cout
+    // sous l'energie si besoin) ; seul un nom plus large que la carte est
+    // coupe (points de suspension, nom complet en infobulle). Le cout a une
+    // largeur minimale pour garder les energies alignees d'une ligne a l'autre.
     var html = '<h5>R&eacute;partition</h5>' +
-               '<div style="display:grid;grid-template-columns:10px minmax(0,1fr) auto auto;' +
-                 'column-gap:6px;row-gap:4px;align-items:center;font-size:.9rem;font-variant-numeric:tabular-nums;">';
+               '<div style="font-size:.9rem;font-variant-numeric:tabular-nums;">';
     arr(s.breakdown).forEach(function(b) {
       b = b || {};
       var icon = b.type === 'prod' ? BD_ICON_SOLAR : (b.type === 'gaz' ? BD_ICON_FLAME : BD_ICON_BOLT);
       var name = escHtml(b.name || '');
-      html += '<span style="border:1px solid grey;width:10px;height:15px;background-color:' +
-                safeColor(b.color, '#95a5a6') + '"></span>' +
-              '<span class="fw-semibold" title="' + name + '" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
-                name + '</span>' +
-              '<span style="white-space:nowrap;text-align:right;">' + icon + ' ' + bdValueKwh(b.wh) + '</span>' +
-              '<span style="white-space:nowrap;text-align:right;">' + BD_ICON_COIN + ' ' + num(b.eur).toFixed(2) + ' &euro;</span>';
+      html += '<div style="display:flex;flex-wrap:wrap;align-items:center;column-gap:6px;margin-bottom:4px;">' +
+                '<span style="display:flex;align-items:center;gap:6px;flex:1 1 auto;min-width:0;max-width:100%;">' +
+                  '<span style="flex:0 0 10px;border:1px solid grey;width:10px;height:15px;background-color:' +
+                    safeColor(b.color, '#95a5a6') + '"></span>' +
+                  '<span class="fw-semibold" title="' + name + '" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+                    name + '</span>' +
+                '</span>' +
+                '<span style="display:flex;flex-wrap:wrap;justify-content:flex-end;column-gap:8px;margin-left:auto;">' +
+                  '<span style="white-space:nowrap;">' + icon + ' ' + bdValueKwh(b.wh) + '</span>' +
+                  '<span style="white-space:nowrap;text-align:right;min-width:4.6em;">' + BD_ICON_COIN + ' ' +
+                    num(b.eur).toFixed(2) + ' &euro;</span>' +
+                '</span>' +
+              '</div>';
     });
     html += '</div>';
     html += '<div class="mt-3"><h5>Total</h5><span style="white-space:nowrap;">' + BD_ICON_BOLT + ' ' +
