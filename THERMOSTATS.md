@@ -157,6 +157,8 @@ Pour les appareils pilotés par **action** (clim, fil pilote), on associe une ac
 - Laissez sur **« Marche/Arrêt simple (on/off) »** pour une prise classique.
 - Renseignez **Chaud ET Froid** pour une **clim réversible** : un sélecteur **Chaud / Froid** apparaît alors sur la vignette pour choisir le mode à la volée.
 
+> ⚠️ **Climatiseur / PAC air-air** : ne le pilotez jamais comme une simple prise on/off. Couper l'alimentation d'un compresseur en marche (plutôt que de lui envoyer sa commande Arrêt) peut l'endommager et déclencher ses sécurités constructeur. Renseignez les actions Chaud/Froid/Arrêt pour que la box le pilote via sa télécommande/API, pas par coupure de courant — le formulaire affiche ce rappel.
+
 ---
 
 ## 7. Algorithmes de régulation (TPI / hystérésis)

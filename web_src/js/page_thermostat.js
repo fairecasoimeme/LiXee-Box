@@ -437,6 +437,7 @@
          "<div id='xactBox' style='border:1px solid #dee2e6;border-radius:8px;padding:10px;margin-bottom:4px;'>" +
          deviceChecks(opts.actuators, 'xact', t.actuatorsExtra, null, 'Aucune prise suppl&eacute;mentaire disponible.') + '</div>';
     h += "<div class='form-text mb-3'>Prises/relais pilot&eacute;s <b>en parall&egrave;le</b> du principal (m&ecirc;me marche/arr&ecirc;t). Utile pour chauffer une zone avec plusieurs appareils.</div>";
+    h += "<div class='alert alert-warning py-2 small mb-3'>&#9888;&#65039; <b>Climatiseur / PAC air-air</b> : ne le pilotez pas comme une simple prise on/off. Couper l'alimentation d'un compresseur en marche (plut&ocirc;t que de lui envoyer sa commande Arr&ecirc;t) peut l'endommager et d&eacute;clencher ses s&eacute;curit&eacute;s. Renseignez les actions <b>Chaud / Froid / Arr&ecirc;t</b> ci-dessous pour que la box le pilote comme sa t&eacute;l&eacute;commande, pas par coupure de courant.</div>";
     h += "<label class='form-label'>" + IC_THERMO + "Action Chaud</label><select class='form-select' id='aHeat'>" + actionOptions([], '') + '</select>';
     h += "<div class='form-text mb-2'>Action quand la zone doit <b>chauffer</b> (ex : <b>HEAT</b>, <b>CONFORT</b>). Laissez sur &laquo; Marche/Arr&ecirc;t simple &raquo; pour une prise on/off.</div>";
     h += "<label class='form-label'>" + IC_SNOW + "Action Froid <span class='text-muted'>(clim r&eacute;versible)</span></label><select class='form-select' id='aCool'>" + actionOptions([], '') + '</select>';
