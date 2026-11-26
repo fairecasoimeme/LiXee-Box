@@ -175,6 +175,8 @@ duty     = clamp(Kp × erreur + Ki × intégrale, 0..1)
 
 Cela évite les oscillations brutales d'un simple thermostat tout-ou-rien et lisse la température.
 
+> Les valeurs par défaut (cycle 15 min, Kp 0,8, Ki 0,1) sont taillées pour un **convecteur électrique**, à réponse rapide. Une **PAC avec plancher chauffant** a une inertie thermique de plusieurs heures : un cycle aussi court et des gains aussi élevés produisent un surdosage puis un dépassement de la consigne, visible seulement des heures plus tard. Pour ce cas, allongez le cycle (1 à 2 h) et réduisez Kp/Ki ; voir le sélecteur « Type d'installation » du formulaire (§8) qui pré-remplit ces champs.
+
 ### Hystérésis (clim / appareils pilotés par action)
 
 Pour un appareil qui a sa **propre régulation interne** (climatiseur), le PWM n'a pas de sens et générerait des commandes répétées (bips). La box utilise donc une **hystérésis** avec bande morte de **±0,3 °C** : la commande (HEAT/COOL/OFF) n'est envoyée **qu'au franchissement du seuil**, jamais en boucle. La clim gère ensuite sa propre modulation.
@@ -183,7 +185,7 @@ Pour un appareil qui a sa **propre régulation interne** (climatiseur), le PWM n
 
 ### Anti-court-cycle
 
-Des durées **minimales** de marche (`minOn`) et d'arrêt (`minOff`) — 3 min par défaut — empêchent les basculements trop rapprochés qui useraient le matériel (compresseur de clim notamment).
+Des durées **minimales** de marche (`minOn`) et d'arrêt (`minOff`) — 3 min par défaut — empêchent les basculements trop rapprochés qui useraient le matériel. Pour une **PAC** (plancher chauffant ou clim réversible air-air), le compresseur a besoin de durées bien supérieures à 3 min pour éviter le court-cyclage (usure, perte de rendement, voire blocage par sécurité constructeur) : comptez 15 à 20 min pour un plancher chauffant, au moins quelques minutes pour une clim air-air.
 
 ---
 
@@ -200,7 +202,7 @@ Repliés dans **« Paramètres avancés de régulation (TPI) »** du formulaire 
 | **Durée OFF min** | 180 s | Temps d'arrêt minimal (anti-court-cycle) |
 | **Délai capteur HS** | 3600 s (60 min) | Sans mesure au-delà → capteur « HS », actionneur coupé |
 
-Les valeurs par défaut conviennent à la plupart des cas. Augmentez `minOn/minOff` pour un compresseur de clim, réduisez le cycle TPI pour une régulation plus fine d'un radiateur.
+Les valeurs par défaut conviennent à un convecteur électrique. Pour une autre installation, le formulaire propose un sélecteur **« Type d'installation »** (convecteur / plancher chauffant PAC / clim réversible air-air) avec un bouton **« Pré-remplir »** : il renseigne ces champs avec des valeurs de départ adaptées, sans rien mémoriser ni verrouiller le formulaire — vous restez libre de les ajuster. Pistes de départ pour une PAC + plancher chauffant : cycle 1 à 2 h, Kp ~0,3–0,4, Ki ~0,05, `minOn`/`minOff` 15–20 min. Ces valeurs dépendent fortement de l'installation (épaisseur de dalle, puissance de la PAC, type d'émetteur) et restent à affiner sur site.
 
 ---
 
@@ -259,7 +261,8 @@ Sécurités complémentaires :
 ## 11. Cas d'usage
 
 - **Radiateur électrique sur prise** : capteur mural + prise on/off, mode Chauffage, TPI. Optionnel : capteur d'ouverture pour couper fenêtre ouverte.
-- **Climatiseur réversible** : capteur (ou température interne de la clim) + clim HVAC, actions HEAT/COOL/OFF, choix Chaud/Froid sur la vignette.
+- **PAC + plancher chauffant** : capteur mural + relais/vanne on/off, mode Chauffage, TPI avec profil « Plancher chauffant » (§8) : cycle long (1–2 h), Kp/Ki réduits, `minOn`/`minOff` 15–20 min pour protéger le compresseur de la PAC.
+- **Climatiseur réversible** : capteur (ou température interne de la clim) + clim HVAC, actions HEAT/COOL/OFF, choix Chaud/Froid sur la vignette. Augmentez `minOn`/`minOff` (profil « Clim réversible (PAC air-air) ») pour protéger le compresseur.
 - **Pièce occupée seulement** : ajouter un capteur de présence → ne régule qu'en présence.
 - **Optimisation tarifaire** : mode Tarif Linky, cocher Heures Creuses (ou tout sauf Tempo Rouge) → chauffe surtout quand l'électricité est moins chère, hors-gel garanti le reste du temps.
 - **Plusieurs convecteurs** : un principal + prises supplémentaires, commandés ensemble.
