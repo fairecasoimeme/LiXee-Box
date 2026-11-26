@@ -576,6 +576,7 @@ static esp_err_t energy_config_handler(httpd_req_t *req)
         cJSON_AddStringToObject(o, "alias", g->sub_meters[i].alias);
         cJSON_AddStringToObject(o, "color", g->sub_meters[i].color);
         cJSON_AddBoolToObject(o, "enabled", g->sub_meters[i].enabled);
+        cJSON_AddStringToObject(o, "category", g->sub_meters[i].category[0] ? g->sub_meters[i].category : "other");
         cJSON_AddItemToArray(sm, o);
     }
     cJSON *th = cJSON_AddObjectToObject(r, "thresholds");

@@ -622,6 +622,16 @@
     return def;
   }
 
+  // Categories de sous-compteur (diagnostic de repartition de la conso)
+  var SUBMETER_CATEGORIES = [
+    ['heating', 'Chauffage'], ['hot_water', 'Eau chaude'], ['appliance', 'Électroménager'],
+    ['electronics', 'Électronique'], ['lighting', 'Éclairage'], ['outdoor', 'Extérieur'],
+    ['other', 'Autre']
+  ];
+  var SUBMETER_CATEGORY_OPTIONS = SUBMETER_CATEGORIES.map(function(c) {
+    return '<option value="' + c[0] + '">' + c[1] + '</option>';
+  }).join('');
+
   // Requete de la page Energie : les reponses arrivees apres un changement de
   // periode ou de page sont ignorees. Renvoie une promesse toujours resolue.
   function energyAlive(gen) { return gen === energyGen && !!document.getElementById('cadre_energy'); }
@@ -2931,13 +2941,14 @@
               '<h5>Sous-compteurs <small class="text-muted" id="sm-count"></small></h5>' +
               '<div class="form-text mb-2">Appareils Zigbee mesurant l\'&eacute;nergie (cluster 0x0702) : leur consommation est d&eacute;duite des index du Linky et affich&eacute;e s&eacute;par&eacute;ment dans le tableau de bord.</div>' +
               '<div class="table-responsive"><table class="table table-sm align-middle">' +
-                '<thead><tr><th>Nom</th><th>Appareil</th><th>Couleur</th><th>Actif</th><th></th></tr></thead>' +
-                '<tbody id="sm-list"><tr><td colspan="5" class="text-muted">Chargement...</td></tr></tbody>' +
+                '<thead><tr><th>Nom</th><th>Appareil</th><th>Cat&eacute;gorie</th><th>Couleur</th><th>Actif</th><th></th></tr></thead>' +
+                '<tbody id="sm-list"><tr><td colspan="6" class="text-muted">Chargement...</td></tr></tbody>' +
               '</table></div>' +
               '<h5 class="mt-3">Ajouter un sous-compteur</h5>' +
               '<form id="form-submeter">' +
                 '<div class="mb-3"><label class="form-label" for="sm-ieee">Appareil</label><select class="form-select" id="sm-ieee"></select></div>' +
                 '<div class="mb-3"><label class="form-label" for="sm-alias">Nom</label><input class="form-control" id="sm-alias" type="text"></div>' +
+                '<div class="mb-3"><label class="form-label" for="sm-category">Cat&eacute;gorie</label><select class="form-select" id="sm-category">' + SUBMETER_CATEGORY_OPTIONS + '</select></div>' +
                 '<div class="mb-3"><label class="form-label" for="sm-color">Couleur</label><input class="form-control form-control-color" id="sm-color" type="color" value="#e74c3c"></div>' +
                 '<div class="form-text mb-2" id="sm-full" style="display:none;">Nombre maximal de sous-compteurs atteint.</div>' +
                 '<button type="submit" class="btn btn-primary" id="sm-add">Ajouter</button>' +
@@ -3175,7 +3186,8 @@
     }
 
     function saveSubmeter(item, changes) {
-      var p = { IEEE: item.IEEE, alias: item.alias || '', color: item.color || '#95a5a6', enabled: !!item.enabled };
+      var p = { IEEE: item.IEEE, alias: item.alias || '', color: item.color || '#95a5a6',
+                enabled: !!item.enabled, category: item.category || 'other' };
       Object.keys(changes).forEach(function(k) { p[k] = changes[k]; });
       postJSON('/api/energy/submeters', p)
         .then(saved('Sous-compteur enregistr&eacute;'), failed)
@@ -3185,10 +3197,13 @@
     function renderSubmeters() {
       var $tb = $('#sm-list').empty();
       if (!sm.list.length) {
-        $tb.append('<tr><td colspan="5" class="text-muted">Aucun sous-compteur configur&eacute;</td></tr>');
+        $tb.append('<tr><td colspan="6" class="text-muted">Aucun sous-compteur configur&eacute;</td></tr>');
       }
       sm.list.forEach(function(item) {
         item = item || {};
+        var $cat = $('<select class="form-select form-select-sm" title="Cat&eacute;gorie">' + SUBMETER_CATEGORY_OPTIONS + '</select>')
+          .val(item.category || 'other')
+          .on('change', function() { saveSubmeter(item, { category: $(this).val() }); });
         var $color = $('<input type="color" class="form-control form-control-color" title="Couleur">')
           .val(colorInputValue(item.color, '#95a5a6'))
           .on('change', function() { saveSubmeter(item, { color: $(this).val() }); });
@@ -3205,6 +3220,7 @@
         $tb.append($('<tr></tr>').append(
           $('<td></td>').text(item.alias || ''),
           $('<td class="small text-muted"></td>').text(item.IEEE || ''),
+          $('<td></td>').append($cat),
           $('<td></td>').append($color),
           $('<td></td>').append($sw),
           $('<td class="text-end"></td>').append($del)
@@ -3253,10 +3269,12 @@
       var alias = String($('#sm-alias').val() || '').trim();
       if (!ieee) { showAlert('S&eacute;lectionnez un appareil', 'danger'); return; }
       if (!alias) { showAlert('Indiquez un nom', 'danger'); return; }
-      postJSON('/api/energy/submeters', { IEEE: ieee, alias: alias, color: $('#sm-color').val() || '#e74c3c', enabled: true })
+      postJSON('/api/energy/submeters', { IEEE: ieee, alias: alias, color: $('#sm-color').val() || '#e74c3c',
+        enabled: true, category: $('#sm-category').val() || 'other' })
         .then(function() {
           showAlert('Sous-compteur ajout&eacute;');
           $('#sm-alias').val('');
+          $('#sm-category').val('other');
           sm.autoAlias = '';
         }, failed)
         .always(loadSubmeters);

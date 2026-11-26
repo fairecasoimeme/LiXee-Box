@@ -469,6 +469,8 @@ esp_err_t cfg_load_general(void)
             json_get_str(sm, "alias", g_general.sub_meters[idx].alias, sizeof(g_general.sub_meters[idx].alias), "");
             json_get_str(sm, "color", g_general.sub_meters[idx].color, sizeof(g_general.sub_meters[idx].color), "#3498db");
             g_general.sub_meters[idx].enabled = json_get_bool(sm, "enabled", true);
+            json_get_str(sm, "category", g_general.sub_meters[idx].category,
+                         sizeof(g_general.sub_meters[idx].category), "other");
 
             if (strlen(g_general.sub_meters[idx].IEEE) > 0) {
                 idx++;
@@ -717,6 +719,7 @@ static esp_err_t save_general_unlocked(void)
         cJSON_AddStringToObject(sm, "alias", g_general.sub_meters[i].alias);
         cJSON_AddStringToObject(sm, "color", g_general.sub_meters[i].color);
         cJSON_AddBoolToObject(sm, "enabled", g_general.sub_meters[i].enabled);
+        cJSON_AddStringToObject(sm, "category", g_general.sub_meters[i].category);
         cJSON_AddItemToArray(sub_arr, sm);
     }
 

@@ -391,6 +391,7 @@ static esp_err_t submeters_get_handler(httpd_req_t *req)
         cJSON_AddStringToObject(o, "alias", s->alias);
         cJSON_AddStringToObject(o, "color", s->color);
         cJSON_AddBoolToObject(o, "enabled", s->enabled);
+        cJSON_AddStringToObject(o, "category", s->category[0] ? s->category : "other");
         cJSON_AddItemToArray(arr, o);
     }
     cJSON_AddNumberToObject(root, "count", g->sub_meter_count);   // champ de la LiXee-Box
@@ -433,6 +434,21 @@ static bool ieee_valid(const char *s)
     return true;
 }
 
+/** Categories predefinies d'un sous-compteur (diagnostic de repartition). */
+static const char *const SUBMETER_CATEGORIES[] = {
+    "heating", "hot_water", "appliance", "electronics", "lighting", "outdoor", "other"
+};
+
+static const char *submeter_category_valid(const cJSON *category)
+{
+    if (cJSON_IsString(category)) {
+        for (size_t i = 0; i < sizeof(SUBMETER_CATEGORIES) / sizeof(SUBMETER_CATEGORIES[0]); i++) {
+            if (!strcasecmp(category->valuestring, SUBMETER_CATEGORIES[i])) return SUBMETER_CATEGORIES[i];
+        }
+    }
+    return "other";
+}
+
 static esp_err_t submeters_post_handler(httpd_req_t *req)
 {
     cJSON *j = read_body_json(req);
@@ -441,6 +457,7 @@ static esp_err_t submeters_post_handler(httpd_req_t *req)
     const cJSON *alias = cJSON_GetObjectItem(j, "alias");
     const cJSON *color = cJSON_GetObjectItem(j, "color");
     const cJSON *enabled = cJSON_GetObjectItem(j, "enabled");
+    const cJSON *category = cJSON_GetObjectItem(j, "category");
     if (!cJSON_IsString(ieee) || !ieee_valid(ieee->valuestring) || !cJSON_IsString(alias) || !alias->valuestring[0]) {
         cJSON_Delete(j);
         return send_status(req, "400 Bad Request", "IEEE et alias requis");
@@ -468,6 +485,7 @@ static esp_err_t submeters_post_handler(httpd_req_t *req)
                       ? color->valuestring : "#3498db";
     strlcpy(s->color, col, sizeof(s->color));
     s->enabled = !cJSON_IsBool(enabled) || cJSON_IsTrue(enabled);
+    strlcpy(s->category, submeter_category_valid(category), sizeof(s->category));
     cJSON_Delete(j);
 
     if (cfg_save_general() != ESP_OK) return send_status(req, "500 Internal Server Error", "Echec d'enregistrement");
