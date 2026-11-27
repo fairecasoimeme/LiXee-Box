@@ -2163,9 +2163,9 @@
           "unit": "%"
         },
         {
-          "name": "Frequence ?",
+          "name": "Frequence",
           "cluster": "EF00",
-          "attribut": 917,
+          "attribut": 1,
           "mqtt_device_class": "frequency",
           "mqtt_icon": "sine-wave",
           "mqtt_state_class": "measurement",
