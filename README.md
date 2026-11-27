@@ -14,6 +14,16 @@ La **v3.0** est une réécriture complète du firmware sous **ESP-IDF 5.5** (le 
 - Tout sur le pont Matter → [Pont Matter](#-pont-matter-à-partir-de-la-v30)
 - Les changements depuis la v2.27 → [changelog.md](changelog.md)
 
+### Nouveautés de la v3.3
+- **Page Économies** : la box calcule seule ses conseils (tarif du moment, coût de l'instant, risque de coupure, budget du mois, consommation de fond, verdict sur l'abonnement) et compare Base / Heures creuses / Tempo au tarif réglementé → [Page Économies](#page-économies-à-partir-de-la-v33)
+- **Page Historique** : archive datée sur 13 mois, de l'heure à l'année, comparaison avec l'année précédente, export CSV → [Historique détaillé](#historique-détaillé-à-partir-de-la-v33)
+- **Températures** de 1 à 4 sondes Zigbee sur le graphe d'usage → [Température sur le graphe d'usage](#température-sur-le-graphe-dusage-à-partir-de-la-v33)
+- **Gaz en kWh** : coefficient de conversion de la facture, le gaz s'empile avec l'électricité
+- **Pont Matter** : prix du kWh en cours publié sur le ZLinky, numéro de série propre à chaque box
+- **Accès distant** : tunnel durci, mot de passe d'au moins 8 caractères → [Tunnel d'accès distant](#-tunnel-daccès-distant-à-partir-de-la-v217)
+- **Bluetooth** : une box déjà configurée n'ouvre plus le Bluetooth d'elle-même quand son WiFi ne répond pas → [Changer de WiFi](#changer-de-wifi-à-partir-de-la-v33)
+- Tout le détail → [changelog.md](changelog.md)
+
 > La v3 est la version courante (branche `master`). Le firmware Arduino (v2.x) reste disponible sur la branche [`lixee-box_v2.27`](https://github.com/fairecasoimeme/LiXee-Box/tree/lixee-box_v2.27) et les branches `lixee-box_v2.xx`.
 
 ## Matériel Compatible
@@ -62,6 +72,10 @@ Les autres tutoriels vidéo (tableau de bord, tarifs, Home Assistant, accès dis
 -  [⚡️ Optimiser la recharge de son véhicule électrique avec la LiXee-Box](https://faire-ca-soi-meme.fr/domotique/2025/11/13/optimiser-la-recharge-de-son-vehicule-electrique-avec-la-lixee-box/)
 -  [📡 Augmenter la portée du ZLinky_TIC v2](https://faire-ca-soi-meme.fr/domotique/2025/03/29/augmenter-la-portee-du-zlinky_tic-v2/)
 -  [📡 Compteur Linky éloigné : répéteur Zigbee, antenne externe ou LoRa](https://lixee-box.fr/guides/compteur-linky-eloigne/)
+-  [🔗 Le pont Matter de la LiXee-Box : Apple Maison, Alexa, Home Assistant](https://lixee-box.fr/guides/pont-matter-lixee-box/)
+-  [💶 Tempo est-il rentable pour vous ? La comparaison de la page Économies](https://lixee-box.fr/guides/tarif-tempo-edf-optimiser/#rentable)
+-  [⚡ Puissance souscrite : payer le juste prix sans faire disjoncter le Linky](https://lixee-box.fr/guides/puissance-souscrite-linky/)
+-  [❄️ Résidence secondaire : hors-gel avec les thermostats virtuels et alertes à distance](https://lixee-box.fr/guides/proteger-residence-secondaire-a-distance/)
 -  [📚 Tous les guides LiXee-Box](https://lixee-box.fr/guides/)
 
 ## ✨ Fonctionnalités Principales
@@ -118,6 +132,7 @@ L'appareil peut être configuré via un site web local
 - Seuils configurables avec actions automatiques
 - Gestion de la production et distribution d'énergie
 - Gestion tarifaire pour l'énergie, la production, le gaz et l'eau
+- Gaz en kWh (à partir de la v3.3) : avec le coefficient de conversion m³ → kWh de la facture (**Config** → **Énergie**, onglet **Gaz**, champ « Conversion en kWh »), le gaz s'empile avec l'électricité dans le tableau de bord et l'historique
 
 ### 🌡️ Thermostat virtuel
 - Régulation multi-zone : capteur de température et actionneur **dissociés** (la box joue le thermostat)
@@ -407,10 +422,12 @@ L'icône disparaît d'elle-même dès que l'appareil accuse réception d'une com
 
 
 ### Tableau de Bord Énergétique
-![État Énergétique](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/tariff_complet_BASE.png)
+![Tableau de bord énergétique v3.3](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Dashboard_v3.3.png)
 ![Interface Mobile](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Mobile_energy.png)
 
 Tableau de bord complet avec visualisation en temps réel de votre consommation énergétique, graphiques historiques et interface mobile responsive.
+
+À partir de la v3.3, le bandeau du haut donne le tarif en cours et le prix du kWh, le conseil du moment (« Bon moment », « Prix normal »…), le coût de l'instant en €/h et un lien vers la [page Économies](#page-économies-à-partir-de-la-v33). Le bouton **Historique** ouvre l'[historique détaillé](#historique-détaillé-à-partir-de-la-v33).
 
 #### Tarif et couleurs
 Selon votre abonnement, vous verrez apparaître en première ligne le tarif en cours de votre abonnement mais aussi la couleur du jour ou la couleur du lendemain si vous avez un abonnement Tempo
@@ -535,6 +552,8 @@ Tout device Zigbee reportant le cluster **Temperature Measurement (0x0402)**, at
 
 Le bouton **Historique** en haut du tableau de bord **Mesures** --> **Energie** (ou l'icône d'agrandissement, deux flèches, à droite du titre du graphe d'usage) donne accès à tout l'historique enregistré par la box, alors que le tableau de bord reste sur les 24 dernières heures, les 30 derniers jours, les 12 derniers mois et les années.
 
+![Historique de consommation : vue heure, production sous l'axe, température, lignes de budget, talon et max, statistiques de la période](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Historique.png)
+
 * **Granularités** : heure (un jour), jour (un mois), semaine (12 semaines), mois (une année), année (10 ans).
 * **Navigation** : flèches ‹ › pour la période précédente ou suivante, bouton **Aujourd'hui**, calendrier pour choisir un jour (les jours sans données sont grisés), et **période libre** du … au … (31 jours au plus en vue heure).
 * **Electricité, production et gaz** sur le même graphe : index tarifaires, sous-compteurs, production (sous l'axe) et gaz (dans la pile s'il est compté en Wh ou kWh, sinon sur son propre axe). L'eau a son propre graphe.
@@ -554,6 +573,22 @@ La box recopie ses compteurs dans `hst/` toutes les 15 minutes et à chaque chan
 | `yr.json` | les années | sans limite |
 
 Environ 2 Mo pour 13 mois, inclus dans la sauvegarde. Le détail heure par heure commence à la mise à jour en v3.3 ; les 30 derniers jours, 12 derniers mois et les années déjà connus de la box sont repris dès le premier enregistrement. **Effacer l'historique** (Config Energie) retire aussi l'énergie de ces fichiers (température et présence restent).
+
+#### Page Économies (à partir de la v3.3)
+
+Menu **Mesures** → **Économies**, ou le lien **Économies ›** du bandeau du tableau de bord. La box calcule elle-même ses conseils, à partir de ce qu'elle mesure : LiXee-Assist (application, kiosque, widgets) affiche les mêmes résultats. Une carte dont les données manquent (pas de ZLinky, pas de prix saisi, historique trop court) n'est pas affichée.
+
+![Page Économies](https://github.com/fairecasoimeme/LiXee-Box/blob/master/doc/screenshots/LiXee-Box_Economies.png)
+
+* **Météo de l'électricité** : tarif en cours (Base, heures pleines ou creuses, couleur Tempo, pointe EJP, surplus solaire), conseil associé et prochain changement ; prix du kWh et coût de l'instant (€/h) si les prix sont saisis.
+* **Risque de coupure** : charge moyenne de la dernière minute rapportée à la puissance souscrite. Faible sous 70 %, moyen jusqu'à 90 %, élevé au-delà. En triphasé, la phase la plus chargée, rapportée au tiers de l'abonnement.
+* **Mois en cours** : consommation depuis le 1er et projection au rythme actuel, en € si les prix sont saisis (abonnement compris), sinon en kWh. Avec un **budget mensuel** (**Config** → **Notifications**), l'écart projeté et le graphique coût du jour / budget du jour.
+* **Consommation de fond** : l'heure complète la plus calme des 24 dernières heures (heures avec production exclues), et ce qu'elle représente sur un an en kWh et en €.
+* **Abonnement** : verdict tiré des pics sur 1 minute des 90 derniers jours (voir [`/api/power/summary`](#apipowersummary)). « Juste » quand la consommation frôle souvent la limite ; sinon « bien taillé », ou le **palier inférieur** proposé : au moins 14 jours observés, tranche 80 % rarement atteinte, et le plus petit palier supérieur ou égal au plus fort appel × 1,15. Jamais de conseil de hausse automatique.
+* **Alertes** : hier comparé à la moyenne des 7 jours précédents (seuil d'anomalie de **Config** → **Notifications**), « Bravo » à partir de 15 % de baisse, et les alertes récentes de la box.
+* **Tarif réglementé : quelle option ?** : coût en Base, Heures creuses et Tempo au tarif réglementé (Tarif Bleu TTC, abonnement compris), sur la période observée (8 à 31 jours complets) et estimé sur un an, avec l'option la moins chère et l'économie par rapport à l'option actuelle. La part des heures creuses est mesurée (index HC/HP, sinon 22 h - 6 h) ; les couleurs Tempo sont enregistrées par la box chaque jour, une couleur inconnue est comptée au prix moyen de saison (22 rouges, 43 blancs, 300 bleus). La grille est livrée avec le firmware (`data/tarifs/tarif_bleu.json`) et remplaçable depuis la page **Maintenance**. Les offres de marché et l'EJP ne sont pas comparées.
+
+Les calculs sont servis par `GET /api/energy/advice` (accessible aussi par le tunnel) et trois valeurs sont publiées en MQTT, retenues : `<en-tête>advice/weather`, `advice/cut_risk` et `advice/base_load_w`. Spécification complète : [ECONOMIES.md](ECONOMIES.md).
 
 ### Production d'énergie et Injection
 
@@ -638,7 +673,7 @@ La LiXee-Box établit une connexion WebSocket sortante vers le serveur [`remote.
 
 ### Activation
 
-> **Prérequis (à partir de la v2.23)** : l'accès sécurisé doit être activé **avec un identifiant et un mot de passe** (**Config** → **Securité**). Sans cela, le tunnel ne peut pas être activé ; s'il l'était déjà, il reste **suspendu** jusqu'à ce que l'accès sécurisé soit configuré. Une box dont l'accès sécurisé était activé sans identifiant ni mot de passe le voit désactivé automatiquement au démarrage.
+> **Prérequis (à partir de la v2.23)** : l'accès sécurisé doit être activé **avec un identifiant et un mot de passe** (**Config** → **Securité**). Sans cela, le tunnel ne peut pas être activé ; s'il l'était déjà, il reste **suspendu** jusqu'à ce que l'accès sécurisé soit configuré. Une box dont l'accès sécurisé était activé sans identifiant ni mot de passe le voit désactivé automatiquement au démarrage. À partir de la v3.3, le mot de passe doit compter **au moins 8 caractères** pour activer le tunnel.
 
 1. Accédez à la page **Config** → **Tunnel**
 2. Entrez le code d'activation à 6 chiffres fourni par LiXee
