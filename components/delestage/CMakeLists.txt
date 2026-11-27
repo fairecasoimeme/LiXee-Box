@@ -15,4 +15,5 @@ idf_component_register(
         energy_service
         config_manager
         notifications
+        ip_devices
 )

@@ -24,6 +24,11 @@ typedef struct {
     matter_profile_t *profile;
     int32_t  last_lift100;              // derniere fermeture publiee (volet), -1 inconnue
     int64_t  last_move_us;              // dernier ordre de mouvement envoye au volet (0 : aucun)
+    // Dernieres mesures par phase (mV, mA, mW) : Matter recoit celles de la
+    // premiere phase qui a une tension. Bits de 'ph_seen' : valeur recue
+    // (0..2 tension, 3..5 courant, 6..8 puissance des phases A..C)
+    int64_t  ph_v[3], ph_i[3], ph_p[3];
+    uint16_t ph_seen;
 } bridge_device_mapping_t;
 
 /**
@@ -60,8 +65,9 @@ esp_err_t matter_device_manager_unmap_device(uint64_t ieee_addr);
 esp_err_t matter_device_manager_handle_zigbee_report(const zigate_attribute_report_t *report);
 
 /**
- * Mappe un emetteur LoRa (ZLinky LoRa) vers un endpoint Matter compteur
- * d'energie. preferred_ep : endpoint d'un demarrage precedent (0 = nouveau).
+ * Mappe un appareil sans radio Zigbee (emetteur LoRa, appareil IP) d'apres
+ * son template ; un ZLinky LoRa sans template reste un compteur d'energie.
+ * preferred_ep : endpoint d'un demarrage precedent (0 = nouveau).
  * @return endpoint Matter (celui deja attribue si l'emetteur est deja mappe),
  *         -1 si le modele n'est pas ponte ou en cas d'echec
  */
@@ -140,6 +146,13 @@ esp_err_t matter_device_manager_set_excluded(uint64_t ieee, bool excluded);
 /** Rappel apres un changement : republier l'appareil, mettre a jour les thermostats. */
 typedef void (*matter_exposure_cb_t)(uint64_t ieee, bool excluded);
 void matter_device_manager_set_exposure_cb(matter_exposure_cb_t cb);
+
+/**
+ * Commande Matter vers un appareil ponte sans radio Zigbee (appareil IP) :
+ * numero de commande et valeur du template (146 = marche / arret).
+ */
+typedef esp_err_t (*matter_ext_cmd_cb_t)(uint64_t ieee, int command, uint8_t endpoint, int32_t value);
+void matter_device_manager_set_ext_cmd_cb(matter_ext_cmd_cb_t cb);
 
 #ifdef __cplusplus
 }

@@ -2643,6 +2643,12 @@ CONFIG_WIFI_PROV_STA_ALL_CHANNEL_SCAN=y
 # end of Wi-Fi Provisioning Manager
 
 #
+# LiXee appareils IP
+#
+CONFIG_LIXEE_IP_DEVICES=y
+# end of LiXee appareils IP
+
+#
 # ESP serial flasher
 #
 CONFIG_SERIAL_FLASHER_MD5_ENABLED=y

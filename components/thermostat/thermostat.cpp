@@ -15,6 +15,7 @@
 #include "ntp_sync.h"
 #include "matter_bridge.h"
 #include "matter_device_manager.h"
+#include "ip_devices.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -333,7 +334,7 @@ static bool zone_schedule_active(const zone_t *t)
 static int read_actuator_state(const zone_t *t)
 {
     uint64_t ieee = parse_ieee(t->actuator);
-    if (!ieee || !zigate_devices_find_by_ieee(ieee)) return -1;
+    if (!ieee || !(zigate_devices_find_by_ieee(ieee) || ip_devices_is_ip(ieee))) return -1;
     char v[DEVDATA_VALUE_LEN];
     // Clim / thermostat : System Mode reel (0201/0x001C), meme pilote par actions
     if (get_hex(ieee, 0x0201, 0x001C, v, sizeof(v))) return strtol(v, NULL, 16) != 0 ? 1 : 0;
@@ -377,6 +378,18 @@ static void refresh_sensors(zone_t *t)
             valid = fresh;
             t->sensor_reason = fresh ? 0 : 3;
         }
+    } else if (ieee && ip_devices_is_ip(ieee)) {
+        // Sonde IP (Tasmota, Shelly...) : fraicheur = age du dernier releve reussi
+        ipdev_info_t ip;
+        char raw[DEVDATA_VALUE_LEN];
+        t->sensor_reason = 2;
+        if (ip_devices_find(ieee, &ip) && get_hex(ieee, 0x0402, 0x0000, raw, sizeof(raw))) {
+            tc = (int16_t)strtol(raw, NULL, 16) * temp_coef(ieee, 0x0402);
+            long timeout = (t->sensor_timeout_s > 0 ? t->sensor_timeout_s : SENSOR_TIMEOUT_DEFAULT_SEC) + 60;
+            t->sensor_age_s = ip.age_s;
+            valid = ip.age_s >= 0 && ip.age_s <= timeout;
+            t->sensor_reason = valid ? 0 : 3;
+        }
     }
     t->current_temp = tc;
     t->sensor_valid = valid;
@@ -396,6 +409,12 @@ static void refresh_sensors(zone_t *t)
 static bool fire_device_action(uint64_t ieee, const char *name)
 {
     if (!ieee || !name || !name[0]) return false;
+    if (ip_devices_is_ip(ieee)) {
+        esp_err_t err = ip_devices_send_named_action(ieee, name);
+        if (err != ESP_OK && err != ESP_ERR_NOT_FOUND)
+            ESP_LOGW(TAG, "Action %s -> IP %016llX : %s", name, (unsigned long long)ieee, esp_err_to_name(err));
+        return err != ESP_ERR_NOT_FOUND;
+    }
     const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
     const devdata_template_t *tp = device_data_get_template(ieee);
     if (!d || !tp) return false;
@@ -418,6 +437,11 @@ static void fire_actuator_one(const char *ieee_s, bool on, const char *name)
     uint64_t ieee = parse_ieee(ieee_s);
     if (!ieee) return;
     if (name[0] && fire_device_action(ieee, name)) return;
+    if (ip_devices_is_ip(ieee)) {
+        esp_err_t err = ip_devices_send_onoff(ieee, on);
+        if (err != ESP_OK) ESP_LOGW(TAG, "On/off -> IP %016llX : %s", (unsigned long long)ieee, esp_err_to_name(err));
+        return;
+    }
     const zigate_device_t *d = zigate_devices_find_by_ieee(ieee);
     if (!d) return;
     zigate_send_onoff(d->short_addr, zigate_device_cluster_ep(d, 0x0006), on ? 1 : 0);
@@ -908,6 +932,25 @@ char *thermostat_options_json(void)
         device_label(ieee, lbl, sizeof(lbl));
         for (int k = 0; k < 4; k++) {
             if (!device_match(d, k)) continue;
+            cJSON *o = cJSON_CreateObject();
+            cJSON_AddStringToObject(o, "ieee", ieee);
+            cJSON_AddStringToObject(o, "label", lbl);
+            cJSON_AddItemToArray(lists[k], o);
+        }
+    }
+    // Appareils IP : sondes de temperature et relais / prises (template)
+    for (int i = 0; i < ip_devices_count(); i++) {
+        ipdev_info_t ip;
+        if (!ip_devices_get(i, &ip)) continue;
+        char ieee[20], lbl[40];
+        snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)ip.ieee);
+        device_label(ieee, lbl, sizeof(lbl));
+        if (!strcmp(lbl, ieee)) strlcpy(lbl, ip.model, sizeof(lbl));
+        const devdata_template_t *tp = device_data_get_template(ip.ieee);
+        bool match[2] = { ip_devices_has_cluster(ip.ieee, 0x0402),
+                          ip_devices_has_cluster(ip.ieee, 0x0006) || (tp && tp->action_count > 0) };
+        for (int k = 0; k < 2; k++) {
+            if (!match[k]) continue;
             cJSON *o = cJSON_CreateObject();
             cJSON_AddStringToObject(o, "ieee", ieee);
             cJSON_AddStringToObject(o, "label", lbl);

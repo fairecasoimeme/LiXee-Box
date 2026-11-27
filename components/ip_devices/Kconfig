@@ -1,0 +1,11 @@
+menu "LiXee appareils IP"
+
+    config LIXEE_IP_DEVICES
+        bool "Appareils IP (Shelly, Tasmota...) par leur API HTTP locale"
+        default y
+        help
+            Module "Appareils IP" (IP_DEVICES.md) : releve et pilotage
+            d'appareils WiFi/Ethernet par HTTP, avec des templates. Desactive,
+            le composant ne fournit que des fonctions vides.
+
+endmenu

@@ -13,6 +13,7 @@ idf_component_register(
         rules
         notifications
         lora
+        ip_devices
         tunnel
         maintenance
         config_manager

@@ -94,6 +94,7 @@ typedef struct {
     uint8_t  target;
     bool     invert;
     uint16_t energy_attr;
+    uint8_t  phase;
 } cls_t;
 
 static bool name_is_setpoint(const char *n)
@@ -175,15 +176,22 @@ static cls_t classify_standard(const devdata_template_state_t *s, bool has_onoff
             c.target = ML_EL_ACTIVE_POWER;
         }
         break;
-    case 0x0B04:
-        if (a == 0x0505) c.target = ML_EL_VOLTAGE;
-        else if (a == 0x0508) c.target = ML_EL_CURRENT;
+    case 0x0B04: {
+        // Phases A, B, C : attributs 05xx, 09xx, 0Axx. Matter n'a qu'une
+        // tension / un courant par endpoint : celui de la premiere phase qui
+        // a une tension (Shelly Pro 3EM branche sur la seule phase C...)
+        const uint8_t ph = (a >> 8) == 0x05 ? 1 : (a >> 8) == 0x09 ? 2 : (a >> 8) == 0x0A ? 3 : 0;
+        const uint8_t lo = a & 0xFF;
+        if (ph && lo == 0x05) { c.target = ML_EL_VOLTAGE; c.phase = ph; }
+        else if (ph && lo == 0x08) { c.target = ML_EL_CURRENT; c.phase = ph; }
         // ZLinky : 0x050B est CCASN (courbe de charge moyenne), pas une puissance
-        else if (a == 0x050B && !zlinky) c.target = ML_EL_ACTIVE_POWER;
+        else if (ph && lo == 0x0B && !zlinky) { c.target = ML_EL_ACTIVE_POWER; c.phase = ph; }
         else if (a == 0x050F) c.target = ML_EL_APPARENT_POWER;
         else if (a == 0x0306) c.target = ML_EL_TOTAL_APPARENT;
         else if (a == 0x0510) c.target = ML_EL_POWER_FACTOR;
+        else if (a == 0x0304 && !zlinky) c.target = ML_EL_TOTAL_ACTIVE;
         break;
+    }
     case 0x0B01:        // Meter Identification (ZLinky)
     case 0xFF66:        // TIC du ZLinky : pas d'equivalent Matter
         break;
@@ -319,6 +327,7 @@ static uint32_t cap_of(uint8_t target)
     case ML_TH_RUNNING:        return MCAP_THERMOSTAT;
     case ML_FAN_MODE:          return MCAP_FAN;
     case ML_EL_ACTIVE_POWER:
+    case ML_EL_TOTAL_ACTIVE:
     case ML_EL_APPARENT_POWER:
     case ML_EL_TOTAL_APPARENT:
     case ML_EL_VOLTAGE:
@@ -438,6 +447,7 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
         l->target = c.target;
         l->invert = c.invert;
         l->energy_attr = c.energy_attr;
+        l->phase = c.phase;
         l->writable = s->writable;
         l->write_type = (uint8_t)(s->type_writable > 0 ? s->type_writable : 0);
         l->mfr = s->manufacturer_code;
@@ -542,6 +552,7 @@ const char *matter_link_target_name(uint8_t t)
     case ML_TH_RUNNING:        return "Etat thermostat";
     case ML_FAN_MODE:          return "Ventilation";
     case ML_EL_ACTIVE_POWER:   return "Puissance active";
+    case ML_EL_TOTAL_ACTIVE:   return "Puissance active totale";
     case ML_EL_APPARENT_POWER: return "Puissance apparente";
     case ML_EL_TOTAL_APPARENT: return "Puissance apparente totale";
     case ML_EL_VOLTAGE:        return "Tension";

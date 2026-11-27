@@ -11,6 +11,8 @@
 #include "web_maint.h"
 #include "web_tunnel.h"
 #include "web_lora.h"
+#include "web_ipdev.h"
+#include "ip_devices.h"
 #include "web_thermostat.h"
 #include "web_notif.h"
 #include "tunnel.h"
@@ -869,6 +871,7 @@ static esp_err_t api_system_info_handler(httpd_req_t *req)
     cJSON_AddBoolToObject(mods, "zigbee", zigate_is_detected());
     cJSON_AddBoolToObject(mods, "ethernet", eth.detected);
     cJSON_AddBoolToObject(mods, "lora", lora_is_detected());
+    cJSON_AddBoolToObject(mods, "ip", ip_devices_enabled());
     cJSON_AddBoolToObject(mods, "matter", main_is_matter_enabled());
 
     char *json = cJSON_PrintUnformatted(root);
@@ -2314,6 +2317,7 @@ esp_err_t web_api_register_handlers(httpd_handle_t server)
     web_maint_register(server);
     web_tunnel_register(server);
     web_lora_register(server);
+    web_ipdev_register(server);
     web_notif_register(server);
     web_thermostat_register(server);
     web_compat_register(server);

@@ -21,6 +21,7 @@
 //     du mois...) via energy_service ; ignore (faux) par une LiXee-Box.
 // ============================================================================
 
+#include "ip_devices.h"
 #include "rules_internal.h"
 #include "action_groups.h"
 #include "config_manager.h"
@@ -1816,6 +1817,85 @@ rules_res_t rules_raw_set(const char *text, size_t len, char *err, size_t errlen
 // Catalogue des appareils pour l'editeur
 // ----------------------------------------------------------------------------
 
+/** Un appareil de la liste de l'editeur de regles (Zigbee ou IP). */
+static void rules_device_entry(sb_t *sb, uint64_t ieee_addr, const char *alias, const char *model,
+                               const char *manufacturer, int device_id, int endpoint)
+{
+    char ieee[20];
+    snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)ieee_addr);
+    const device_data_t *dd = device_data_find(ieee_addr);
+    const devdata_template_t *t = device_data_get_template(ieee_addr);
+    if (t && !t->loaded) t = NULL;
+
+    sb_key(sb, ieee);
+    sb_putc(sb, '{');
+    sb_key(sb, "INFO");
+    sb_putc(sb, '{');
+    sb_kstr(sb, "alias", alias && alias[0] ? alias : (dd ? dd->info.alias : ""));
+    sb_kstr(sb, "model", model);
+    sb_kstr(sb, "manufacturer", manufacturer);
+    sb_kint(sb, "device_id", device_id);
+    sb_kint(sb, "endpoint", endpoint ? endpoint : 1);
+    sb_close(sb, '}');
+    sb_putc(sb, ',');
+
+    sb_key(sb, "status");
+    sb_putc(sb, '[');
+    for (int k = 0; t && k < t->state_count; k++) {
+        const devdata_template_state_t *s = &t->states[k];
+        char cl[8];
+        snprintf(cl, sizeof(cl), "%04X", (unsigned)s->cluster);
+        sb_putc(sb, '{');
+        sb_kstr(sb, "name", s->name);
+        sb_kstr(sb, "cluster", cl);
+        sb_kint(sb, "attribut", s->attribute);
+        sb_kstr(sb, "unit", s->unit);
+        sb_knum(sb, "coefficient", s->coefficient);
+        sb_kstr(sb, "type", s->type);
+        sb_close(sb, '}');
+        sb_putc(sb, ',');
+    }
+    sb_close(sb, ']');
+    sb_putc(sb, ',');
+
+    sb_key(sb, "action");
+    sb_putc(sb, '[');
+    for (int k = 0; t && k < t->action_count; k++) {
+        const devdata_template_action_t *a = &t->actions[k];
+        sb_putc(sb, '{');
+        sb_kstr(sb, "name", a->name);
+        sb_kint(sb, "endpoint", a->endpoint);
+        sb_kint(sb, "command", a->command);
+        sb_kint(sb, "visible", a->visible ? 1 : 0);
+        sb_close(sb, '}');
+        sb_putc(sb, ',');
+    }
+    sb_close(sb, ']');
+    sb_putc(sb, ',');
+
+    // Valeurs courantes des etats du template, cle "CCCC:attribut"
+    sb_key(sb, "values");
+    sb_putc(sb, '{');
+    for (int k = 0; t && k < t->state_count; k++) {
+        const devdata_template_state_t *s = &t->states[k];
+        char raw[DEVDATA_VALUE_LEN];
+        if (device_data_get_value(ieee_addr, s->cluster, s->attribute, raw, sizeof(raw)) != ESP_OK) continue;
+        char key[16];
+        snprintf(key, sizeof(key), "%04X:%u", (unsigned)s->cluster, (unsigned)s->attribute);
+        const devdata_attr_t *da = device_data_get_attr(ieee_addr, s->cluster, s->attribute);
+        if (strcmp(s->type, "string") == 0 || (da && da->type >= 0x41 && da->type <= 0x44)) {
+            char txt[DEVDATA_VALUE_LEN];
+            rules_hex_to_text(raw, txt, sizeof(txt));
+            sb_kstr(sb, key, txt);
+        } else {
+            sb_kstr(sb, key, raw);
+        }
+    }
+    sb_close(sb, '}');
+    sb_close(sb, '}');
+    sb_putc(sb, ',');
+}
+
 char *rules_devices_json(void)
 {
     sb_t sb;
@@ -1825,79 +1905,13 @@ char *rules_devices_json(void)
     for (int i = 0; i < n; i++) {
         const zigate_device_t *z = zigate_devices_get(i);
         if (!z || !z->ieee_addr) continue;
-        char ieee[20];
-        snprintf(ieee, sizeof(ieee), "%016llX", (unsigned long long)z->ieee_addr);
-        const device_data_t *dd = device_data_find(z->ieee_addr);
-        const devdata_template_t *t = device_data_get_template(z->ieee_addr);
-        if (t && !t->loaded) t = NULL;
-
-        sb_key(&sb, ieee);
-        sb_putc(&sb, '{');
-        sb_key(&sb, "INFO");
-        sb_putc(&sb, '{');
-        sb_kstr(&sb, "alias", z->alias[0] ? z->alias : (dd ? dd->info.alias : ""));
-        sb_kstr(&sb, "model", z->model);
-        sb_kstr(&sb, "manufacturer", z->manufacturer);
-        sb_kint(&sb, "device_id", z->device_id);
-        sb_kint(&sb, "endpoint", z->endpoint ? z->endpoint : 1);
-        sb_close(&sb, '}');
-        sb_putc(&sb, ',');
-
-        sb_key(&sb, "status");
-        sb_putc(&sb, '[');
-        for (int k = 0; t && k < t->state_count; k++) {
-            const devdata_template_state_t *s = &t->states[k];
-            char cl[8];
-            snprintf(cl, sizeof(cl), "%04X", (unsigned)s->cluster);
-            sb_putc(&sb, '{');
-            sb_kstr(&sb, "name", s->name);
-            sb_kstr(&sb, "cluster", cl);
-            sb_kint(&sb, "attribut", s->attribute);
-            sb_kstr(&sb, "unit", s->unit);
-            sb_knum(&sb, "coefficient", s->coefficient);
-            sb_kstr(&sb, "type", s->type);
-            sb_close(&sb, '}');
-            sb_putc(&sb, ',');
-        }
-        sb_close(&sb, ']');
-        sb_putc(&sb, ',');
-
-        sb_key(&sb, "action");
-        sb_putc(&sb, '[');
-        for (int k = 0; t && k < t->action_count; k++) {
-            const devdata_template_action_t *a = &t->actions[k];
-            sb_putc(&sb, '{');
-            sb_kstr(&sb, "name", a->name);
-            sb_kint(&sb, "endpoint", a->endpoint);
-            sb_kint(&sb, "command", a->command);
-            sb_kint(&sb, "visible", a->visible ? 1 : 0);
-            sb_close(&sb, '}');
-            sb_putc(&sb, ',');
-        }
-        sb_close(&sb, ']');
-        sb_putc(&sb, ',');
-
-        // Valeurs courantes des etats du template, cle "CCCC:attribut"
-        sb_key(&sb, "values");
-        sb_putc(&sb, '{');
-        for (int k = 0; t && k < t->state_count; k++) {
-            const devdata_template_state_t *s = &t->states[k];
-            char raw[DEVDATA_VALUE_LEN];
-            if (device_data_get_value(z->ieee_addr, s->cluster, s->attribute, raw, sizeof(raw)) != ESP_OK) continue;
-            char key[16];
-            snprintf(key, sizeof(key), "%04X:%u", (unsigned)s->cluster, (unsigned)s->attribute);
-            const devdata_attr_t *da = device_data_get_attr(z->ieee_addr, s->cluster, s->attribute);
-            if (strcmp(s->type, "string") == 0 || (da && da->type >= 0x41 && da->type <= 0x44)) {
-                char txt[DEVDATA_VALUE_LEN];
-                rules_hex_to_text(raw, txt, sizeof(txt));
-                sb_kstr(&sb, key, txt);
-            } else {
-                sb_kstr(&sb, key, raw);
-            }
-        }
-        sb_close(&sb, '}');
-        sb_close(&sb, '}');
-        sb_putc(&sb, ',');
+        rules_device_entry(&sb, z->ieee_addr, z->alias, z->model, z->manufacturer, z->device_id, z->endpoint);
+    }
+    // Appareils IP (Shelly, Tasmota...) : memes etats et actions de template
+    for (int i = 0; i < ip_devices_count(); i++) {
+        ipdev_info_t ipi;
+        if (!ip_devices_get(i, &ipi)) continue;
+        rules_device_entry(&sb, ipi.ieee, NULL, ipi.model, "IP", 0, 1);
     }
     sb_close(&sb, '}');
     return sb_take(&sb);
