@@ -39,6 +39,8 @@ typedef struct {
     char alias[32];         // Nom affiche (ex: "Salon", "Cuisine")
     char color[10];         // Couleur hex pour le donut (ex: "#e74c3c")
     bool enabled;           // Active/desactive
+    char category[16];      // Categorie (heating, cooling, hot_water, appliance,
+                             // electronics, lighting, outdoor, other)
 } cfg_submeter_t;
 
 /**
