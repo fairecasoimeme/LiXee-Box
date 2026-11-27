@@ -437,6 +437,7 @@
          "<div id='xactBox' style='border:1px solid #dee2e6;border-radius:8px;padding:10px;margin-bottom:4px;'>" +
          deviceChecks(opts.actuators, 'xact', t.actuatorsExtra, null, 'Aucune prise suppl&eacute;mentaire disponible.') + '</div>';
     h += "<div class='form-text mb-3'>Prises/relais pilot&eacute;s <b>en parall&egrave;le</b> du principal (m&ecirc;me marche/arr&ecirc;t). Utile pour chauffer une zone avec plusieurs appareils.</div>";
+    h += "<div id='climWarn' class='alert alert-warning py-2 small mb-3' style='display:none;'>&#9888;&#65039; <b>Climatiseur / PAC air-air</b> : ne le pilotez pas comme une simple prise on/off. Couper l'alimentation d'un compresseur en marche (plut&ocirc;t que de lui envoyer sa commande Arr&ecirc;t) peut l'endommager et d&eacute;clencher ses s&eacute;curit&eacute;s. V&eacute;rifiez que l'action <b>Froid</b> ci-dessous pilote bien la t&eacute;l&eacute;commande/API de la clim, pas une coupure de courant.</div>";
     h += "<label class='form-label'>" + IC_THERMO + "Action Chaud</label><select class='form-select' id='aHeat'>" + actionOptions([], '') + '</select>';
     h += "<div class='form-text mb-2'>Action quand la zone doit <b>chauffer</b> (ex : <b>HEAT</b>, <b>CONFORT</b>). Laissez sur &laquo; Marche/Arr&ecirc;t simple &raquo; pour une prise on/off.</div>";
     h += "<label class='form-label'>" + IC_SNOW + "Action Froid <span class='text-muted'>(clim r&eacute;versible)</span></label><select class='form-select' id='aCool'>" + actionOptions([], '') + '</select>';
@@ -453,22 +454,32 @@
     // Bloc 4 : parametres avances (TPI)
     h += "<details class='card p-4 mb-3'>" +
          "<summary style='cursor:pointer;font-weight:600;font-size:17px;'>" + IC_GEAR + 'Param&egrave;tres avanc&eacute;s de r&eacute;gulation (TPI)</summary>' +
-         "<p class='form-text mt-2'>La r&eacute;gulation <b>TPI</b> (Time Proportional &amp; Integral) module le <i>temps</i> de chauffe sur un cycle pour stabiliser la temp&eacute;rature sans &agrave;-coups. Les valeurs par d&eacute;faut conviennent &agrave; la plupart des installations &mdash; ne les modifiez que si la r&eacute;gulation oscille ou r&eacute;agit mal.</p>";
+         "<p class='form-text mt-2'>La r&eacute;gulation <b>TPI</b> (Time Proportional &amp; Integral) module le <i>temps</i> de chauffe sur un cycle pour stabiliser la temp&eacute;rature sans &agrave;-coups. Les valeurs par d&eacute;faut conviennent &agrave; un <b>convecteur &eacute;lectrique</b> &mdash; une PAC avec plancher chauffant ou une clim r&eacute;versible ont une dynamique tr&egrave;s diff&eacute;rente (inertie, protection du compresseur) : voir le s&eacute;lecteur ci-dessous.</p>";
+    h += "<label class='form-label mt-2'>Type d'installation</label>" +
+         "<div style='display:flex;gap:8px;align-items:stretch;margin-bottom:4px;'>" +
+         "<select class='form-select' id='thProfile' style='flex:1;'>" +
+         "<option value='conv'>Convecteur &eacute;lectrique</option>" +
+         "<option value='floor'>Plancher chauffant (PAC, chaudi&egrave;re)</option>" +
+         "<option value='clim'>Climatisation r&eacute;versible (PAC air-air)</option>" +
+         '</select>' +
+         "<button type='button' class='btn btn-outline-primary text-nowrap' id='thProfileFill'>Pr&eacute;-remplir</button>" +
+         '</div>';
+    h += "<div class='form-text mb-3'>S&eacute;lectionnez votre installation puis cliquez sur <b>Pr&eacute;-remplir</b> : les champs ci-dessous sont renseign&eacute;s avec des valeurs de d&eacute;part adapt&eacute;es, que vous restez libre d'ajuster. Rien n'est m&eacute;moris&eacute; : ce n'est qu'un raccourci de saisie, pas un profil enregistr&eacute; ; les valeurs propos&eacute;es restent &agrave; affiner selon votre installation r&eacute;elle.</div>";
     h += "<label class='form-label mt-2'>Dur&eacute;e du cycle (secondes)</label>";
     h += "<input class='form-control' type='number' id='thCycle' value='" + t.tpiCycleSec + "'>";
-    h += "<div class='form-text mb-3'>Sur chaque cycle, le chauffage est actif une fraction du temps proportionnelle au besoin. <b>Plus court</b> = plus r&eacute;actif mais plus de commutations ; <b>plus long</b> = plus doux. Recommand&eacute; : <b>900 s (15 min)</b> pour un convecteur &eacute;lectrique.</div>";
+    h += "<div class='form-text mb-3'>Sur chaque cycle, le chauffage est actif une fraction du temps proportionnelle au besoin. <b>Plus court</b> = plus r&eacute;actif mais plus de commutations ; <b>plus long</b> = plus doux. Recommand&eacute; : <b>900 s (15 min)</b> pour un convecteur &eacute;lectrique, <b>1 &agrave; 2 h (3600&ndash;7200 s)</b> pour une PAC + plancher chauffant (forte inertie de la dalle).</div>";
     h += "<label class='form-label'>Kp &mdash; gain proportionnel</label>";
-    h += "<input class='form-control' type='number' step='0.1' id='thKp' value='" + Number(t.tpiKp).toFixed(2) + "'>";
-    h += "<div class='form-text mb-3'>Force de r&eacute;action &agrave; l'&eacute;cart avec la consigne. <b>Plus &eacute;lev&eacute;</b> = chauffe plus fort quand on est loin du but, mais risque d'<b>oscillations</b> autour de la consigne. D&eacute;faut : <b>0,8</b>.</div>";
+    h += "<input class='form-control' type='number' min='0' step='0.05' id='thKp' value='" + Number(t.tpiKp).toFixed(2) + "'>";
+    h += "<div class='form-text mb-3'>Force de r&eacute;action &agrave; l'&eacute;cart avec la consigne. <b>Plus &eacute;lev&eacute;</b> = chauffe plus fort quand on est loin du but, mais risque d'<b>oscillations</b> autour de la consigne. D&eacute;faut : <b>0,8</b> pour un convecteur ; r&eacute;duisez &agrave; <b>0,3&ndash;0,4</b> pour un plancher chauffant (r&eacute;gulation plus douce, forte inertie).</div>";
     h += "<label class='form-label'>Ki &mdash; gain int&eacute;gral</label>";
-    h += "<input class='form-control' type='number' step='0.05' id='thKi' value='" + Number(t.tpiKi).toFixed(2) + "'>";
-    h += "<div class='form-text mb-3'>Corrige l'erreur qui <b>persiste dans le temps</b> (&eacute;vite de stagner juste sous la consigne). Trop &eacute;lev&eacute; = <b>d&eacute;passements</b> de la consigne. D&eacute;faut : <b>0,1</b>.</div>";
+    h += "<input class='form-control' type='number' min='0' step='0.05' id='thKi' value='" + Number(t.tpiKi).toFixed(2) + "'>";
+    h += "<div class='form-text mb-3'>Corrige l'erreur qui <b>persiste dans le temps</b> (&eacute;vite de stagner juste sous la consigne). Trop &eacute;lev&eacute; = <b>d&eacute;passements</b> de la consigne. D&eacute;faut : <b>0,1</b> ; r&eacute;duisez-le (&agrave; ~0,05) pour un plancher chauffant, l'erreur r&eacute;siduelle s'y corrigeant sur plusieurs heures.</div>";
     h += "<label class='form-label'>Temps ON minimal (secondes)</label>";
     h += "<input class='form-control' type='number' id='thMinOn' value='" + t.minOnSec + "'>";
-    h += "<div class='form-text mb-3'>Dur&eacute;e minimale d'allumage : <b>prot&egrave;ge l'appareil</b> et &eacute;vite les cycles marche/arr&ecirc;t trop rapproch&eacute;s. D&eacute;faut : <b>180 s (3 min)</b>.</div>";
+    h += "<div class='form-text mb-3'>Dur&eacute;e minimale d'allumage : <b>prot&egrave;ge l'appareil</b> et &eacute;vite les cycles marche/arr&ecirc;t trop rapproch&eacute;s. D&eacute;faut : <b>180 s (3 min)</b> pour un convecteur ; passez &agrave; <b>15&ndash;20 min (900&ndash;1200 s)</b> pour le compresseur d'une PAC (plancher chauffant), ou quelques minutes pour une clim r&eacute;versible.</div>";
     h += "<label class='form-label'>Temps OFF minimal (secondes)</label>";
     h += "<input class='form-control' type='number' id='thMinOff' value='" + t.minOffSec + "'>";
-    h += "<div class='form-text mb-3'>Dur&eacute;e minimale d'extinction avant de pouvoir rallumer. D&eacute;faut : <b>180 s (3 min)</b>.</div>";
+    h += "<div class='form-text mb-3'>Dur&eacute;e minimale d'extinction avant de pouvoir rallumer. D&eacute;faut : <b>180 s (3 min)</b> pour un convecteur ; m&ecirc;me logique PAC / clim que le temps ON minimal ci-dessus.</div>";
     h += "<label class='form-label'>D&eacute;lai avant capteur &laquo; HS &raquo; (minutes)</label>";
     h += "<input class='form-control' type='number' id='thTimeout' value='" + Math.round(t.sensorTimeoutSec / 60) + "'>";
     h += "<div class='form-text'>Si le capteur de temp&eacute;rature n'a envoy&eacute; <b>aucune trame</b> (temp&eacute;rature, humidit&eacute;, batterie&hellip;) depuis ce d&eacute;lai, il est consid&eacute;r&eacute; &laquo; HS &raquo; et la zone est coup&eacute;e par s&eacute;curit&eacute; (la marche forc&eacute;e reste possible). Un capteur sur pile n'&eacute;met souvent que lorsque la temp&eacute;rature varie : dans une pi&egrave;ce stable, il peut rester silencieux plus d'une heure. D&eacute;faut : <b>180 min</b>.</div>" +
@@ -493,6 +504,23 @@
     upMode();
     upOper();
 
+    // Pre-remplissage des parametres avances TPI selon le type d'installation
+    // (issue #81) : raccourci de saisie, aucun profil memorise.
+    var TH_PROFILES = {
+      conv:  { cycle: 900,  kp: 0.80, ki: 0.10, minOn: 180,  minOff: 180 },
+      floor: { cycle: 5400, kp: 0.35, ki: 0.05, minOn: 1200, minOff: 1200 },
+      clim:  { minOn: 600, minOff: 600 }
+    };
+    $('#thProfileFill').on('click', function() {
+      var p = TH_PROFILES[$('#thProfile').val()];
+      if (!p) return;
+      if (p.cycle !== undefined) $('#thCycle').val(p.cycle);
+      if (p.kp !== undefined) $('#thKp').val(p.kp.toFixed(2));
+      if (p.ki !== undefined) $('#thKi').val(p.ki.toFixed(2));
+      $('#thMinOn').val(p.minOn);
+      $('#thMinOff').val(p.minOff);
+    });
+
     // Plages horaires : une ligne par plage (jours + debut + fin)
     parseSchedule(t.schedule).forEach(function(p) { $('#schedList').append(schedRowHtml(p)); });
     $('#schedAdd').on('click', function() {
@@ -502,21 +530,29 @@
     $('#schedList').on('click', '.sched-del', function() { $(this).closest('.sched-row').remove(); });
 
     // Listes d'actions selon l'appareil principal (deviceActions)
+    // climWarn : visible quand une action Froid est renseignee, ou quand le
+    // profil TPI "Clim" est choisi (cas d'une clim sur une simple prise, sans
+    // action Froid configuree).
+    function upClimWarn() { $('#climWarn').toggle(!!$('#aCool').val() || $('#thProfile').val() === 'clim'); }
     function fillActions(ieee, keep) {
       var cur = keep || { h: $('#aHeat').val(), c: $('#aCool').val(), o: $('#aOff').val() };
       if (!ieee) {
         $('#aHeat').html(actionOptions([], ''));
         $('#aCool').html(actionOptions([], ''));
         $('#aOff').html(actionOptions([], ''));
+        upClimWarn();
         return;
       }
       $.getJSON('/api/thermostats/actions?ieee=' + encodeURIComponent(ieee)).done(function(a) {
         $('#aHeat').html(actionOptions(a, cur.h));
         $('#aCool').html(actionOptions(a, cur.c));
         $('#aOff').html(actionOptions(a, cur.o));
+        upClimWarn();
       });
     }
     $('#actSel').on('change', function() { fillActions(this.value); });
+    $('#aCool').on('change', upClimWarn);
+    $('#thProfile').on('change', upClimWarn);
     fillActions(t.actuatorIEEE, { h: t.actionHeat, c: t.actionCool, o: t.actionOff });
 
     $('#thermoForm').on('submit', function(e) {
