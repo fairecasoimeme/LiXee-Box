@@ -838,6 +838,19 @@
      "unit": "A"
     },
     {
+     "name": "Facteur de puissance",
+     "cluster": "0B04",
+     "attribut": 1296,
+     "json": "StatusSNS.ENERGY.Factor",
+     "scale": 100,
+     "mqtt_device_class": "power_factor",
+     "mqtt_icon": "angle-acute",
+     "mqtt_state_class": "measurement",
+     "type": "numeric",
+     "visible": 1,
+     "unit": "%"
+    },
+    {
      "name": "Energie",
      "cluster": "0702",
      "attribut": 0,
