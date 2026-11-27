@@ -27,6 +27,7 @@ param(
 Remove-Item Env:\MSYSTEM -ErrorAction SilentlyContinue; Remove-Item Env:\MSYS -ErrorAction SilentlyContinue
 Remove-Item Env:\MINGW_PREFIX -ErrorAction SilentlyContinue; Remove-Item Env:\SHELL -ErrorAction SilentlyContinue
 $env:IDF_PATH = "C:\esp\v5.5.2\esp-idf"
+. "$PSScriptRoot\python3_path.ps1"      # Python 3 avant export.ps1 (Python 2 en tete du PATH)
 & "$env:IDF_PATH\export.ps1" *> $null
 # Apres l'activation d'ESP-IDF, qui ecrit sur stderr ; les commandes natives
 # sont verifiees par $LASTEXITCODE

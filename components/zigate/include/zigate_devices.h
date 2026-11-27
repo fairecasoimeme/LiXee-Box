@@ -78,9 +78,12 @@ typedef struct {
     // APS (0x8702, ex. 0xE9 pas d'accuse, 0xD4 injoignable), 0 = joignable.
     uint8_t  radio_status;
     uint32_t last_rx_s;        // Derniere trame recue, secondes depuis le demarrage (0 = jamais)
-    // Derniere redecouverte des endpoints tentee (appareil decouvert avant la
-    // v3.4), secondes depuis le demarrage, 0 = jamais ; en RAM seulement
+    // Redecouverte automatique des endpoints (appareil decouvert avant la
+    // v3.4 ou jamais decrit, voir maybe_refresh_endpoints), en RAM seulement :
+    // derniere tentative (secondes depuis le demarrage, 0 = jamais) et nombre
+    // de tentatives pour un appareil jamais decrit
     uint32_t ep_refresh_s;
+    uint8_t  auto_disc_count;
 } zigate_device_t;
 
 /**

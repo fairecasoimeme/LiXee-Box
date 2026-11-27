@@ -58,6 +58,10 @@ static uint16_t s_refresh_old_devid;
 static uint32_t s_refresh_last_s;
 #define REFRESH_SPACING_S 15
 #define REFRESH_RETRY_S   1800    // appareil sur pile endormi avant la reponse
+#define AUTO_DISC_RETRY_S 600     // appareil jamais decrit : 10 min entre deux essais
+#define AUTO_DISC_MAX     5       // appareil jamais decrit : essais par demarrage
+#define JOIN_GRACE_S      60      // decouverte de l'appairage en cours
+extern zigate_coord_info_t g_zigate_coord;    // defini plus bas
 
 /** Fin de decouverte d'un appareil : lecture Basic puis configuration */
 static void discovery_finish(uint16_t short_addr)
@@ -145,31 +149,51 @@ static void desc_begin(uint16_t short_addr, uint8_t ep_count)
 }
 
 /**
- * Appareil sans endpoints enregistres (decouvert avant la v3.4) qui vient
- * d'envoyer une valeur : Active Endpoint redemande, un appareil a la fois, au
- * plus toutes les REFRESH_SPACING_S secondes, et pour un meme appareil toutes
- * les REFRESH_RETRY_S secondes tant qu'il n'a pas repondu.
- * Ses clusters sont ainsi connus sans le reappairer.
+ * Redecouverte automatique des endpoints d'un appareil qui vient d'emettre
+ * (il est donc eveille) :
+ *  - decouvert avant la v3.4 (endpoints non enregistres) : ses clusters sont
+ *    ainsi connus sans le reappairer, nouvel essai toutes les
+ *    REFRESH_RETRY_S secondes tant qu'il n'a pas repondu ;
+ *  - jamais decrit (profile_id nul : aucun Simple Descriptor recu a
+ *    l'appairage, DeviceId reste a 0x0000) : nouvel essai toutes les
+ *    AUTO_DISC_RETRY_S secondes, AUTO_DISC_MAX fois par demarrage (appareil
+ *    sans endpoint Home Automation). Un DeviceId 0x0000 avec un profil connu
+ *    est legitime (On/Off Switch) et n'est pas concerne.
+ * Un appareil a la fois, au plus toutes les REFRESH_SPACING_S secondes, et
+ * jamais pendant la decouverte d'un appairage. La fin (discovery_finish) ne
+ * reconfigure l'appareil que si l'endpoint principal ou le Device ID changent.
  */
 static void maybe_refresh_endpoints(uint16_t short_addr)
 {
     zigate_device_t *dev = zigate_devices_find_by_short(short_addr);
-    if (!dev || dev->ep_count) return;
+    if (!dev) return;
+    const bool undescribed = (dev->profile_id == 0);
+    if (dev->ep_count && !undescribed) return;
+    if (undescribed && dev->auto_disc_count >= AUTO_DISC_MAX) return;
     uint32_t now = zigate_uptime_s();
-    if (dev->ep_refresh_s && now - dev->ep_refresh_s < REFRESH_RETRY_S) return;
+    uint32_t retry = undescribed ? AUTO_DISC_RETRY_S : REFRESH_RETRY_S;
+    if (dev->ep_refresh_s && now - dev->ep_refresh_s < retry) return;
     if (s_refresh_last_s && now - s_refresh_last_s < REFRESH_SPACING_S) return;
+    if (g_zigate_coord.last_join_short == short_addr && g_zigate_coord.last_join_s &&
+        now - g_zigate_coord.last_join_s < JOIN_GRACE_S) return;
     bool busy;
     taskENTER_CRITICAL(&s_desc_mux);
     busy = (s_desc_addr != 0xFFFF);
     taskEXIT_CRITICAL(&s_desc_mux);
-    if (busy || s_discovery_in_progress_addr == short_addr) return;
+    if (busy) return;
 
     dev->ep_refresh_s = now ? now : 1;
+    if (undescribed) dev->auto_disc_count++;
     s_refresh_last_s = now;
     s_refresh_addr = short_addr;
     s_refresh_old_ep = dev->endpoint;
     s_refresh_old_devid = dev->device_id;
-    ESP_LOGI(TAG, "0x%04X : endpoints inconnus, Active Endpoint redemande", short_addr);
+    if (undescribed) {
+        ESP_LOGI(TAG, "0x%04X jamais decrit (DeviceId 0x%04X) : redecouverte %u/%u", short_addr,
+                 dev->device_id, (unsigned)dev->auto_disc_count, (unsigned)AUTO_DISC_MAX);
+    } else {
+        ESP_LOGI(TAG, "0x%04X : endpoints inconnus, Active Endpoint redemande", short_addr);
+    }
     zigate_request_active_endpoints(short_addr);
 }
 
@@ -1076,6 +1100,7 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
         if (pkt->length >= 9) {
             uint16_t sa = (uint16_t)((pkt->payload[5] << 8) | pkt->payload[6]);
             touch_device(sa, pkt->length >= 10 ? pkt->payload[pkt->length - 1] : 0);
+            maybe_refresh_endpoints(sa);
             emit_zone_status(sa, pkt->payload[1], (uint16_t)((pkt->payload[7] << 8) | pkt->payload[8]));
         }
         break;
@@ -1089,6 +1114,7 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
             uint16_t sa = (uint16_t)((pkt->payload[5] << 8) | pkt->payload[6]);
             uint8_t lqi = pkt->length >= 9 ? pkt->payload[pkt->length - 1] : 0;
             touch_device(sa, lqi);
+            maybe_refresh_endpoints(sa);
             if (s_onoff_cmd_cb) s_onoff_cmd_cb(sa, pkt->payload[1], pkt->payload[7]);
         }
         break;
@@ -1172,6 +1198,7 @@ void zigate_dispatch_packet(const zigate_packet_t *pkt)
         if (pkt->length >= 13 && pkt->payload[7] == 0x02) {
             uint16_t sa = (uint16_t)((pkt->payload[8] << 8) | pkt->payload[9]);
             touch_device(sa, pkt->lqi);
+            maybe_refresh_endpoints(sa);
             int zcl = 11 + (pkt->payload[10] == 0x03 ? 8 : 2);
             if (cluster == 0xEF00) {
                 handle_tuya_frame(pkt, sa, pkt->payload[5], zcl);

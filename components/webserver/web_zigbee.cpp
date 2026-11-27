@@ -21,6 +21,7 @@
 // POST /api/zigbee/read        {ieee, cluster, attr, endpoint?, mfr?}
 // POST /api/zigbee/refresh     {ieee}  relit fabricant, modele, version logicielle
 // POST /api/zigbee/configure   {ieee}  renvoie bind et reporting du template
+// POST /api/zigbee/rediscover  {ieee}  relit endpoints et descripteurs (DeviceId, profil, clusters)
 // POST /api/zigbee/alias       {ieee, alias}
 // POST /api/zigbee/delete      {ieee}  (alias historique : /api/zigbee/remove)
 // POST /api/zigbee/discover    {ieee}  decouverte Home Assistant
@@ -1387,6 +1388,25 @@ static esp_err_t post_configure(httpd_req_t *req, cJSON *j)
 }
 
 /**
+ * Redecouverte : Active Endpoints (0x0045), puis Simple Descriptor de chaque
+ * endpoint (zigate_protocol.cpp). Relit DeviceId, profil, endpoint et
+ * clusters, restes a zero quand une reponse s'est perdue pendant l'appairage
+ * (appareil sur pile rendormi). La suite est celle de l'appairage :
+ * sauvegarde de zigbee_devices.json, lecture Basic, puis configuration
+ * (template, bind, reporting).
+ */
+static esp_err_t post_rediscover(httpd_req_t *req, cJSON *j)
+{
+    zigate_device_t *d = body_device(j);
+    if (!d) return send_not_found(req, "Appareil inconnu");
+    ESP_LOGI(TAG, "Redecouverte de 0x%04X (DeviceId actuel 0x%04X, profil 0x%04X)",
+             d->short_addr, d->device_id, d->profile_id);
+    esp_err_t err = zigate_request_active_endpoints(d->short_addr);
+    if (err != ESP_OK) return send_zigate_result(req, err);
+    return send_status(req, "200 OK", "Redecouverte demandee (appareil sur pile : le reveiller)");
+}
+
+/**
  * Alias (portage de /setAlias). Accepte aussi un appareil connu de
  * device_data seulement (emetteurs LoRa, page_lora.js), comme l'ancienne
  * route de web_api.
@@ -1961,6 +1981,7 @@ static esp_err_t zigbee_post_handler(httpd_req_t *req)
         { "read",        post_read },
         { "refresh",     post_refresh },
         { "configure",   post_configure },
+        { "rediscover",  post_rediscover },
         { "alias",       post_alias },
         { "delete",      post_delete },
         { "remove",      post_delete },          // nom historique (web_api)
