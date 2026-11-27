@@ -1969,6 +1969,221 @@
       ]
     }
   ],
+  "_TZE284_78ioiaml": [
+    {
+      "status": [
+        {
+          "name": "Tension L1",
+          "cluster": "EF00",
+          "attribut": 100,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "Tension L2",
+          "cluster": "EF00",
+          "attribut": 110,
+          "mqtt_device_class": "voltage",
+          "mqtt_icon": "home-lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.1,
+          "unit": "V"
+        },
+        {
+          "name": "Courant L1",
+          "cluster": "EF00",
+          "attribut": 101,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.001,
+          "unit": "A"
+        },
+        {
+          "name": "Courant L2",
+          "cluster": "EF00",
+          "attribut": 111,
+          "mqtt_device_class": "current",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.001,
+          "unit": "A"
+        },
+        {
+          "name": "Puissance L1",
+          "cluster": "EF00",
+          "attribut": 102,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "W"
+        },
+        {
+          "name": "Puissance L2",
+          "cluster": "EF00",
+          "attribut": 112,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "W"
+        },
+        {
+          "name": "Puissance totale",
+          "cluster": "EF00",
+          "attribut": 29,
+          "mqtt_device_class": "power",
+          "mqtt_icon": "lightning-bolt",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "W"
+        },
+        {
+          "name": "Energie ?",
+          "cluster": "EF00",
+          "attribut": 908,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "jauge": "text",
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie produite",
+          "cluster": "EF00",
+          "attribut": 23,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie L1 ?",
+          "cluster": "EF00",
+          "attribut": 910,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie L2 ?",
+          "cluster": "EF00",
+          "attribut": 911,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "transmission-tower",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie produite L1",
+          "cluster": "EF00",
+          "attribut": 121,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Energie produite L2",
+          "cluster": "EF00",
+          "attribut": 119,
+          "mqtt_device_class": "energy",
+          "mqtt_icon": "solar-power",
+          "mqtt_state_class": "total_increasing",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "kWh"
+        },
+        {
+          "name": "Facteur de puissance ?",
+          "cluster": "EF00",
+          "attribut": 50,
+          "mqtt_device_class": "power_factor",
+          "mqtt_icon": "angle-acute",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%"
+        },
+        {
+          "name": "Facteur de puissance L1 ?",
+          "cluster": "EF00",
+          "attribut": 915,
+          "mqtt_device_class": "power_factor",
+          "mqtt_icon": "angle-acute",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%"
+        },
+        {
+          "name": "Facteur de puissance L2 ?",
+          "cluster": "EF00",
+          "attribut": 916,
+          "mqtt_device_class": "power_factor",
+          "mqtt_icon": "angle-acute",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "unit": "%"
+        },
+        {
+          "name": "Frequence",
+          "cluster": "EF00",
+          "attribut": 1,
+          "mqtt_device_class": "frequency",
+          "mqtt_icon": "sine-wave",
+          "mqtt_state_class": "measurement",
+          "type": "numeric",
+          "visible": 1,
+          "coefficient": 0.01,
+          "unit": "Hz"
+        },
+        {
+          "name": "Frequence de mise a jour ?",
+          "cluster": "EF00",
+          "attribut": 918,
+          "type": "numeric",
+          "visible": 1,
+          "unit": "s",
+          "writable": true,
+          "typewritable": 2
+        }
+      ]
+    }
+  ],
   "MINI-ZB1GP": [
     {
       "status": [
