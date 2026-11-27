@@ -2043,17 +2043,14 @@
           "unit": "W"
         },
         {
-          "name": "Puissance totale ?",
+          "name": "Puissance totale",
           "cluster": "EF00",
-          "attribut": 907,
+          "attribut": 29,
           "mqtt_device_class": "power",
           "mqtt_icon": "lightning-bolt",
           "mqtt_state_class": "measurement",
           "type": "numeric",
           "visible": 1,
-          "jauge": "gauge",
-          "min": 0,
-          "max": 8000,
           "unit": "W"
         },
         {
