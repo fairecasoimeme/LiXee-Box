@@ -254,6 +254,7 @@ esp_err_t matter_device_manager_init(void)
 }
 
 static int map_device_locked(const zigate_device_t *zigbee_dev);
+static void map_ways_locked(const zigate_device_t *zd, const char *label, matter_device_type_t mtype);
 
 int matter_device_manager_map_device(const zigate_device_t *zigbee_dev)
 {
@@ -270,7 +271,8 @@ static int map_device_locked(const zigate_device_t *zigbee_dev)
 
     // Verifier si deja mappe
     for (int i = 0; i < s_mapping_count; i++) {
-        if (s_mappings[i].zigbee_ieee == zigbee_dev->ieee_addr && s_mappings[i].active) {
+        if (s_mappings[i].zigbee_ieee == zigbee_dev->ieee_addr && s_mappings[i].active &&
+            !s_mappings[i].zb_ep) {
             ESP_LOGD(TAG, "Device 0x%016llX already mapped to endpoint %d",
                      zigbee_dev->ieee_addr, s_mappings[i].matter_endpoint);
             return s_mappings[i].matter_endpoint;
@@ -347,6 +349,7 @@ static int map_device_locked(const zigate_device_t *zigbee_dev)
     m->matter_endpoint = ep_id;
     m->zigbee_ieee = zigbee_dev->ieee_addr;
     m->zigbee_short_addr = zigbee_dev->short_addr;
+    m->zb_ep = 0;
     m->device_type = mtype;
     m->active = true;
     m->profile = profile;
@@ -362,7 +365,99 @@ static int map_device_locked(const zigate_device_t *zigbee_dev)
     ESP_LOGI(TAG, "Mapped Zigbee 0x%016llX -> Matter endpoint %d (type=0x%04X)",
              zigbee_dev->ieee_addr, ep_id, mtype);
 
+    if (profile) map_ways_locked(zigbee_dev, label, mtype);
     return ep_id;
+}
+
+/** Copie s en UTF-8 : telle quelle si elle l'est deja, sinon lue en Latin-1. */
+static void latin1_to_utf8(const char *s, char *out, size_t cap)
+{
+    bool utf8 = true;
+    for (const unsigned char *p = (const unsigned char *)s; *p && utf8; ) {
+        int n = *p < 0x80 ? 0 : (*p & 0xE0) == 0xC0 ? 1 : (*p & 0xF0) == 0xE0 ? 2 : (*p & 0xF8) == 0xF0 ? 3 : -1;
+        if (n < 0) { utf8 = false; break; }
+        p++;
+        for (int k = 0; k < n; k++, p++)
+            if ((*p & 0xC0) != 0x80) { utf8 = false; break; }
+    }
+    if (utf8) { strlcpy(out, s, cap); return; }
+    size_t j = 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p && j + 2 < cap; p++) {
+        if (*p < 0x80) out[j++] = (char)*p;
+        else { out[j++] = (char)(0xC0 | (*p >> 6)); out[j++] = (char)(0x80 | (*p & 0x3F)); }
+    }
+    out[j] = '\0';
+}
+
+/**
+ * Voies d'un appareil multi-voies (issue #120) : chaque endpoint Zigbee
+ * secondaire qui porte une mesure ou une commande deja presente sur un autre
+ * endpoint (deux voies On/Off, deux sondes) est expose par son propre
+ * endpoint ponte, avec son numero d'un demarrage precedent.
+ */
+static void map_ways_locked(const zigate_device_t *zd, const char *label, matter_device_type_t mtype)
+{
+    const devdata_template_t *tmpl = device_data_get_template(zd->ieee_addr);
+    const matter_meter_role_t role = meter_role(zd->ieee_addr);
+    const uint16_t ways = matter_profile_ways(tmpl, zd->model, role);
+    for (uint8_t zep = 2; zep <= 15; zep++) {
+        if (!(ways & (1u << zep))) continue;
+        bool known = false;
+        for (int i = 0; i < s_mapping_count; i++) {
+            const bridge_device_mapping_t *x = &s_mappings[i];
+            if (x->active && x->zigbee_ieee == zd->ieee_addr && x->zb_ep == zep) known = true;
+        }
+        if (known) continue;
+        if (s_mapping_count >= MATTER_BRIDGE_MAX_ENDPOINTS) {
+            ESP_LOGE(TAG, "Max endpoints reached (%d) : voie %u de 0x%016llX non exposee",
+                     MATTER_BRIDGE_MAX_ENDPOINTS, (unsigned)zep, (unsigned long long)zd->ieee_addr);
+            return;
+        }
+        uint16_t devid = zd->device_id;
+        for (int k = 0; k < zd->ep_count && k < ZIGATE_MAX_EPS; k++)
+            if (zd->eps[k].ep == zep) devid = zd->eps[k].device_id;
+        matter_profile_t *wp = matter_profile_build_way(tmpl, zd->model, devid, role, zep);
+        if (!wp) continue;
+
+        // Nom : alias + nom de l'etat (en Latin-1 dans certains templates :
+        // converti en UTF-8), coupe a 32 octets (NodeLabel) sans couper un
+        // caractere UTF-8
+        char wn[2 * sizeof(wp->way_name)];
+        latin1_to_utf8(wp->way_name, wn, sizeof(wn));
+        char name[160];
+        if (wn[0]) snprintf(name, sizeof(name), "%s %s", label, wn);
+        else snprintf(name, sizeof(name), "%s (voie %u)", label, (unsigned)zep);
+        size_t len = strlen(name);
+        if (len > 32) {
+            len = 32;
+            while (len > 0 && ((unsigned char)name[len] & 0xC0) == 0x80) len--;
+            name[len] = '\0';
+        }
+        const int pref = zigate_devices_get_matter_way(zd->ieee_addr, zep);
+        int ep_id = matter_bridge_add_endpoint_profile(zd->ieee_addr, wp, name, pref);
+        if (ep_id < 0) {
+            ESP_LOGE(TAG, "Endpoint Matter impossible pour la voie %u de 0x%016llX",
+                     (unsigned)zep, (unsigned long long)zd->ieee_addr);
+            free(wp);
+            continue;
+        }
+        bridge_device_mapping_t *m = &s_mappings[s_mapping_count];
+        m->matter_endpoint = ep_id;
+        m->zigbee_ieee = zd->ieee_addr;
+        m->zigbee_short_addr = zd->short_addr;
+        m->zb_ep = zep;
+        m->device_type = mtype;
+        m->active = true;
+        m->profile = wp;
+        m->last_lift100 = -1;
+        m->last_move_us = 0;
+        reset_phases(m);
+        s_mapping_count++;
+        replay_stored_values(m);
+        if (pref != ep_id) zigate_devices_set_matter_way(zd->ieee_addr, zep, (uint16_t)ep_id);
+        ESP_LOGI(TAG, "Voie %u de 0x%016llX -> Matter endpoint %d (%s)", (unsigned)zep,
+                 (unsigned long long)zd->ieee_addr, ep_id, name);
+    }
 }
 
 int matter_device_manager_refresh_device(const zigate_device_t *zigbee_dev)
@@ -372,7 +467,8 @@ int matter_device_manager_refresh_device(const zigate_device_t *zigbee_dev)
     int ep = -1;
     bridge_device_mapping_t *m = NULL;
     for (int i = 0; i < s_mapping_count; i++) {
-        if (s_mappings[i].active && s_mappings[i].zigbee_ieee == zigbee_dev->ieee_addr) {
+        if (s_mappings[i].active && s_mappings[i].zigbee_ieee == zigbee_dev->ieee_addr &&
+            !s_mappings[i].zb_ep) {
             m = &s_mappings[i];
             break;
         }
@@ -418,8 +514,7 @@ esp_err_t matter_device_manager_unmap_device(uint64_t ieee_addr)
             s_mappings[i].active = false;
             ESP_LOGI(TAG, "Unmapped device 0x%016llX from endpoint %d",
                      ieee_addr, s_mappings[i].matter_endpoint);
-            ret = ESP_OK;
-            break;
+            ret = ESP_OK;               // pas de break : voies exposees a part aussi
         }
     }
     map_unlock();
@@ -488,6 +583,24 @@ int matter_device_manager_map_lora_device(uint64_t ieee, const char *model,
 static esp_err_t apply_report(const bridge_device_mapping_t *mapping, const char *model,
                               const zigate_attribute_report_t *report);
 
+/**
+ * Rapport vers chaque endpoint Matter de l'appareil (principal et voies
+ * exposees a part) : chaque profil ne lie que les etats de sa voie. Les
+ * entrees du tableau des mappings ne bougent jamais.
+ */
+static esp_err_t apply_report_all(uint64_t ieee, const char *model, const zigate_attribute_report_t *report)
+{
+    esp_err_t ret = ESP_ERR_NOT_FOUND;
+    const int n = s_mapping_count;
+    for (int i = 0; i < n; i++) {
+        const bridge_device_mapping_t *m = &s_mappings[i];
+        if (!m->active || m->zigbee_ieee != ieee) continue;
+        esp_err_t e = apply_report(m, model, report);
+        if (ret != ESP_OK) ret = e;
+    }
+    return ret;
+}
+
 esp_err_t matter_device_manager_handle_zigbee_report(const zigate_attribute_report_t *report)
 {
     // Trouver le device par adresse courte
@@ -505,7 +618,7 @@ esp_err_t matter_device_manager_handle_zigbee_report(const zigate_attribute_repo
     }
     char model[sizeof(dev->model)];
     strlcpy(model, dev->model, sizeof(model));
-    return apply_report(mapping, model, report);
+    return apply_report_all(mapping->zigbee_ieee, model, report);
 }
 
 esp_err_t matter_device_manager_handle_report_for_ieee(uint64_t ieee, const char *model,
@@ -513,7 +626,7 @@ esp_err_t matter_device_manager_handle_report_for_ieee(uint64_t ieee, const char
 {
     const bridge_device_mapping_t *mapping = matter_device_manager_get_mapping_by_ieee(ieee);
     if (!mapping || !mapping->active) return ESP_ERR_NOT_FOUND;
-    return apply_report(mapping, model ? model : "", report);
+    return apply_report_all(ieee, model ? model : "", report);
 }
 
 // ----------------------------------------------------------------------------
@@ -999,13 +1112,19 @@ static esp_err_t write_link(const matter_link_t *l, uint16_t short_addr, uint8_t
         uint8_t dp_type = (l->write_type >= 1 && l->write_type <= 5) ? l->write_type : TUYA_DP_VALUE;
         return zigate_tuya_dp_set(short_addr, 1, (uint8_t)l->attr, dp_type, (uint32_t)raw);
     }
+    // Ligne propre a un endpoint : cle composee (endpoint << 12 | attribut)
+    uint16_t attr = l->attr;
+    if (attr >= 0x2000) {
+        dev_ep = (uint8_t)(attr >> 12);
+        attr &= 0x0FFF;
+    }
     uint8_t type = l->write_type ? l->write_type : default_type;
     char txt[24];
     snprintf(txt, sizeof(txt), "%lld", (long long)raw);
     uint8_t buf[8];
     int n = zigate_zcl_encode(type, txt, buf, sizeof(buf));
     if (n <= 0) return ESP_ERR_INVALID_ARG;
-    return zigate_write_attribute_mfr(short_addr, dev_ep, l->cluster, l->attr, type, buf, (uint16_t)n,
+    return zigate_write_attribute_mfr(short_addr, dev_ep, l->cluster, attr, type, buf, (uint16_t)n,
                                       l->mfr);
 }
 
@@ -1029,7 +1148,8 @@ static esp_err_t profile_command(bridge_device_mapping_t *m, uint32_t cluster_id
     const uint16_t sa = dev->short_addr;
     // Endpoint qui porte le cluster (identifiants Matter et ZCL identiques
     // pour OnOff, Level, Window Covering, Thermostat, Fan Control)
-    const uint8_t dep = zigate_device_cluster_ep(dev, (uint16_t)cluster_id);
+    // Voie exposee a part : son endpoint
+    const uint8_t dep = m->zb_ep ? m->zb_ep : zigate_device_cluster_ep(dev, (uint16_t)cluster_id);
     esp_err_t err = ESP_OK;
 
     switch (cluster_id) {
@@ -1162,11 +1282,24 @@ const bridge_device_mapping_t* matter_device_manager_get_mapping(int matter_endp
 const bridge_device_mapping_t* matter_device_manager_get_mapping_by_ieee(uint64_t ieee_addr)
 {
     for (int i = 0; i < s_mapping_count; i++) {
-        if (s_mappings[i].zigbee_ieee == ieee_addr && s_mappings[i].active) {
+        if (s_mappings[i].zigbee_ieee == ieee_addr && s_mappings[i].active && !s_mappings[i].zb_ep) {
             return &s_mappings[i];
         }
     }
     return NULL;
+}
+
+int matter_device_manager_get_ways(uint64_t ieee_addr, uint8_t *zb_eps, int *matter_eps, int max)
+{
+    int n = 0;
+    for (int i = 0; i < s_mapping_count && n < max; i++) {
+        const bridge_device_mapping_t *m = &s_mappings[i];
+        if (!m->active || m->zigbee_ieee != ieee_addr || !m->zb_ep) continue;
+        if (zb_eps) zb_eps[n] = m->zb_ep;
+        if (matter_eps) matter_eps[n] = m->matter_endpoint;
+        n++;
+    }
+    return n;
 }
 
 esp_err_t matter_device_manager_save(void)

@@ -384,7 +384,8 @@
         ['LQI', hex2(d.lqi)],
         ['\u00c9tat radio', d.radio ? radioLabel(d.radio) + ' (' + d.radio.toString(16).toUpperCase() + ')' : 'OK'],
         ['Bind / reporting envoy\u00e9s', d.configured ? 'Oui' : 'Non'],
-        ['Endpoint Matter', d.matterEndpoint >= 0 ? d.matterEndpoint : '-'],
+        ['Endpoint Matter', (d.matterEndpoint >= 0 ? d.matterEndpoint : '-') +
+          (d.matterWays || []).map(function(w) { return ', voie ' + w[0] + ' : ' + w[1]; }).join('')],
         ['Statut', d.status || '-'],
         ['Clusters entrants', (d.inClusters || []).join(' ') || '-'],
         ['Clusters sortants', (d.outClusters || []).join(' ') || '-']

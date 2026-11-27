@@ -504,6 +504,15 @@ static void write_device_header(jw_t *w, const zigate_device_t *d)
     jw_kbool(w, "active", d->active);
     jw_kint(w, "lqi", d->lqi);
     jw_kint(w, "matterEndpoint", d->matter_endpoint);
+    if (d->matter_way_count) {
+        // Voies exposees par leur propre endpoint Matter : [endpoint Zigbee, endpoint Matter]
+        jw_key(w, "matterWays");
+        jw_raw(w, "[");
+        for (int k = 0; k < d->matter_way_count && k < ZIGATE_MAX_MATTER_WAYS; k++)
+            jw_fmt(w, "%s[%u,%u]", k ? "," : "", (unsigned)d->matter_ways[k].zb_ep,
+                   (unsigned)d->matter_ways[k].matter_ep);
+        jw_raw(w, "]");
+    }
     jw_kint(w, "radio", d->radio_status);
     jw_kint(w, "lastSeen", d->last_seen);
     jw_kint(w, "ago", d->last_rx_s ? (long long)(zigate_uptime_s() - d->last_rx_s) : -1);

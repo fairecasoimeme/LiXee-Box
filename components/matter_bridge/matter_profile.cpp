@@ -266,10 +266,31 @@ static void set_cmd(matter_cmd_t *cmd, const devdata_template_action_t *a)
     cmd->mfr = a->manufacturer_code;
 }
 
-static void scan_actions(const devdata_template_t *t, matter_profile_t *p)
+// Endpoint Zigbee d'une ligne d'etat : 0 = endpoint de l'appareil (pas de
+// champ "endpoint", ou endpoint 1), 2..15 sinon (voir devdata_ep_key)
+static uint8_t state_ep(const devdata_template_state_t *s)
+{
+    return (s->endpoint >= 2 && s->endpoint <= 15 && s->attribute >= 0x2000) ? s->endpoint : 0;
+}
+
+static uint8_t action_ep(const devdata_template_action_t *a)
+{
+    return (a->endpoint >= 2 && a->endpoint <= 15) ? a->endpoint : 0;
+}
+
+// Ligne (etat ou action) d'endpoint 'ep' retenue pour l'endpoint Matter
+// construit : way = voie exposee seule (endpoint Zigbee), 0 = endpoint
+// principal, sans les voies exposees a part (bits de 'ways')
+static bool keep_ep(uint8_t ep, uint8_t way, uint16_t ways)
+{
+    return way ? ep == way : !(ep && (ways & (1u << ep)));
+}
+
+static void scan_actions(const devdata_template_t *t, matter_profile_t *p, uint8_t way, uint16_t ways)
 {
     for (int i = 0; i < t->action_count; i++) {
         const devdata_template_action_t *a = &t->actions[i];
+        if (!keep_ep(action_ep(a), way, ways)) continue;
         switch (a->command) {
         case CMD_ONOFF:
         case CMD_TUYA_BOOL:
@@ -384,8 +405,60 @@ static bool target_is_single(uint8_t t)
     }
 }
 
-matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const char *model,
-                                       uint16_t zcl_device_id, matter_meter_role_t meter_role)
+// Classe une ligne d'etat d'apres son attribut reel. Ligne propre a un
+// endpoint ("endpoint": 3) : cle composee 0x3000 | attribut, sinon jamais
+// reconnue (0402/0x3000 n'est pas une temperature) ; la liaison garde la cle
+// composee, celle des valeurs enregistrees.
+static cls_t classify_state(const devdata_template_state_t *s, bool has_onoff_action, bool zlinky,
+                            matter_meter_role_t meter_role, devdata_template_state_t *real)
+{
+    const devdata_template_state_t *cs = s;
+    if (s->endpoint && s->attribute >= 0x2000) {
+        *real = *s;
+        real->attribute = s->attribute & 0x0FFF;
+        cs = real;
+    }
+    bool handled = false;
+    cls_t c = classify_standard(cs, has_onoff_action, zlinky, meter_role, &handled);
+    if (!handled) c = classify_generic(cs);
+    return c;
+}
+
+static bool any_onoff_action(const devdata_template_t *tmpl, uint8_t way, uint16_t ways)
+{
+    for (int i = 0; i < tmpl->action_count; i++)
+        if (is_onoff_action(&tmpl->actions[i]) && keep_ep(action_ep(&tmpl->actions[i]), way, ways))
+            return true;
+    return false;
+}
+
+uint16_t matter_profile_ways(const devdata_template_t *tmpl, const char *model,
+                             matter_meter_role_t meter_role)
+{
+    if (!tmpl || !tmpl->loaded || tmpl->dyn_only) return 0;
+    const bool zlinky = model && strncmp(model, "ZLinky", 6) == 0;
+    const bool has_onoff_action = any_onoff_action(tmpl, 0, 0);
+    // Endpoints Zigbee (bits 0..15, 0 = endpoint de l'appareil) qui portent
+    // chaque mesure unique d'un endpoint Matter
+    uint16_t eps_of[ML_EL_TOTAL_ACTIVE + 1] = {};
+    for (int i = 0; i < tmpl->state_count; i++) {
+        const devdata_template_state_t *s = &tmpl->states[i];
+        devdata_template_state_t real;
+        cls_t c = classify_state(s, has_onoff_action, zlinky, meter_role, &real);
+        if (c.target == ML_NONE || c.target > ML_EL_TOTAL_ACTIVE || !target_is_single(c.target)) continue;
+        eps_of[c.target] |= (uint16_t)(1u << state_ep(s));
+    }
+    // Une mesure sur plusieurs endpoints : chaque endpoint secondaire qui la
+    // porte devient une voie exposee a part (deux voies On/Off, deux sondes)
+    uint16_t ways = 0;
+    for (size_t k = 0; k < sizeof(eps_of) / sizeof(eps_of[0]); k++)
+        if (eps_of[k] & (eps_of[k] - 1)) ways |= eps_of[k];
+    return ways & ~1u;
+}
+
+static matter_profile_t *build(const devdata_template_t *tmpl, const char *model,
+                               uint16_t zcl_device_id, matter_meter_role_t meter_role,
+                               uint8_t way, uint16_t ways)
 {
     if (!tmpl || !tmpl->loaded || tmpl->dyn_only) return NULL;   // dyn_only : codes IR seuls
 
@@ -395,27 +468,16 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
     if (!p) return NULL;
 
     p->zlinky = model && strncmp(model, "ZLinky", 6) == 0;
-    scan_actions(tmpl, p);
-    bool has_onoff_action = false;
-    for (int i = 0; i < tmpl->action_count; i++)
-        if (is_onoff_action(&tmpl->actions[i])) has_onoff_action = true;
+    p->way = way;
+    scan_actions(tmpl, p, way, ways);
+    const bool has_onoff_action = any_onoff_action(tmpl, way, ways);
 
     for (int i = 0; i < tmpl->state_count; i++) {
         const devdata_template_state_t *s = &tmpl->states[i];
-        // Ligne propre a un endpoint ("endpoint": 3) : cle composee 0x3000 |
-        // attribut. Classee d'apres l'attribut reel, sinon elle n'etait jamais
-        // reconnue (0402/0x3000 n'est pas une temperature) ; la liaison garde
-        // la cle composee, celle des valeurs enregistrees.
+        if (!keep_ep(state_ep(s), way, ways)) continue;
         devdata_template_state_t real;
-        const devdata_template_state_t *cs = s;
-        if (s->endpoint && s->attribute >= 0x2000) {
-            real = *s;
-            real.attribute = s->attribute & 0x0FFF;
-            cs = &real;
-        }
-        bool handled = false;
-        cls_t c = classify_standard(cs, has_onoff_action, p->zlinky, meter_role, &handled);
-        if (!handled) c = classify_generic(cs);
+        const devdata_template_state_t *cs = (s->endpoint && s->attribute >= 0x2000) ? &real : s;
+        cls_t c = classify_state(s, has_onoff_action, p->zlinky, meter_role, &real);
         if (c.target == ML_NONE) continue;
 
         // Un meme attribut n'est lie qu'une fois
@@ -441,6 +503,7 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
             continue;
         }
 
+        if (way && !p->way_name[0]) strlcpy(p->way_name, s->name, sizeof(p->way_name));
         matter_link_t *l = &p->links[p->link_count++];
         l->cluster = s->cluster;
         l->attr = s->attribute;
@@ -490,14 +553,28 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
         free(p);
         return NULL;
     }
-    ESP_LOGI(TAG, "Profil '%s' : %d liaison(s), capacites 0x%04lX", model ? model : "",
-             p->link_count, (unsigned long)p->caps);
+    ESP_LOGI(TAG, "Profil '%s'%s%.0u : %d liaison(s), capacites 0x%04lX", model ? model : "",
+             way ? " voie " : "", (unsigned)way, p->link_count, (unsigned long)p->caps);
     for (int i = 0; i < p->link_count; i++) {
         ESP_LOGD(TAG, "  %04X/%04X -> %s (x%g)", p->links[i].cluster, p->links[i].attr,
                  matter_link_target_name(p->links[i].target),
                  (double)(p->links[i].scale * p->links[i].unit_mul));
     }
     return p;
+}
+
+matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const char *model,
+                                       uint16_t zcl_device_id, matter_meter_role_t meter_role)
+{
+    return build(tmpl, model, zcl_device_id, meter_role, 0, matter_profile_ways(tmpl, model, meter_role));
+}
+
+matter_profile_t *matter_profile_build_way(const devdata_template_t *tmpl, const char *model,
+                                           uint16_t zcl_device_id, matter_meter_role_t meter_role,
+                                           uint8_t zb_ep)
+{
+    if (zb_ep < 2 || zb_ep > 15) return NULL;
+    return build(tmpl, model, zcl_device_id, meter_role, zb_ep, 0);
 }
 
 // ----------------------------------------------------------------------------

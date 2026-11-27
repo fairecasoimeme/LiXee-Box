@@ -18,6 +18,9 @@ typedef struct {
     int      matter_endpoint;
     uint64_t zigbee_ieee;
     uint16_t zigbee_short_addr;
+    // Voie d'un appareil multi-voies exposee par son propre endpoint Matter :
+    // son endpoint Zigbee (issue #120). 0 : endpoint principal de l'appareil.
+    uint8_t  zb_ep;
     matter_device_type_t device_type;   // sans profil : type deduit du DeviceId
     bool     active;
     // Profil du template (NULL : appareil sans template, conversion historique)
@@ -100,6 +103,13 @@ const bridge_device_mapping_t* matter_device_manager_get_mapping(int matter_endp
  * Retourne le mapping pour une adresse IEEE donnee
  */
 const bridge_device_mapping_t* matter_device_manager_get_mapping_by_ieee(uint64_t ieee_addr);
+
+/**
+ * Endpoints Matter des voies exposees a part d'un appareil (issue #120) :
+ * endpoints Zigbee dans zb_eps, endpoints Matter dans matter_eps.
+ * @return nombre de voies (au plus max)
+ */
+int matter_device_manager_get_ways(uint64_t ieee_addr, uint8_t *zb_eps, int *matter_eps, int max);
 
 /**
  * Convertit un device_id ZCL en type de device Matter

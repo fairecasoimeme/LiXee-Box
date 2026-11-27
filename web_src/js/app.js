@@ -2599,8 +2599,10 @@
         }
         arr(devices).forEach(function(d) {
           if (!d || !d.ieee) return;
+          // Voies exposees par leur propre endpoint (appareil multi-voies)
+          var ways = (d.matterWays || []).map(function(w) { return w[1]; });
           list.push({ key: d.ieee, alias: d.alias, model: d.model, ieee: d.ieee, radio: d.radio === 'lora' ? 'lora' : 'zigbee',
-                      ep: d.matterEndpoint, active: d.active });
+                      ep: d.matterEndpoint, ways: ways, active: d.active });
         });
       }).always(done);
     });
@@ -2623,7 +2625,7 @@
       list.forEach(function(d) {
         html += '<tr' + (d.excluded ? ' class="text-muted"' : '') + '><td>' + escHtml(d.alias || '--') + '</td><td>' + escHtml(d.model || '--') + '</td><td><small>' + escHtml(d.ieee) + '</small></td>' +
                 '<td>' + (d.radio === 'lora' ? 'LoRa' : (d.radio === 'virtual' ? 'Virtuel' : (d.radio === 'ip' ? 'IP' : 'Zigbee'))) + '</td>' +
-                '<td>' + (d.bridged ? d.ep : '&mdash;') + '</td>' +
+                '<td>' + (d.bridged ? d.ep + (d.ways && d.ways.length ? ', ' + d.ways.join(', ') : '') : '&mdash;') + '</td>' +
                 '<td>' + (d.active ? '<span class="badge bg-success">Oui</span>' : '<span class="badge bg-secondary">Non</span>') + '</td>' +
                 '<td><div class="form-check form-switch m-0"><input class="form-check-input mt-expose" type="checkbox" role="switch" style="cursor:pointer;"' +
                   ' data-key="' + escHtml(d.key) + '"' + (d.excluded ? '' : ' checked') + ' title="Publier dans Matter / retirer de Matter"></div></td></tr>';

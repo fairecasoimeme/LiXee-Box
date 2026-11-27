@@ -293,7 +293,8 @@ static esp_err_t set_parent_endpoint(endpoint_t *child_ep, endpoint_t *parent_ep
 // nom, et le parametre label etait recu puis ignore.
 // ============================================================================
 
-static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *label, const char *product)
+static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *label, const char *product,
+                                 uint8_t way)
 {
     cluster_t *bdbi = cluster::get(ep, BridgedDeviceBasicInformation::Id);
     if (!bdbi) return;
@@ -304,8 +305,10 @@ static void set_bridged_identity(endpoint_t *ep, uint64_t ieee, const char *labe
     // connait pas encore cet endpoint (mapping enregistre apres) et repond
     // ESP_ERR_NOT_FOUND ; esp-matter abandonnait alors l'ecriture et
     // l'UniqueID restait vide.
-    char uid[17];
-    snprintf(uid, sizeof(uid), "%016llX", (unsigned long long)ieee);
+    // Voie d'un appareil multi-voies (endpoint Zigbee 'way') : IEEE-endpoint
+    char uid[24];
+    if (way) snprintf(uid, sizeof(uid), "%016llX-%u", (unsigned long long)ieee, (unsigned)way);
+    else snprintf(uid, sizeof(uid), "%016llX", (unsigned long long)ieee);
     attribute_t *uid_attr = attribute::get(bdbi, BridgedDeviceBasicInformation::Attributes::UniqueID::Id);
     if (uid_attr) {
         esp_matter_attr_val_t v = esp_matter_char_str(uid, (uint16_t)strlen(uid));
@@ -1603,7 +1606,7 @@ static int add_endpoint_impl(uint64_t zigbee_ieee, matter_device_type_t device_t
     }
 
     // 2. Identite de l'appareil ponte (UniqueID, nom, fabricant, modele)
-    set_bridged_identity(ep, zigbee_ieee, label, product);
+    set_bridged_identity(ep, zigbee_ieee, label, product, profile ? profile->way : 0);
 
     // 3. Ajouter les clusters : profil du template, a defaut type deduit du
     //    DeviceId Zigbee

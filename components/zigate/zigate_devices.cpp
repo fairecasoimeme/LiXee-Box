@@ -113,6 +113,7 @@ int zigate_devices_add_or_update(const zigate_device_t *dev)
 
     memcpy(&s_devices[s_device_count], dev, sizeof(zigate_device_t));
     s_devices[s_device_count].matter_endpoint = -1;
+    s_devices[s_device_count].matter_way_count = 0;
     int idx = s_device_count;
     s_device_count++;
 
@@ -195,6 +196,39 @@ esp_err_t zigate_devices_set_matter_endpoint(uint64_t ieee_addr, int matter_ep)
     zigate_device_t *dev = zigate_devices_find_by_ieee(ieee_addr);
     if (!dev) { devs_unlock(); return ESP_ERR_NOT_FOUND; }
     dev->matter_endpoint = matter_ep;
+    esp_err_t err = zigate_devices_save();
+    devs_unlock();
+    return err;
+}
+
+int zigate_devices_get_matter_way(uint64_t ieee_addr, uint8_t zb_ep)
+{
+    int r = -1;
+    devs_lock();
+    zigate_device_t *dev = zigate_devices_find_by_ieee(ieee_addr);
+    for (int i = 0; dev && i < dev->matter_way_count && i < ZIGATE_MAX_MATTER_WAYS; i++) {
+        if (dev->matter_ways[i].zb_ep == zb_ep) r = dev->matter_ways[i].matter_ep;
+    }
+    devs_unlock();
+    return r;
+}
+
+esp_err_t zigate_devices_set_matter_way(uint64_t ieee_addr, uint8_t zb_ep, uint16_t matter_ep)
+{
+    devs_lock();
+    zigate_device_t *dev = zigate_devices_find_by_ieee(ieee_addr);
+    if (!dev) { devs_unlock(); return ESP_ERR_NOT_FOUND; }
+    int slot = -1;
+    for (int i = 0; i < dev->matter_way_count && i < ZIGATE_MAX_MATTER_WAYS; i++) {
+        if (dev->matter_ways[i].zb_ep == zb_ep) slot = i;
+    }
+    if (slot >= 0 && dev->matter_ways[slot].matter_ep == matter_ep) { devs_unlock(); return ESP_OK; }
+    if (slot < 0) {
+        if (dev->matter_way_count >= ZIGATE_MAX_MATTER_WAYS) { devs_unlock(); return ESP_ERR_NO_MEM; }
+        slot = dev->matter_way_count++;
+    }
+    dev->matter_ways[slot].zb_ep = zb_ep;
+    dev->matter_ways[slot].matter_ep = matter_ep;
     esp_err_t err = zigate_devices_save();
     devs_unlock();
     return err;
@@ -352,6 +386,14 @@ esp_err_t zigate_devices_save(void)
         cJSON_AddStringToObject(obj, "alias", s_devices[i].alias);
         cJSON_AddBoolToObject(obj, "active", s_devices[i].active);
         cJSON_AddNumberToObject(obj, "matter_ep", s_devices[i].matter_endpoint);
+        if (s_devices[i].matter_way_count) {
+            // Voies exposees par leur propre endpoint Matter : [endpoint Zigbee, endpoint Matter]
+            cJSON *a = cJSON_AddArrayToObject(obj, "matter_ways");
+            for (int k = 0; a && k < s_devices[i].matter_way_count && k < ZIGATE_MAX_MATTER_WAYS; k++) {
+                int v[2] = { s_devices[i].matter_ways[k].zb_ep, s_devices[i].matter_ways[k].matter_ep };
+                cJSON_AddItemToArray(a, cJSON_CreateIntArray(v, 2));
+            }
+        }
         cJSON_AddBoolToObject(obj, "cfg", s_devices[i].configured);
         cJSON_AddNumberToObject(obj, "lqi", s_devices[i].lqi);
         // Endpoints [ep, profil, deviceId] et clusters [cluster, ep] (v3.4)
@@ -536,6 +578,13 @@ static esp_err_t zigate_devices_load_locked(void)
 
         // Endpoints et clusters (v3.4 ; absents des fichiers plus anciens)
         cJSON *e;
+        cJSON *ways = cJSON_GetObjectItem(obj, "matter_ways");
+        cJSON_ArrayForEach(e, ways) {
+            if (dev->matter_way_count >= ZIGATE_MAX_MATTER_WAYS || cJSON_GetArraySize(e) < 2) break;
+            zigate_matter_way_t *w = &dev->matter_ways[dev->matter_way_count++];
+            w->zb_ep = (uint8_t)cJSON_GetArrayItem(e, 0)->valueint;
+            w->matter_ep = (uint16_t)cJSON_GetArrayItem(e, 1)->valueint;
+        }
         cJSON *eps = cJSON_GetObjectItem(obj, "eps");
         cJSON_ArrayForEach(e, eps) {
             if (dev->ep_count >= ZIGATE_MAX_EPS || cJSON_GetArraySize(e) < 3) break;

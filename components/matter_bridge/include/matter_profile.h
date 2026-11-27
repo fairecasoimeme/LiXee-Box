@@ -142,6 +142,8 @@ typedef struct {
     bool          cover_inverted;   // volet dont la position remontee est l'ouverture (252)
     bool          zlinky;
     matter_occupancy_tech_t occupancy_tech;  // MCAP_OCCUPANCY (issue #97)
+    uint8_t       way;              // voie exposee a part : son endpoint Zigbee (0 : endpoint principal)
+    char          way_name[50];     // voie : nom du premier etat lie (nom de l'endpoint Matter)
     int           link_count;
     matter_link_t links[MATTER_PROFILE_MAX_LINKS];
     matter_cmd_t  on, off;
@@ -172,6 +174,24 @@ typedef enum {
  */
 matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const char *model,
                                        uint16_t zcl_device_id, matter_meter_role_t meter_role);
+
+/**
+ * Voies d'un appareil multi-voies exposees chacune par son propre endpoint
+ * Matter (issue #120) : endpoints Zigbee secondaires (bits 2..15) qui portent
+ * une mesure ou une commande unique (etat On/Off, temperature...) deja
+ * presente sur un autre endpoint. Aqara T2 : voie 2 ; Ztriac : sondes 3 et 4.
+ * Le profil principal (matter_profile_build) ne contient plus ces voies.
+ */
+uint16_t matter_profile_ways(const devdata_template_t *tmpl, const char *model,
+                             matter_meter_role_t meter_role);
+
+/**
+ * Profil d'une voie (endpoint Zigbee zb_ep, 2..15) : ses etats et ses actions
+ * seulement. NULL si aucun n'a d'equivalent Matter.
+ */
+matter_profile_t *matter_profile_build_way(const devdata_template_t *tmpl, const char *model,
+                                           uint16_t zcl_device_id, matter_meter_role_t meter_role,
+                                           uint8_t zb_ep);
 
 /**
  * Valeur numerique brute d'un rapport (entiers signes ou non, booleen, enum,

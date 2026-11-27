@@ -15,6 +15,7 @@ extern "C" {
 #define ZIGATE_MAX_DEVICES   64
 #define ZIGATE_MAX_EPS       8      // endpoints applicatifs retenus par appareil
 #define ZIGATE_MAX_CLUSTERS  48     // clusters retenus (tous endpoints confondus)
+#define ZIGATE_MAX_MATTER_WAYS 4    // voies exposees en Matter par leur propre endpoint
 
 /** Endpoint applicatif d'un appareil (Simple Descriptor, profil HA ou ZLL) */
 typedef struct {
@@ -22,6 +23,12 @@ typedef struct {
     uint16_t profile_id;
     uint16_t device_id;
 } zigate_ep_info_t;
+
+/** Voie d'un appareil multi-voies exposee par son propre endpoint Matter */
+typedef struct {
+    uint8_t  zb_ep;            // endpoint Zigbee de la voie
+    uint16_t matter_ep;        // endpoint Matter attribue
+} zigate_matter_way_t;
 
 typedef struct {
     uint64_t ieee_addr;
@@ -55,6 +62,11 @@ typedef struct {
     uint8_t  out_cluster_count;
     // Matter endpoint assigne (-1 = pas encore mappe)
     int      matter_endpoint;
+    // Endpoints Matter des voies secondaires (deux voies On/Off, deux sondes
+    // sur deux endpoints Zigbee : un endpoint ponte par voie, issue #120).
+    // Numeros gardes d'un demarrage a l'autre, comme matter_endpoint.
+    zigate_matter_way_t matter_ways[ZIGATE_MAX_MATTER_WAYS];
+    uint8_t  matter_way_count;
 
     // Bind et reporting du template deja envoyes a l'appareil. L'appareil
     // les conserve : inutile (et usant pour sa flash) de les renvoyer a
@@ -128,6 +140,16 @@ esp_err_t zigate_devices_load(void);
  * Assigne un endpoint Matter a un device Zigbee
  */
 esp_err_t zigate_devices_set_matter_endpoint(uint64_t ieee_addr, int matter_ep);
+
+/**
+ * Endpoint Matter de la voie zb_ep (appareil multi-voies), -1 si inconnu
+ */
+int zigate_devices_get_matter_way(uint64_t ieee_addr, uint8_t zb_ep);
+
+/**
+ * Enregistre l'endpoint Matter de la voie zb_ep (sauvegarde si change)
+ */
+esp_err_t zigate_devices_set_matter_way(uint64_t ieee_addr, uint8_t zb_ep, uint16_t matter_ep);
 
 /**
  * Note la date de la derniere trame d'un appareil (enregistree plus tard par
