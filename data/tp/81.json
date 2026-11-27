@@ -2070,9 +2070,9 @@
           "unit": "kWh"
         },
         {
-          "name": "Energie produite ?",
+          "name": "Energie produite",
           "cluster": "EF00",
-          "attribut": 909,
+          "attribut": 23,
           "mqtt_device_class": "energy",
           "mqtt_icon": "solar-power",
           "mqtt_state_class": "total_increasing",
@@ -2106,9 +2106,9 @@
           "unit": "kWh"
         },
         {
-          "name": "Energie produite L1 ?",
+          "name": "Energie produite L1",
           "cluster": "EF00",
-          "attribut": 912,
+          "attribut": 121,
           "mqtt_device_class": "energy",
           "mqtt_icon": "solar-power",
           "mqtt_state_class": "total_increasing",
@@ -2118,9 +2118,9 @@
           "unit": "kWh"
         },
         {
-          "name": "Energie produite L2 ?",
+          "name": "Energie produite L2",
           "cluster": "EF00",
-          "attribut": 913,
+          "attribut": 119,
           "mqtt_device_class": "energy",
           "mqtt_icon": "solar-power",
           "mqtt_state_class": "total_increasing",
@@ -2132,7 +2132,7 @@
         {
           "name": "Facteur de puissance ?",
           "cluster": "EF00",
-          "attribut": 914,
+          "attribut": 50,
           "mqtt_device_class": "power_factor",
           "mqtt_icon": "angle-acute",
           "mqtt_state_class": "measurement",
