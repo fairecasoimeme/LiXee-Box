@@ -89,10 +89,16 @@ static ThermostatPresetsDelegate *s_thermo_preset_delegates[MATTER_BRIDGE_MAX_EN
 static int s_thermo_preset_delegate_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static int s_thermo_preset_delegate_count = 0;
 static matter_thermostat_preset_cb_t s_thermo_preset_cb = nullptr;
+static matter_thermostat_preset_commit_cb_t s_thermo_preset_commit_cb = nullptr;
 
 void matter_bridge_set_thermostat_preset_cb(matter_thermostat_preset_cb_t cb)
 {
     s_thermo_preset_cb = cb;
+}
+
+void matter_bridge_set_thermostat_preset_commit_cb(matter_thermostat_preset_commit_cb_t cb)
+{
+    s_thermo_preset_commit_cb = cb;
 }
 
 static ThermostatPresetsDelegate *get_thermo_preset_delegate(int endpoint_id)
@@ -104,16 +110,30 @@ static ThermostatPresetsDelegate *get_thermo_preset_delegate(int endpoint_id)
 }
 
 void matter_bridge_set_thermostat_presets(int endpoint_id, int32_t comfort_setpoint,
-                                          int32_t frost_setpoint, bool frost_active)
+                                          int32_t frost_setpoint, bool frost_active,
+                                          const matter_preset_t *custom, int custom_count,
+                                          uint8_t active_custom_handle)
 {
     ThermostatPresetsDelegate *d = get_thermo_preset_delegate(endpoint_id);
-    if (d) d->SyncFromZone(comfort_setpoint, frost_setpoint, frost_active);
+    if (d) d->SyncFromZone(comfort_setpoint, frost_setpoint, frost_active, custom, custom_count, active_custom_handle);
+}
+
+bool matter_bridge_get_thermostat_custom_presets(int endpoint_id, matter_preset_t *out,
+                                                 int max_out, int *out_count)
+{
+    ThermostatPresetsDelegate *d = get_thermo_preset_delegate(endpoint_id);
+    if (!d) return false;
+    d->GetCustomPresetsSnapshot(out, max_out, out_count);
+    return true;
 }
 
 // Appelee par le serveur CHIP quand un controleur invoque SetActivePresetRequest :
 // repercute le choix sur la zone via le callback enregistre par thermostat.cpp
 // (definie ici, et non dans thermostat_presets_delegate.h, pour acceder a
-// s_thermo_preset_cb).
+// s_thermo_preset_cb). Le handle est deja verifie present dans Presets par
+// ThermostatAttrAccess::SetActivePreset() (voir thermostat-server-presets.cpp)
+// avant d'arriver ici : built-in (0x01/0x02) ou personnalise (0x03+, issue #80),
+// pas besoin de le revalider.
 CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
     const chip::app::DataModel::Nullable<chip::ByteSpan> &newActivePresetHandle)
 {
@@ -121,12 +141,11 @@ CHIP_ERROR ThermostatPresetsDelegate::SetActivePresetHandle(
         return CHIP_NO_ERROR;   // aucun preset actif demande : rien a repercuter sur la zone
     }
     const chip::ByteSpan &v = newActivePresetHandle.Value();
-    if (v.size() != 1 || (v.data()[0] != 0x01 && v.data()[0] != 0x02)) {
+    if (v.size() != 1) {
         return CHIP_ERROR_INVALID_ARGUMENT;
     }
-    bool frost = (v.data()[0] == 0x02);
     if (s_thermo_preset_cb) {
-        esp_err_t err = s_thermo_preset_cb(EndpointId(), frost);
+        esp_err_t err = s_thermo_preset_cb(EndpointId(), v.data()[0]);
         if (err == ESP_ERR_NOT_FOUND) {
             ESP_LOGW(TAG, "Preset Matter sur l'endpoint %d : zone introuvable", EndpointId());
         }
@@ -140,6 +159,60 @@ static LinkyPriceDelegate *s_price_delegates[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static CommodityPrice::Instance *s_price_instances[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static int s_price_ep_ids[MATTER_BRIDGE_MAX_ENDPOINTS] = {};
 static int s_price_count = 0;
+
+// Commit de l'edition des presets personnalises (issue #80) : le contenu valide
+// a deja ete range dans m_custom (CommitPendingPresets, tache CHIP) ; notifie
+// seulement thermostat.cpp (file d'attente, jamais d'appel bloquant depuis la
+// tache CHIP, voir commentaire en tete de thermostat_presets_delegate.h) pour
+// qu'il relise ce contenu via matter_bridge_get_thermostat_custom_presets() et
+// le persiste.
+CHIP_ERROR ThermostatPresetsDelegate::CommitPendingPresets()
+{
+    // Copie de l'ancienne liste, pour pouvoir la restaurer si la notification
+    // ci-dessous echoue (voir plus bas) : seul GetCustomPresetsSnapshot() leve
+    // m_commit_pending, donc sans notification recue par la tache des
+    // thermostats, m_commit_pending resterait leve ad vitam et SyncFromZone()
+    // ne recopierait plus jamais les presets perso de la zone (revue PR #83).
+    matter_preset_t prev[MATTER_PRESET_MAX_CUSTOM];
+    uint8_t prev_count = m_custom_count;
+    memcpy(prev, m_custom, sizeof(matter_preset_t) * prev_count);
+
+    matter_preset_t next[MATTER_PRESET_MAX_CUSTOM];
+    uint8_t next_count = 0;
+    uint8_t next_free = 0x03;
+    for (uint8_t i = 0; i < m_custom_count; i++) {
+        if ((uint16_t)m_custom[i].handle + 1 > next_free) next_free = (uint8_t)(m_custom[i].handle + 1);
+    }
+    for (uint8_t i = 0; i < m_pending_count && next_count < MATTER_PRESET_MAX_CUSTOM; i++) {
+        const matter_preset_t &p = m_pending[i];
+        if (p.handle == kHandleComfort || p.handle == kHandleFrost) continue;
+        next[next_count] = p;
+        if (next[next_count].handle == 0) next[next_count].handle = next_free++;
+        next_count++;
+    }
+    memcpy(m_custom, next, sizeof(matter_preset_t) * next_count);
+    m_custom_count = next_count;
+    m_pending_count = 0;
+    m_commit_pending = true;   // voir SyncFromZone()/GetCustomPresetsSnapshot()
+
+    esp_err_t err = s_thermo_preset_commit_cb ? s_thermo_preset_commit_cb(EndpointId()) : ESP_OK;
+    if (err != ESP_OK) {
+        // Notification non recue par la tache des thermostats (file pleine ou
+        // zone introuvable) : rien n'a ete persiste, donc on restaure l'ancienne
+        // liste de presets perso plutot que de garder celle qu'on vient de
+        // construire, on relache m_commit_pending nous-memes (GetCustomPresetsSnapshot()
+        // ne sera jamais appele pour ca), et on signale l'echec au controleur
+        // au lieu de CHIP_NO_ERROR.
+        memcpy(m_custom, prev, sizeof(matter_preset_t) * prev_count);
+        m_custom_count = prev_count;
+        m_commit_pending = false;
+        if (err == ESP_ERR_NOT_FOUND) {
+            ESP_LOGW(TAG, "Commit presets Matter sur l'endpoint %d : zone introuvable", EndpointId());
+        }
+        return CHIP_ERROR_INTERNAL;
+    }
+    return CHIP_NO_ERROR;
+}
 
 // Energie cumulee : un acces partage pour tous les endpoints compteur, et
 // l'etat des index Zigbee par endpoint.
@@ -709,7 +782,8 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         uint32_t f = 0;
         if (p->heat) f |= cluster::thermostat::feature::heating::get_id();
         if (p->cool) f |= cluster::thermostat::feature::cooling::get_id();
-        if (p->presets) f |= cluster::thermostat::feature::presets::get_id();
+        // Presets volontairement absent d'ici : voir le contournement
+        // espressif/esp-matter#1928 juste apres endpoint::thermostat::add().
         // LTNE (issue #109) : zone virtuelle sans capteur de temperature assigne ->
         // LocalTemperature (mandatoryConform, nullable) ne sera jamais renseigne,
         // on le signale au controleur plutot que de laisser un null permanent
@@ -734,6 +808,28 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         }
         endpoint::thermostat::add(ep, &cfg);
         cluster_t *th = cluster::get(ep, Thermostat::Id);
+        if (p->presets && th) {
+            // Contournement espressif/esp-matter#1928 (revue PR #83) : sans
+            // feature presets dans feature_flags ci-dessus, endpoint::thermostat::add()
+            // n'a pas appele feature::presets::add(), qui aurait cree l'attribut
+            // Presets avec ATTRIBUTE_FLAG_MANAGED_INTERNALLY -- flag qui fait
+            // echouer emberAfLocateAttributeMetadata() (modele Ember legacy,
+            // jamais peuple par les endpoints dynamiques esp-matter) et donc
+            // la commande AtomicRequest (InvalidCommand systematique) pour
+            // Presets/Schedules sur tout endpoint dynamique de ce type.
+            // On cree nous-memes l'attribut Presets sans ce drapeau ;
+            // esp_matter::attribute::create() renvoie l'attribut existant sans
+            // toucher a ses flags s'il existe deja (esp_matter_data_model.cpp),
+            // donc feature::presets::add() juste en dessous reutilise le notre
+            // au lieu d'en creer un avec MANAGED_INTERNALLY. Lecture/ecriture
+            // restent servies par ThermostatPresetsDelegate (AttributeAccessInterface),
+            // ce drapeau ne changeait de toute facon rien a ce chemin.
+            attribute::create(th, Thermostat::Attributes::Presets::Id, ATTRIBUTE_FLAG_WRITABLE,
+                              esp_matter_array(nullptr, 0, 0));
+            cluster::thermostat::feature::presets::add(th);
+            cluster::thermostat::command::create_atomic_request(th);
+            cluster::thermostat::command::create_atomic_response(th);
+        }
         bool running = false;
         for (int i = 0; i < p->link_count; i++)
             if (p->links[i].target == ML_TH_RUNNING) running = true;

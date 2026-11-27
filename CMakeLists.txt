@@ -31,6 +31,7 @@ project(lixee_matter_bridge)
 # Cluster inutilise par le pont : le fichier est retire de la compilation ici,
 # managed_components/ etant retelecharge (et non versionne).
 idf_component_get_property(_matter_dir espressif__esp_matter COMPONENT_DIR)
+
 set_source_files_properties(
     "${_matter_dir}/connectedhomeip/connectedhomeip/src/app/clusters/closure-control-server/closure-control-cluster-logic.cpp"
     DIRECTORY "${_matter_dir}"
