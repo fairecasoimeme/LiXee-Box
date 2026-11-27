@@ -469,10 +469,10 @@
     h += "<input class='form-control' type='number' id='thCycle' value='" + t.tpiCycleSec + "'>";
     h += "<div class='form-text mb-3'>Sur chaque cycle, le chauffage est actif une fraction du temps proportionnelle au besoin. <b>Plus court</b> = plus r&eacute;actif mais plus de commutations ; <b>plus long</b> = plus doux. Recommand&eacute; : <b>900 s (15 min)</b> pour un convecteur &eacute;lectrique, <b>1 &agrave; 2 h (3600&ndash;7200 s)</b> pour une PAC + plancher chauffant (forte inertie de la dalle).</div>";
     h += "<label class='form-label'>Kp &mdash; gain proportionnel</label>";
-    h += "<input class='form-control' type='number' step='0.1' id='thKp' value='" + Number(t.tpiKp).toFixed(2) + "'>";
+    h += "<input class='form-control' type='number' min='0' step='0.05' id='thKp' value='" + Number(t.tpiKp).toFixed(2) + "'>";
     h += "<div class='form-text mb-3'>Force de r&eacute;action &agrave; l'&eacute;cart avec la consigne. <b>Plus &eacute;lev&eacute;</b> = chauffe plus fort quand on est loin du but, mais risque d'<b>oscillations</b> autour de la consigne. D&eacute;faut : <b>0,8</b> pour un convecteur ; r&eacute;duisez &agrave; <b>0,3&ndash;0,4</b> pour un plancher chauffant (r&eacute;gulation plus douce, forte inertie).</div>";
     h += "<label class='form-label'>Ki &mdash; gain int&eacute;gral</label>";
-    h += "<input class='form-control' type='number' step='0.05' id='thKi' value='" + Number(t.tpiKi).toFixed(2) + "'>";
+    h += "<input class='form-control' type='number' min='0' step='0.05' id='thKi' value='" + Number(t.tpiKi).toFixed(2) + "'>";
     h += "<div class='form-text mb-3'>Corrige l'erreur qui <b>persiste dans le temps</b> (&eacute;vite de stagner juste sous la consigne). Trop &eacute;lev&eacute; = <b>d&eacute;passements</b> de la consigne. D&eacute;faut : <b>0,1</b> ; r&eacute;duisez-le (&agrave; ~0,05) pour un plancher chauffant, l'erreur r&eacute;siduelle s'y corrigeant sur plusieurs heures.</div>";
     h += "<label class='form-label'>Temps ON minimal (secondes)</label>";
     h += "<input class='form-control' type='number' id='thMinOn' value='" + t.minOnSec + "'>";
@@ -530,9 +530,10 @@
     $('#schedList').on('click', '.sched-del', function() { $(this).closest('.sched-row').remove(); });
 
     // Listes d'actions selon l'appareil principal (deviceActions)
-    // climWarn ne concerne que la clim/PAC air-air : visible seulement quand
-    // une action Froid est renseignee (donc hors convecteur/plancher chauffant).
-    function upClimWarn() { $('#climWarn').toggle(!!$('#aCool').val()); }
+    // climWarn : visible quand une action Froid est renseignee, ou quand le
+    // profil TPI "Clim" est choisi (cas d'une clim sur une simple prise, sans
+    // action Froid configuree).
+    function upClimWarn() { $('#climWarn').toggle(!!$('#aCool').val() || $('#thProfile').val() === 'clim'); }
     function fillActions(ieee, keep) {
       var cur = keep || { h: $('#aHeat').val(), c: $('#aCool').val(), o: $('#aOff').val() };
       if (!ieee) {
@@ -551,6 +552,7 @@
     }
     $('#actSel').on('change', function() { fillActions(this.value); });
     $('#aCool').on('change', upClimWarn);
+    $('#thProfile').on('change', upClimWarn);
     fillActions(t.actuatorIEEE, { h: t.actionHeat, c: t.actionCool, o: t.actionOff });
 
     $('#thermoForm').on('submit', function(e) {
