@@ -60,6 +60,7 @@ typedef enum {
     ML_EL_TOTAL_APPARENT,
     ML_EL_VOLTAGE,
     ML_EL_CURRENT,
+    ML_EL_POWER_FACTOR,
     ML_EL_ENERGY,           // energie cumulee importee
     ML_SWITCH_PRESS,        // bouton : un appui par rapport
     ML_SWITCH_MULTI,        // bouton : valeur = nombre d'appuis (0 = appui long)
@@ -179,6 +180,9 @@ bool matter_profile_raw_value(const uint8_t *data, uint16_t len, uint8_t zcl_typ
 
 /** Nom court d'une cible (journal). */
 const char *matter_link_target_name(uint8_t target);
+
+/** Vrai si le profil a une liaison vers cette cible (matter_link_target_t). */
+bool matter_profile_has_target(const matter_profile_t *p, uint8_t target);
 
 #ifdef __cplusplus
 }

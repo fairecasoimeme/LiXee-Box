@@ -532,8 +532,12 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
         break;
     }
     case MATTER_DEV_ENERGY_METER: {
-        // Creer un delegate pour stocker les valeurs de mesure
-        ElecPowerDelegate *delegate = new ElecPowerDelegate();
+        // Creer un delegate pour stocker les valeurs de mesure. Pas de
+        // profil ici (ZLinky LoRa sans template) : jamais de liaison
+        // PowerFactor possible, donc ni l'attribut ni son entree Accuracy
+        // ne doivent etre annonces (sinon Home Assistant cree une entite
+        // "Facteur de puissance" permanemment inconnue).
+        ElecPowerDelegate *delegate = new ElecPowerDelegate(false);
         endpoint::electrical_sensor::config_t cfg;
         cfg.electrical_power_measurement.feature_flags =
             cluster::electrical_power_measurement::feature::alternating_current::get_id();
@@ -589,11 +593,19 @@ static esp_err_t add_device_type_clusters(endpoint_t *ep, matter_device_type_t d
 // recree pas un cluster deja present (Identify, Descriptor...).
 // ============================================================================
 
-static void add_electrical_clusters(endpoint_t *ep, bool with_power, bool with_energy)
+static void add_electrical_clusters(endpoint_t *ep, bool with_power, bool with_energy,
+                                      const matter_profile_t *p)
 {
     if (with_power) {
+        // PowerFactor n'est cree que si le profil a effectivement une
+        // liaison vers lui (ex. ZCL 0B04/0510, Tuya EF00 power_factor) :
+        // sinon Home Assistant cree une entite "Facteur de puissance"
+        // permanemment inconnue pour tout compteur qui n'en fournit pas
+        // (ZLinky, Shelly Pro 3EM...).
+        bool has_power_factor = matter_profile_has_target(p, ML_EL_POWER_FACTOR);
+
         // Delegate : stocke les valeurs de mesure (attributs geres par le serveur)
-        ElecPowerDelegate *delegate = new ElecPowerDelegate();
+        ElecPowerDelegate *delegate = new ElecPowerDelegate(has_power_factor);
         endpoint::electrical_sensor::config_t cfg;
         cfg.electrical_power_measurement.feature_flags =
             cluster::electrical_power_measurement::feature::alternating_current::get_id();
@@ -606,6 +618,9 @@ static void add_electrical_clusters(endpoint_t *ep, bool with_power, bool with_e
             cluster::electrical_power_measurement::attribute::create_voltage(epm, nullable<int64_t>());
             cluster::electrical_power_measurement::attribute::create_active_current(epm, nullable<int64_t>());
             cluster::electrical_power_measurement::attribute::create_apparent_power(epm, nullable<int64_t>());
+            if (has_power_factor) {
+                cluster::electrical_power_measurement::attribute::create_power_factor(epm, nullable<int64_t>());
+            }
         }
         if (s_elec_delegate_count < MATTER_BRIDGE_MAX_ENDPOINTS) {
             s_elec_delegates[s_elec_delegate_count] = delegate;
@@ -757,7 +772,7 @@ static esp_err_t add_profile_clusters(endpoint_t *ep, const matter_profile_t *p)
         endpoint::generic_switch::add(ep, &cfg);
     }
     if (caps & (MCAP_ELECTRICAL | MCAP_ENERGY)) {
-        add_electrical_clusters(ep, (caps & MCAP_ELECTRICAL) != 0, (caps & MCAP_ENERGY) != 0);
+        add_electrical_clusters(ep, (caps & MCAP_ELECTRICAL) != 0, (caps & MCAP_ENERGY) != 0, p);
         if (p->zlinky && (caps & MCAP_ENERGY)) add_linky_clusters(ep);
     }
     if (caps & MCAP_BATTERY) {

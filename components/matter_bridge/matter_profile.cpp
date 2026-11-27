@@ -182,6 +182,7 @@ static cls_t classify_standard(const devdata_template_state_t *s, bool has_onoff
         else if (a == 0x050B && !zlinky) c.target = ML_EL_ACTIVE_POWER;
         else if (a == 0x050F) c.target = ML_EL_APPARENT_POWER;
         else if (a == 0x0306) c.target = ML_EL_TOTAL_APPARENT;
+        else if (a == 0x0510) c.target = ML_EL_POWER_FACTOR;
         break;
     case 0x0B01:        // Meter Identification (ZLinky)
     case 0xFF66:        // TIC du ZLinky : pas d'equivalent Matter
@@ -228,6 +229,8 @@ static cls_t classify_generic(const devdata_template_state_t *s)
         c.target = ML_EL_ACTIVE_POWER;
     } else if (ieq(dc, "apparent_power") || (!dc[0] && (!strcmp(u, "VA") || !strcmp(u, "kVA")))) {
         c.target = ML_EL_APPARENT_POWER;
+    } else if (ieq(dc, "power_factor")) {
+        c.target = ML_EL_POWER_FACTOR;
     } else if ((ieq(dc, "energy") || (!dc[0] && (!strcmp(u, "Wh") || !strcmp(u, "kWh")))) &&
                !name_is_export(n)) {
         c.target = ML_EL_ENERGY;
@@ -319,7 +322,8 @@ static uint32_t cap_of(uint8_t target)
     case ML_EL_APPARENT_POWER:
     case ML_EL_TOTAL_APPARENT:
     case ML_EL_VOLTAGE:
-    case ML_EL_CURRENT:        return MCAP_ELECTRICAL;
+    case ML_EL_CURRENT:
+    case ML_EL_POWER_FACTOR:   return MCAP_ELECTRICAL;
     case ML_EL_ENERGY:         return MCAP_ENERGY;
     case ML_SWITCH_PRESS:
     case ML_SWITCH_MULTI:      return MCAP_SWITCH;
@@ -327,7 +331,7 @@ static uint32_t cap_of(uint8_t target)
     }
 }
 
-static bool has_target(const matter_profile_t *p, uint8_t target)
+bool matter_profile_has_target(const matter_profile_t *p, uint8_t target)
 {
     for (int i = 0; i < p->link_count; i++)
         if (p->links[i].target == target) return true;
@@ -446,15 +450,15 @@ matter_profile_t *matter_profile_build(const devdata_template_t *tmpl, const cha
     //    un simple capteur ;
     //  - une seule fonction BooleanState par endpoint : la fuite l'emporte ;
     //  - un bouton qui remonte le nombre d'appuis ne compte pas deux fois
-    p->heat = has_target(p, ML_TH_HEAT_SP);
-    p->cool = has_target(p, ML_TH_COOL_SP);
+    p->heat = matter_profile_has_target(p, ML_TH_HEAT_SP);
+    p->cool = matter_profile_has_target(p, ML_TH_COOL_SP);
     if (!p->heat && !p->cool) {
         retarget(p, ML_TH_LOCAL_TEMP, ML_TEMPERATURE);
         drop_target(p, ML_TH_SYSTEM_MODE);
         drop_target(p, ML_TH_RUNNING);
     }
-    if (has_target(p, ML_LEAK)) drop_target(p, ML_CONTACT);
-    if (has_target(p, ML_SWITCH_MULTI)) drop_target(p, ML_SWITCH_PRESS);
+    if (matter_profile_has_target(p, ML_LEAK)) drop_target(p, ML_CONTACT);
+    if (matter_profile_has_target(p, ML_SWITCH_MULTI)) drop_target(p, ML_SWITCH_PRESS);
 
     for (int i = 0; i < p->link_count; i++) p->caps |= cap_of(p->links[i].target);
 
@@ -542,6 +546,7 @@ const char *matter_link_target_name(uint8_t t)
     case ML_EL_TOTAL_APPARENT: return "Puissance apparente totale";
     case ML_EL_VOLTAGE:        return "Tension";
     case ML_EL_CURRENT:        return "Courant";
+    case ML_EL_POWER_FACTOR:   return "Facteur de puissance";
     case ML_EL_ENERGY:         return "Energie";
     case ML_SWITCH_PRESS:      return "Bouton";
     case ML_SWITCH_MULTI:      return "Bouton multi";

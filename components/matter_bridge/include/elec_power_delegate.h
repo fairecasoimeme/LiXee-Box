@@ -45,7 +45,14 @@ namespace lixee_epm_attr = chip::app::Clusters::ElectricalPowerMeasurement::Attr
 class ElecPowerDelegate : public chip::app::Clusters::ElectricalPowerMeasurement::Delegate
 {
 public:
-    ElecPowerDelegate() = default;
+    // has_power_factor : vrai si l'endpoint a une liaison de profil vers
+    // PowerFactor (voir matter_bridge.cpp) -- sinon ni l'attribut ni son
+    // entree Accuracy n'existent sur l'endpoint, et il ne faut pas les
+    // annoncer ici (sinon Home Assistant cree une entite "Facteur de
+    // puissance" permanemment inconnue, ex. ZLinky, Shelly Pro 3EM).
+    explicit ElecPowerDelegate(bool has_power_factor = true)
+        : m_measurement_type_count(has_power_factor ? kMeasurementTypeCountMax : kMeasurementTypeCountMax - 1)
+    {}
 
     // --- Setters (appeles depuis la tache de reception ZiGate) ---
 
@@ -65,6 +72,9 @@ public:
     // matter_bridge.cpp).
     void SetRMSVoltage(int64_t mv) { Update(m_rms_voltage, mv, lixee_epm_attr::Voltage::Id); }
     void SetRMSCurrent(int64_t ma) { Update(m_rms_current, ma, lixee_epm_attr::ActiveCurrent::Id); }
+
+    // Facteur de puissance, en 1/100e de pourcent (-10000..10000)
+    void SetPowerFactor(int64_t hundredths_pct) { Update(m_power_factor, hundredths_pct, lixee_epm_attr::PowerFactor::Id); }
 
     // Puissance apparente TOTALE (ZLinky 0x0B04/0x0306, SINSTS). Prioritaire :
     // en triphase standard, 0x050F ne contient que la phase 1.
@@ -106,7 +116,7 @@ public:
 
     // Types de mesure pris en charge : ceux dont l'attribut existe sur
     // l'endpoint (voir matter_bridge.cpp), meme si leur valeur est encore nulle.
-    uint8_t GetNumberOfMeasurementTypes() override { return kMeasurementTypeCount; }
+    uint8_t GetNumberOfMeasurementTypes() override { return m_measurement_type_count; }
 
     // --- Accuracy list (obligatoire) : une entree par type de mesure, ---
     // --- ActivePower compris (exige par la specification)            ---
@@ -120,17 +130,20 @@ public:
         // Plages et precision (resolution d'une unite entiere : V, A, W, VA,
         // celle de la TIC Linky et des prises Zigbee). La specification veut
         // au moins une plage par type, avec FixedMax ou PercentMax.
-        static Range s_ranges[kMeasurementTypeCount];
-        static const struct { MeasurementTypeEnum type; int64_t max; uint64_t fixed; } k_types[kMeasurementTypeCount] = {
-            { MeasurementTypeEnum::kVoltage,       400000,    1000 },  // 400 V en mV
-            { MeasurementTypeEnum::kActiveCurrent, 100000,    1000 },  // 100 A en mA
-            { MeasurementTypeEnum::kActivePower,   100000000, 1000 },  // 100 kW en mW
-            { MeasurementTypeEnum::kApparentPower, 100000000, 1000 },  // 100 kVA en mVA
+        // PowerFactor (dernier) n'est inclus que si l'endpoint a une liaison
+        // de profil vers lui (m_measurement_type_count, voir le constructeur).
+        static Range s_ranges[kMeasurementTypeCountMax];
+        static const struct { MeasurementTypeEnum type; int64_t min; int64_t max; uint64_t fixed; } k_types[kMeasurementTypeCountMax] = {
+            { MeasurementTypeEnum::kVoltage,       0,      400000,    1000 },  // 400 V en mV
+            { MeasurementTypeEnum::kActiveCurrent, 0,      100000,    1000 },  // 100 A en mA
+            { MeasurementTypeEnum::kActivePower,   0,      100000000, 1000 },  // 100 kW en mW
+            { MeasurementTypeEnum::kApparentPower, 0,      100000000, 1000 },  // 100 kVA en mVA
+            { MeasurementTypeEnum::kPowerFactor,   -10000, 10000,     100 },   // +/-100.00%, resolution 1%
         };
-        if (index >= kMeasurementTypeCount) return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
+        if (index >= m_measurement_type_count) return CHIP_ERROR_PROVIDER_LIST_EXHAUSTED;
 
         Range &r = s_ranges[index];
-        r.rangeMin = 0;
+        r.rangeMin = k_types[index].min;
         r.rangeMax = k_types[index].max;
         r.fixedMax.SetValue(k_types[index].fixed);
 
@@ -138,7 +151,7 @@ public:
         // ActivePower n'est qu'estimee (puissance apparente, cos phi = 1)
         // tant qu'aucune vraie puissance active n'a ete recue.
         entry.measured         = k_types[index].type != MeasurementTypeEnum::kActivePower || m_active_is_measured;
-        entry.minMeasuredValue = 0;
+        entry.minMeasuredValue = k_types[index].min;
         entry.maxMeasuredValue = k_types[index].max;
         entry.accuracyRanges   = chip::app::DataModel::List<const Range>(&r, 1);
         return CHIP_NO_ERROR;
@@ -185,7 +198,7 @@ public:
     chip::app::DataModel::Nullable<int64_t> GetRMSCurrent()      override { return m_rms_current; }
     chip::app::DataModel::Nullable<int64_t> GetRMSPower()        override { return m_active_power; }
     chip::app::DataModel::Nullable<int64_t> GetFrequency()       override { return chip::app::DataModel::Nullable<int64_t>(); }
-    chip::app::DataModel::Nullable<int64_t> GetPowerFactor()     override { return chip::app::DataModel::Nullable<int64_t>(); }
+    chip::app::DataModel::Nullable<int64_t> GetPowerFactor()     override { return m_power_factor; }
     chip::app::DataModel::Nullable<int64_t> GetNeutralCurrent()  override { return chip::app::DataModel::Nullable<int64_t>(); }
 
 private:
@@ -233,9 +246,11 @@ private:
     chip::app::DataModel::Nullable<int64_t> m_rms_voltage;
     chip::app::DataModel::Nullable<int64_t> m_rms_current;
     chip::app::DataModel::Nullable<int64_t> m_apparent_power;
+    chip::app::DataModel::Nullable<int64_t> m_power_factor;
     bool    m_active_is_measured = false;
     bool    m_has_total_apparent = false;
+    const uint8_t m_measurement_type_count;
 
-    // Voltage, ActiveCurrent, ActivePower, ApparentPower
-    static constexpr uint8_t kMeasurementTypeCount = 4;
+    // Voltage, ActiveCurrent, ActivePower, ApparentPower, PowerFactor
+    static constexpr uint8_t kMeasurementTypeCountMax = 5;
 };
